@@ -14,7 +14,8 @@ import { v2SwitchNotice, type ChainSwitchOutcome } from '../../wallet/port'
 import { SlippageChoice } from '../create/SlippageChoice'
 import { TokenMark } from '../TokenIcon'
 import { Button, Skeleton } from '../ui'
-import { IconCoins, IconClose } from '../icons'
+import { IconClose } from '../icons'
+import { IconCollect } from './actionIcons'
 import { ActionSheet, SheetAlert, SheetCard, SheetFact, SheetFacts, SheetMore, SheetNote, SheetStatus, TokenRow, TokenRows } from './ActionSheet'
 import { SequenceSwitch } from './SequenceSwitch'
 import { QuietMark } from './visual/QuietMarks'
@@ -356,7 +357,7 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
           data-position-action="collect"
           onClick={() => void show('collect')}
         >
-          <IconCoins size={18} /><span>Collect fees</span>
+          <IconCollect size={18} /><span>Collect fees</span>
         </Button>
         <span className="dm-position-tools-slot" data-position-action-tools="" />
         {automationSlot}

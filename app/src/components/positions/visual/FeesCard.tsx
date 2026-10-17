@@ -303,7 +303,7 @@ export function FeesCard({ source, bandPresent, quoteIndex, tokens, standalone =
     plot = (
       <div className="dm-fees-plot">
         <FeesChart view={view} pv={pv} zero={view.zero} onInspect={setInspected} automation={impact ? { adds: impact.adds, by: AUTOMATION_NAME[impact.kind], exactFees: impact.exactFees } : undefined} />
-        <p className="dm-fees-window" data-fees-window="" title={`${shortDate(pv.start)} ${shortTime(pv.start)} — ${shortDate(pv.end)} ${shortTime(pv.end)}`}>
+        <p key={period} className="dm-fees-window" data-fees-window="" title={`${shortDate(pv.start)} ${shortTime(pv.start)} — ${shortDate(pv.end)} ${shortTime(pv.end)}`}>
           {pv.from.kind === 'opened' ? 'Since opened' : `From ${shortDate(pv.start)} ${shortTime(pv.start)}`}
         </p>
       </div>

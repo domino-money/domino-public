@@ -967,7 +967,11 @@ export type MenuEntry =
  * The panel exists only while open; focus goes to its first item, arrows, Home
  * and End move, Escape closes and returns focus, and choosing a link, a
  * pointer press outside or a route change closes it. `mobileOnly` entries show
- * only below 768px, decided when the menu opens.
+ * only on a phone (up to 859px, the prototype's one switch), decided when the menu opens.
+ * V4 (site/_kit.md .ch-menu, .ch-psheet): a closed panel stays drawn 200ms while it
+ * shrinks away (.14s) and the phone's scrim fades (.2s), with no role, no id and no key
+ * handling, hidden from assistive technology and inert, so nothing can reach it; a reopen
+ * takes it back at once.
  */
 export function Menu({
   id,
@@ -984,32 +988,51 @@ export function Menu({
   align?: 'start' | 'end'
 }) {
   const [open, setOpen] = useState(false)
+  const [closing, setClosing] = useState(false)
   const [narrow, setNarrow] = useState(false)
   const anchor = useRef<HTMLDivElement>(null)
   const button = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLDivElement>(null)
+  const closeTimer = useRef(0)
+
+  useEffect(() => () => window.clearTimeout(closeTimer.current), [])
 
   useEffect(() => {
     if (!open) return
     panel.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
-    const onPointer = (event: PointerEvent) => {
-      if (!anchor.current?.contains(event.target as Node)) setOpen(false)
+    const shut = () => {
+      setOpen(false)
+      setClosing(true)
+      window.clearTimeout(closeTimer.current)
+      closeTimer.current = window.setTimeout(() => setClosing(false), 200)
     }
-    const onRoute = () => setOpen(false)
+    const onPointer = (event: PointerEvent) => {
+      if (!anchor.current?.contains(event.target as Node)) shut()
+    }
     document.addEventListener('pointerdown', onPointer)
-    window.addEventListener('hashchange', onRoute)
+    window.addEventListener('hashchange', shut)
     return () => {
       document.removeEventListener('pointerdown', onPointer)
-      window.removeEventListener('hashchange', onRoute)
+      window.removeEventListener('hashchange', shut)
     }
   }, [open])
 
+  /** Closes the menu; its panel shrinks away (V4) before it leaves. */
+  const close = () => {
+    setOpen(false)
+    setClosing(true)
+    window.clearTimeout(closeTimer.current)
+    closeTimer.current = window.setTimeout(() => setClosing(false), 200)
+  }
+
   const toggle = () => {
     if (open) {
-      setOpen(false)
+      close()
       return
     }
-    setNarrow(typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 767px)').matches)
+    window.clearTimeout(closeTimer.current)
+    setClosing(false)
+    setNarrow(typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 859px)').matches)
     setOpen(true)
   }
 
@@ -1035,16 +1058,38 @@ export function Menu({
         return
       case 'Escape':
         event.preventDefault()
-        setOpen(false)
+        close()
         button.current?.focus()
         return
       case 'Tab':
-        setOpen(false)
+        close()
         return
     }
   }
 
   const shown = items.filter((entry) => entry.kind === 'heading' || !entry.mobileOnly || narrow)
+  const panelClass = cx('dm-menu', align === 'start' ? 'dm-menu--start' : 'dm-menu--end')
+  const entries = shown.map((entry, index) =>
+    entry.kind === 'separator' ? (
+      <hr key={index} className="dm-menu-sep" />
+    ) : entry.kind === 'heading' ? (
+      <div key={index} role="presentation" className="dm-menu-heading">
+        {entry.label}
+      </div>
+    ) : (
+      <a
+        key={index}
+        role="menuitem"
+        href={entry.href}
+        aria-current={entry.current ? 'page' : undefined}
+        onClick={close}
+        className="dm-menu-item"
+      >
+        {entry.icon}
+        <span className="min-w-0 truncate">{entry.label}</span>
+      </a>
+    ),
+  )
 
   return (
     <div ref={anchor} className="dm-menu-anchor">
@@ -1065,31 +1110,16 @@ export function Menu({
           </span>
         )}
       </button>
-      {open && (
-        <div ref={panel} id={id} role="menu" aria-label={label} tabIndex={-1} onKeyDown={onKeyDown} className={cx('dm-menu', align === 'start' ? 'dm-menu--start' : 'dm-menu--end')}>
-          {shown.map((entry, index) =>
-            entry.kind === 'separator' ? (
-              <hr key={index} className="dm-menu-sep" />
-            ) : entry.kind === 'heading' ? (
-              <div key={index} role="presentation" className="dm-menu-heading">
-                {entry.label}
-              </div>
-            ) : (
-              <a
-                key={index}
-                role="menuitem"
-                href={entry.href}
-                aria-current={entry.current ? 'page' : undefined}
-                onClick={() => setOpen(false)}
-                className="dm-menu-item"
-              >
-                {entry.icon}
-                <span className="min-w-0 truncate">{entry.label}</span>
-              </a>
-            ),
-          )}
+      {/* The open panel, or the same panel shrinking away: one element in one place, so a reopen takes it back. */}
+      {open ? (
+        <div ref={panel} id={id} role="menu" aria-label={label} tabIndex={-1} onKeyDown={onKeyDown} className={panelClass}>
+          {entries}
         </div>
-      )}
+      ) : closing ? (
+        <div aria-hidden="true" inert data-closing="" className={panelClass}>
+          {entries}
+        </div>
+      ) : null}
     </div>
   )
 }

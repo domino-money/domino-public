@@ -1490,9 +1490,12 @@ test('a later visit replaces the remembered total only after new holdings receiv
       const list = page.locator('[data-portfolio-tokens]');
       await page.locator('[data-portfolio-tokens][data-wallet-prices="ok"] [data-wallet-total]').waitFor({ timeout: 30_000 });
       assert.equal(await totalBecomes(page, '$2,038.50'), '$2,038.50');
-      // The next visit: its first page names NEWER (1,000 at $0.001), every price answered 800 ms after it is asked.
+      // The next visit: its first page names NEWER (1,000 at $0.001), every price answered 2.5 s after it is asked.
+      // Changed on purpose 2026-10-17 (it was 800 ms): on a slow runner the reload could take longer than that to draw, so
+      // the new price landed before the remembered total was read (seen on main 38655740202 and on V4's runs). The same
+      // order is checked: the remembered total at once, then the new one once its price comes.
       extras = [[NEWDROP, 'NEWDROP'], [NEWER, 'NEWER']];
-      delay = 800;
+      delay = 2500;
       await page.reload();
       await list.locator('[data-wallet-total]').waitFor({ timeout: 5_000 });
       assert.equal(await list.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$2,038.50', 'the remembered total, at once');

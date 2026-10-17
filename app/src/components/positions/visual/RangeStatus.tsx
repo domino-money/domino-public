@@ -16,10 +16,22 @@ import { positionPlotHeight, usePositionChartOptions } from '../PositionChartOpt
 export const RangeFactsContext = createContext<RangeFacts | null>(null)
 
 /** The chart's box (px): its plot's height on a desktop and on a phone, and the room above it and under it for the dates. */
-export const PLOT_HEIGHT = 196
-export const PLOT_HEIGHT_PHONE = 168
+// V4 (2026-10-17, site/position.html .c-range): 300 design px, 420 expanded (360 on a phone); a Base or Arbitrum
+// position's recorded chart (position-base.html) 260, 380 expanded.
+export const PLOT_HEIGHT = 300
+export const PLOT_HEIGHT_PHONE = 300
+export const PLOT_BIG = 420
+export const PLOT_BIG_PHONE = 360
+export const RECORDED_PLOT = 260
+export const RECORDED_BIG = 380
 export const PAD_TOP = 16
 export const PAD_BOTTOM = 30
+/** The chart's whole box (design px), which the frame that waits for it keeps. */
+export const rangeChartBox = (phone: boolean, expanded: boolean, recorded = false) => PAD_TOP + rangePlotHeight(phone, expanded, recorded) + PAD_BOTTOM
+/** The plot's height for this chart: Robinhood's, or a recorded (Base, Arbitrum) one's; expanded, its larger one. */
+export const rangePlotHeight = (phone: boolean, expanded: boolean, recorded = false) => recorded
+  ? positionPlotHeight(RECORDED_PLOT, phone, expanded, RECORDED_BIG)
+  : positionPlotHeight(phone ? PLOT_HEIGHT_PHONE : PLOT_HEIGHT, phone, expanded, phone ? PLOT_BIG_PHONE : PLOT_BIG)
 
 /**
  * The card's one plain status, in words and colour (lib/chart/priceFacts.ts statusWords): "Earning fees — the price is
@@ -52,14 +64,14 @@ export function RangeHead({ facts }: { facts: RangeFacts }) {
  * page moves when the chart arrives. `failed`: the place of a chart whose code could not load (2026-10-15, pack 7: it no
  * longer says so).
  */
-export function RangeChartWaiting({ facts, failed = false }: { facts: RangeFacts; failed?: boolean }) {
+export function RangeChartWaiting({ facts, failed = false, recorded = false }: { facts: RangeFacts; failed?: boolean; recorded?: boolean }) {
   const phone = useMediaQuery('(max-width: 767px)')
   const { expanded } = usePositionChartOptions()
   return (
     <div className="dm-pvr-wrap" data-pvr-waiting={failed ? undefined : ''} data-pvr-unavailable={failed ? '' : undefined} aria-busy={failed ? undefined : true}>
       <RangeHead facts={facts} />
       {/* In design px through rem, as ChartFrame sizes the chart that replaces it (lib/rootScale.ts), so nothing moves. */}
-      <div className="dm-pvr" style={{ height: rem(PAD_TOP + positionPlotHeight(phone ? PLOT_HEIGHT_PHONE : PLOT_HEIGHT, phone, expanded) + PAD_BOTTOM) }} />
+      <div className="dm-pvr" style={{ height: rem(rangeChartBox(phone, expanded, recorded)) }} />
       <div className="dm-pvr-legend">
         <span className="dm-pvr-key" data-key="range">
           <span aria-hidden="true" className="dm-pvr-swatch" />

@@ -72,6 +72,10 @@ export function Tick({ checked, onChange, children, disabled, ...data }: { check
   return (
     <label className="dm-pa-tick">
       <input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.currentTarget.checked)} {...data} />
+      {/* The drawn box (V4's .as-tbox): its Tangerine check draws itself once ticked; the input above stays the control. */}
+      <span className="dm-pa-tbox" aria-hidden="true">
+        <svg viewBox="0 0 14 14" width="14" height="14" focusable="false"><path d="M3 7.4 5.7 10.1 11.2 4.2" pathLength="1" /></svg>
+      </span>
       <span>{children}</span>
     </label>
   )

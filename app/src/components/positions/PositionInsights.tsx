@@ -27,10 +27,10 @@ export function PositionInsights({ fees, range }: { fees: ReactNode; range: Reac
         </div>
         <div className="dm-position-chart-tools" role="group" aria-label="Chart display">
           <button type="button" aria-label="Show measured points" title="Show measured points" aria-pressed={showPoints} onClick={() => setShowPoints(value => !value)}>
-            <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m3 14 7-8 7 5" /><circle cx="3" cy="14" r="2" /><circle cx="10" cy="6" r="2" /><circle cx="17" cy="11" r="2" /></svg>
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false"><path className="dm-pts-line" d="M2 11.5 5.5 7l3 2.5L14 4" /><circle cx="5.5" cy="7" r="1.6" /><circle cx="8.5" cy="9.5" r="1.6" /><circle cx="14" cy="4" r="1.6" /><circle cx="2" cy="11.5" r="1.6" /></svg>
           </button>
           <button type="button" aria-label={expanded ? 'Collapse chart' : 'Expand chart'} title={expanded ? 'Collapse chart' : 'Expand chart'} aria-expanded={expanded} aria-controls={`${id}-${active}-panel`} onClick={() => setExpanded(value => !value)}>
-            <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">{expanded ? <path d="M3 7h4V3m6 0v4h4M3 13h4v4m6 0v-4h4" /> : <path d="M7 3H3v4m14 0V3h-4M3 13v4h4m6 0h4v-4" />}</svg>
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false">{expanded ? <path d="M13.5 6.5h-4v-4M2.5 9.5h4v4M9.5 6.5l4-4M6.5 9.5l-4 4" /> : <path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5l-4 4M2.5 13.5l4-4" />}</svg>
           </button>
         </div>
       </div>

@@ -76,7 +76,7 @@
     .dm-mkt-name { font-size: 0.875rem; line-height: 1.125rem; }
     .dm-mkt-ident > .dm-mkt-name { display: block; overflow-wrap: anywhere; }
     .dm-mkt-table [data-pool-catalogue] .dm-mkt-pool > span:nth-child(2) { min-width: 0; overflow-wrap: anywhere; }
-    .dm-mkt-table .dm-fee-venue { display: none; }
+    .dm-mkt-table :is(.dm-fee-venue, .dm-fee-sep) { display: none; }
     .dm-mkt-venue, .dm-mkt-table [data-pool-catalogue] .dm-chip { font-size: 0.6875rem; line-height: 0.875rem; }
     .dm-mkt-num { font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.16px; }
     .dm-mkt-end .i-chev-r { display: none; }

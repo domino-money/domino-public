@@ -3,11 +3,10 @@ import { askAutoExitOnArrival } from '../../lib/automate/autoExitAsk'
 import { AUTO_EXIT_FEATURE, FEATURES, FEATURE_ORDER, type FeatureKey } from '../../lib/automate/features'
 import { priceOf, type JourneyState } from '../../lib/create/journey'
 import { rangePosition, usableTicks } from '../../lib/read/screens/poolRange'
-import { ModeArt, PlainArt } from '../automate/ModeArt'
 import { positionHref, sequenceHref } from '../explore/routes'
-import { ExitThumb } from '../home/Vignettes'
 import { IconChevronRight } from '../icons'
 import { Pill } from '../ui'
+import { CreatedArt, CreatedTile, InCreatedSlot } from './createdParts'
 
 /** Where each choice leads: the position's own page, or the automation page with this position and that mode chosen. */
 const hrefOf = (key: FeatureKey, tokenId: string) => (key === 'plain' ? positionHref(tokenId) : sequenceHref(tokenId, key))
@@ -54,59 +53,63 @@ export function CreatedNext({ tokenId, state }: { tokenId: string; state?: Pick<
   const [now] = useState(() => Date.now())
   const beside = createdBeside(state, now)
   const exit = __DOMINO_V2__ && !createdFullRange(state)
+  // Drawn at the top of Review's body (V4: the created block opens above Your position), its tile beside the line.
   return (
-    <section className="dm-created" aria-labelledby="created-title" data-created-position={tokenId}>
-      <p id="created-title" className="dm-created-line" role="status">
-        Position NFT <span translate="no">{tokenId}</span> is in your wallet. What should Domino do with it?
-      </p>
-      <nav className="dm-created-choices" aria-labelledby="created-title">
-        {FEATURE_ORDER.map((key) => {
-          const feature = FEATURES[key]
-          return (
-            <a key={key} href={hrefOf(key, tokenId)} className="dm-created-choice" data-created-next={key}>
+    <InCreatedSlot>
+      <section className="dm-created" aria-labelledby="created-title" data-created-position={tokenId}>
+        <p id="created-title" className="dm-created-line" role="status">
+          Position NFT <span translate="no">{tokenId}</span> is in your wallet. <span className="dm-created-q">What should Domino do with it?</span>
+        </p>
+        <CreatedTile />
+        <nav className="dm-created-choices" aria-labelledby="created-title">
+          {FEATURE_ORDER.map((key) => {
+            const feature = FEATURES[key]
+            return (
+              <a key={key} href={hrefOf(key, tokenId)} className="dm-created-choice" data-created-next={key}>
+                <span className="dm-created-art" aria-hidden="true">
+                  <CreatedArt kind={key} />
+                </span>
+                <span className="dm-created-text">
+                  <span className="dm-created-name">
+                    {feature.name}
+                    {feature.fee && <span className="dm-created-fee"> · {feature.fee}</span>}
+                  </span>
+                  <span className="dm-created-note">{feature.line}</span>
+                </span>
+                <span className="dm-created-go">
+                  <span className="dm-created-go-text">{key === 'plain' ? 'View position' : 'Set up'}</span>
+                  <IconChevronRight size={16} />
+                </span>
+              </a>
+            )
+          })}
+          {exit && (
+            // The panel's key for a Robinhood Chain Uniswap v4 position is its bare id (src/v2in/autoexit/entry.ts exitOrderKey).
+            <a href={positionHref(tokenId)} onClick={() => askAutoExitOnArrival(tokenId)} className="dm-created-choice" data-created-next="autoexit" data-created-recommended={beside ? '' : undefined}>
               <span className="dm-created-art" aria-hidden="true">
-                {key === 'plain' ? <PlainArt /> : <ModeArt mode={key} size="thumb" />}
+                <CreatedArt kind="autoexit" />
               </span>
               <span className="dm-created-text">
                 <span className="dm-created-name">
-                  {feature.name}
-                  {feature.fee && <span className="dm-created-fee"> · {feature.fee}</span>}
+                  {AUTO_EXIT_FEATURE.name}
+                  <span className="dm-created-fee"> · {AUTO_EXIT_FEATURE.fee}</span>
+                  {beside && (
+                    <>
+                      {' '}
+                      <Pill tone="accent" className="dm-created-pill">Recommended</Pill>
+                    </>
+                  )}
                 </span>
-                <span className="dm-created-note">{feature.line}</span>
+                <span className="dm-created-note">{AUTO_EXIT_FEATURE.line}</span>
               </span>
               <span className="dm-created-go">
-                <span className="dm-created-go-text">{key === 'plain' ? 'View position' : 'Set up'}</span>
+                <span className="dm-created-go-text">Turn on</span>
                 <IconChevronRight size={16} />
               </span>
             </a>
-          )
-        })}
-        {exit && (
-          // The panel's key for a Robinhood Chain Uniswap v4 position is its bare id (src/v2in/autoexit/entry.ts exitOrderKey).
-          <a href={positionHref(tokenId)} onClick={() => askAutoExitOnArrival(tokenId)} className="dm-created-choice" data-created-next="autoexit" data-created-recommended={beside ? '' : undefined}>
-            <span className="dm-created-art" aria-hidden="true">
-              <ExitThumb />
-            </span>
-            <span className="dm-created-text">
-              <span className="dm-created-name">
-                {AUTO_EXIT_FEATURE.name}
-                <span className="dm-created-fee"> · {AUTO_EXIT_FEATURE.fee}</span>
-                {beside && (
-                  <>
-                    {' '}
-                    <Pill tone="accent" className="dm-created-pill">Recommended</Pill>
-                  </>
-                )}
-              </span>
-              <span className="dm-created-note">{AUTO_EXIT_FEATURE.line}</span>
-            </span>
-            <span className="dm-created-go">
-              <span className="dm-created-go-text">Turn on</span>
-              <IconChevronRight size={16} />
-            </span>
-          </a>
-        )}
-      </nav>
-    </section>
+          )}
+        </nav>
+      </section>
+    </InCreatedSlot>
   )
 }

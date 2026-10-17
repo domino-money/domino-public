@@ -7,7 +7,8 @@
   .dm-info-tip-trigger:focus-visible { outline: 2px solid var(--primary-line); outline-offset: 0.1875rem; }
   .dm-info-tip { position: fixed; z-index: 100; width: min(16rem, calc(100vw - 1.5rem)); padding: 0.75rem 0.875rem; border-radius: 0.875rem; background: var(--surface-2); color: var(--fg-muted); font-size: 0.78125rem; line-height: 1.55; box-shadow: inset 0 0 0 1px var(--border-lip), 0 1.5rem 3.75rem -1.5rem rgb(0 0 0 / 0.9); animation: dm-fade 0.2s var(--ease-std) backwards; }
   /* ---- Page frame (§2.7): one 1200px container; the width aliases stay in the DOM ------------------ */
-  .dm-page { width: 100%; max-width: calc(var(--content) + 2 * var(--gutter)); margin-inline: auto; padding: 1.5rem var(--gutter) 0; animation: dm-page-in var(--dur-page) var(--ease-std) backwards; }
+  /* No whole-page fade on a route change (V4): the screen's own load moment marks it (App.tsx, tokens.css dm-k-*). */
+  .dm-page { width: 100%; max-width: calc(var(--content) + 2 * var(--gutter)); margin-inline: auto; padding: 1.5rem var(--gutter) 0; }
   /* The page is at least the screen under the header (2026-10-01, platform workstream, E1): while a screen's code or
      first figures load, the footer stays below the fold instead of showing mid-screen and then jumping down, which
      measured up to 0.67 of layout shift on tablets and desktops. */
@@ -75,23 +76,23 @@
   .dm-btn--lg > svg { width: 1.125rem; height: 1.125rem; }
   .dm-btn--xl > svg { width: 1.25rem; height: 1.25rem; }
   .dm-btn > svg { flex-shrink: 0; }
-  .dm-btn--primary, .dm-btn--accent { background: var(--primary); color: var(--primary-fg); }
+  /* The label is the page's cream ink, as the approved prototype draws every solid Tangerine button (its links and buttons
+     inherit their colour); only the wallet sheet's foot keeps the dark label (v4-foundation.css). */
+  .dm-btn--primary, .dm-btn--accent { background: var(--primary); color: var(--fg); }
   .dm-btn--primary:hover:not(:disabled):not([aria-disabled="true"]), .dm-btn--accent:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--primary-hover); }
   .dm-btn--primary:active:not(:disabled):not([aria-disabled="true"]), .dm-btn--accent:active:not(:disabled):not([aria-disabled="true"]) { background: var(--primary-press); }
   .dm-btn--soft, .dm-btn--secondary, .dm-btn--outline { background: var(--v4-w03); color: var(--fg); box-shadow: inset 0 0 0 1px var(--border-lip); }
   :is(.dm-btn--soft, .dm-btn--secondary, .dm-btn--outline):hover:not(:disabled):not([aria-disabled="true"]) { background: var(--v4-tan-07); color: var(--primary-hover); box-shadow: inset 0 0 0 1px var(--v4-tan-ring); }
-  /* The washes are 3-6% fills, so the ember's 13px dot grid read through them (dots across the words, a ring that looked
-     dashed). Blurring what lies behind each one keeps the warm light under it and melts the dots; nothing else changes. */
-  :is(.dm-btn--soft, .dm-btn--secondary, .dm-btn--outline, .dm-icon-btn--surface, .dm-icon-btn--round), :is(.dm-btn--primary, .dm-btn--accent):is(:disabled, [aria-disabled="true"]), .dm-pill:is(.dm-pill--neutral, .dm-pill--in, .dm-pill--out, .dm-pill--wait):not(:has(> .dm-pill-dot)) { -webkit-backdrop-filter: blur(0.25rem); backdrop-filter: blur(0.25rem); }
   .dm-btn--ghost, .dm-btn--danger { background: transparent; color: var(--fg-muted); }
   :is(.dm-btn--ghost, .dm-btn--danger):hover:not(:disabled):not([aria-disabled="true"]) { background: var(--v4-w05); color: var(--fg); }
   /* Not ready: a quiet slot (.06 fill, the faint ring), its words in --fg-subtle (5.4:1 or better). aria-disabled is
      busy ("Refreshing…") or nothing-left ("All pages loaded"), news the reader needs. Ghost and danger stay bare. */
   .dm-btn:disabled, .dm-btn[aria-disabled="true"] { background: var(--v4-w06); color: var(--fg-subtle); box-shadow: inset 0 0 0 1px var(--border); cursor: not-allowed; }
   :is(.dm-btn--ghost, .dm-btn--danger):is(:disabled, [aria-disabled="true"]) { background: transparent; box-shadow: none; }
-  /* Working: the button keeps its colour and an arc turns beside its words. */
-  :is(.dm-btn--primary, .dm-btn--accent)[aria-busy="true"]:disabled { background: var(--primary); color: var(--primary-fg); cursor: progress; }
-  .dm-btn[aria-busy="true"]:disabled::before { content: ''; flex-shrink: 0; width: 1rem; height: 1rem; border-radius: var(--radius-pill); background: conic-gradient(from var(--dm-spin), currentColor 0 25%, color-mix(in srgb, currentColor 22%, transparent) 0); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px)); mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px)); animation: dm-spin 1s linear infinite; }
+  /* Working (V4 .is-busy): the button presses into its deeper Tangerine and a 1.6px arc turns beside its words in .9s (its
+     inner shade is v4-foundation.css's, as the v3 layer's disabled ring would beat it here). */
+  :is(.dm-btn--primary, .dm-btn--accent)[aria-busy="true"]:disabled { background: var(--primary-press); color: var(--fg); cursor: progress; }
+  .dm-btn[aria-busy="true"]:disabled::before { content: ''; flex-shrink: 0; width: 1rem; height: 1rem; border-radius: var(--radius-pill); background: conic-gradient(from var(--dm-spin), currentColor 0 25%, color-mix(in srgb, currentColor 20%, transparent) 0); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 1.6px), #000 calc(100% - 1.2px)); mask: radial-gradient(farthest-side, transparent calc(100% - 1.6px), #000 calc(100% - 1.2px)); animation: dm-spin 0.9s linear infinite; }
   .dm-btn .i-chev-r { transition: translate 0.25s var(--ease-enter); }
   .dm-btn:hover .i-chev-r { translate: 2px 0; }
 
@@ -245,7 +246,10 @@
      pops in on hover and stays on the current entry; the label quiet; the separator the tile's groove. Entry icons stay in
      the DOM, unseen. ---- */
   .dm-menu-anchor { position: relative; }
-  .dm-menu { position: absolute; top: calc(100% + 0.5rem); z-index: 50; display: grid; width: 15rem; padding: 0.375rem; border-radius: 1.125rem; background: var(--surface-1); box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.1), inset 0 1px 0 var(--v4-w06), 0 1.5rem 3.75rem -1.5rem rgb(0 0 0 / 0.9); outline: none; animation: dm-pop 0.28s var(--ease-enter) backwards; }
+  /* In: opacity .2s, the drop and growth .28s ease-enter from 4px up and .96; out (ui.tsx keeps it drawn 200ms): both
+     back in .14s. */
+  .dm-menu { position: absolute; top: calc(100% + 0.5rem); z-index: 50; display: grid; width: 15rem; padding: 0.375rem; border-radius: 1.125rem; background: var(--surface-1); box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.1), inset 0 1px 0 var(--v4-w06), 0 1.5rem 3.75rem -1.5rem rgb(0 0 0 / 0.9); outline: none; animation: dm-menu-in 0.28s var(--ease-enter) backwards, dm-fade 0.2s var(--ease-std) backwards; }
+  .dm-menu[data-closing] { pointer-events: none; animation: dm-menu-out 0.14s var(--ease-std) forwards; }
   .dm-menu--end { right: 0; transform-origin: top right; }
   .dm-menu--start { left: 0; transform-origin: top left; }
   .dm-menu-item { position: relative; display: flex; align-items: center; height: 2.5rem; padding: 0 0.75rem 0 1.375rem; border-radius: 0.75rem; font-size: 0.90625rem; line-height: 1.25rem; font-weight: 500; color: var(--fg-muted); text-decoration: none; transition: background-color 0.18s var(--ease-std), color 0.18s var(--ease-std), scale 0.1s var(--ease-fast); }
@@ -255,9 +259,9 @@
   .dm-menu-item:is(:hover, :focus-visible, [aria-current="page"])::before { opacity: 1; scale: 1; }
   .dm-menu-item:active { scale: 0.985; }
   .dm-menu-item:focus-visible { outline-offset: var(--focus-offset-inset); }
-  .dm-menu-item[aria-current="page"] { color: var(--fg); }
-  .dm-menu-heading { padding: 0.75rem 0.75rem 0.375rem 1.375rem; font-size: 0.75rem; line-height: 1rem; color: var(--fg-subtle); }
-  .dm-menu-sep { height: 2px; margin: 0.375rem 0.625rem; border: 0; background: linear-gradient(rgb(0 0 0 / 0.5), rgb(0 0 0 / 0.5)) 0 0 / 100% 1px no-repeat, linear-gradient(rgb(255 236 220 / 0.075), rgb(255 236 220 / 0.075)) 0 1px / 100% 1px no-repeat; }
+  .dm-menu-item[aria-current="page"] { color: var(--fg); background: var(--v4-w045); }
+  .dm-menu-heading { padding: 0.75rem 0.75rem 0.375rem 1.375rem; font-size: 0.75rem; line-height: normal; color: var(--fg-subtle); }
+  .dm-menu-sep { height: 0.125rem; margin: 0.375rem 0.625rem; border: 0; background: linear-gradient(rgb(0 0 0 / 0.5), rgb(0 0 0 / 0.5)) 0 0 / 100% 0.0625rem no-repeat, linear-gradient(rgb(255 236 220 / 0.075), rgb(255 236 220 / 0.075)) 0 0.0625rem / 100% 0.0625rem no-repeat; }
   /* The trigger's two drawn glyphs: three dots from 768px whose outer two spread on hover and while open; three bars below,
      the middle one short until hovered, turning into a cross while open. */
   .dm-menu-glyph { position: relative; display: inline-grid; place-items: center; }
@@ -275,13 +279,19 @@
   .dm-menu-trigger[aria-expanded="true"] .dm-menu-bars > i:first-child { transform: translateY(0.325rem) rotate(45deg); }
   .dm-menu-trigger[aria-expanded="true"] .dm-menu-bars > i:nth-child(2) { opacity: 0; transform: scaleX(0.2); }
   .dm-menu-trigger[aria-expanded="true"] .dm-menu-bars > i:last-child { transform: translateY(-0.325rem) rotate(-45deg); }
-  @media (max-width: 767px) {
+  @media (max-width: 859px) {
     .dm-menu { position: fixed; left: 1rem; right: 1rem; top: calc(var(--header-h) + 0.5rem); width: auto; }
     .dm-menu-dots { display: none; }
     .dm-menu-bars { display: block; }
     /* The ≡ sheet hangs from the header row, gutter to gutter (V4 .ch-psheet); the page under it dims (.dm-header::after). */
     .dm-header .dm-menu-anchor { position: static; }
-    .dm-header .dm-menu { position: absolute; left: 0.75rem; right: 0.75rem; top: calc(100% + 0.25rem); border-radius: 1.25rem; box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.1), inset 0 1px 0 var(--v4-w06), 0 1.875rem 4.375rem -1.5rem rgb(0 0 0 / 0.95); }
+    .dm-header .dm-menu { position: absolute; left: 0.75rem; right: 0.75rem; top: calc(100% + 0.25rem); border-radius: 1.25rem; box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.1), inset 0 1px 0 var(--v4-w06), 0 1.875rem 4.375rem -1.5rem rgb(0 0 0 / 0.95); transform-origin: top right; animation: dm-psheet-in 0.3s var(--ease-enter) backwards, dm-fade 0.2s var(--ease-std) backwards; }
+    .dm-header .dm-menu[data-closing] { animation: dm-psheet-out 0.14s var(--ease-std) forwards; }
+    /* The ≡ sheet marks the current place by its ink and pip alone, and only the three places: New position and Docs keep
+       their aria-current unlit (V4 .ch-psheet). */
+    .dm-header .dm-menu-item[aria-current="page"]:not(:hover, :focus-visible) { background: none; }
+    .dm-header .dm-menu > a.dm-menu-item:nth-of-type(n + 4)[aria-current="page"]:not(:hover, :focus-visible) { color: var(--fg-muted); }
+    .dm-header .dm-menu > a.dm-menu-item:nth-of-type(n + 4)[aria-current="page"]:not(:hover, :focus-visible)::before { opacity: 0; scale: 0.2; }
     .dm-header .dm-menu-item { height: 2.875rem; padding: 0 0.875rem 0 1.5rem; border-radius: 0.8125rem; font-size: 0.9375rem; }
     .dm-header .dm-menu-item::before { left: 0.625rem; }
     .dm-header .dm-menu-sep { margin-inline: 0.75rem; }
@@ -485,7 +495,9 @@
   .dm-vbars[data-animate] .dm-vbar { animation: dm-bar-rise 0.6s var(--ease-enter) backwards; animation-delay: calc(var(--i, 0) * 18ms); }
 
   /* ---- Header (V4, site/_kit.md .top): sticky, transparent over the ember at the top of the page; once something scrolls
-     under it, a warm wash and a blur on a pseudo-element (so the blur never contains the phone menu), no hairline. ---- */
+     under it, a warm wash and a blur on a pseudo-element (so the blur never contains the phone menu), no hairline.
+     Kept sticky on purpose (2026-10-17): the prototype's header scrolls away, but every section offset and scroll
+     check of the site is built on a header that stays. ---- */
   .dm-header { position: sticky; top: 0; z-index: 30; height: var(--header-h); }
   .dm-header::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none; transition: background-color var(--dur-fade) var(--ease-std); }
   .dm-header[data-scrolled]::before { background: rgb(13 12 10 / 0.84); -webkit-backdrop-filter: blur(0.75rem); backdrop-filter: blur(0.75rem); }
@@ -513,7 +525,7 @@
   .dm-nav-item[aria-current="page"] { color: var(--fg); }
   .dm-nav-item:focus-visible { outline-offset: var(--focus-offset-inset); }
   .dm-nav-indicator { position: absolute; top: 0; bottom: 0; left: 0; z-index: 2; width: 0; opacity: 0; pointer-events: none; }
-  .dm-nav[data-ready] > .dm-nav-indicator { transition: translate var(--dur-step) var(--ease-enter), width var(--dur-step) var(--ease-enter), opacity var(--dur-fade) ease; }
+  .dm-nav[data-ready] > .dm-nav-indicator { transition: translate 0.5s var(--ease-enter), width 0.5s var(--ease-enter), opacity var(--dur-fade) ease; }
   /* The wallet control (V4 .btn-line): the outline button with the wallet glyph that tilts Tangerine on hover; connected,
      the short address in Geist Mono and the chevron that steps down; Sign in is the small Tangerine .btn-acc beside the
      square Wallet menu. */
@@ -524,13 +536,21 @@
      A width, not a min-width: the v3 layer's .dm-btn { min-width: 0 } wins over this layer, and the flexible Sign in
      beside it had squeezed it to a 10px sliver. */
   .dm-header-actions .dm-btn.dm-wallet-menu { flex: none; width: 2.5rem; padding: 0; color: var(--fg-subtle); }
+  /* The header's buttons speak at the page's own 16px / 400 (the prototype's buttons inherit its font): Connect wallet and
+     the connected address chip 16px / 14px apart, Sign in, Signing in… (its padding steps in as the arc appears). */
+  .dm-header-actions .dm-btn { position: relative; }
+  .dm-header-actions .dm-btn:not(.dm-wallet-menu):not(.dm-wallet-signin) { gap: 0.5625rem; padding: 0 1rem 0 0.875rem; }
+  .dm-header-actions .dm-btn::after { content: ''; position: absolute; inset: -0.1875rem 0; }
+  .dm-header-actions .dm-btn.dm-wallet-signin[aria-busy="true"] { padding-left: 0.875rem; }
+  .dm-wallet-addr { font-size: 0.8125rem; }
+  .dm-wallet-chev { flex: none; margin-right: -2px; color: var(--fg-subtle); rotate: 90deg; }
   .dm-wallet-glyph { color: var(--fg-subtle); transition: color 0.2s var(--ease-std), rotate 0.3s var(--ease-enter), translate 0.3s var(--ease-enter); }
   .dm-btn:hover:not(:disabled) > .dm-wallet-glyph { color: var(--primary); rotate: -6deg; translate: -1px 0; }
   .dm-btn:disabled > .dm-wallet-glyph { color: var(--fg-faint); }
   .dm-wallet-pill > svg:last-child { transition: translate 0.25s var(--ease-enter), color 0.2s var(--ease-std); }
   .dm-wallet-pill:hover:not(:disabled) > svg:last-child { translate: 0 1px; color: var(--primary); }
   .dm-wallet-disc { width: 1rem; height: 1rem; flex-shrink: 0; border-radius: var(--radius-pill); background: radial-gradient(120% 120% at 30% 25%, hsl(var(--mark-h, 0) var(--disc-s) calc(var(--disc-l) + 6%)), hsl(var(--mark-h, 0) var(--disc-s) var(--disc-l))); box-shadow: inset 0 0 0 1px var(--border-strong); }
-  @media (min-width: 768px) {
+  @media (min-width: 860px) {
     /* Three columns, the nav in the middle (2026-10-01, D6): the side columns share what is left equally, so the nav
        sits in the centre, but neither is ever narrower than its own content. Between 768 and about 800 px, with a wallet
        connected, a nav placed absolutely at the centre covered the wallet control's left edge (a press there opened
@@ -540,27 +560,30 @@
     .dm-header-actions { justify-self: end; }
     .dm-nav { position: relative; justify-self: center; display: flex; align-items: center; gap: 0.375rem; }
   }
-  /* The phone (V4 phone rows): the wordmark and the controls on a 62px row, the nav a strip of words under them, left
-     aligned with its first word's padding hanging into the gutter; the ≡ button 44px. */
-  @media (max-width: 767px) {
+  /* The phone (V4 phone rows, up to 859px whatever the pointer, as every phone block of the prototype): the wordmark and
+     the controls on a 62px row, the nav a strip of words under them, left aligned with its first word's padding hanging
+     into the gutter; the ≡ button 44px; the wallet button 38px (16px words, a 3px reach above and below it). */
+  @media (max-width: 859px) {
     .dm-header-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 3.875rem 2.75rem; }
     .dm-header-row > .dm-wordmark { grid-column: 1; grid-row: 1; justify-self: start; }
     .dm-header-actions { grid-column: 2; grid-row: 1; gap: 0.375rem; }
     .dm-wordmark-text { font-size: 1.625rem; }
-    .dm-nav { position: relative; display: flex; grid-column: 1 / -1; grid-row: 2; justify-self: start; gap: 2px; height: 2.75rem; margin-left: -0.75rem; }
+    .dm-nav { position: relative; display: flex; grid-column: 1 / -1; grid-row: 2; justify-self: start; gap: 0.125rem; height: 2.75rem; margin-left: -0.75rem; }
     .dm-nav-item { height: 2.75rem; padding: 0 0.875rem; }
     .dm-nav-item::after, .dm-nav-indicator::after { bottom: 0.375rem; }
-    .dm-header-actions .dm-btn { height: 2.375rem; padding: 0 0.75rem; font-size: 0.8125rem; line-height: 1rem; }
+    .dm-header-actions .dm-btn, .dm-header-actions .dm-btn:not(.dm-wallet-menu):not(.dm-wallet-signin) { padding: 0 0.75rem; }
+    .dm-header-actions .dm-btn.dm-wallet-signin[aria-busy="true"] { padding-left: 0.75rem; }
     .dm-header-actions .dm-icon-btn--md { width: 2.75rem; height: 2.75rem; }
     .dm-header-actions .dm-btn.dm-wallet-menu { width: 2.375rem; }
     /* A small segmented control's items (the period tabs, 24px) answer a touch over 36px: the pill is drawn as before,
        the area that takes the press reaches 6px above and below it (audit E23). */
     .dm-seg--sm > .dm-seg-item::after { content: ''; position: absolute; inset: -0.375rem 0; }
   }
-  /* The ≡ sheet dims the page under the header while it is open: drawn only, it takes no press, so a press outside still
-     closes the menu (ui.tsx Menu). */
-  @media (max-width: 767px) {
-    .dm-header:has(.dm-menu)::after { content: ''; position: fixed; inset: var(--header-h) 0 0; background: var(--backdrop); pointer-events: none; animation: dm-fade 0.2s var(--ease-std) backwards; }
+  /* The ≡ sheet dims the page under the header while it is open (V4 .ch-pscrim): it hangs from the header and scrolls with
+     the page. Drawn only, it takes no press, so a press outside still closes the menu (ui.tsx Menu). */
+  @media (max-width: 859px) {
+    .dm-header:has(.dm-menu)::after { content: ''; position: absolute; top: 100%; left: 0; right: 0; height: 100vh; height: 100dvh; background: var(--backdrop); pointer-events: none; animation: dm-fade 0.2s var(--ease-std) backwards; }
+    .dm-header:has(.dm-menu[data-closing])::after { animation: dm-fade-out 0.2s var(--ease-std) forwards; }
   }
   /* The narrowest phones keep the wordmark whole beside a connected wallet: tighter gaps, a smaller wordmark, no glyph. */
   @media (max-width: 359px) {
@@ -574,8 +597,10 @@
     .dm-header-actions .dm-wallet-control { min-width: 0; gap: 0.375rem; }
     .dm-header-actions .dm-btn.dm-wallet-signin { padding: 0 0.625rem; }
   }
-  /* A touch screen's buttons are 44px tall (v3 layer), so the square Wallet menu is 44px wide there. */
-  @media (pointer: coarse) {
+  /* The header's buttons are the prototype's 38px on a phone even on a touch screen (above), each with a 3px reach above and
+     below (::after), so a thumb still gets 44px. A wider touch screen keeps the v3 layer's 44px buttons, so the square
+     Wallet menu is 44px wide there. */
+  @media (pointer: coarse) and (min-width: 860px) {
     .dm-header-actions .dm-btn.dm-wallet-menu { width: 2.75rem; }
   }
 
@@ -605,13 +630,19 @@
     .dm-ticker-scroller { overflow-x: auto; scrollbar-width: none; }
   }
 
-  /* ---- Dialogs and sheets (§3.12). The backdrop stays transparent: its scrim (and the blur from 640px) is a
-     pseudo-element, because a filter on the dialog's own parent would contain its fixed descendants. ---- */
+  /* ---- Dialogs and sheets (§3.12). The backdrop stays transparent: its scrim (blurred 6px at every width, as the
+     prototype's .ch-scrim and .as-scrim) is a pseudo-element, because a filter on the dialog's own parent would contain
+     its fixed descendants. A closing dialog (data-closing, the wallet dialog's) takes no pointer: its scrim fades in .22s
+     and its sheet sinks back in .2s (a phone's drops away in .26s). ---- */
   .dm-dialog-backdrop { position: fixed; inset: 0; z-index: 50; isolation: isolate; display: flex; align-items: flex-end; justify-content: center; padding: 0; background: transparent; }
-  .dm-dialog-backdrop::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--backdrop); animation: dm-fade 0.35s var(--ease-std) backwards; }
+  .dm-dialog-backdrop::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--backdrop); -webkit-backdrop-filter: blur(0.375rem) saturate(0.9); backdrop-filter: blur(0.375rem) saturate(0.9); animation: dm-fade 0.35s var(--ease-std) backwards; }
+  .dm-dialog-backdrop[data-closing], .dm-dialog-backdrop[data-closing] * { pointer-events: none; }
+  .dm-dialog-backdrop[data-closing]::before { animation: dm-fade-out 0.22s var(--ease-std) forwards; }
+  .dm-dialog-backdrop[data-closing] > .dm-dialog { animation: dm-sheet-down 0.26s var(--ease-std) forwards; }
   .dm-dialog { position: relative; display: grid; align-content: start; gap: 0.75rem; width: 100%; max-height: 88dvh; overflow-y: auto; overscroll-behavior: contain; padding: 1.75rem 1rem max(1.125rem, env(safe-area-inset-bottom)); border-radius: 1.625rem 1.625rem 0 0; color: var(--fg); box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.1), inset 0 1px 0 rgb(255 236 220 / 0.08), 0 -1.875rem 5rem -1.875rem rgb(0 0 0 / 0.95); animation: dm-sheet-up 0.55s var(--ease-enter) backwards; }
-  /* The sheet's grab handle: absolute, so it is never a grid item. */
-  .dm-dialog::before { content: ''; position: absolute; top: 0.5rem; left: 50%; translate: -50% 0; width: 2.5rem; height: 0.375rem; border-radius: 0.1875rem; background: linear-gradient(90deg, transparent calc(50% - 0.75px), rgb(13 12 10 / 0.65) 0 calc(50% + 0.75px), transparent 0), rgb(255 236 220 / 0.2); box-shadow: inset 0 1px 0 rgb(255 236 220 / 0.12); }
+  /* The sheet's grab handle (V4 .ch-grab i): a domino lying down, its groove a 1.5px dark line 1px short of either edge with
+     a 1px light edge beside it. Absolute, so it is never a grid item. */
+  .dm-dialog::before { content: ''; position: absolute; top: 0.5rem; left: 50%; translate: -50% 0; width: 2.5rem; height: 0.375rem; border-radius: 0.1875rem; background: linear-gradient(rgb(13 12 10 / 0.65), rgb(13 12 10 / 0.65)) 50% 50% / 1.5px calc(100% - 2px) no-repeat, linear-gradient(rgb(255 236 220 / 0.14), rgb(255 236 220 / 0.14)) calc(50% + 1.25px) 50% / 1px calc(100% - 2px) no-repeat, rgb(255 236 220 / 0.2); box-shadow: inset 0 1px 0 rgb(255 236 220 / 0.12); }
   .dm-dialog-title { font-family: var(--font-display); font-size: 2rem; line-height: 1.05; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
   .dm-dialog-close { position: absolute; top: 0.75rem; right: 0.75rem; }
   .dm-dialog-close, .dm-wd-close { width: 2.5rem; height: 2.5rem; }
@@ -621,11 +652,18 @@
   .dm-slip-choice > .dm-slip-presets { justify-self: start; width: fit-content; }
   @media (min-width: 640px) {
     .dm-dialog-backdrop { align-items: center; padding: 1rem; }
-    .dm-dialog-backdrop::before { -webkit-backdrop-filter: blur(0.375rem) saturate(0.9); backdrop-filter: blur(0.375rem) saturate(0.9); }
-    .dm-dialog { width: min(27.5rem, 100vw - 2rem); max-height: min(86vh, 47.5rem); padding: 1.5rem; border-radius: 1.625rem; box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.1), inset 0 1px 0 rgb(255 236 220 / 0.07), 0 2.5rem 5.625rem -1.875rem rgb(0 0 0 / 0.95); animation: dm-dialog-in 0.45s var(--ease-enter) backwards; }
+    /* The sheet rises from 8px and .98 in .45s while it fades in .3s (V4 .ch-sheet). */
+    .dm-dialog { width: min(27.5rem, 100vw - 2rem); max-height: min(86vh, 47.5rem); padding: 1.5rem; border-radius: 1.625rem; box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.1), inset 0 1px 0 rgb(255 236 220 / 0.07), 0 2.5rem 5.625rem -1.875rem rgb(0 0 0 / 0.95); animation: dm-dialog-rise 0.45s var(--ease-enter) backwards, dm-fade 0.3s var(--ease-std) backwards; }
     .dm-dialog::before { display: none; }
     .dm-dialog--wide { width: min(40rem, 100vw - 2rem); }
+    .dm-dialog-backdrop[data-closing] > .dm-dialog { animation: dm-dialog-out 0.2s var(--ease-std) forwards; }
   }
+  /* The wallet dialog's content arrives a beat after its sheet, from 4px below and a blur (V4 .ch-in); a new set of foot
+     buttons rises in (.foot-in), a changed status sentence settles (.sw). */
+  .dm-wd > * { animation: dm-wd-in 0.35s var(--ease-enter) 0.06s backwards; }
+  .dm-wd > .dm-wd-foot { animation: dm-wd-foot 0.4s var(--ease-enter) backwards; }
+  .dm-wd-sw { display: inline-block; animation: dm-wd-sw 0.42s var(--ease-enter) backwards; }
+  .dm-wd .dm-wallet-disc.dm-wallet-id-disc { background: radial-gradient(circle at 34% 30%, #7b909b, #4a5a63 72%); }
 
   /* Wallet choices inside the wallet dialogs: wallet logos (never the Domino mark) sit in a tile. */
   .dm-wallet-list { display: grid; gap: 0.25rem; margin: 0 -0.875rem; padding: 0; list-style: none; }
@@ -641,6 +679,20 @@
   .dm-wallet-row:hover:not(:disabled) .dm-wallet-logo { rotate: -6deg; scale: 1.06; box-shadow: 0 0 0 2px var(--v4-ring-hover), 0 0 0 0.1875rem var(--v4-tan-ring); }
   .dm-wallet-row .i-chev-r { box-sizing: content-box; padding: 0.5625rem; border-radius: var(--radius-pill); color: var(--fg-faint); transition: color 0.18s var(--ease-std), background-color 0.18s var(--ease-std), translate 0.25s var(--ease-enter); }
   .dm-wallet-row:is(:hover, :focus-visible) .i-chev-r { color: var(--fg); background: var(--v4-w06); translate: 2px 0; }
+  /* A wallet waiting for its approval (V4 .is-wait, data-waiting): the hover's tint and pip, its brand ring, and a 16px arc
+     turning in .9s where the chevron was. Each wallet's own ring on hover and while it waits. */
+  .dm-wallet-row[data-waiting] { background: var(--v4-w045); }
+  .dm-wallet-row[data-waiting]::before { opacity: 1; scale: 1; }
+  .dm-wallet-row[data-waiting] .i-chev-r { opacity: 0; }
+  .dm-wallet-row[data-waiting]::after { content: ''; position: absolute; right: 1.3125rem; top: 50%; width: 1rem; height: 1rem; margin-top: -0.5rem; border-radius: 50%; background: conic-gradient(var(--fg-muted) 0 25%, color-mix(in srgb, var(--fg-muted) 20%, transparent) 0); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 0.175rem), #000 calc(100% - 0.17rem) calc(100% - 0.08rem), transparent calc(100% - 0.075rem)); mask: radial-gradient(farthest-side, transparent calc(100% - 0.175rem), #000 calc(100% - 0.17rem) calc(100% - 0.08rem), transparent calc(100% - 0.075rem)); animation: dm-spin-r 0.9s linear infinite; }
+  .dm-wallet-row:is(:hover:not(:disabled), [data-waiting]):has(.dm-wallet-logo > svg) .dm-wallet-logo { box-shadow: 0 0 0 2px var(--v4-ring-hover), 0 0 0 0.1875rem rgb(255 236 220 / 0.3); }
+  .dm-wallet-row:is(:hover:not(:disabled), [data-waiting]):has(img[src$="/rabby.svg"]) .dm-wallet-logo { box-shadow: 0 0 0 2px var(--v4-ring-hover), 0 0 0 0.1875rem rgb(134 151 255 / 0.75); }
+  .dm-wallet-row:is(:hover:not(:disabled), [data-waiting]):has(img[src$="/phantom.svg"]) .dm-wallet-logo { box-shadow: 0 0 0 2px var(--v4-ring-hover), 0 0 0 0.1875rem rgb(171 159 242 / 0.75); }
+  .dm-wallet-row:is(:hover:not(:disabled), [data-waiting]):has(img[src$="/ronin.svg"]) .dm-wallet-logo { box-shadow: 0 0 0 2px var(--v4-ring-hover), 0 0 0 0.1875rem rgb(18 115 234 / 0.8); }
+  .dm-wallet-row:is(:hover:not(:disabled), [data-waiting]):has(img[src$="/metamask.svg"]) .dm-wallet-logo { box-shadow: 0 0 0 2px var(--v4-ring-hover), 0 0 0 0.1875rem rgb(246 133 27 / 0.65); }
+  .dm-wallet-row:is(:hover:not(:disabled), [data-waiting]):has(img[src$="/magic-eden.svg"]) .dm-wallet-logo { box-shadow: 0 0 0 2px var(--v4-ring-hover), 0 0 0 0.1875rem rgb(255 79 160 / 0.65); }
+  .dm-wallet-row:is(:hover:not(:disabled), [data-waiting]):has(img[src$="/coinbase.svg"]) .dm-wallet-logo { box-shadow: 0 0 0 2px var(--v4-ring-hover), 0 0 0 0.1875rem rgb(0 82 255 / 0.75); }
+  .dm-wallet-row:is(:hover:not(:disabled), [data-waiting]):has(img[src$="/trust.svg"]) .dm-wallet-logo { box-shadow: 0 0 0 2px var(--v4-ring-hover), 0 0 0 0.1875rem rgb(90 155 221 / 0.75); }
   /* 2026-10-01 (audit C3, C4, C7): a row's second line (WalletConnect's hint, the wallet still to approve), the wallet
      apps a phone opens the site in, and WalletConnect's pairing code, dark on white as a phone's camera reads it. */
   .dm-wallet-row-text { display: grid; gap: 0.1875rem; min-width: 0; }

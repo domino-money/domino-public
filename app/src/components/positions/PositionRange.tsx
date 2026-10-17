@@ -18,8 +18,10 @@ import { recovering } from '../../lib/staleRelease'
 import type { LiveCard } from '../../lib/walletCards'
 import { TokenLabel } from '../read/TokenLabel'
 import { Button, RangeBar, cx } from '../ui'
-import { RangeChartWaiting, RangeFactsContext } from './visual/RangeStatus'
+import { RangeChartWaiting, RangeFactsContext, rangeChartBox } from './visual/RangeStatus'
 import { PendingPlot } from './visual/PendingPlot'
+import { usePositionChartOptions } from './PositionChartOptions'
+import { useMediaQuery } from '../../lib/useMediaQuery'
 
 /**
  * The Price range chart's own code (its axis, labels, line and the pool's history: visual/PriceVsRange.tsx), a chunk of
@@ -129,6 +131,9 @@ export function PositionRange({ card, price, variant = 'bar', history = false, o
   const page = variant === 'page'
   const facts = page ? rangeFacts(card, state.phase === 'ready' ? state.price : null) : null
   const charted = facts !== null
+  // The frame that waits for the chart keeps the chart's own box (design px), compact or expanded.
+  const phone = useMediaQuery('(max-width: 767px)')
+  const { expanded } = usePositionChartOptions()
   const unit = writesPrice && (
     <>
       <TokenLabel token={quote} /> per <TokenLabel token={base} />
@@ -180,11 +185,11 @@ export function PositionRange({ card, price, variant = 'bar', history = false, o
         )}
         {/* One place for the chart, with or without its line, so the line fills in where the chart already stands. */}
         {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the box alone while the price is read or asked again; it said "Updating price…", then "Price is temporarily unavailable. Retrying automatically." */}
-        {page && !charted && <PendingPlot label="Position price range" busy={asking} />}
+        {page && !charted && <PendingPlot label="Position price range" busy={asking} box={rangeChartBox(phone, expanded, recorded !== undefined)} />}
         {charted && (
           <div className="dm-pos-chart">
             {/* While the chart's own code loads (a moment, the first time), its status and its box stand in its place. */}
-            <Suspense fallback={<RangeChartWaiting facts={facts} />}>
+            <Suspense fallback={<RangeChartWaiting facts={facts} recorded={recorded !== undefined} />}>
               <PriceVsRange history={history ? { poolId: card.poolId, base: base.address, quote: quote.address } : null} openedAt={openedAt} openedBefore={openedBefore} closedAt={closedAt} observations={observations} recorded={recorded} />
             </Suspense>
           </div>

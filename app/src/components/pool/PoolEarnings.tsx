@@ -16,6 +16,8 @@ const presetText = (value: number) => `$${numberFormat().format(value)}`
  */
 export function PoolEarnings({ apr, tvl, loading, saved = false }: { apr: number | null; tvl: number | null; loading: boolean; saved?: boolean }) {
   const [typed, setTyped] = useState('1,000')
+  // V4 (pool.html .eres-v tick): a preset press is one deliberate act, so the figure ticks in; typing updates it at once.
+  const [tick, setTick] = useState(0)
   const amount = parseAmount(typed)
   const shown = apr !== null && amount !== null ? earnings(amount, apr, tvl) : null
   const state = apr === null ? (loading ? 'loading' : 'none') : amount === null ? 'no-amount' : 'ready'
@@ -48,7 +50,7 @@ export function PoolEarnings({ apr, tvl, loading, saved = false }: { apr: number
           </div>
           <div className="dm-pool-earn-presets" role="group" aria-label="Amounts">
             {PRESETS.map((value) => (
-              <button key={value} type="button" className="dm-pool-earn-preset" aria-pressed={amount === value} onClick={() => setTyped(numberFormat().format(value))}>
+              <button key={value} type="button" className="dm-pool-earn-preset" aria-pressed={amount === value} onClick={() => { setTyped(numberFormat().format(value)); setTick((count) => count + 1) }}>
                 {presetText(value)}
               </button>
             ))}
@@ -57,7 +59,7 @@ export function PoolEarnings({ apr, tvl, loading, saved = false }: { apr: number
             {shown ? (
               <>
                 <p className="dm-pool-earn-lead">You could earn about</p>
-                <p className="dm-pool-earn-month">
+                <p key={tick} className="dm-pool-earn-month" data-tick={tick ? '' : undefined}>
                   <span className="dm-fig-lg tnum">{usdText(shown.month)}</span> <span>a month</span>
                 </p>
               </>

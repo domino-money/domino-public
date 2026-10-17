@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, type CSSProperties, type ReactNode } from 'react'
 import { IconPlus } from '../../components/icons'
 import { SheetChoices } from '../../components/positions/ActionSheet'
 import { TokenMarkPair } from '../../components/TokenIcon'
@@ -9,7 +9,7 @@ import { priceText, rangeBothWays } from '../../v2/plan/present'
 import { ZERO_ADDRESS, type Address } from '../../v2/types'
 import { RANGE_PRESETS, type Share } from './constants'
 import { COPY } from './copy'
-import { amountTokens, otherTokens, rangeReferencePrice, type AmountsValue, type RangeValue } from './forms'
+import { amountTokens, otherTokens, rangeReferencePrice, ticksOf, type AmountsValue, type RangeValue } from './forms'
 import { markOf } from './marks'
 import type { ActionPosition } from './model'
 import { decimalsOf, labelOf, type TokenBook } from './tokens'
@@ -191,10 +191,14 @@ export function RangeField({ position, book, value, onChange, ticks, sameRange }
   const current = rangeBothWays(position.tickLower, position.tickUpper, d0, d1)
   const custom = value.preset === 'custom'
   const typed = value.lower.trim() !== '' || value.upper.trim() !== ''
+  // Each width with its little picture (V4's choice glyphs, decoration only); pointing at a preset previews its band in
+  // the comparison well below (RangePicture's `previews`), as the approved sheet does before anything is chosen.
   const items = [
-    ...RANGE_PRESETS.map((preset) => ({ key: preset.key, title: preset.label.split(' ')[0], disabled: position.tick === null })),
-    { key: 'custom', title: COPY.form.custom, disabled: d0 === null || d1 === null },
+    ...RANGE_PRESETS.map((preset) => ({ key: preset.key, title: preset.label.split(' ')[0], icon: <RangeGlyph kind={preset.key} />, disabled: position.tick === null, data: { 'data-range-choice': preset.key } })),
+    { key: 'custom', title: COPY.form.custom, icon: <RangeGlyph kind="custom" />, disabled: d0 === null || d1 === null, data: { 'data-range-choice': 'custom' } },
   ]
+  const tick = position.tick
+  const previews = tick === null ? null : Object.fromEntries(RANGE_PRESETS.map((preset) => [preset.key, ticksOf({ preset: preset.key, lower: '', upper: '' }, pool, tick, book)]))
   return (
     <div className="dm-pa-field dm-range-edit" data-position-range={value.preset}>
       <div className="dm-range-reference">
@@ -228,11 +232,12 @@ export function RangeField({ position, book, value, onChange, ticks, sameRange }
         })}
       </div>
       <div className="dm-range-comparison">
-        <RangePicture position={position} ticks={ticks} />
-        <p className="dm-range-result" role="status" data-position-range-result={ticks === null || position.tick === null ? 'unknown' : position.tick >= ticks.tickLower && position.tick < ticks.tickUpper ? 'inside' : 'outside'}>
-          {ticks === null ? 'Set both prices to preview your new range.' : position.tick === null ? 'The pool price is unavailable right now.' : position.tick >= ticks.tickLower && position.tick < ticks.tickUpper ? 'The price is inside your new range.' : 'The price is outside your new range. Fees start when it enters.'}
-        </p>
+        <RangePicture position={position} ticks={ticks} previews={previews} />
       </div>
+      {/* The result line under the well (V4's .as-rs), its hooks and words unchanged. */}
+      <p className="dm-range-result" role="status" data-position-range-result={ticks === null || position.tick === null ? 'unknown' : position.tick >= ticks.tickLower && position.tick < ticks.tickUpper ? 'inside' : 'outside'}>
+        {ticks === null ? 'Set both prices to preview your new range.' : position.tick === null ? 'The pool price is unavailable right now.' : position.tick >= ticks.tickLower && position.tick < ticks.tickUpper ? 'The price is inside your new range.' : 'The price is outside your new range. Fees start when it enters.'}
+      </p>
       <details className="dm-range-detail">
         <summary>Compare exact prices</summary>
         <dl><div><dt>{COPY.form.currentRange}</dt><dd>{priceText(current.forward.low) ?? '—'} — {priceText(current.forward.high) ?? '—'} {l1} per {l0}</dd></div>
@@ -255,7 +260,7 @@ export function RangeField({ position, book, value, onChange, ticks, sameRange }
  * sits from the price now. Ticks are a log price axis already, so the picture is drawn in them: no decimals are needed.
  * Decoration: the panels under it say every figure.
  */
-export function RangePicture({ position, ticks }: { position: ActionPosition; ticks: { tickLower: number; tickUpper: number } | null }) {
+export function RangePicture({ position, ticks, previews = null }: { position: ActionPosition; ticks: { tickLower: number; tickUpper: number } | null; previews?: Record<string, { tickLower: number; tickUpper: number } | null> | null }) {
   const now = position.tick
   const points = [position.tickLower, position.tickUpper, ...(ticks ? [ticks.tickLower, ticks.tickUpper] : []), ...(now === null ? [] : [now])]
   const span = Math.max(...points) - Math.min(...points)
@@ -265,13 +270,39 @@ export function RangePicture({ position, ticks }: { position: ActionPosition; ti
   const x = (tick: number) => ((tick - lo) / (hi - lo)) * 100
   const band = (a: number, b: number) => ({ left: `${x(a)}%`, width: `${Math.max(0.8, x(b) - x(a))}%` })
   const inside = ticks === null || now === null || (now >= ticks.tickLower && now < ticks.tickUpper)
+  // A preset's band where the pointer previews it (v4-position.css reads these; clamped to the drawn axis).
+  const clamp = (value: number) => Math.min(100, Math.max(0, value))
+  const preview: Record<string, string> = {}
+  for (const [key, short] of [['narrow', 'n'], ['medium', 'm'], ['wide', 'w']] as const) {
+    const at = previews?.[key]
+    if (!at) continue
+    const left = clamp(x(at.tickLower)), right = clamp(x(at.tickUpper))
+    preview[`--${short}l`] = `${left}%`
+    preview[`--${short}w`] = `${Math.max(0.8, right - left)}%`
+  }
   return (
-    <div className="dm-pa-range dm-range-tracks" data-in={String(inside)} aria-hidden="true">
+    <div className="dm-pa-range dm-range-tracks" data-in={String(inside)} aria-hidden="true" style={preview as CSSProperties}>
       <div className="dm-range-track-head"><span data-key="was">Current range</span><span data-key="now">{now === null ? 'Price unavailable' : '● Price now'}</span></div>
       <div className="dm-range-track"><span className="dm-pa-range-was" style={band(position.tickLower, position.tickUpper)} />{now !== null && <span className="dm-pa-range-now" style={{ left: `${x(now)}%` }} />}</div>
       <div className="dm-range-track-head"><span data-key="new">New range</span>{ticks && now !== null && <span><span data-side="start">{awayShort(ticks.tickLower, now)}</span> to <span data-side="end">{awayShort(ticks.tickUpper, now)}</span></span>}</div>
       <div className="dm-range-track"><span className="dm-pa-range-axis" />{ticks && <span className="dm-pa-range-band" style={band(ticks.tickLower, ticks.tickUpper)} />}{now !== null && <span className="dm-pa-range-now" style={{ left: `${x(now)}%` }} />}</div>
     </div>
+  )
+}
+
+/** A width's picture (V4's choice glyph, 56 × 20): the axis, the price now dashed, the band between its two handles. */
+const GLYPH_BANDS: Record<string, readonly [number, number]> = { narrow: [23, 10], medium: [17, 22], wide: [7, 42], custom: [14, 30] }
+function RangeGlyph({ kind }: { kind: string }) {
+  const [x, width] = GLYPH_BANDS[kind] ?? GLYPH_BANDS.custom
+  return (
+    <svg className="dm-range-glyph" data-glyph={kind} width="56" height="20" viewBox="0 0 56 20" fill="none" aria-hidden="true" focusable="false">
+      <path className="dm-gl-ax" d="M2 10h52" />
+      <path className="dm-gl-now" d="M28 2v16" />
+      <g className="dm-gl-b">
+        <rect className="dm-gl-band" x={x} y="6" width={width} height="8" rx="1.5" />
+        <path className="dm-gl-hd" d={`M${x} 4v12M${x + width} 4v12`} />
+      </g>
+    </svg>
   )
 }
 
@@ -301,7 +332,7 @@ export function ReceiveField({ chainId, book, position, way, convertTo, onChange
         ]}
         onChange={(key) => (key === 'both' ? onChange('both', convertTo) : onChange('convert', key as Address))}
       />
-      <Note data-position-way-note={way}>{way === 'both' ? COPY.form.directNote : COPY.form.convertNote}</Note>
+      <Note key={way} data-position-way-note={way}>{way === 'both' ? COPY.form.directNote : COPY.form.convertNote}</Note>
     </div>
   )
 }

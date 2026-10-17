@@ -27,7 +27,8 @@ export function FallbackApr({ apr, compact = false }: { apr: Fallback; compact?:
           longer when it was observed nor "Not current. Shown because the usual market data provider did not answer
           this time." (MetricCell fallbackTitle). */}
       <span className={cx('tnum whitespace-nowrap', compact ? 'font-medium text-money-in' : 'text-fg')} title={`${fallbackTitle(apr.basis, 'estimate')} ${ESTIMATE_SCOPE}`}>
-        {`${text}% ${compact ? 'est.' : 'est. APR'}`}
+        {/* V4: a compact figure's "est." is quieter and smaller than the figure (.apr i, .stat-q); the words stay the same. */}
+        {compact ? <>{`${text}% `}<span className="dm-apr-est">est.</span></> : `${text}% est. APR`}
       </span>
     </span>
   )

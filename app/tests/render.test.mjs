@@ -819,6 +819,9 @@ test('the compact range scene keeps the correct token mix and fixed range withou
   assert.match(await demo.locator('details[open]').innerText(), /Outside it, you hold one token and stop earning trading fees/);
   assert.match(await demo.locator('details[open]').innerText(), /can lose value even when it earns fees/);
   await demo.locator('summary').click();
+  // Changed on purpose 2026-10-17 (V4 prototype parity): the explanation folds with a 0.4 s height motion; the sizes below
+  // are read once it has settled.
+  await page.waitForFunction(() => !document.getAnimations().some((animation) => animation instanceof CSSTransition && animation.playState === 'running'));
   assert.equal(await demo.locator('button').count(), 0, 'no replay, play, pause, preset or mode buttons');
   assert.deepEqual(await page.evaluate(() => Object.keys(localStorage)), []);
   for (const width of [320, 390, 960, 1280, 1440]) {
@@ -845,8 +848,16 @@ test('the compact range scene keeps the correct token mix and fixed range withou
       const tileHeights = await page.locator('#pools tbody tr').evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height));
       assert.ok(tileHeights.every(height => height < 128), `Home pool tiles do not inherit table cell heights: ${tileHeights}`);
     }
+    // The card's plot height follows the width through a media query read in script, a render after the resize: on a
+    // slow runner it can still hold the phone layout two frames in, so its compact height is awaited (5 s at most).
+    const limit = width >= 960 ? 560 * (await rootScale(page)) + 2 : 640;
+    await page.waitForFunction(({ limit }) => document.querySelector('[data-sim-example]').getBoundingClientRect().height < limit, { limit }, { timeout: 5000 }).catch(() => {});
     const box = await demo.boundingBox();
-    assert.ok(box.height < (width >= 960 ? 370 : 600), 'the scene stays compact at ' + width + ': ' + box.height);
+    // Changed on purpose 2026-10-17 (the approved V4 prototype's range card: min-height 560 design px, at the root's scale:
+    // 378px under the 67.5% desktop root, 560px where the root stays 16px; on phones its plot stays 250px tall down to
+    // 320px, so the card is 590px at 390 and 632px at 320).
+    const why = box.height < limit ? '' : await demo.evaluate((card) => JSON.stringify({ root: getComputedStyle(document.documentElement).fontSize, minHeight: getComputedStyle(card).minHeight, areas: getComputedStyle(card).gridTemplateAreas, open: [...card.querySelectorAll('details')].map((d) => d.open), parts: [...card.children].map((child) => [String(child.className).slice(0, 40), Math.round(child.getBoundingClientRect().height)]) }));
+    assert.ok(box.height < limit, 'the scene stays compact at ' + width + ': ' + box.height + ' ' + why);
     await captureUI(page, 'simulator-r3-' + width, '[data-sim-example]');
     if (width !== 960) {
       await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
@@ -891,6 +902,12 @@ test('shared decorative motion repeats, rests outside the viewport or hidden tab
   assert.ok(await art.evaluate(el => el.getAnimations({ subtree: true })[0].currentTime) >= paused, 'resumes the same timeline instead of restarting it');
   await page.locator('footer').scrollIntoViewIfNeeded();
   await page.waitForFunction(() => !document.querySelector('.dm-funding-demonstration')?.classList.contains('is-running'));
+  // Changed on purpose 2026-10-17 (V4 prototype parity: the funding scene is a one-shot sequence driven by the reader's
+  // place): leaving it swaps its animations, so the pause is read once it has settled, as after the hidden tab above.
+  await page.waitForFunction(() => {
+    const animation = document.querySelector('.dm-funding-demonstration')?.getAnimations({ subtree: true })[0];
+    return animation?.playState === 'paused' && !animation.pending;
+  });
   assert.equal(await art.evaluate(el => el.getAnimations({ subtree: true })[0].playState), 'paused');
   for (const mode of ['compound', 'domino', 'autoexit']) {
     const selector = '#learn [data-feature="' + mode + '"] .dm-automation-story-art';
@@ -1382,7 +1399,9 @@ test('Automate connects three visual choices to their guarded flows and keeps ex
   const ways = await Promise.all(['Set up Auto-compound', 'Set up Domino-compound'].map((name) =>
     page.getByRole('link', { name, exact: true }).evaluate((link) => ({ height: link.getBoundingClientRect().height, outline: link.classList.contains('dm-btn--outline'), sm: link.classList.contains('dm-btn--sm') }))));
   assert.deepEqual(ways.map(({ outline, sm }) => [outline, sm]), [[true, false], [true, false]], 'both choices have equal emphasis, neither small');
-  assert.equal(ways[0].height, ways[1].height, `the two ways in: ${ways.map(({ height }) => height).join(' vs ')} px`);
+  // Changed on purpose 2026-10-17 (V4 prototype parity): the rows rise with a scale as the page arrives, so the heights are
+  // compared within half a pixel (they read 27.000015 vs 27 mid-motion); a real difference in emphasis is still caught.
+  assert.ok(Math.abs(ways[0].height - ways[1].height) < 0.5, `the two ways in: ${ways.map(({ height }) => height).join(' vs ')} px`);
   assert.equal(await page.locator('main .dm-inset, main .dm-acct-auto-note').count(), 0, 'no panel under the cards');
   assert.doesNotMatch(await page.locator('main').innerText(), /Setup checks the deployment/, 'no note under the cards');
   // Changed on purpose 2026-10-01 (audit E4, live note L12): plain words, no "consumed", and no promise about the APR.
@@ -1550,7 +1569,8 @@ test('Home connects funding, pools, three automations and risks, with the option
   for (const heading of [/Earn fees\.\s*Keep control\./, /Start with\s*what you have\./, /Choose what\s*happens next\./, /What is a price range\?/, /Stay informed\.\s*Stay in control\./]) {
     assert.match(text, heading);
   }
-  assert.deepEqual(await page.locator('main section[id]').evaluateAll(sections => sections.map(section => section.id)), ['funding', 'pools', 'learn', 'limits'], 'the page follows a readable sequence from funding to managing the position');
+  // Changed on purpose 2026-10-17 (the approved V4 prototype puts Top pools under the strip, before the story).
+  assert.deepEqual(await page.locator('main section[id]').evaluateAll(sections => sections.map(section => section.id)), ['pools', 'funding', 'learn', 'limits'], 'the page follows a readable sequence from the pools to managing the position');
   assert.deepEqual(await page.locator('.dm-hero-funding li > span:last-child').allInnerTexts(), ['Ethereum', 'Base', 'Arbitrum One', 'OP Mainnet', 'Robinhood Chain'], 'the hero names all five funding networks');
   assert.deepEqual(await page.locator('#learn article h3').allInnerTexts(), ['Auto-compound', 'Domino-compound', 'Auto-exit']);
   for (const article of await page.locator('#learn article').all()) assert.equal(await article.isVisible(), true, 'each automation is visible without choosing a tab');
@@ -1786,7 +1806,9 @@ test('Home funding examples preserve consent, show available networks and disclo
   await page.goto(origin + '/#/');
   await shown(page, '/');
   const funding = page.locator('#funding');
-  assert.equal(await funding.getByRole('link', { name: 'Find your funds', exact: true }).getAttribute('href'), '#/new');
+  // Changed on purpose 2026-10-17 (the owner's decision on the V4 prototype: "Find your funds" goes to Positions, where the
+  // wallet's tokens and positions are; it was New position).
+  assert.equal(await funding.getByRole('link', { name: 'Find your funds', exact: true }).getAttribute('href'), '#/positions');
   assert.equal(await funding.locator('details[open]').count(), 0, 'route conditions start folded');
   // Changed on purpose 2026-10-16 (V4 Home, the owner's D-H3): the range lesson starts open, with its one control; its
   // title still folds it away (it was: starts folded, no control until opened).
@@ -1836,8 +1858,8 @@ test('Home funding examples preserve consent, show available networks and disclo
   await captureUI(page, 'home-automation-details', '#learn');
   leaving(page);
   await funding.getByRole('link', { name: 'Find your funds', exact: true }).click();
-  await page.waitForFunction(() => location.hash === '#/new');
-  await page.getByRole('heading', { name: 'New position', exact: true }).waitFor();
+  await page.waitForFunction(() => location.hash === '#/positions');
+  await page.getByRole('heading', { name: 'Positions', exact: true, level: 1 }).waitFor();
   await go(page, '/');
   leaving(page);
   await page.locator('#learn').getByRole('link', { name: 'Explore automation', exact: true }).click();

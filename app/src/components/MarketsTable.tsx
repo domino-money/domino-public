@@ -3,7 +3,7 @@ import { catalogueTokenLabel, poolListings, type PoolCatalogueEntry, type PoolLi
 import { agedMarket, feeLabel, presentMetric, providerStale, retrievedAgeSeconds, retrievedText, type FallbackApr as Fallback, type Instant, type Market, type MarketProvenance, type Metric } from '../lib/markets'
 import { presentAprEstimate } from '../lib/read/aprEstimate'
 import { poolAprPresentation } from '../lib/read/poolAprPresentation'
-import { FEE_VENUE_PREFIX, feeWords } from '../lib/format/fee'
+import { FEE_VENUE, feeWords } from '../lib/format/fee'
 import { featuredTitle } from '../lib/read/featuredList'
 import { useFeatured } from '../lib/read/featuredSource'
 import { pricePair } from '../lib/read/orientation'
@@ -169,7 +169,7 @@ function PriceCell({ market, now }: { market: Market; now: Instant }) {
   )
 }
 
-function Row({ m: read, now, full, home, onFigures, poolToken, pinned }: { m: Market; now: Instant; full: boolean; home: boolean; onFigures: () => void; poolToken?: string | null; pinned: boolean }) {
+function Row({ m: read, now, full, home, onFigures, poolToken, pinned, revealed = false }: { m: Market; now: Instant; full: boolean; home: boolean; onFigures: () => void; poolToken?: string | null; pinned: boolean; revealed?: boolean }) {
   const p = read.provenance
   const age = p ? retrievedAgeSeconds(p.market, now) : null
   const stale = p ? providerStale(p.market, now) : false
@@ -204,7 +204,7 @@ function Row({ m: read, now, full, home, onFigures, poolToken, pinned }: { m: Ma
   return (
     // A read row fades in as it replaces its catalogue stand-in (M20). The fade is on the row: an opacity animation on
     // cell contents left some columns half-drawn in Edge's full-page captures.
-    <tr className="dm-mkt-row animate-fade" onClick={(event) => followRow(event, href)} data-pool-row={full ? m.poolId : undefined} data-row-source={p?.origin}>
+    <tr className="dm-mkt-row animate-fade" onClick={(event) => followRow(event, href)} data-pool-row={full ? m.poolId : undefined} data-row-source={p?.origin} data-revealed={revealed ? '' : undefined}>
       <Td>
         <div className="dm-mkt-pool">
           <span className="dm-mkt-marks">
@@ -216,10 +216,11 @@ function Row({ m: read, now, full, home, onFigures, poolToken, pinned }: { m: Ma
             <a href={href} className="dm-mkt-name">
               <span className="font-medium">{name}</span>
             </a>
-            {/* The fee as every chip writes it (lib/format/fee.ts, audit E21); a phone keeps the fee and drops "Uniswap · ". */}
+            {/* The fee as every chip writes it (lib/format/fee.ts, audit E21): "Uniswap · 0.30% fee". V4 draws it as two joined
+                segments (.tag), the "·" kept in the text and unseen; Home's phone rows still drop "Uniswap · ". */}
             <Chip className="dm-mkt-venue">
-              <span className="dm-fee-venue">{FEE_VENUE_PREFIX}</span>
-              {feeWords(feeLabel(m))}
+              <span className="dm-fee-venue">{FEE_VENUE}</span><span className="dm-fee-sep"> · </span>
+              <span className="dm-fee-value">{feeWords(feeLabel(m))}</span>
             </Chip>
             {pinned && <PinnedChip />}
             {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no sr-only "Last available <figures>;
@@ -322,7 +323,7 @@ function PinnedChip() {
  * A pool from the list on screen whose live row has not arrived: its
  * labels only, every figure a dash. It still opens its pool page.
  */
-function CatalogueRow({ poolId, entry, full, home, loading, token, pinned, standIn }: {
+function CatalogueRow({ poolId, entry, full, home, loading, token, pinned, standIn, revealed = false }: {
   poolId: string
   entry: PoolCatalogueEntry
   full: boolean
@@ -332,6 +333,8 @@ function CatalogueRow({ poolId, entry, full, home, loading, token, pinned, stand
   pinned: boolean
   /** Figures standing in for the ones the read service has not given (audit V1, lib/read/figureFallback.ts): dated, attributed. */
   standIn?: { tvl: Metric | null; volume: Metric | null; apr: Fallback | null }
+  /** The row appeared only when a person asked for every pool (the stored token page's Show all): it rises in. */
+  revealed?: boolean
 }) {
   const href = poolHref(poolId, token)
   // While the first markets read is out, or briefly while the store is about to collect the pool for the first time
@@ -348,7 +351,7 @@ function CatalogueRow({ poolId, entry, full, home, loading, token, pinned, stand
   // Details." The dashes below have no reason ("Price unavailable", "TVL unavailable", "24h volume unavailable", "Pool
   // APR unavailable" used to be their title and name). Each stand-in still names its source in its own title.
   return (
-    <tr className="dm-mkt-row" data-pool-catalogue={poolId} data-pool-row={full ? poolId : undefined} data-row-loading={loading ? '' : undefined} onClick={(event) => followRow(event, href)}>
+    <tr className="dm-mkt-row" data-pool-catalogue={poolId} data-pool-row={full ? poolId : undefined} data-row-loading={loading ? '' : undefined} data-revealed={revealed ? '' : undefined} onClick={(event) => followRow(event, href)}>
       <Td>
         <a href={href} className="dm-mkt-pool dm-mkt-name" title="Listed on Uniswap.">
           <PoolCatalogueIdentity entry={entry} />
@@ -397,6 +400,7 @@ export function MarketsTable({
   diagnostics = false,
   includeCatalogue = true,
   poolToken,
+  revealed,
 }: {
   variant?: 'featured' | 'full' | 'home'
   /** Full only. */
@@ -415,6 +419,8 @@ export function MarketsTable({
   includeCatalogue?: boolean
   /** Preserve an arbitrary pool's verified token in its shareable link. */
   poolToken?: string
+  /** Pools shown only because a person asked for every one (a token page's Show all), by pool id: they rise in. */
+  revealed?: ReadonlySet<string>
 }) {
   const full = variant === 'full'
   const home = variant === 'home'
@@ -494,6 +500,12 @@ export function MarketsTable({
   // A daily reorder keeps those rows mounted, preserving focus on a surviving pool.
   const filtering = full ? matches.map((listing) => listing.poolId).sort().join(',') : 'all'
   const nothingMatches = full && total > 0 && matchCount === 0
+  // Once a person has changed the filter, the rows that stay rise back in, 30ms apart (V4 markets.html .f-a); the first
+  // render, and rows that change for any other reason, never move.
+  const filterKey = full && filter ? `${filter.asset ?? ''}|${filter.query}` : ''
+  const [filterSeen, setFilterSeen] = useState({ key: filterKey, changed: false })
+  if (filterSeen.key !== filterKey) setFilterSeen({ key: filterKey, changed: true })
+  const refiltered = filterSeen.changed || filterSeen.key !== filterKey
 
   const notice = diagnostics && (fixtures || result?.notice) && (
     <p className="dm-mkt-notice">
@@ -571,13 +583,13 @@ export function MarketsTable({
         </tr>
       </thead>
       {matchCount > 0 && (
-        <tbody key={filtering} className={full ? 'animate-fade' : undefined}>
+        <tbody key={filtering} className={full ? 'animate-fade' : undefined} data-refilter={full && refiltered ? '' : undefined}>
           {matches.map(({ poolId, market, catalogue, token }) =>
             market ? (
-              <Row key={poolId} m={market} now={now} full={full} home={home} onFigures={() => setFiguresKey(market.key)} poolToken={poolToken ?? token} pinned={ranked && catalogue?.pinned === true} />
+              <Row key={poolId} m={market} now={now} full={full} home={home} onFigures={() => setFiguresKey(market.key)} poolToken={poolToken ?? token} pinned={ranked && catalogue?.pinned === true} revealed={revealed?.has(poolId) === true} />
             ) : catalogue ? (
               // A pool the store is about to collect for the first time keeps its placeholder briefly (marketsProvider.ts).
-              <CatalogueRow key={poolId} poolId={poolId} entry={catalogue} full={full} home={home} loading={state.phase === 'loading' || (state.phase === 'ready' && state.placeholders?.includes(poolId.toLowerCase()) === true)} token={token} pinned={ranked && catalogue.pinned === true} standIn={standIns.get(poolId)} />
+              <CatalogueRow key={poolId} poolId={poolId} entry={catalogue} full={full} home={home} loading={state.phase === 'loading' || (state.phase === 'ready' && state.placeholders?.includes(poolId.toLowerCase()) === true)} token={token} pinned={ranked && catalogue.pinned === true} standIn={standIns.get(poolId)} revealed={revealed?.has(poolId) === true} />
             ) : null,
           )}
         </tbody>

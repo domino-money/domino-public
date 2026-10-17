@@ -15,6 +15,8 @@ import type { WalletPosition } from '../lib/walletPositions'
 import { Button, Card, LinkButton } from '../components/ui'
 import { IconChevronRight } from '../components/icons'
 import { ModeArt } from '../components/automate/ModeArt'
+import { AutomateStage } from '../components/automate-v4/AutomateStage'
+import { ModeThumb } from '../components/automate-v4/ModeThumb'
 import { ModeSummary } from '../components/automate/ModeSummary'
 import { LimitControl } from '../components/automate/LimitControl'
 import { SuccessorAxis } from '../components/automate/SuccessorAxis'
@@ -489,9 +491,9 @@ export default function SequenceCreate({ positions, intent, connect, capabilitie
 
   if (created && chosen) {
     return (
-      <section className="dm-card dm-acct-block dm-seq-done" aria-label="Sequence created" data-sequence-create="done" data-sequence-create-mode={chosen.key} data-sequence-created={created.vault}>
+      <section className="dm-card dm-acct-block dm-seq-done dm-lit" aria-label="Sequence created" data-sequence-create="done" data-sequence-create-mode={chosen.key} data-sequence-created={created.vault}>
         <div className="dm-plate dm-dots-plate dm-seq-stage" data-mode={chosen.key}>
-          <ModeArt mode={chosen.key} size="card" play="once" />
+          <AutomateStage chosen={chosen.key} scenes={[chosen.key]} labels={false} run="a" dd={0.35} enter />
         </div>
         <h2 className="dm-display dm-display-card">
           {chosen.title} is set up for position #{created.tokenId}
@@ -501,6 +503,7 @@ export default function SequenceCreate({ positions, intent, connect, capabilitie
         <div className="dm-seq-done-links">
           <LinkButton href={positionHref(created.tokenId)} size="lg" className="dm-seq-done-link" data-sequence-created-position={created.tokenId}>
             View position
+            <IconChevronRight />
           </LinkButton>
           {/* Turn on once the automation service says it is ready for this sequence (2026-09-25); until then, the docs. */}
           <SequenceSwitch
@@ -562,7 +565,7 @@ export default function SequenceCreate({ positions, intent, connect, capabilitie
                     }}
                     data-sequence-mode={entry.key}
                   >
-                    <ModeArt mode={entry.key} size="card" play={mode === entry.key ? 'once' : 'none'} />
+                    <ModeThumb mode={entry.key} />
                     <ModeSummary mode={entry.key} title={entry.title} fee={entry.fee} />
                   </Button>
                 ))}

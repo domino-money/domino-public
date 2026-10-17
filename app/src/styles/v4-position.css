@@ -12,7 +12,7 @@
    reduced motion; nothing moves when data refreshes. */
 @layer v4 {
   /* ==== The page ================================================================================================= */
-  main.dm-page:has(> :is([data-position-detail], [data-position-loading], .dm-pos-empty)) > .dm-pos-back { display: inline-flex; align-items: center; gap: 0.375rem; height: 2.125rem; min-height: 0; margin: 1.375rem 0 0 -0.5rem; padding: 0 0.75rem 0 0.5rem; border-radius: 999px; font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg-muted); transition: color 0.18s var(--ease-std), background-color 0.18s var(--ease-std); }
+  main.dm-page:has(> :is([data-position-detail], [data-position-loading], .dm-pos-empty)) > .dm-pos-back { display: flex; width: fit-content; align-items: center; gap: 0.375rem; height: 2.125rem; min-height: 0; margin: -0.875rem 0 0 -0.5rem; padding: 0 0.75rem 0 0.5rem; border-radius: 999px; font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); transition: color 0.18s var(--ease-std), background-color 0.18s var(--ease-std); }
   main.dm-page:has(> :is([data-position-detail], [data-position-loading], .dm-pos-empty)) > .dm-pos-back > svg { color: currentColor; transition: translate 0.25s var(--ease-enter); }
   main.dm-page:has(> :is([data-position-detail], [data-position-loading], .dm-pos-empty)) > .dm-pos-back:hover { background: var(--v4-w04); color: var(--fg); }
   main.dm-page:has(> :is([data-position-detail], [data-position-loading], .dm-pos-empty)) > .dm-pos-back:hover > svg { translate: -2px 0; }
@@ -26,15 +26,25 @@
   [data-position-detail] .dm-pos-name > [aria-hidden="true"]:first-child > * { transition: translate 0.3s var(--ease-enter), scale 0.3s var(--ease-enter); }
   [data-position-detail] .dm-pos-name:hover > [aria-hidden="true"]:first-child > :first-child { scale: 1.04; }
   [data-position-detail] .dm-pos-name:hover > [aria-hidden="true"]:first-child > :last-child { translate: 0.25rem 0; scale: 1.04; }
-  [data-position-detail] .dm-pos-pair { grid-column: 2; grid-row: 1; min-width: 0; margin: 0 0 -0.14em; padding: 0.05em 0.1em 0.14em 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); font-size: clamp(3.5rem, calc(7.4vw * var(--vwk)), 6.75rem); line-height: 0.9; font-weight: 400; letter-spacing: -0.035em; color: var(--fg-subtle); }
+  [data-position-detail] .dm-pos-pair { grid-column: 2; grid-row: 1; min-width: 0; margin: 0 0 -0.22em; padding: 0.05em 0.1em 0.14em 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); font-size: clamp(3.5rem, calc(7.4vw * var(--vwk)), 6.75rem); line-height: 0.9; font-weight: 400; letter-spacing: -0.035em; color: var(--fg-subtle); }
   [data-position-detail] .dm-pos-pair > * { color: var(--v4-display); }
   [data-position-detail] .dm-pos-pair > bdi { max-width: 14ch; padding-bottom: 0.08em; vertical-align: bottom; }
   /* The full stop: drawn, so neither the heading's name nor its text changes ("ETH / TOKEN"). */
   [data-position-detail] .dm-pos-pair::after { content: ''; display: inline-block; width: 0.15em; height: 0.15em; margin-left: 0.05em; border-radius: 999px; background: var(--primary); vertical-align: baseline; }
   [data-position-detail] .dm-pos-chips { grid-column: 2; grid-row: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.875rem; margin: 0; }
-  [data-position-detail] .dm-pos-chips > .dm-chip { min-height: 0; padding: 2px 0.4375rem; border-radius: 0.375rem; background: var(--v4-w055); box-shadow: none; font-size: 0.75rem; line-height: 1rem; font-weight: 400; color: var(--fg-subtle); white-space: nowrap; }
+  [data-position-detail] .dm-pos-chips > .dm-chip { min-height: 0; padding: 0.125rem 0.4375rem; border-radius: 0.375rem; background: var(--v4-w055); box-shadow: none; font-size: 0.75rem; line-height: 1rem; font-weight: 400; color: var(--fg-subtle); white-space: nowrap; }
   [data-position-detail] .dm-pos-chips > .dm-chip + .dm-chip::before { content: none; }
+  /* The fee tag (the kit's .tag): two joined segments, "Uniswap" and "0.30% fee", 2px apart; the "·" stays in the text,
+     drawn at no size, so the chip still reads "Uniswap · 0.30% fee". */
+  [data-position-detail] .dm-pos-chips > .dm-chip.dm-pos-tag { padding: 0; background: none; }
+  [data-position-detail] .dm-pos-tag .dm-pos-tag-seg { display: inline-block; padding: 0.125rem 0.4375rem; background: var(--v4-w055); }
+  [data-position-detail] .dm-pos-tag .dm-pos-tag-seg:first-child { margin-right: 2px; border-radius: 0.375rem 2px 2px 0.375rem; }
+  [data-position-detail] .dm-pos-tag .dm-pos-tag-seg:last-child { border-radius: 2px 0.375rem 0.375rem 2px; }
+  [data-position-detail] .dm-pos-tag .dm-pos-tag-sep { font-size: 0; }
   [data-position-detail] .dm-pos-chips [data-position-network] { display: inline-flex; align-items: center; gap: 0.375rem; }
+  /* The network tag (position-base.html .ntag): its own 22px chip, the mark 5px in; the meta row 12px apart there. */
+  [data-position-detail] .dm-pos-chips > .dm-chip:has(> [data-position-network]) { display: inline-flex; align-items: center; height: 1.375rem; padding: 0 0.5rem 0 0.3125rem; }
+  :is([data-position-v2^="base-"], [data-position-v2^="arbitrum-"]) .dm-pos-chips { column-gap: 0.75rem; }
   [data-position-detail] .dm-pos-chips [data-position-network]::before { content: ''; flex: none; width: 0.8125rem; height: 0.8125rem; border-radius: 999px; background: var(--v4-w08) center / 100% 100% no-repeat; }
   [data-position-detail] .dm-pos-chips [data-position-network="base"]::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Ccircle cx='10' cy='10' r='10' fill='%230052ff'/%3E%3Ccircle cx='10' cy='10' r='5.6' fill='%23fff'/%3E%3Crect x='3.6' y='9.2' width='7.4' height='1.6' fill='%230052ff'/%3E%3C/svg%3E"); }
   [data-position-detail] .dm-pos-chips [data-position-network="arbitrum"]::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Ccircle cx='10' cy='10' r='10' fill='%23213147'/%3E%3Cpath d='M6.4 14.6 10 5.4l3.6 9.2' stroke='%2328a0f0' stroke-width='1.7' fill='none' stroke-linejoin='round'/%3E%3Cpath d='M8.2 12.2h3.6' stroke='%23fff' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E"); }
@@ -44,36 +54,66 @@
   [data-position-detail] .dm-pos-chips > .dm-pill[data-position-status="closed"] { color: var(--fg-muted); }
   [data-position-detail] .dm-pos-chips > .dm-pill > .dm-pill-dot { width: 0.375rem; height: 0.375rem; flex: none; }
   [data-position-detail] .dm-pos-title > [data-position-actions-waiting] { flex: 1 1 100%; max-width: 40rem; margin: 1.875rem 0 0; font-size: 0.84375rem; line-height: 1.25rem; color: var(--fg-muted); }
+  /* The pair's sheen (the kit's .sheen): under the ember the letters warm to #ffc69f, the slash to its quieter warm and the
+     stop to #ffd7ba, a 600px light clipped to the letters (no copy of the words); a fine pointer only. The ember writes
+     --ex/--ey on the title (EmberLight.tsx). */
+  @media (hover: hover) and (pointer: fine) and (forced-colors: none) {
+    @supports ((background-clip: text) or (-webkit-background-clip: text)) {
+      [data-position-detail] .dm-pos-pair, [data-position-detail] .dm-pos-pair > * { -webkit-text-fill-color: transparent; transition: background-position 0.9s var(--e-drift); }
+      [data-position-detail] .dm-pos-pair { background: radial-gradient(closest-side, rgb(255 198 159 / 0.62), rgb(255 198 159 / 0.3) 42%, rgb(255 198 159 / 0)) calc(var(--ex, -100rem) - 18.75rem) calc(var(--ey, -100rem) - 18.75rem) / 37.5rem 37.5rem no-repeat fixed, linear-gradient(var(--fg-subtle), var(--fg-subtle)); -webkit-background-clip: text; background-clip: text; }
+      [data-position-detail] .dm-pos-pair > * { background: radial-gradient(closest-side, var(--v4-lit), rgb(255 198 159 / 0.55) 42%, rgb(255 198 159 / 0)) calc(var(--ex, -100rem) - 18.75rem) calc(var(--ey, -100rem) - 18.75rem) / 37.5rem 37.5rem no-repeat fixed, linear-gradient(var(--v4-display), var(--v4-display)); -webkit-background-clip: text; background-clip: text; }
+      [data-position-detail] .dm-pos-pair::after { -webkit-text-fill-color: currentColor; background: radial-gradient(closest-side, var(--v4-lit-stop), rgb(255 215 186 / 0.55) 42%, rgb(255 215 186 / 0)) calc(var(--ex, -100rem) - 18.75rem) calc(var(--ey, -100rem) - 18.75rem) / 37.5rem 37.5rem no-repeat fixed, var(--primary); -webkit-background-clip: border-box; background-clip: border-box; transition: background-position 0.9s var(--e-drift); }
+      [data-position-detail] .dm-pos-pair ::selection, [data-position-detail] .dm-pos-pair::selection { -webkit-text-fill-color: var(--fg); }
+    }
+  }
 
   /* ---- The actions: one row, 8px apart; Collect fees the one Tangerine button; Close position on the right --------- */
   [data-position-detail] .dm-pos-actions { display: flex; flex-wrap: wrap; flex: 1 1 100%; align-items: center; gap: 0.5rem; width: 100%; margin-top: 2.125rem; padding: 0; border: 0; background: none; }
-  [data-position-detail] .dm-pos-actions .dm-btn { display: inline-flex; flex-direction: row; justify-content: center; gap: 0.5625rem; height: 2.5rem; min-height: 0; min-width: 0; padding: 0 1rem 0 0.875rem; border: 0; border-radius: 0.75rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border-lip); color: var(--fg); font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; white-space: nowrap; text-align: center; transition: background-color 0.2s var(--ease-std), box-shadow 0.2s var(--ease-std), color 0.2s var(--ease-std), scale 0.1s var(--ease-fast); }
+  /* The approved page's actions are <button>s, so they take its own 16px regular text and cream ink (.v4c button { font:
+     inherit; color: inherit } beats the kit's 14px medium); computed sizes decide, as on Positions. */
+  [data-position-detail] .dm-pos-actions .dm-btn { display: inline-flex; flex-direction: row; justify-content: center; gap: 0.5625rem; height: 2.5rem; min-height: 0; min-width: 0; padding: 0 1rem 0 0.875rem; border: 0; border-radius: 0.75rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border-lip); color: var(--fg); font-size: 1rem; line-height: 1.25rem; font-weight: 400; letter-spacing: -0.01em; white-space: nowrap; text-align: center; transition: background-color 0.2s var(--ease-std), box-shadow 0.2s var(--ease-std), color 0.2s var(--ease-std), scale 0.1s var(--ease-fast); }
   [data-position-detail] .dm-pos-actions .dm-btn > svg { width: 1rem; height: 1rem; flex: none; color: var(--fg-subtle); transition: color 0.2s var(--ease-std), rotate 0.3s var(--ease-enter), translate 0.3s var(--ease-enter); }
   [data-position-detail] .dm-pos-actions .dm-btn:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--v4-tan-07); box-shadow: inset 0 0 0 1px var(--v4-tan-ring); color: var(--primary-hover); }
   [data-position-detail] .dm-pos-actions .dm-btn:hover:not(:disabled):not([aria-disabled="true"]) > svg { color: var(--primary); }
   [data-position-detail] .dm-pos-actions .dm-btn:active:not(:disabled):not([aria-disabled="true"]) { background: var(--v4-tan-12); box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.6); color: var(--primary-hover); scale: 0.98; }
   [data-position-detail] .dm-pos-actions .dm-btn[aria-expanded="true"]:not(:disabled):not([aria-disabled="true"]) { background: var(--v4-tan-07); box-shadow: inset 0 0 0 1px var(--v4-tan-ring); color: var(--primary-hover); }
   [data-position-detail] .dm-pos-actions [data-position-v2-action="increase"]:hover:not([aria-disabled="true"]) > svg { rotate: 90deg; }
-  [data-position-detail] .dm-pos-actions [data-position-v2-action="changeRange"]:hover:not([aria-disabled="true"]) > svg { translate: 1px 0; }
+  /* Change range: the double arrow's two heads part 1.5px on hover. */
+  [data-position-detail] .dm-pos-actions [data-position-v2-action="changeRange"] > svg :is(.dm-ar-l, .dm-ar-r) { transition: translate 0.3s var(--ease-enter); }
+  [data-position-detail] .dm-pos-actions [data-position-v2-action="changeRange"]:hover:not([aria-disabled="true"]) > svg .dm-ar-l { translate: -1.5px 0; }
+  [data-position-detail] .dm-pos-actions [data-position-v2-action="changeRange"]:hover:not([aria-disabled="true"]) > svg .dm-ar-r { translate: 1.5px 0; }
   [data-position-detail] .dm-pos-actions [data-position-v2-action="exit"]:hover:not([aria-disabled="true"]) > svg { translate: 0 2px; }
   [data-position-detail] .dm-pos-actions [data-automation-control]:hover:not(:disabled):not([aria-disabled="true"]) > svg { rotate: -8deg; }
+  /* Auto-compound's circular arrow turns further (-18deg); Auto-exit's shield tilts -8deg. */
+  [data-position-detail] .dm-pos-actions [data-automation-control]:hover:not(:disabled):not([aria-disabled="true"]) > svg:has(.i-turn) { rotate: -18deg; }
   /* Unavailable (a hooked pool, an armed root): no fill, the quiet ring, the reason on hover, focus or tap. */
   [data-position-detail] .dm-pos-actions .dm-btn[aria-disabled="true"], [data-position-detail] .dm-pos-actions .dm-btn:disabled { background: transparent; box-shadow: inset 0 0 0 1px var(--border); color: var(--fg-subtle); cursor: not-allowed; }
   [data-position-detail] .dm-pos-actions .dm-btn[aria-disabled="true"] > svg, [data-position-detail] .dm-pos-actions .dm-btn:disabled > svg { color: var(--fg-faint); }
   /* Collect fees: the page's one solid Tangerine button, its coins tilting on hover; unavailable, a neutral slot. */
-  [data-position-detail] .dm-pos-actions :is([data-position-action="collect"], [data-position-v2-action="collect"]).dm-btn--primary { padding: 0 1.0625rem 0 0.875rem; background: var(--primary); color: var(--primary-fg); box-shadow: inset 0 1px 0 rgb(255 240 228 / 0.5), inset 0 -1px 0 rgb(120 50 15 / 0.25), 0 0.625rem 1.75rem -0.875rem rgb(255 157 98 / 0.55); }
+  [data-position-detail] .dm-pos-actions :is([data-position-action="collect"], [data-position-v2-action="collect"]).dm-btn--primary { padding: 0 1.0625rem 0 0.875rem; background: var(--primary); color: var(--fg); box-shadow: inset 0 1px 0 rgb(255 240 228 / 0.5), inset 0 -1px 0 rgb(120 50 15 / 0.25), 0 0.625rem 1.75rem -0.875rem rgb(255 157 98 / 0.55); }
   [data-position-detail] .dm-pos-actions :is([data-position-action="collect"], [data-position-v2-action="collect"]).dm-btn--primary > svg { color: currentColor; }
-  [data-position-detail] .dm-pos-actions :is([data-position-action="collect"], [data-position-v2-action="collect"]).dm-btn--primary:hover:not(:disabled) { background: var(--primary-hover); color: var(--primary-fg); box-shadow: inset 0 1px 0 rgb(255 240 228 / 0.6), inset 0 -1px 0 rgb(120 50 15 / 0.2), 0 0.875rem 2.125rem -0.75rem rgb(255 157 98 / 0.7); }
+  [data-position-detail] .dm-pos-actions :is([data-position-action="collect"], [data-position-v2-action="collect"]).dm-btn--primary:hover:not(:disabled) { background: var(--primary-hover); color: var(--fg); box-shadow: inset 0 1px 0 rgb(255 240 228 / 0.6), inset 0 -1px 0 rgb(120 50 15 / 0.2), 0 0.875rem 2.125rem -0.75rem rgb(255 157 98 / 0.7); }
   [data-position-detail] .dm-pos-actions :is([data-position-action="collect"], [data-position-v2-action="collect"]).dm-btn--primary:hover:not(:disabled) > svg { color: currentColor; translate: 0 -1px; rotate: -8deg; }
-  [data-position-detail] .dm-pos-actions :is([data-position-action="collect"], [data-position-v2-action="collect"]).dm-btn--primary:active:not(:disabled) { background: var(--primary-press); color: var(--primary-fg); }
-  [data-position-detail] .dm-pos-actions :is([data-position-action="collect"], [data-position-v2-action="collect"]).dm-btn--primary[aria-expanded="true"]:not(:disabled) { background: var(--primary-hover); color: var(--primary-fg); }
+  [data-position-detail] .dm-pos-actions :is([data-position-action="collect"], [data-position-v2-action="collect"]).dm-btn--primary:active:not(:disabled) { background: var(--primary-press); color: var(--fg); }
+  [data-position-detail] .dm-pos-actions :is([data-position-action="collect"], [data-position-v2-action="collect"]).dm-btn--primary[aria-expanded="true"]:not(:disabled) { background: var(--primary-hover); color: var(--fg); }
   [data-position-detail] .dm-pos-actions :is([data-position-action="collect"], [data-position-v2-action="collect"]).dm-btn--primary:disabled { background: var(--v4-w06); color: var(--fg-subtle); box-shadow: inset 0 0 0 1px var(--border); }
-  [data-position-detail] .dm-pos-actions [data-position-action="collect"].dm-btn--primary[aria-busy="true"]:disabled { background: var(--primary); color: var(--primary-fg); cursor: progress; }
+  [data-position-detail] .dm-pos-actions [data-position-action="collect"].dm-btn--primary[aria-busy="true"]:disabled { background: var(--primary); color: var(--fg); cursor: progress; }
   /* Set up automation sits in the row as an outline: one Tangerine button per screen. */
   [data-position-detail] .dm-pos-actions .dm-btn--primary[data-automation-setup] { background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border-lip); color: var(--fg); }
-  [data-position-detail] .dm-pos-actions .dm-automation-funds-dot { width: 0.375rem; height: 0.375rem; flex: none; border-radius: 999px; background: var(--money-in); box-shadow: 0 0 0 0.1875rem rgb(95 208 154 / 0.16); }
+  /* Also while the row's chunk loads (the control then stands under the title for a moment): never a second Tangerine button. */
+  [data-position-detail] .dm-position-automation .dm-btn--primary[data-automation-setup]:not(:hover) { background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border-lip); color: var(--fg); }
+  [data-position-detail] .dm-pos-actions .dm-automation-funds-dot { width: 0.375rem; height: 0.375rem; flex: none; margin-left: 2px; border-radius: 999px; background: var(--money-in); box-shadow: 0 0 0 0.1875rem rgb(95 208 154 / 0.16); transition: scale 0.3s var(--ease-enter), box-shadow 0.2s var(--ease-std); }
+  [data-position-detail] .dm-pos-actions .dm-btn:hover .dm-automation-funds-dot { scale: 1.15; box-shadow: 0 0 0 0.25rem rgb(95 208 154 / 0.22); }
+  /* The automation's standing word (when its control writes it apart): On in green, a pause or an end quiet; it rises in
+     its own line when it changes (the kit's word-a). */
+  [data-position-detail] .dm-pos-actions .dm-auto-dot { color: var(--fg-subtle); }
+  [data-position-detail] .dm-pos-actions .dm-auto-word[data-standing="On"] { color: var(--money-in); transition: color 0.2s var(--ease-std); }
+  [data-position-detail] .dm-pos-actions .dm-btn:hover .dm-auto-word[data-standing="On"] { color: #7fdcae; }
+  [data-position-detail] .dm-pos-actions .dm-auto-word:is([data-standing="Paused"], [data-standing="Off"], [data-standing="Closed"]) { color: var(--fg-muted); }
+  [data-position-detail] .dm-pos-actions .dm-auto-sw { display: inline-block; overflow: hidden; margin: -0.1em 0 -0.14em; padding: 0.1em 0 0.14em; vertical-align: bottom; }
+  [data-position-detail] .dm-pos-actions .dm-auto-word[data-changed] { display: inline-block; animation: dm-v4p-word 0.45s var(--ease-enter) both; }
   /* Close position: a ghost; its × in a ring turns and takes the Tangerine ring on hover (never red). */
-  [data-position-detail] .dm-pos-actions .dm-btn[data-position-action="close"] { margin-left: auto; padding: 0 0.9375rem 0 0.5rem; background: transparent; box-shadow: none; color: var(--fg-muted); }
+  [data-position-detail] .dm-pos-actions .dm-btn[data-position-action="close"] { margin-left: auto; padding: 0 0.9375rem 0 0.5rem; background: transparent; box-shadow: none; color: var(--fg); }
   [data-position-detail] .dm-pos-actions .dm-btn[data-position-action="close"] > svg { box-sizing: content-box; width: 0.75rem; height: 0.75rem; padding: 0.375rem; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--border-strong); color: var(--fg-muted); transition: rotate 0.35s var(--ease-enter), box-shadow 0.2s var(--ease-std), color 0.2s var(--ease-std); }
   [data-position-detail] .dm-pos-actions .dm-btn[data-position-action="close"]:hover:not(:disabled) { background: var(--v4-w05); box-shadow: none; color: var(--fg); }
   [data-position-detail] .dm-pos-actions .dm-btn[data-position-action="close"]:hover:not(:disabled) > svg { rotate: 90deg; box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong); color: var(--primary); }
@@ -94,8 +134,22 @@
   [data-position-detail] .dm-pos-stats > .dm-pos-stat:is(:hover, :focus-within) { z-index: 3; }
   /* The price tile holds the light at rest (the halo round the price now): it never reaches past the tile. */
   [data-position-detail] .dm-pos-stats > .dm-pos-stat[data-cell="price"] { overflow: clip; }
+  /* Its edge and wash stay lit while no pointer is on the page (the approved t: lit(m.t, true)): the light rests on it. */
+  html:not(:hover) [data-position-detail] [data-position-overview] > .dm-pos-stat.dm-lit[data-cell="price"]::before, html:not(:hover) [data-position-detail] [data-position-overview] > .dm-pos-stat.dm-lit[data-cell="price"]::after { opacity: 1; }
+  @media (hover: none) {
+    [data-position-detail] [data-position-overview] > .dm-pos-stat.dm-lit[data-cell="price"]::before, [data-position-detail] [data-position-overview] > .dm-pos-stat.dm-lit[data-cell="price"]::after { opacity: 1; }
+  }
   [data-position-detail] .dm-pos-stat > dt { display: flex; align-items: center; gap: 2px; min-height: 1.25rem; font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.01em; text-transform: none; color: var(--fg-subtle); }
+  /* The (i) beside a label (the kit's .ib): a 22px round button in the page's cream ink (a <button> there, so its faint
+     colour gives way to the inherited one); on its own hover (the kit's .tip:hover) or focus a quiet fill, its mark
+     growing a little. It overhangs the 20px label row by a pixel each way, as on the approved page. */
+  [data-position-detail] .dm-pos-stat .dm-info-tip-trigger { display: inline-flex; align-items: center; justify-content: center; width: 1.375rem; height: 1.375rem; margin: -1px 0; border-radius: 50%; color: var(--fg); transition: color 0.18s var(--ease-std), background-color 0.18s var(--ease-std); }
+  [data-position-detail] .dm-pos-stat .dm-info-tip-trigger > svg { transition: scale 0.3s var(--ease-enter); }
+  [data-position-detail] .dm-pos-stat .dm-info-tip-trigger:is(:hover, :focus-visible) { color: var(--fg); background: var(--v4-w06); }
+  [data-position-detail] .dm-pos-stat .dm-info-tip-trigger:hover > svg { scale: 1.08; }
   [data-position-detail] .dm-pos-stat > .dm-stat-value { margin-top: 0.875rem; }
+  /* The expanders sit 14px under the figure (the kit's .xp); the price's rail keeps its own 40px under the unit. */
+  [data-position-detail] .dm-pos-stat:not([data-cell="price"]) > .dm-stat-sub { margin-top: 0.875rem; }
   [data-position-detail] .dm-pos-stat > .dm-stat-sub { margin-top: 0.625rem; gap: 0.625rem; font-size: 0.78125rem; line-height: 1.125rem; color: var(--fg-subtle); }
   [data-position-detail] [data-position-overview] .dm-fig-lg { font-family: var(--font-display); font-size: 2.75rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
   [data-position-detail] [data-position-overview] .dm-fig-lg.dm-fees-in { color: var(--money-in); }
@@ -117,26 +171,28 @@
   [data-position-detail] [data-position-overview] .dm-pos-apr > .dm-skel { width: 5.5rem; height: 2.125rem; border-radius: 0.5rem; }
   /* The expanders ("Token amounts", "Period details", "Breakdown"): a ghost text button and its round plus, turning 45° open. */
   [data-position-detail] .dm-position-figure-detail { font-size: 0.8125rem; line-height: 1.125rem; color: var(--fg-muted); }
-  [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary { display: inline-flex; align-items: center; gap: 0.5rem; width: fit-content; min-height: 1.875rem; margin-left: -0.5rem; padding: 0 0.375rem 0 0.5rem; border-radius: 0.625rem; list-style: none; cursor: pointer; font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg-muted); transition: color 0.18s var(--ease-std), background-color 0.18s var(--ease-std), scale 0.1s var(--ease-fast); }
+  /* They are <button>s on the approved page: its 16px regular text in the cream ink; the plus keeps the kit's muted ring. */
+  [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary { display: inline-flex; align-items: center; gap: 0.5rem; width: fit-content; min-height: 1.875rem; margin-left: -0.5rem; padding: 0 0.375rem 0 0.5rem; border-radius: 0.625rem; list-style: none; cursor: pointer; font-size: 1rem; line-height: 1.25rem; font-weight: 400; letter-spacing: -0.01em; color: var(--fg); transition: color 0.18s var(--ease-std), background-color 0.18s var(--ease-std), scale 0.1s var(--ease-fast); }
   [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary::-webkit-details-marker { display: none; }
-  [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary::after { content: ''; flex: none; width: 1.375rem; height: 1.375rem; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--border-strong); color: var(--fg-muted); background: linear-gradient(currentColor, currentColor) center / 0.5625rem 1.5px no-repeat, linear-gradient(currentColor, currentColor) center / 1.5px 0.5625rem no-repeat; transition: rotate 0.35s var(--ease-enter), box-shadow 0.2s var(--ease-std), color 0.2s var(--ease-std); }
+  [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary::after { content: ''; flex: none; width: 1.375rem; height: 1.375rem; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--border-strong); color: var(--fg-muted); background: linear-gradient(currentColor, currentColor) center / 0.46875rem 0.0833rem no-repeat, linear-gradient(currentColor, currentColor) center / 0.0833rem 0.46875rem no-repeat; transition: rotate 0.35s var(--ease-enter), box-shadow 0.2s var(--ease-std), color 0.2s var(--ease-std); }
   [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary:hover { background: var(--v4-w04); color: var(--fg); }
   [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary:hover::after { box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong); color: var(--primary); }
   [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary:active { scale: 0.97; }
   [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown)[open] > summary { color: var(--fg); }
   [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown)[open] > summary::after { rotate: 45deg; }
   [data-position-detail] .dm-position-figure-detail > :not(summary) { margin-top: 0.625rem; }
-  /* At the compact desktop root (67.5%) the round plus is drawn larger, so its turned × stays a clear mark. */
-  @media (min-width: 768px) and (pointer: fine) {
-    [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary::after { width: 1.75rem; height: 1.75rem; background-size: 0.8125rem 1.5px, 1.5px 0.8125rem; }
-  }
   /* The price: its figure in serif, its unit under it. */
   [data-position-detail] [data-position-overview] .dm-pos-price { display: grid; justify-items: start; gap: 0.625rem; }
   [data-position-detail] [data-position-overview] .dm-pos-price .dm-fig-lg { white-space: nowrap; }
-  [data-position-detail] [data-position-overview] .dm-pos-price-side { font-size: 0.78125rem; line-height: 1.125rem; font-weight: 400; color: var(--fg-subtle); overflow-wrap: anywhere; white-space: normal; }
+  [data-position-detail] [data-position-overview] .dm-pos-price-side { font-size: 0.78125rem; line-height: 1.3; font-weight: 400; color: var(--fg-subtle); overflow-wrap: anywhere; white-space: normal; }
   /* The range rail: a green track with its ends, the price now a white line and dot in a Tangerine halo. */
-  [data-position-detail] [data-position-overview] .dm-pos-span { display: grid; gap: 0.875rem; margin-top: 1.875rem; padding-top: 0; }
-  [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-bar { height: 0.375rem; border-radius: 0.1875rem; background: none; }
+  /* 40px between the unit and the rail as the kit's .rail (the tile's sub line already opens 10px of it): room for the Now chip. */
+  [data-position-detail] [data-position-overview] .dm-pos-span { position: relative; display: grid; gap: 0.875rem; margin-top: 1.875rem; padding-top: 0; }
+  /* The light's resting point (KeyFigures.tsx): on the price now, the rail's middle; no size, no pointer. */
+  [data-position-detail] [data-position-overview] .dm-pos-span-rest { position: absolute; top: 0.1875rem; width: 0; height: 0; pointer-events: none; }
+  /* The band fills the rail end to end, its caps on the bounds' edges (the kit's .rtrk, inset 0): the bar, whose band runs
+     5% to 95% so a price beyond an end has room outside it, is drawn wider than the tile's text by those margins. */
+  [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-bar { width: calc(100% / 0.9); height: 0.375rem; margin-left: calc(100% / -18); border-radius: 0.1875rem; background: none; }
   [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-band { border-radius: 0.1875rem; }
   [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-band[data-in] { background: rgb(95 208 154 / 0.28); box-shadow: inset 0 0 0 1px rgb(95 208 154 / 0.32); }
   [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-band[data-in="false"] { background: var(--v4-w08); box-shadow: inset 0 0 0 1px var(--border-strong); }
@@ -146,26 +202,36 @@
   [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-band::after { right: 0; }
   [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-band:is([data-in="false"], .dm-range-unknown)::before, [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-band:is([data-in="false"], .dm-range-unknown)::after { background: var(--border-strong); }
   [data-position-detail] [data-position-overview] .dm-pos-span:hover .dm-range-band[data-in="true"]::before, [data-position-detail] [data-position-overview] .dm-pos-span:hover .dm-range-band[data-in="true"]::after { scale: 1 1.45; background: rgb(95 208 154 / 0.85); }
-  [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-now { width: 0.625rem; height: 0.625rem; border-radius: 999px; background: var(--fg); box-shadow: 0 0 0 0.1875rem rgb(22 20 17 / 0.9), 0 0 0 0.25rem rgb(247 241 234 / 0.25); }
-  [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-now::before { content: ''; position: absolute; left: 50%; top: 50%; z-index: -1; width: 5.75rem; height: 5.75rem; margin: -2.875rem 0 0 -2.875rem; border-radius: 999px; background: radial-gradient(closest-side, rgb(255 196 156 / 0.55), rgb(255 157 98 / 0.2) 45%, rgb(255 157 98 / 0)); pointer-events: none; }
-  [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-now::after { content: ''; position: absolute; left: 50%; top: 50%; width: 2px; height: 1.375rem; margin: -0.6875rem 0 0 -1px; border-radius: 1px; background: var(--fg); }
+  /* The price now (the kit's .rnow): the 92px halo under a 22px white line under a 10px white dot in its dark and light
+     rings, all three drawn as the marker's own layers (a child layer would paint over its background and tint the dot);
+     centred by its translate, it takes no pointer. ::after is the "Now" chip 16px above it, shown on the rail's hover and
+     always on a touch screen. The halo follows the pointer's distance once the ember writes --ember-halo. */
+  [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-now { width: 5.75rem; height: 5.75rem; border-radius: 0; box-shadow: none; pointer-events: none; background: radial-gradient(circle closest-side, var(--fg) 0 0.29rem, rgb(22 20 17 / 0.9) 0.3125rem 0.49rem, rgb(247 241 234 / 0.25) 0.51rem 0.55rem, rgb(247 241 234 / 0) 0.5625rem) center / 1.125rem 1.125rem no-repeat, linear-gradient(var(--fg), var(--fg)) center / 0.125rem 1.375rem no-repeat, radial-gradient(closest-side, rgb(255 196 156 / calc(0.55 * var(--ember-halo, 1))), rgb(255 157 98 / calc(0.2 * var(--ember-halo, 1))) 45%, rgb(255 157 98 / 0)) center / 100% 100% no-repeat; }
+  [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-now::before { content: none; }
+  [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-now::after { content: 'Now' / ''; position: absolute; left: 50%; bottom: calc(50% + 1rem); padding: 0.125rem 0.4375rem; border-radius: 0.375rem; background: rgb(255 236 220 / 0.07); font-size: 0.75rem; line-height: 1rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); white-space: nowrap; opacity: 0; transform: translate(-50%, 0.25rem); transition: opacity 0.2s var(--ease-std), transform 0.3s var(--ease-enter); pointer-events: none; }
+  [data-position-detail] [data-position-overview] .dm-pos-span:hover .dm-range-now::after { opacity: 1; transform: translate(-50%, 0); }
+  @media (hover: none) {
+    [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-now::after { opacity: 1; transform: translate(-50%, 0); }
+  }
   [data-position-detail] [data-position-overview] .dm-pos-span-ends { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: baseline; gap: 0.625rem; padding: 0; font-size: 0.84375rem; line-height: 1.125rem; font-weight: 500; color: var(--fg-muted); }
   [data-position-detail] [data-position-overview] .dm-pos-span-ends > :not(.dm-pos-span-word) { white-space: nowrap; transition: color 0.18s var(--ease-std); }
   [data-position-detail] [data-position-overview] .dm-pos-span-ends > :last-child { text-align: right; }
   [data-position-detail] [data-position-overview] .dm-pos-span-word { grid-column: auto; grid-row: auto; font-size: 0.78125rem; font-weight: 400; color: var(--fg-subtle); text-align: center; }
   [data-position-detail] [data-position-overview] .dm-pos-span:hover .dm-pos-span-ends > :not(.dm-pos-span-word) { color: var(--fg); }
-  /* A narrow price tile (two by two on a phone): the bounds never break mid-number; they stack as Low and High rows
-     (the 320px pattern of v3-position-detail.css) whenever the two would not fit side by side. */
+  /* A narrow price tile: the bounds never break mid-number; they stack as Low and High rows whenever the two would not
+     fit side by side (the container rule sits after the phone rules, below, so it still applies there). */
   [data-position-detail] [data-position-overview] .dm-pos-stat[data-cell="price"] { container: dm-pos-price / inline-size; }
-  @container dm-pos-price (max-width: 12rem) {
-    [data-position-detail] [data-position-overview] .dm-pos-span-ends { grid-template-columns: minmax(0, 1fr); gap: 0.25rem; }
-    [data-position-detail] [data-position-overview] .dm-pos-span-word { grid-column: 1; grid-row: 1; text-align: left; }
-    [data-position-detail] [data-position-overview] .dm-pos-span-ends > :not(.dm-pos-span-word) { display: flex; align-items: baseline; justify-content: space-between; gap: 0.25rem; min-width: 0; white-space: nowrap; text-align: right; }
-    [data-position-detail] [data-position-overview] .dm-pos-span-ends > :first-child::before { content: 'Low'; font-weight: 400; color: var(--fg-subtle); }
-    [data-position-detail] [data-position-overview] .dm-pos-span-ends > :last-child::before { content: 'High'; font-weight: 400; color: var(--fg-subtle); }
-  }
   /* The V2 page's price tile: the state as a word under the price. */
   [data-position-detail] [data-position-overview] .dm-pos-span-state { gap: 0.375rem; margin-top: 0.375rem; font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; color: var(--money-in); }
+  /* Base and Arbitrum (position-base.html .stats): four equal tiles 170px tall, the figure 30px under its label, the
+     price's state word 14px under its unit; Robinhood's V2 page keeps its rail tile. */
+  :is([data-position-v2^="base-"], [data-position-v2^="arbitrum-"]) .dm-pos-stats > .dm-pos-stat { min-height: 10.625rem; }
+  :is([data-position-v2^="base-"], [data-position-v2^="arbitrum-"]) .dm-pos-stat > .dm-stat-value { margin-top: 1.875rem; }
+  :is([data-position-v2^="base-"], [data-position-v2^="arbitrum-"]) [data-position-overview] [data-cell="price"] .dm-stat-sub { margin-top: 0.875rem; }
+  :is([data-position-v2^="base-"], [data-position-v2^="arbitrum-"]) [data-position-overview] [data-cell="price"] .dm-pos-span-state { margin-top: 0; padding-top: 0.375rem; font-size: 0.78125rem; }
+  @media (min-width: 860px) {
+    :is([data-position-v2^="base-"], [data-position-v2^="arbitrum-"]) .dm-pos-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  }
   [data-position-detail] [data-position-overview] .dm-pos-span-state[data-in="false"] { color: var(--money-out); }
   [data-position-detail] [data-position-overview] .dm-pos-span-state::before { width: 0.375rem; height: 0.375rem; background: currentColor; box-shadow: 0 0 0 0.1875rem rgb(95 208 154 / 0.16); }
   [data-position-detail] [data-position-overview] .dm-pos-span-state[data-in="false"]::before { box-shadow: 0 0 0 0.1875rem rgb(244 96 122 / 0.16); }
@@ -177,15 +243,35 @@
   [data-fee-reserves="position"] .dm-reserves-row:hover { background: var(--v4-w045); }
   [data-fee-reserves="position"] .dm-reserves-row::before { content: ''; position: absolute; left: 0.5rem; top: 50%; width: 0.3125rem; height: 0.3125rem; margin-top: -0.15625rem; border-radius: 999px; background: var(--primary); opacity: 0; scale: 0.2; transition: opacity 0.2s var(--ease-std), scale 0.35s var(--ease-enter); pointer-events: none; }
   [data-fee-reserves="position"] .dm-reserves-row:hover::before { opacity: 1; scale: 1; }
-  [data-fee-reserves="position"] .dm-btn--primary[data-reserve-withdraw] { background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border-lip); color: var(--fg); }
+  /* Withdraw to wallet (the kit's btn-line, 40px): outlined with its wallet glyph; a disabled one (another row's
+     withdrawal under way) keeps the quiet unavailable slot. */
+  [data-fee-reserves="position"] .dm-btn--primary[data-reserve-withdraw]:not(:disabled, [aria-disabled="true"]) { background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border-lip); color: var(--fg); }
   [data-fee-reserves="position"] .dm-btn--primary[data-reserve-withdraw]:hover:not(:disabled) { background: var(--v4-tan-07); box-shadow: inset 0 0 0 1px var(--v4-tan-ring); color: var(--primary-hover); }
+  [data-fee-reserves="position"] .dm-btn--primary[data-reserve-withdraw]:is(:disabled, [aria-disabled="true"]) { background: var(--v4-w06); box-shadow: inset 0 0 0 1px var(--border); color: var(--fg-subtle); cursor: not-allowed; }
+  /* The card's rhythm (position-base.html .fw): the head, the lede at 62ch, 72px rows, quiet discs, the foot line. */
+  [data-fee-reserves="position"] .dm-acct-card-head { padding: 1.375rem 1.125rem 1.125rem 1.375rem; }
+  [data-fee-reserves="position"] .dm-reserves-lede { max-width: 62ch; margin: 0; padding: 0 1.375rem 0.875rem; font-size: 0.875rem; line-height: 1.5; color: var(--fg-muted); }
+  [data-fee-reserves="position"] .dm-reserves-row > .dm-held-main { min-height: 4.5rem; gap: 0.875rem; padding: 0 0.875rem 0 1.375rem; }
+  [data-fee-reserves="position"] .dm-held-main > :first-child { filter: saturate(0.55); opacity: 0.85; }
+  [data-fee-reserves="position"] .dm-held-pair { font-size: 0.9375rem; font-weight: 500; }
+  [data-fee-reserves="position"] .dm-held-refund { display: inline-flex; align-items: center; gap: 0.5625rem; height: 2.5rem; padding: 0 1rem 0 0.875rem; border-radius: 0.75rem; font-size: 0.875rem; font-weight: 500; }
+  [data-fee-reserves="position"] .dm-held-refund::before { content: ''; flex: none; width: 1rem; height: 1rem; background: var(--fg-subtle); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='4' width='12' height='9' rx='2'/%3E%3Cpath d='M2 6.5h12'/%3E%3Ccircle cx='11.5' cy='9.25' r='.6' fill='%23000'/%3E%3C/svg%3E") center / 1rem no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='4' width='12' height='9' rx='2'/%3E%3Cpath d='M2 6.5h12'/%3E%3Ccircle cx='11.5' cy='9.25' r='.6' fill='%23000'/%3E%3C/svg%3E") center / 1rem no-repeat; transition: background-color 0.2s var(--ease-std); }
+  [data-fee-reserves="position"] .dm-held-refund:hover:not(:disabled)::before { background: var(--primary); }
+  [data-fee-reserves="position"] .dm-reserves-more { margin: 0; padding: 0.625rem 1.375rem 0.5rem; font-size: 0.78125rem; line-height: 1.125rem; color: var(--fg-subtle); }
 
   /* ==== The charts: one card, its tabs with the Tangerine dot, the tools, a hairline ============================== */
   [data-position-detail] .dm-position-workspace { min-width: 0; margin: 0.875rem 0 0; }
+  /* The frame that waits for a chart keeps the chart's box (PendingPlot.tsx); its guides scale with it, the baseline on the
+     plot's foot (164 of the drawing's 180, over the 30px date row). */
+  [data-position-detail] .dm-pending-plot > svg { height: calc((100% - 1.875rem) * 1.0976); }
+  /* On the V2 page the charts are the grid's first card: the grid's own 14px is the gap above them. */
+  [data-position-detail] .dm-pos-grid > .dm-position-workspace { margin-top: 0; }
   [data-position-detail] .dm-position-analysis { min-width: 0; padding: 0.5rem 0.625rem 0.875rem; border: 0; border-radius: 1.625rem; background: var(--v4-card-lift), var(--card); box-shadow: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 var(--v4-w06), var(--v4-card-drop); overflow: hidden; }
-  [data-position-detail] .dm-position-chart-head { gap: 1rem; padding: 0.5rem 0.375rem 0.625rem 0.5rem; border: 0; background: linear-gradient(var(--border), var(--border)) center bottom / 100% 1px no-repeat; }
+  /* The hairline under the tabs (the kit's .an-rule): 10px under them, 8px in from each side. */
+  [data-position-detail] .dm-position-chart-head { gap: 1rem; padding: 0.5rem 0.375rem 0.6875rem 0.5rem; border: 0; background: linear-gradient(var(--border), var(--border)) center bottom / calc(100% - 1rem) 1px no-repeat; }
   [data-position-detail] .dm-position-analysis .dm-position-chart-head .dm-position-chart-tabs { display: flex; gap: 0.25rem; min-width: 0; padding: 0; border: 0; }
-  [data-position-detail] .dm-position-chart-tabs > button { position: relative; display: inline-flex; align-items: center; min-height: 0; height: 2.375rem; padding: 0 1rem; border: 0; border-radius: 999px; background: transparent; font-size: 0.90625rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg-muted); cursor: pointer; transition: color 0.18s var(--ease-std), background-color 0.18s var(--ease-std), scale 0.1s var(--ease-fast); }
+  /* The tabs and tools are <button>s on the approved page: 16px regular, the cream ink (the dot marks the chosen tab). */
+  [data-position-detail] .dm-position-chart-tabs > button { position: relative; display: inline-flex; align-items: center; min-height: 0; height: 2.375rem; padding: 0 1rem; border: 0; border-radius: 999px; background: transparent; font-size: 1rem; line-height: 1.25rem; font-weight: 400; letter-spacing: -0.01em; color: var(--fg); cursor: pointer; transition: color 0.18s var(--ease-std), background-color 0.18s var(--ease-std), scale 0.1s var(--ease-fast); }
   [data-position-detail] .dm-position-chart-tabs > button:hover { background: var(--v4-w04); color: var(--fg); }
   [data-position-detail] .dm-position-chart-tabs > button:active { scale: 0.97; }
   [data-position-detail] .dm-position-chart-tabs > button[aria-selected="true"] { color: var(--fg); }
@@ -193,17 +279,28 @@
   [data-position-detail] .dm-position-chart-tabs > button[aria-selected="true"]::after { opacity: 1; translate: 0 0; scale: 1; }
   [data-position-detail] .dm-position-chart-tabs > button:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; border-radius: 999px; }
   [data-position-detail] .dm-position-chart-tools { gap: 0.25rem; padding: 0; }
-  [data-position-detail] .dm-position-chart-tools > button { width: 2.125rem; height: 2.125rem; padding: 0; border-radius: 0.625rem; background: transparent; color: var(--fg-subtle); transition: color 0.18s var(--ease-std), background-color 0.18s var(--ease-std), box-shadow 0.18s var(--ease-std), scale 0.1s var(--ease-fast); }
+  [data-position-detail] .dm-position-chart-tools > button { width: 2.125rem; height: 2.125rem; padding: 0; border-radius: 0.625rem; background: transparent; color: var(--fg); transition: color 0.18s var(--ease-std), background-color 0.18s var(--ease-std), box-shadow 0.18s var(--ease-std), scale 0.1s var(--ease-fast); }
   [data-position-detail] .dm-position-chart-tools svg { width: 1rem; height: 1rem; transition: translate 0.3s var(--ease-enter), scale 0.3s var(--ease-enter); }
   [data-position-detail] .dm-position-chart-tools > button:hover { background: var(--v4-w06); color: var(--fg); }
-  [data-position-detail] .dm-position-chart-tools > button:first-child:hover svg { translate: 0 -1px; }
+  [data-position-detail] .dm-position-chart-tools > button:first-child:hover svg { translate: none; scale: 1.1; }
   [data-position-detail] .dm-position-chart-tools > button:last-child:hover svg { scale: 1.12; }
   [data-position-detail] .dm-position-chart-tools > button:last-child[aria-expanded="true"]:hover svg { scale: 0.9; }
   [data-position-detail] .dm-position-chart-tools > button:active { scale: 0.94; }
   [data-position-detail] .dm-position-chart-tools > button:is([aria-pressed="true"], [aria-expanded="true"]) { background: var(--v4-w05); box-shadow: inset 0 0 0 1px var(--border); color: var(--fg); }
-  [data-position-detail] .dm-position-chart-tools svg circle { fill: var(--card); }
-  /* A panel arrives with a short fade (the hidden one stays hidden). */
-  [data-position-detail] [data-position-chart-panel]:not([hidden]) { animation: dm-v4p-fade 0.25s var(--ease-std) backwards; }
+  /* The measured-points glyph: a faint line through four filled dots. */
+  [data-position-detail] .dm-position-chart-tools svg { stroke-width: 1.4; }
+  [data-position-detail] .dm-position-chart-tools svg circle { fill: currentColor; stroke: none; }
+  [data-position-detail] .dm-position-chart-tools svg .dm-pts-line { stroke-width: 1.2; stroke-opacity: 0.55; }
+  /* A panel arrives with a fade and a 6px rise (the hidden one stays hidden: hiding it is the switch). */
+  [data-position-detail] [data-position-chart-panel]:not([hidden]) { animation: dm-v4-fade 0.25s var(--ease-std) backwards, dm-v4p-rise 0.4s var(--ease-enter) backwards; }
+  /* A period change (24H, 7D, 30D, All) answers with a short crossfade of the line and its caption, never a redraw. */
+  [data-position-detail] .dm-position-analysis .dm-chart-series[data-swap] { animation: dm-v4p-swap 0.2s var(--ease-std) backwards; }
+  [data-position-detail] .dm-position-analysis .dm-fees-plot:has(.dm-chart-series[data-swap]) > .dm-fees-window { animation: dm-v4p-swap 0.2s var(--ease-std) backwards; }
+  /* Expand chart: the plot's box grows (248 to 368, 300 to 420) over .45s, the bigger plot revealed as it goes. */
+  [data-position-detail] .dm-position-analysis .dm-chart { transition: height 0.45s var(--ease-enter); }
+  [data-position-detail] [data-chart-expanded] .dm-position-analysis .dm-chart { animation: dm-v4p-grow 0.45s linear; }
+  /* The axis labels at 12 design px (the SVG's own units), as the approved charts write them. */
+  [data-position-detail] .dm-position-analysis .dm-axis { font-size: 12px; }
 
   /* ---- Fees earned inside the card ------------------------------------------------------------------------------ */
   [data-position-detail] [data-position-chart-panel] > .dm-fees { gap: 0.75rem; margin: 0; padding: 1.125rem 0.75rem 0.25rem 0.875rem; border: 0; border-radius: 0; background: none; box-shadow: none; }
@@ -238,16 +335,33 @@
   [data-position-detail] [data-position-chart-panel] .dm-fees-window { font-size: 0.78125rem; line-height: 1.125rem; letter-spacing: -0.01em; color: var(--fg-subtle); }
   /* The chart's skin (its sizes, paddings and axis text stay the chart's own). */
   [data-position-detail] .dm-position-analysis .dm-series-line:not([data-tone]) { stroke-width: 1.75; }
+  /* Fees earned: one Tangerine area under the line (#cfill, .16 to 0), no glow; collected and ready to collect are said
+     in words under Breakdown, never in two fills (both paths stay, on one scale: FeesChart.tsx). */
+  [data-position-detail] .dm-position-analysis :is(.dm-stop-top, .dm-fees-wait-top) { stop-color: #ff9d62; stop-opacity: 0.16; }
+  [data-position-detail] .dm-position-analysis .dm-stop-mid { stop-color: #ff9d62; stop-opacity: 0.072; }
+  [data-position-detail] .dm-position-analysis :is(.dm-stop-bottom, .dm-fees-wait-bottom) { stop-color: #ff9d62; stop-opacity: 0; }
+  [data-position-detail] .dm-position-analysis .dm-series-glow { opacity: 0; }
+  /* The line draws itself in from the left when the chart first appears (k-draw), its area fading in after it. */
+  [data-position-detail] .dm-position-analysis .dm-fees-chart > .dm-chart-series[data-reveal] { animation: dm-v4p-draw 0.5s var(--ease-enter) backwards; }
+  [data-position-detail] .dm-position-analysis .dm-fees-chart > .dm-chart-series[data-reveal] :is(.dm-fees-collected, .dm-fees-waiting) { animation: dm-v4-fade 0.3s var(--ease-std) 0.16s backwards; }
   [data-position-detail] .dm-position-analysis .dm-position-chart-guide { stroke: rgb(255 236 220 / 0.07); stroke-dasharray: none; }
   [data-position-detail] .dm-position-analysis :is(.dm-baseline, .dm-chart-baseline) { stroke: rgb(255 236 220 / 0.07); }
   [data-position-detail] .dm-position-analysis .dm-crosshair { stroke: var(--border-strong); }
   [data-position-detail] .dm-position-analysis .dm-end-dot { stroke: rgb(255 157 98 / 0.18); stroke-width: 5px; paint-order: stroke; }
   [data-position-detail] .dm-position-analysis .dm-last-chip { padding: 0 0.5rem; border-radius: 0.375rem; background: var(--v4-w08); color: var(--fg); font-size: 0.78125rem; font-weight: 500; }
+  /* The end value on a desktop (the kit's .endtag): its chip 10px right of the plot at the end's level, no dashed line. */
+  @media (min-width: 768px) {
+    [data-position-detail] .dm-position-analysis .dm-fees-chart .dm-last-line { display: none; }
+    [data-position-detail] .dm-position-analysis .dm-fees-chart .dm-last-chip { right: auto; left: calc(100% - 3.875rem); }
+  }
   [data-position-detail] .dm-position-analysis .dm-chart-tooltip { padding: 0.4375rem 0.625rem 0.5rem; border-radius: 0.625rem; background: var(--surface-2); -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: inset 0 0 0 1px var(--border-lip), 0 1.5rem 3.125rem -1.375rem rgb(0 0 0 / 0.9); font-size: 0.78125rem; }
   [data-position-detail] .dm-position-analysis .dm-position-measured-point { fill: var(--card); stroke: var(--primary-line); stroke-width: 1.5px; }
   [data-position-detail] .dm-position-analysis .dm-position-measured-point[data-tone="in"] { stroke: var(--money-in); }
   [data-position-detail] .dm-position-analysis .dm-position-measured-point[data-tone="out"] { stroke: var(--money-out); }
   [data-position-detail] .dm-position-analysis .dm-position-measured-point[data-tone="closed"] { stroke: var(--fg-subtle); }
+  /* Recorded fees (Base, Arbitrum): hollow Tangerine rings, the last one filled with its halo (the kit's .pip, .cend). */
+  [data-position-detail] [data-recorded-fee-points] .dm-position-measured-point { fill: var(--card); stroke: var(--primary); stroke-width: 1.5px; }
+  [data-position-detail] [data-recorded-fee-points] .dm-position-measured-point--last { fill: var(--primary); stroke: rgb(255 157 98 / 0.18); stroke-width: 10px; paint-order: stroke; }
   [data-position-detail] .dm-position-analysis :is(.dm-pending-plot, .dm-fees-quiet) path { stroke: rgb(255 236 220 / 0.07); }
   /* Recorded fees (Base, Arbitrum): the same head, a token switch, a serif value. */
   [data-position-detail] .dm-position-analysis .dm-position-range-panel { padding: 1.125rem 0.75rem 0.25rem 0.875rem; border: 0; border-radius: 0; background: none; box-shadow: none; }
@@ -256,8 +370,10 @@
   [data-position-detail] .dm-recorded-fees-head .dm-seg { height: auto; padding: 0.1875rem; border-radius: 0.8125rem; }
   [data-position-detail] .dm-recorded-fees-head .dm-seg-item { height: 2rem; max-width: 12rem; padding: 0 0.875rem; border-radius: 0.625rem; font-size: 0.84375rem; }
   [data-position-detail] .dm-recorded-fees-head .dm-seg-item[aria-pressed="true"] { background: var(--v4-w08); box-shadow: inset 0 0 0 1px var(--border-lip); color: var(--fg); }
-  [data-position-detail] .dm-recorded-fees-value { align-items: baseline; gap: 0.5rem; margin: 0.75rem 0 0.875rem; font-size: 0.875rem; color: var(--fg-subtle); }
+  /* The figure, its unit 10px after it in 14px medium (the kit's .fv-u), the chart 18px under it. */
+  [data-position-detail] .dm-recorded-fees-value { align-items: baseline; gap: 0.5rem; margin: 0.75rem 0 1.125rem; font-size: 0.875rem; font-weight: 500; color: var(--fg-subtle); }
   [data-position-detail] .dm-recorded-fees-value .dm-fig-lg { font-family: var(--font-display); font-size: 3.125rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
+  [data-position-detail] .dm-recorded-fees-value .dm-fig-lg[data-switched] { display: inline-block; animation: dm-v4p-tok 0.32s var(--ease-enter) backwards; }
 
   /* ---- Price range: the state as a word, the band green with its edges, the labels in sentence case -------------- */
   [data-position-detail] .dm-pvr-head { align-items: center; padding: 0; }
@@ -268,12 +384,27 @@
   [data-position-detail] .dm-pvr-status[data-tone="out"] .dm-pvr-status-dot { box-shadow: 0 0 0 0.1875rem rgb(244 96 122 / 0.16); }
   [data-position-detail] .dm-pvr-move { padding-left: 0.875rem; font-size: 0.8125rem; line-height: 1.1875rem; color: var(--fg-muted); }
   [data-position-detail] .dm-pvr-unit { font-size: 0.78125rem; line-height: 1.125rem; color: var(--fg-subtle); }
-  [data-position-detail] .dm-pvr-band { fill: rgb(95 208 154); fill-opacity: 0.08; }
+  /* The range band green with its two edges (the kit's .band); the price line one warm white in or out of the range (the
+     state is said in words); Max, Now and Min at their levels with no leaders, Now's value in a neutral chip. Every
+     data-tone stays; the price-now marks stay in place (measured), unseen while the line draws the price. */
+  [data-position-detail] .dm-pvr-band { fill: rgb(95 208 154 / 0.08) !important; fill-opacity: 1 !important; }
+  [data-position-detail] .dm-pvr-line[data-tone] { stroke: rgb(247 241 234 / 0.86); stroke-width: 1.5; }
+  [data-position-detail] .dm-pvr-lone[data-tone] { fill: rgb(247 241 234 / 0.86); }
+  [data-position-detail] .dm-pvr-hover[data-tone] { fill: var(--fg); stroke: rgb(22 20 17 / 0.8); }
+  [data-position-detail] .dm-pvr-now-line[data-tone] { stroke: rgb(247 241 234 / 0.5); }
+  [data-position-detail] .dm-pvr-now-dot[data-tone] { fill: var(--fg); }
+  [data-position-detail] .dm-pvr-wrap[data-pvr-line] :is(.dm-pvr-now-dot, .dm-pvr-now-line, .dm-pvr-leader) { opacity: 0; }
+  [data-position-detail] .dm-pvr-key:is([data-key="in"], [data-key="out"], [data-key="price"]) .dm-pvr-swatch { height: 1.5px; background: rgb(247 241 234 / 0.86); }
+  [data-position-detail] .dm-pvr-key[data-key="now"] .dm-pvr-swatch { border-top-color: rgb(247 241 234 / 0.6); }
+  [data-position-detail] .dm-pvr-chip, [data-position-detail] .dm-pvr-chip[data-tone] { padding: 0; background: none; color: var(--fg); }
+  [data-position-detail] .dm-pvr-chip .dm-pvr-chip-word { font-size: 0.75rem; line-height: 0.9375rem; color: var(--fg-subtle); opacity: 1; }
+  [data-position-detail] .dm-pvr-chip .dm-pvr-chip-fig { display: inline-block; justify-self: start; margin-top: 2px; padding: 1px 0.375rem; border-radius: 0.375rem; background: rgb(255 236 220 / 0.07); font-size: 0.78125rem; line-height: 1.125rem; font-weight: 500; }
+  [data-position-detail] .dm-pvr-label .dm-pvr-label-word { font-size: 0.75rem; line-height: 0.9375rem; }
   [data-position-detail] .dm-pvr-edge { stroke: rgb(95 208 154); stroke-opacity: 0.5; }
   [data-position-detail] .dm-pvr-leader:not([data-tone]) { stroke: rgb(95 208 154); stroke-opacity: 0.5; }
-  [data-position-detail] :is(.dm-pvr-label-word, .dm-pvr-chip-word) { font-size: 0.6875rem; line-height: 0.8125rem; font-weight: 400; letter-spacing: -0.01em; text-transform: none; }
+  [data-position-detail] :is(.dm-pvr-label-word, .dm-pvr-chip-word) { font-weight: 400; letter-spacing: -0.01em; text-transform: none; }
   [data-position-detail] .dm-pvr-label-word { color: var(--fg-subtle); }
-  [data-position-detail] .dm-pvr-chip:not([data-tone]) { background: var(--v4-w08); }
+
   [data-position-detail] .dm-pvr-legend { gap: 0.375rem 1.125rem; font-size: 0.78125rem; line-height: 1.125rem; color: var(--fg-subtle); }
   [data-position-detail] .dm-pvr-key { gap: 0.5rem; }
   [data-position-detail] .dm-pvr-key:not([data-key="in"], [data-key="out"], [data-key="price"], [data-key="now"]) .dm-pvr-swatch { background: rgb(95 208 154 / 0.12); box-shadow: inset 0 1px 0 rgb(95 208 154 / 0.6), inset 0 -1px 0 rgb(95 208 154 / 0.6); }
@@ -294,7 +425,7 @@
   /* ==== Activity and Details: quiet rows in the card, the details a ring card closed until asked ================== */
   [data-position-detail] .dm-pos-grid { gap: 0.875rem; margin-top: 0.875rem; }
   [data-position-detail] .dm-pos-grid > .dm-pos-card, [data-position-detail] .dm-pos-grid > .dm-card:not(.dm-pos-details) { padding: 0.5rem 0.625rem 0.75rem; border: 0; border-radius: 1.625rem; background: var(--v4-card-lift), var(--card); box-shadow: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 var(--v4-w06), var(--v4-card-drop); }
-  [data-position-detail] .dm-pos-grid > .dm-pos-card > .dm-title, [data-position-detail] .dm-pos-grid .dm-activity-head > .dm-title { padding: 0.875rem 0.5rem 0.25rem 0.75rem; font-family: var(--font-display); font-size: 2.375rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
+  [data-position-detail] .dm-pos-grid > .dm-pos-card > .dm-title, [data-position-detail] .dm-pos-grid .dm-activity-head > .dm-title { padding: 1.375rem 1.125rem 0.625rem 1.375rem; font-family: var(--font-display); font-size: 2.375rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
   .dm-pos-activity { gap: 0.5rem; }
   .dm-pos-activity .dm-activity-list { display: grid; gap: 2px; }
   .dm-pos-activity .dm-activity-list .dm-rcpt-operation { border-radius: 0.875rem; transition: background-color 0.18s var(--ease-std); }
@@ -312,8 +443,15 @@
   .dm-pos-activity .dm-receipt-check { display: inline-grid; place-items: center; flex: none; border-radius: 999px; background: rgb(95 208 154 / 0.12); color: var(--money-in); transition: scale 0.3s var(--ease-enter); }
   .dm-pos-activity .dm-rcpt-operation > summary:hover .dm-receipt-check { scale: 1.06; }
   .dm-pos-activity .dm-rcpt-operation > summary:hover .dm-rcpt-amount { translate: 0 -1px; }
-  .dm-pos-activity .dm-rcpt-chevron { color: var(--fg-faint); transition: rotate 0.35s var(--ease-enter), color 0.18s var(--ease-std); }
-  .dm-pos-activity .dm-rcpt-operation > summary:hover .dm-rcpt-chevron { color: var(--fg); }
+  /* The chevron in its 34px circle: on hover a quiet fill, full ink and a 2px drop; it turns when the receipt opens. */
+  .dm-pos-activity .dm-rcpt-chevron { box-sizing: content-box; padding: 0.5625rem; border-radius: 999px; color: var(--fg-faint); transition: rotate 0.35s var(--ease-enter), translate 0.25s var(--ease-enter), background-color 0.18s var(--ease-std), color 0.18s var(--ease-std); }
+  .dm-pos-activity .dm-rcpt-operation > summary:hover .dm-rcpt-chevron { background: var(--v4-w06); color: var(--fg); translate: 0 2px; }
+  .dm-pos-activity .dm-rcpt-operation[open] > summary:hover .dm-rcpt-chevron { translate: 0 0; }
+  /* The ledger rows (Fees collected, Fees added back, Opened): round icons, no separators, the receipts' hover fill. */
+  .dm-pos-activity .dm-fees-act-verb > :is(.dm-icon-tile, .dm-fees-act-pip) { border-radius: 999px; }
+  .dm-pos-activity .dm-activity-list > * + * { border-top: 0; box-shadow: none; }
+  .dm-pos-activity .dm-fees-act { border-radius: 0.875rem; transition: background-color 0.18s var(--ease-std); }
+  .dm-pos-activity .dm-fees-act:hover { background: var(--v4-w045); }
   .dm-pos-activity .dm-rcpt-operation[open] > summary .dm-rcpt-chevron { rotate: 180deg; color: var(--fg); }
   /* A receipt opens to its facts in an inset box. */
   .dm-pos-activity .dm-rcpt-detail { padding: 0.25rem 0.75rem 1rem 1.375rem; }
@@ -332,7 +470,13 @@
   [data-position-detail] .dm-pos-details { margin-bottom: 10rem; border: 0; border-radius: 1.25rem; background: transparent; box-shadow: inset 0 0 0 1px var(--border); }
   [data-position-detail] .dm-pos-details-head { gap: 0.875rem; min-height: 3.75rem; padding: 0 0.75rem 0 1.375rem; border-radius: 1.25rem; transition: background-color 0.18s var(--ease-std); }
   [data-position-detail] .dm-pos-details-head:hover { background: rgb(255 236 220 / 0.035); }
-  [data-position-detail] .dm-pos-details-head > .dm-title { font-family: var(--font-sans); font-size: 0.96875rem; line-height: 1.375rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); }
+  [data-position-detail] .dm-pos-details-head > .dm-title { font-family: var(--font-sans); font-size: 1rem; line-height: 1.375rem; font-weight: 400; letter-spacing: -0.01em; color: var(--fg); }
+  /* Robinhood's head carries its hint on the right, quiet, a step up on hover (none on Base, Arbitrum or a phone). */
+  [data-position-detail]:not([data-position-v2]) .dm-pos-details-hint { display: block; flex: 1; min-width: 0; font-size: 0.8125rem; line-height: 1.125rem; font-weight: 400; color: var(--fg-subtle); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color 0.18s var(--ease-std); }
+  [data-position-detail]:not([data-position-v2]) .dm-pos-details-head:hover .dm-pos-details-hint { color: var(--fg-muted); }
+  @media (max-width: 859px) {
+    [data-position-detail]:not([data-position-v2]) .dm-pos-details-hint { display: none; }
+  }
   [data-position-detail] .dm-pos-details-head > svg { box-sizing: content-box; width: 1rem; height: 1rem; padding: 0.5625rem; border-radius: 999px; color: var(--fg-subtle); transition: rotate 0.35s var(--ease-enter), color 0.18s var(--ease-std), background-color 0.18s var(--ease-std); }
   [data-position-detail] .dm-pos-details-head:hover > svg { color: var(--fg); background: var(--v4-w06); }
   [data-position-detail] .dm-pos-details[open] > .dm-pos-details-head > svg { rotate: 180deg; }
@@ -342,6 +486,8 @@
   [data-position-detail] .dm-pos-facts > div:hover { background: rgb(255 236 220 / 0.03); }
   [data-position-detail] .dm-pos-facts dt { flex: none; max-width: 48%; font-size: 0.84375rem; line-height: 1.25rem; color: var(--fg-subtle); }
   [data-position-detail] .dm-pos-facts dd { min-width: 0; font-size: 0.84375rem; line-height: 1.25rem; font-weight: 500; color: var(--fg); text-align: right; overflow-wrap: anywhere; }
+  /* A hex value (the kit's .hx): Geist Mono 13px, regular, muted. */
+  [data-position-detail] .dm-pos-facts .dm-hex { font-size: 0.8125rem; line-height: 1.25rem; font-weight: 400; color: var(--fg-muted); }
   /* Label and value share a baseline (a two-line value starts on its label's line); single rows keep their 44px. */
   [data-position-detail] .dm-pos-facts > div { align-items: baseline; padding-block: 0.75rem; }
   /* Token amounts read at the facts' size, each amount with its unit on one line. */
@@ -352,6 +498,12 @@
   [data-position-detail] .dm-pos-facts dd .dm-pos-amounts .dm-acct-amount-symbol { font-weight: 400; color: var(--fg-muted); }
   /* A sentence as a value (custody, fees history, Domino's permission) reads in the regular weight. */
   [data-position-detail] .dm-pos-facts :is(dd > [data-position-custody], dd > [data-history-source], [data-position-zap-approval] > dd) { font-weight: 400; text-wrap: pretty; }
+  /* Base and Arbitrum (position-base.html .dt-b): two columns of rows 24px apart, a sentence row across both. */
+  @media (min-width: 860px) {
+    [data-position-v2] .dm-pos-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 1.5rem; }
+    [data-position-v2] .dm-pos-facts > div:has(> dd :is([data-position-custody], [data-history-source], .dm-pos-amounts, [data-usd-detail], [data-usd-price-reason])), [data-position-v2] .dm-pos-facts > [data-position-zap-approval] { grid-column: 1 / -1; }
+    [data-position-v2] .dm-pos-facts > div:has(> dd > [data-position-custody]) > dd, [data-position-v2] .dm-pos-facts > [data-position-zap-approval] > dd { max-width: 64%; color: var(--fg-muted); }
+  }
   [data-position-detail] .dm-pos-details > .dm-pos-links { gap: 0.5rem; margin: 0.625rem 0.75rem 0.875rem; padding: 0.75rem 2px 0; box-shadow: inset 0 1px 0 var(--border); }
   [data-position-detail] .dm-pos-links .dm-btn > svg { color: var(--fg-subtle); transition: translate 0.3s var(--ease-enter), color 0.2s var(--ease-std); }
   [data-position-detail] .dm-pos-links .dm-btn:hover > svg { translate: 0 -1px; color: var(--primary); }
@@ -393,6 +545,20 @@
   .dm-pa[data-position-dialog] .dm-pa-chip .dm-option:is(:hover, [data-active]) { background: var(--v4-w045); color: var(--fg); }
   .dm-pa[data-position-dialog] .dm-pa-chip .dm-option:is(:hover, [data-active])::before { opacity: 1; scale: 1; }
   .dm-pa[data-position-dialog] .dm-pa-chip .dm-option[aria-selected="true"] { color: var(--fg); }
+  /* The list (the kit's .as-lbx): its "Pay with" label on top, the chosen token's Tangerine check, discs that tilt on
+     hover; it grows from its corner (scale .96 and 4px). Where it opens stays ChipSelect's (below, or above with room). */
+  .dm-pa[data-position-dialog] .dm-pa-chip > .dm-listbox { transform-origin: top right; animation-name: dm-v4p-lbx; }
+  .dm-pa[data-position-dialog] .dm-pa-chip > .dm-listbox::before { content: 'Pay with' / ''; display: block; padding: 0.5rem 0.75rem 0.375rem 0.875rem; font-size: 0.75rem; line-height: 1rem; font-weight: 400; color: var(--fg-subtle); }
+  .dm-pa[data-position-dialog] .dm-pa-chip .dm-option[aria-selected="true"]::after { content: ''; flex: none; margin-left: auto; width: 0.875rem; height: 0.875rem; background: var(--primary); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='M3 7.4 5.7 10.1 11.2 4.2' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 0.875rem no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='M3 7.4 5.7 10.1 11.2 4.2' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 0.875rem no-repeat; animation: dm-v4-pip 0.3s var(--e-enter) backwards; }
+  .dm-pa[data-position-dialog] .dm-pa-chip .dm-option > :is(img, svg, span):first-child { transition: rotate 0.3s var(--e-enter), scale 0.3s var(--e-enter); }
+  .dm-pa[data-position-dialog] .dm-pa-chip .dm-option:hover > :is(img, svg, span):first-child { rotate: -8deg; scale: 1.06; }
+  /* Both tokens: the second panel opens under the + (its height and opacity), never at once. */
+  .dm-pa[data-position-dialog] .dm-flow-pair > .dm-flow-link ~ .dm-flow-pair-row { overflow: clip; overflow-clip-margin: 0.375rem; transition: height 0.45s var(--e-enter), opacity 0.25s var(--ease-std); }
+  @supports (interpolate-size: allow-keywords) {
+    @starting-style {
+      .dm-pa[data-position-dialog] .dm-flow-pair > .dm-flow-link ~ .dm-flow-pair-row { height: 0; opacity: 0; }
+    }
+  }
   .dm-pa[data-position-dialog] .dm-flow-link { position: relative; z-index: 2; display: inline-flex; align-items: center; justify-content: center; justify-self: center; width: 1.875rem; height: 1.875rem; margin: -1.125rem auto; border-radius: 999px; background: var(--card); box-shadow: inset 0 0 0 1px var(--border-lip); color: var(--fg-muted); animation: dm-v4p-pop 0.45s var(--e-pop) 0.12s backwards; }
   .dm-pa[data-position-dialog] .dm-pa-mode { height: 2.125rem; border-radius: 0.6875rem; }
   .dm-pa[data-position-dialog] .dm-pa-mode .dm-seg-item { height: 1.75rem; padding: 0 0.6875rem; border-radius: 0.5rem; font-size: 0.8125rem; }
@@ -400,12 +566,27 @@
 
   /* Change range: today's price, four widths in one track, two ends on a hairline, the comparison well. */
   .dm-pa[data-position-dialog] .dm-range-edit { gap: 0.875rem; }
-  .dm-pa[data-position-dialog] .dm-range-reference { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.25rem 1rem; padding: 2px 2px 1rem; border: 0; box-shadow: inset 0 -1px 0 var(--border); }
+  .dm-pa[data-position-dialog] .dm-range-reference { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.25rem 1rem; padding: 2px 2px 0.25rem; border: 0; box-shadow: none; }
   .dm-pa[data-position-dialog] .dm-range-reference p { margin: 0; font-size: 0.90625rem; line-height: 1.25rem; font-weight: 500; color: var(--fg-muted); }
   .dm-pa[data-position-dialog] .dm-range-reference strong { font-size: 0.90625rem; line-height: 1.25rem; font-weight: 500; color: var(--fg); }
   .dm-pa[data-position-dialog] .dm-range-width { gap: 0.625rem; }
   .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-choices--compact { gap: 0.1875rem; padding: 0.1875rem; border-radius: 1.0625rem; }
-  .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-choices--compact > .dm-pa-choice { min-height: 4.75rem; border-radius: 0.875rem; font-size: 0.84375rem; }
+  .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-choices--compact > .dm-pa-choice { gap: 0.5625rem; min-height: 4.75rem; border-radius: 0.875rem; font-size: 0.84375rem; }
+  /* Each width's picture (the kit's .as-ch glyphs): grey; green once chosen; its band stretches a little on hover. */
+  .dm-pa[data-position-dialog] .dm-range-glyph { display: block; width: 3.5rem; height: 1.25rem; overflow: visible; }
+  .dm-pa[data-position-dialog] .dm-range-glyph .dm-gl-ax { stroke: rgb(255 236 220 / 0.2); stroke-width: 1; }
+  .dm-pa[data-position-dialog] .dm-range-glyph .dm-gl-now { stroke: var(--fg-subtle); stroke-width: 1; stroke-dasharray: 1.5 2; }
+  .dm-pa[data-position-dialog] .dm-range-glyph .dm-gl-band { fill: rgb(255 236 220 / 0.06); stroke: rgb(255 236 220 / 0.3); stroke-width: 1; transition: fill 0.2s var(--ease-std), stroke 0.2s var(--ease-std); }
+  .dm-pa[data-position-dialog] .dm-range-glyph .dm-gl-hd { stroke: var(--fg-muted); stroke-width: 1.6; stroke-linecap: round; transition: stroke 0.2s var(--ease-std); }
+  .dm-pa[data-position-dialog] .dm-range-glyph .dm-gl-b { transform-box: fill-box; transform-origin: center; transition: transform 0.3s var(--e-enter); }
+  .dm-pa[data-position-dialog] .dm-range-glyph[data-glyph="custom"] .dm-gl-band { stroke-dasharray: 2 2; }
+  .dm-pa[data-position-dialog] .dm-pa-choice:hover:not(:disabled) .dm-range-glyph .dm-gl-b { transform: scaleX(1.08); }
+  .dm-pa[data-position-dialog] .dm-pa-choice[aria-checked="true"] .dm-range-glyph .dm-gl-band { fill: rgb(95 208 154 / 0.16); stroke: rgb(95 208 154 / 0.6); }
+  .dm-pa[data-position-dialog] .dm-pa-choice[aria-checked="true"] .dm-range-glyph .dm-gl-hd { stroke: var(--money-in); }
+  /* Look before you choose: pointing at Narrow, Medium or Wide moves the new band there (RangePicture's --nl/--nw...). */
+  .dm-pa[data-position-dialog] .dm-range-edit:has([data-range-choice="narrow"]:hover:not(:disabled)) .dm-range-tracks[style*="--nl"] .dm-range-track .dm-pa-range-band { left: var(--nl) !important; width: var(--nw) !important; }
+  .dm-pa[data-position-dialog] .dm-range-edit:has([data-range-choice="medium"]:hover:not(:disabled)) .dm-range-tracks[style*="--ml"] .dm-range-track .dm-pa-range-band { left: var(--ml) !important; width: var(--mw) !important; }
+  .dm-pa[data-position-dialog] .dm-range-edit:has([data-range-choice="wide"]:hover:not(:disabled)) .dm-range-tracks[style*="--wl"] .dm-range-track .dm-pa-range-band { left: var(--wl) !important; width: var(--ww) !important; }
   .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bounds { position: relative; gap: 0; margin: 0 -0.375rem; }
   .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bound { position: relative; gap: 0; padding: 0.875rem 1rem; border-radius: 1.125rem; background: transparent; box-shadow: none; transition: box-shadow 0.2s var(--ease-std), background-color 0.2s var(--ease-std); }
   .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bound + .dm-pa-bound::before { content: ''; position: absolute; left: 0; top: 0.875rem; bottom: 0.875rem; width: 1px; background: var(--border); transition: opacity 0.2s var(--ease-std); }
@@ -427,26 +608,32 @@
   .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bound-unit { margin-top: 0.5rem; font-size: 0.78125rem; line-height: 1.125rem; color: var(--fg-subtle); }
   .dm-pa[data-position-dialog] .dm-range-comparison { padding: 0.875rem 1rem 1rem; border: 0; border-radius: 1.125rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border); }
   .dm-pa[data-position-dialog] .dm-range-track-head { min-height: 1.125rem; font-size: 0.78125rem; line-height: 1.125rem; color: var(--fg-subtle); }
-  .dm-pa[data-position-dialog] .dm-range-track-head [data-key="new"] { color: var(--fg-muted); }
+  /* The kit's .cw-r: the labels quiet, the price now and the new range's reach a step up. */
+  .dm-pa[data-position-dialog] .dm-range-track-head [data-key="new"] { color: var(--fg-subtle); }
+  .dm-pa[data-position-dialog] .dm-range-track-head :is([data-key="now"], [data-key="new"] + span) { color: var(--fg-muted); }
   .dm-pa[data-position-dialog] .dm-range-track { height: 1.375rem; margin-bottom: 0.375rem; border-radius: 0; background: linear-gradient(var(--border-lip), var(--border-lip)) center / 100% 1px no-repeat; }
   .dm-pa[data-position-dialog] .dm-range-track .dm-pa-range-was { top: 0.25rem; bottom: 0.25rem; border-radius: 2px; background: repeating-linear-gradient(135deg, rgb(255 236 220 / 0.16) 0 1.5px, rgb(255 236 220 / 0) 1.5px 0.3125rem); box-shadow: inset 1px 0 0 rgb(255 236 220 / 0.32), inset -1px 0 0 rgb(255 236 220 / 0.32); }
-  .dm-pa[data-position-dialog] .dm-range-track .dm-pa-range-band { top: 0.1875rem; bottom: 0.1875rem; border-radius: 0; background: linear-gradient(180deg, rgb(95 208 154 / 0.12), rgb(95 208 154 / 0.32)); box-shadow: none; }
+  .dm-pa[data-position-dialog] .dm-range-track .dm-pa-range-band { top: 0.1875rem; bottom: 0.1875rem; border-radius: 0; background: linear-gradient(180deg, rgb(95 208 154 / 0.12), rgb(95 208 154 / 0.32)); box-shadow: none; transition: left 0.45s var(--e-enter), width 0.45s var(--e-enter); }
   /* The new range's two ends: little dominoes standing on the track (a groove across each). */
   .dm-pa[data-position-dialog] .dm-range-track .dm-pa-range-band::before, .dm-pa[data-position-dialog] .dm-range-track .dm-pa-range-band::after { content: ''; position: absolute; top: 50%; width: 0.625rem; height: 1.125rem; margin-top: -0.5625rem; border-radius: 0.1875rem; background: linear-gradient(var(--card), var(--card)) center / 0.25rem 1px no-repeat, rgb(255 157 98 / 0.6); box-shadow: 0 0 0 1px var(--card); transition: background-color 0.2s var(--ease-std); }
   .dm-pa[data-position-dialog] .dm-range-track .dm-pa-range-band::before { left: -0.3125rem; }
   .dm-pa[data-position-dialog] .dm-range-track .dm-pa-range-band::after { right: -0.3125rem; }
   .dm-pa[data-position-dialog] .dm-range-comparison:hover .dm-range-track .dm-pa-range-band::before, .dm-pa[data-position-dialog] .dm-range-comparison:hover .dm-range-track .dm-pa-range-band::after { background-color: var(--primary); }
+  /* Pointing at an end tilts its handle and lights it. */
+  .dm-pa[data-position-dialog] .dm-range-track .dm-pa-range-band::before, .dm-pa[data-position-dialog] .dm-range-track .dm-pa-range-band::after { transition: rotate 0.4s var(--e-enter), background-color 0.2s var(--ease-std); }
+  .dm-pa[data-position-dialog] .dm-range-edit:has([data-position-bound="lower"]:hover) .dm-range-track .dm-pa-range-band::before, .dm-pa[data-position-dialog] .dm-range-edit:has([data-position-bound="upper"]:hover) .dm-range-track .dm-pa-range-band::after { rotate: -18deg; background-color: var(--primary-hover); }
   .dm-pa[data-position-dialog] .dm-range-tracks[data-in="false"] .dm-range-track .dm-pa-range-band { background: linear-gradient(180deg, rgb(255 236 220 / 0.04), rgb(255 236 220 / 0.12)); }
   .dm-pa[data-position-dialog] .dm-range-track .dm-pa-range-axis { display: none; }
   .dm-pa[data-position-dialog] .dm-range-track .dm-pa-range-now::before { left: -0.5px; width: 1px; border-radius: 0; background: linear-gradient(var(--fg-muted) 50%, transparent 0) 0 0 / 1px 0.3125rem repeat-y; opacity: 0.8; }
   .dm-pa[data-position-dialog] .dm-range-track .dm-pa-range-now::after { width: 0.375rem; height: 0.375rem; left: -0.1875rem; background: var(--fg); box-shadow: 0 0 0 0.1875rem rgb(247 241 234 / 0.14); }
-  .dm-pa[data-position-dialog] .dm-range-result { display: flex; gap: 0.625rem; margin: 0.625rem 0 0; padding: 0 2px; font-size: 0.84375rem; line-height: 1.5; color: var(--fg-muted); }
+  .dm-pa[data-position-dialog] .dm-range-result { display: flex; gap: 0.625rem; margin: 0; padding: 0 2px; font-size: 0.84375rem; line-height: 1.5; color: var(--fg-muted); }
   .dm-pa[data-position-dialog] .dm-range-result::before { content: ''; flex: none; width: 0.375rem; height: 0.375rem; margin-top: 0.4375rem; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--fg-subtle); }
   .dm-pa[data-position-dialog] .dm-range-result[data-position-range-result="inside"]::before { background: var(--money-in); box-shadow: 0 0 0 0.1875rem rgb(95 208 154 / 0.16); }
   .dm-pa[data-position-dialog] .dm-range-result[data-position-range-result="outside"] { color: var(--fg); }
   .dm-pa[data-position-dialog] .dm-range-result[data-position-range-result="outside"]::before { box-shadow: inset 0 0 0 1.5px var(--fg); }
   .dm-pa[data-position-dialog] .dm-range-detail { font-size: 0.84375rem; line-height: 1.5; color: var(--fg-muted); }
-  .dm-pa[data-position-dialog] .dm-range-detail > summary { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 2.375rem; margin-left: -0.375rem; padding: 0 0.75rem 0 0.5rem; border-radius: 0.625rem; list-style: none; font-weight: 500; color: var(--fg-muted); transition: background-color 0.18s var(--ease-std), color 0.18s var(--ease-std), scale 0.1s var(--ease-fast); }
+  /* A <button> on the approved sheet (the kit's .qd): its 16px regular text in the cream ink; the chevron stays quiet. */
+  .dm-pa[data-position-dialog] .dm-range-detail > summary { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 2.375rem; margin-left: -0.375rem; padding: 0 0.75rem 0 0.5rem; border-radius: 0.625rem; list-style: none; font-size: 1rem; line-height: 1.25rem; font-weight: 400; color: var(--fg); transition: background-color 0.18s var(--ease-std), color 0.18s var(--ease-std), scale 0.1s var(--ease-fast); }
   .dm-pa[data-position-dialog] .dm-range-detail > summary::-webkit-details-marker { display: none; }
   .dm-pa[data-position-dialog] .dm-range-detail > summary::before { content: ''; flex: none; width: 0.875rem; height: 0.875rem; background: var(--fg-subtle); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='m5 3 4 4-4 4' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 0.875rem no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='m5 3 4 4-4 4' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 0.875rem no-repeat; transition: rotate 0.3s var(--ease-enter), translate 0.3s var(--ease-enter), background-color 0.18s var(--ease-std); }
   .dm-pa[data-position-dialog] .dm-range-detail > summary:hover { background: var(--v4-w04); color: var(--fg); }
@@ -465,7 +652,7 @@
   .dm-pa[data-position-dialog] .dm-pa-choices:not(.dm-pa-choices--compact):has(> .dm-pa-choice > .dm-pa-choice-icon) > .dm-pa-choice { position: relative; display: grid; grid-template-columns: 1.25rem 2.875rem minmax(0, 1fr); justify-items: start; align-items: center; align-content: center; gap: 0.875rem; min-height: 3.625rem; padding: 0 1rem; border-radius: 0.875rem; background: transparent; box-shadow: none; color: var(--fg); font-size: 0.9375rem; text-align: left; }
   .dm-pa[data-position-dialog] .dm-pa-choices:not(.dm-pa-choices--compact):has(> .dm-pa-choice > .dm-pa-choice-icon) > .dm-pa-choice::before { content: ''; grid-column: 1; grid-row: 1; width: 1.25rem; height: 1.25rem; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--border-strong); background: radial-gradient(circle, var(--primary) 0 0.25rem, transparent 0.28125rem) center / 0 0 no-repeat; transition: box-shadow 0.2s var(--ease-std), background-size 0.35s var(--ease-enter); }
   .dm-pa[data-position-dialog] .dm-pa-choices:not(.dm-pa-choices--compact):has(> .dm-pa-choice > .dm-pa-choice-icon) > .dm-pa-choice > .dm-pa-choice-icon { grid-column: 2; grid-row: 1; justify-content: flex-start; }
-  .dm-pa[data-position-dialog] .dm-pa-choices:not(.dm-pa-choices--compact):has(> .dm-pa-choice > .dm-pa-choice-icon) > .dm-pa-choice > .dm-pa-choice-title { grid-column: 3; grid-row: 1; font-size: 0.9375rem; line-height: 1.25rem; }
+  .dm-pa[data-position-dialog] .dm-pa-choices:not(.dm-pa-choices--compact):has(> .dm-pa-choice > .dm-pa-choice-icon) > .dm-pa-choice > .dm-pa-choice-title { grid-column: 3; grid-row: 1; font-size: 1rem; line-height: 1.25rem; font-weight: 400; }
   .dm-pa[data-position-dialog] .dm-pa-choices:not(.dm-pa-choices--compact):has(> .dm-pa-choice > .dm-pa-choice-icon) > .dm-pa-choice:hover:not(:disabled) { background: var(--v4-w045); }
   .dm-pa[data-position-dialog] .dm-pa-choices:not(.dm-pa-choices--compact):has(> .dm-pa-choice > .dm-pa-choice-icon) > .dm-pa-choice:hover:not(:disabled)::before { box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong); background-size: 75% 75%; }
   .dm-pa[data-position-dialog] .dm-pa-choices:not(.dm-pa-choices--compact):has(> .dm-pa-choice > .dm-pa-choice-icon) > .dm-pa-choice[aria-checked="true"] { background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.5); color: var(--fg); }
@@ -479,39 +666,145 @@
      sent and lies down green when done (colour only under reduced motion). */
   .dm-pa[data-position-dialog] .dm-flow-wsteps { margin: 0; padding: 0.375rem 0; border-radius: 1.125rem; background: rgb(255 236 220 / 0.025); box-shadow: inset 0 0 0 1px var(--border); }
   .dm-pa[data-position-dialog] .dm-flow-wsteps > li { gap: 0.875rem; min-height: 0; padding: 0.5625rem 0.75rem; background: none; }
-  .dm-pa[data-position-dialog] .dm-flow-wsteps > li:not(:last-child)::before { top: 2.625rem; bottom: -0.6875rem; left: 1.625rem; width: 1px; border-radius: 0; background: var(--border); }
-  .dm-pa[data-position-dialog] .dm-flow-wsteps > li[data-step-state="done"]:not(:last-child)::before { background: rgb(255 157 98 / 0.45); }
-  .dm-pa[data-position-dialog] .dm-flow-wsteps .dm-step-marker { width: 1.125rem; height: 1.875rem; margin: 2px 0.375rem 0; align-items: start; padding-top: 2px; border-radius: 0.3125rem; background: linear-gradient(var(--border-strong), var(--border-strong)) center / 0.625rem 1px no-repeat, var(--card); box-shadow: inset 0 0 0 1.25px var(--border-strong); color: var(--fg-subtle); font-size: 0.5625rem; line-height: 0.75rem; transform-origin: 50% 80%; transition: rotate 0.45s var(--ease-enter), translate 0.45s var(--ease-enter), background-color 0.2s var(--ease-std), box-shadow 0.2s var(--ease-std), color 0.2s var(--ease-std); }
-  .dm-pa[data-position-dialog] .dm-flow-wsteps .dm-step-marker[data-state="current"] { background: linear-gradient(rgb(255 157 98 / 0.5), rgb(255 157 98 / 0.5)) center / 0.625rem 1px no-repeat, rgb(255 157 98 / 0.08); box-shadow: inset 0 0 0 1.25px rgb(255 157 98 / 0.7), 0 0 0 0.25rem rgb(255 157 98 / 0.1); color: var(--primary); }
-  .dm-pa[data-position-dialog] .dm-flow-wsteps .dm-step-marker[data-state="current"]::after { border-radius: 0.5625rem; }
+  /* The connector between two steps fills Tangerine from the top once the step above is done (after its tile falls). */
+  .dm-pa[data-position-dialog] .dm-flow-wsteps > li:not(:last-child)::before { top: 2.625rem; bottom: -0.6875rem; left: 1.625rem; width: 1px; border-radius: 0; background: linear-gradient(rgb(255 157 98 / 0.45), rgb(255 157 98 / 0.45)) top / 100% 0 no-repeat, var(--border); transition: background-size 0.4s var(--e-enter); }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps > li[data-step-state="done"]:not(:last-child)::before { background-size: 100% 100%, auto; transition-delay: 0.34s; }
+  /* Each step a small domino (the kit's .as-tile): one, two or three pips above its groove, no digit; neutral through the
+     review; Tangerine and leaning in the wallet (8deg), further once sent (22deg); done, it falls flat and turns green. */
+  .dm-pa[data-position-dialog] .dm-flow-wsteps .dm-step-marker { --pip: var(--fg-subtle); --groove: var(--border-strong); --tile: var(--card); width: 1.125rem; height: 1.875rem; margin: 2px 0.375rem 0; align-items: start; padding-top: 2px; border-radius: 0.3125rem; background: linear-gradient(var(--groove), var(--groove)) center / 0.625rem 1px no-repeat, var(--tile); box-shadow: inset 0 0 0 1.25px var(--border-strong); color: var(--fg-subtle); font-size: 0.5625rem; line-height: 0.75rem; transform-origin: 50% 80%; transition: rotate 0.45s var(--ease-enter), translate 0.45s var(--ease-enter), background-color 0.2s var(--ease-std), box-shadow 0.2s var(--ease-std), color 0.2s var(--ease-std); }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps .dm-step-marker:not([data-state="done"]) { font-size: 0; }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps > li:nth-child(1) .dm-step-marker:not([data-state="done"]) { background: radial-gradient(circle at 0.5625rem 0.46875rem, var(--pip) 0 1.5px, transparent 1.6px) no-repeat, linear-gradient(var(--groove), var(--groove)) center / 0.625rem 1px no-repeat, var(--tile); }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps > li:nth-child(2) .dm-step-marker:not([data-state="done"]) { background: radial-gradient(circle at 0.34375rem 0.28125rem, var(--pip) 0 1.5px, transparent 1.6px) no-repeat, radial-gradient(circle at 0.78125rem 0.65625rem, var(--pip) 0 1.5px, transparent 1.6px) no-repeat, linear-gradient(var(--groove), var(--groove)) center / 0.625rem 1px no-repeat, var(--tile); }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps > li:nth-child(n + 3) .dm-step-marker:not([data-state="done"]) { background: radial-gradient(circle at 0.34375rem 0.28125rem, var(--pip) 0 1.5px, transparent 1.6px) no-repeat, radial-gradient(circle at 0.5625rem 0.46875rem, var(--pip) 0 1.5px, transparent 1.6px) no-repeat, radial-gradient(circle at 0.78125rem 0.65625rem, var(--pip) 0 1.5px, transparent 1.6px) no-repeat, linear-gradient(var(--groove), var(--groove)) center / 0.625rem 1px no-repeat, var(--tile); }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps .dm-step-marker[data-state="current"]::after { content: none; }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps > li:is([data-step-state="wallet"], [data-step-state="chain"]) .dm-step-marker { --pip: var(--primary); --groove: rgb(255 157 98 / 0.5); --tile: rgb(255 157 98 / 0.08); box-shadow: inset 0 0 0 1.25px rgb(255 157 98 / 0.7), 0 0 0 0.25rem rgb(255 157 98 / 0.1); color: var(--primary); }
   .dm-pa[data-position-dialog] .dm-flow-wsteps > li[data-step-state="wallet"] .dm-step-marker { rotate: 8deg; }
-  .dm-pa[data-position-dialog] .dm-flow-wsteps > li[data-step-state="chain"] .dm-step-marker { rotate: 22deg; }
-  .dm-pa[data-position-dialog] .dm-flow-wsteps > li[data-step-state="done"] .dm-step-marker { place-items: center; padding: 0; background: rgb(95 208 154 / 0.12); box-shadow: inset 0 0 0 1.25px rgb(95 208 154 / 0.55); color: var(--money-in); rotate: 90deg; translate: -2px 0.25rem; animation: none; }
-  .dm-pa[data-position-dialog] .dm-flow-wsteps > li[data-step-state="done"] .dm-step-marker > svg { width: 0.75rem; height: 0.75rem; rotate: -90deg; }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps > li[data-step-state="chain"] .dm-step-marker { rotate: 22deg; transition-duration: 0.5s, 0.5s, 0.2s, 0.2s, 0.2s; }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps > li[data-step-state="done"] .dm-step-marker { place-items: center; padding: 0; background: rgb(95 208 154 / 0.12); box-shadow: inset 0 0 0 1.25px rgb(95 208 154 / 0.55); color: var(--money-in); rotate: 90deg; translate: -0.5625rem -0.4375rem; animation: none; transition: rotate 0.46s cubic-bezier(0.55, 0.06, 0.9, 0.4), translate 0.46s cubic-bezier(0.55, 0.06, 0.9, 0.4), background-color 0.25s var(--ease-std) 0.3s, box-shadow 0.25s var(--ease-std) 0.3s, color 0.25s var(--ease-std) 0.3s; }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps > li[data-step-state="done"] .dm-step-marker > svg { width: 0.75rem; height: 0.75rem; rotate: -90deg; animation: dm-v4-fade 0.2s var(--ease-std) 0.4s backwards; }
+  /* A step the wallet declined stands back up with a red ring and a ×, and shakes once. */
+  .dm-pa[data-position-dialog] .dm-flow-wsteps > li[data-step-failed] .dm-step-marker:not([data-state="done"]) { rotate: none; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10' fill='none'%3E%3Cpath d='m2.5 2.5 5 5m0-5-5 5' stroke='%23f4607a' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") center / 0.625rem no-repeat, rgb(244 96 122 / 0.06); box-shadow: inset 0 0 0 1.25px rgb(244 96 122 / 0.7), 0 0 0 0.25rem rgb(244 96 122 / 0.1); animation: dm-v4p-shake 0.38s var(--ease-std); }
   .dm-pa[data-position-dialog] .dm-flow-wsteps > li[data-step-state="failed"] .dm-step-marker { background: var(--v4-w06); color: var(--fg); }
   .dm-pa[data-position-dialog] .dm-flow-wstep-body { gap: 0.1875rem; padding-top: 0.375rem; }
   .dm-pa[data-position-dialog] .dm-flow-wstep-title { font-size: 0.9375rem; line-height: 1.35; font-weight: 500; color: var(--fg-muted); transition: color 0.2s var(--ease-std); }
   .dm-pa[data-position-dialog] .dm-flow-wsteps > li[data-step-state] .dm-flow-wstep-title { color: var(--fg); }
-  .dm-pa[data-position-dialog] .dm-flow-wstep-note { font-size: 0.8125rem; line-height: 1.45; color: var(--fg-subtle); animation: dm-v4p-fade 0.3s var(--ease-std) backwards; }
+  /* A step's line swaps in from a 3px blur; in the wallet and on the network a turning Tangerine arc leads it. */
+  .dm-pa[data-position-dialog] .dm-flow-wstep-note { font-size: 0.8125rem; line-height: 1.45; color: var(--fg-subtle); animation: dm-v4-up 0.35s var(--ease-enter) 0.06s backwards; }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps > li:is([data-step-state="wallet"], [data-step-state="chain"]) span.dm-flow-wstep-note { display: inline-flex; align-items: center; gap: 0.5rem; }
+  .dm-pa[data-position-dialog] .dm-flow-wsteps > li:is([data-step-state="wallet"], [data-step-state="chain"]) span.dm-flow-wstep-note::before { content: ''; flex: none; width: 0.875rem; height: 0.875rem; border-radius: 999px; background: conic-gradient(from var(--dm-spin), var(--primary) 0 25%, rgb(255 236 220 / 0.14) 0); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 1.8px), #000 calc(100% - 1.3px)); mask: radial-gradient(farthest-side, transparent calc(100% - 1.8px), #000 calc(100% - 1.3px)); animation: dm-spin 0.9s linear infinite; }
   .dm-pa[data-position-dialog] .dm-flow-wsteps > li[data-step-state="done"] .dm-flow-wstep-note { color: var(--money-in); }
+  /* "View on the explorer": a quiet link with the site chevron, never underlined. */
+  .dm-pa[data-position-dialog] a.dm-flow-wstep-note, .dm-pa[data-position-dialog] [data-position-direct] > a[data-step-explorer] { display: inline-flex; align-items: center; gap: 0.375rem; justify-self: start; font-size: 0.8125rem; line-height: 1.45; font-weight: 500; color: var(--fg-muted); text-decoration: none; transition: color 0.18s var(--ease-std); }
+  .dm-pa[data-position-dialog] :is(a.dm-flow-wstep-note, [data-position-direct] > a[data-step-explorer])::after { content: ''; flex: none; width: 0.75rem; height: 0.75rem; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='m5 3 4 4-4 4' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 0.75rem no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='m5 3 4 4-4 4' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 0.75rem no-repeat; transition: translate 0.25s var(--e-enter); }
+  .dm-pa[data-position-dialog] :is(a.dm-flow-wstep-note, [data-position-direct] > a[data-step-explorer]):hover { color: var(--fg); }
+  .dm-pa[data-position-dialog] :is(a.dm-flow-wstep-note, [data-position-direct] > a[data-step-explorer]):hover::after { translate: 2px 0; }
 
-  /* The receipt: the green row "Confirmed". */
-  .dm-pa[data-position-dialog] :is([data-position-receipt], [data-position-direct]) .dm-pa-status[data-state="done"] { display: flex; justify-self: stretch; min-height: 3.75rem; padding: 0 1rem; border-radius: 1rem; background: rgb(95 208 154 / 0.06); box-shadow: inset 0 0 0 1px rgb(95 208 154 / 0.18); font-size: 0.96875rem; color: var(--money-in); }
-  .dm-pa[data-position-dialog] [data-position-new-nft] { height: 2.25rem; border-radius: 0.6875rem; }
-  /* A step with the Back chevron: the head starts nearer the edge for the chevron; its description stays on the body column. */
-  .dm-flow-dialog.dm-pa[data-position-dialog] > .dm-pa-head--back > .dm-pa-lede { margin-left: 0.375rem; }
-  /* Each sheet's stage arrives with a short rise of the part that changed. */
-  .dm-pa[data-position-dialog] :is([data-position-review-stage], [data-position-direct], [data-position-receipt]) { animation: dm-v4p-up 0.5s var(--ease-enter) backwards; }
+  /* The status line while signing (the kit's .as-status): a full-width box with a turning arc; its line rises in from a
+     blur as it changes. */
+  .dm-pa[data-position-dialog] .dm-pa-status:not([data-state="done"]) { display: flex; justify-self: stretch; gap: 0.6875rem; min-height: 3rem; padding: 0 0.9375rem; border-radius: 0.875rem; background: rgb(255 236 220 / 0.035); box-shadow: inset 0 0 0 1px var(--border); font-size: 0.84375rem; line-height: 1.35; font-weight: 500; color: var(--fg); transition: background-color 0.3s var(--ease-std), box-shadow 0.3s var(--ease-std); animation: dm-v4-up 0.35s var(--ease-enter) backwards; }
+  .dm-pa[data-position-dialog] .dm-pa-status:not([data-state="done"])::before { width: 0.875rem; height: 0.875rem; background: conic-gradient(from var(--dm-spin), var(--primary) 0 25%, rgb(255 236 220 / 0.14) 0); animation-duration: 0.9s; }
+
+  /* The receipt (the kit's .as-rcpt): a green row, one small laid domino per signed step on its left (they drop flat one
+     after another), "Confirmed", and the round check on its right. */
+  .dm-pa[data-position-dialog] :is([data-position-receipt], [data-position-direct]) .dm-pa-status[data-state="done"] { display: flex; justify-self: stretch; gap: 0.875rem; min-height: 3.75rem; padding: 0 1rem; border-radius: 1rem; background: rgb(95 208 154 / 0.06); box-shadow: inset 0 0 0 1px rgb(95 208 154 / 0.18); font-size: 0.96875rem; color: var(--money-in); }
+  .dm-pa[data-position-dialog] :is([data-position-receipt], [data-position-direct]) .dm-pa-status[data-state="done"]::before { content: none; }
+  .dm-pa[data-position-dialog] :is([data-position-receipt], [data-position-direct]) .dm-pa-status[data-state="done"]::after { content: ''; flex: none; margin-left: auto; width: 1.25rem; height: 1.25rem; border-radius: 999px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='m2.75 6.25 2.25 2.25 4.25-4.75' stroke='%235fd09a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 0.75rem no-repeat, rgb(95 208 154 / 0.14); animation: dm-v4-pip 0.3s var(--e-pop) 0.8s backwards; }
+  .dm-pa[data-position-dialog] .dm-pa-laid { display: flex; flex: none; align-items: center; gap: 0.1875rem; }
+  .dm-pa[data-position-dialog] .dm-pa-laid > i { display: block; width: 1.0625rem; height: 0.625rem; border-radius: 0.1875rem; background: linear-gradient(rgb(95 208 154 / 0.45), rgb(95 208 154 / 0.45)) center / 1px calc(100% - 0.25rem) no-repeat, rgb(95 208 154 / 0.16); box-shadow: inset 0 0 0 1px rgb(95 208 154 / 0.55); transform-origin: 100% 100%; animation: dm-v4p-lay 0.42s cubic-bezier(0.55, 0.06, 0.9, 0.4) 0.35s backwards; }
+  .dm-pa[data-position-dialog] .dm-pa-laid > i:nth-child(2) { animation-delay: 0.47s; }
+  .dm-pa[data-position-dialog] .dm-pa-laid > i:nth-child(3) { animation-delay: 0.59s; }
+  /* "Open the new position" (the kit's .as-bs): 36px, its chevron moving 2px and turning Tangerine on hover. */
+  .dm-pa[data-position-dialog] [data-position-new-nft] { gap: 0.4375rem; height: 2.25rem; border-radius: 0.6875rem; }
+  .dm-pa[data-position-dialog] [data-position-new-nft]::after { content: ''; flex: none; width: 0.75rem; height: 0.75rem; background: var(--fg-subtle); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='m5 3 4 4-4 4' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 0.75rem no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='m5 3 4 4-4 4' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 0.75rem no-repeat; transition: translate 0.25s var(--e-enter), background-color 0.18s var(--ease-std); }
+  .dm-pa[data-position-dialog] [data-position-new-nft]:hover::after { translate: 2px 0; background: var(--primary); }
+  /* Withdraw's note under "You receive" swaps with a fade and a 4px rise. */
+  .dm-pa[data-position-dialog] [data-position-way-note] { animation: dm-v4-fade 0.2s var(--ease-std) backwards, dm-v4p-rise 0.3s var(--e-enter) backwards; }
+  /* "At least" (the kit's .as-least): both minimums on one line, 12px apart, quiet, without their marks. */
+  .dm-pa[data-position-dialog] [data-position-at-least] dd > .dm-pa-tokens--sm { grid-auto-flow: column; gap: 0.75rem; justify-items: end; }
+  .dm-pa[data-position-dialog] [data-position-at-least] dd > .dm-pa-tokens--sm .dm-pa-token > :first-child:not(.dm-pa-token-amount) { display: none; }
+  .dm-pa[data-position-dialog] [data-position-at-least] dd > .dm-pa-tokens--sm :is(.dm-pa-token-amount, .dm-pa-token-symbol) { font-weight: 400; color: var(--fg-muted); }
+  @media (max-width: 399px) {
+    .dm-pa[data-position-dialog] [data-position-at-least] dd > .dm-pa-tokens--sm { grid-auto-flow: row; }
+  }
+  /* Each sheet's stage arrives with a rise of the part that changed, out of a blur; the foot's buttons cross over. */
+  .dm-pa[data-position-dialog] :is([data-position-review-stage], [data-position-direct], [data-position-receipt]) { animation: dm-v4-up 0.5s var(--ease-enter) backwards; }
+  .dm-pa[data-position-dialog] > .dm-pa-foot > * { animation: dm-v4p-up 0.35s var(--ease-enter) 0.08s backwards; }
+
+  /* Signing (the kit's .as-duo): once the wallet is asked, the review's two cards sit side by side, smaller, a hairline
+     and its medallion between them; its facts, notes and Details fold away (still in the page) while the steps run. */
+  @media (min-width: 860px) {
+    .dm-pa[data-position-dialog] [data-position-review]:has(.dm-flow-wsteps > li:is([data-step-state="wallet"], [data-step-state="chain"], [data-step-state="done"])) > .dm-pa-pair { position: relative; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 1.625rem; }
+    .dm-pa[data-position-dialog] [data-position-review]:has(.dm-flow-wsteps > li:is([data-step-state="wallet"], [data-step-state="chain"], [data-step-state="done"])) > .dm-pa-pair > .dm-pa-link { position: absolute; top: 0; bottom: 0; left: calc(50% - 0.8125rem); width: 1.625rem; height: auto; margin: 0; background: radial-gradient(circle, var(--card) 0 calc(0.8125rem - 1px), var(--border-strong) calc(0.8125rem - 1px) 0.8125rem, transparent 0.8125rem) center / 1.625rem 1.625rem no-repeat, linear-gradient(var(--border), var(--border)) center / 1px 100% no-repeat; }
+    .dm-pa[data-position-dialog] [data-position-review]:has(.dm-flow-wsteps > li:is([data-step-state="wallet"], [data-step-state="chain"], [data-step-state="done"])) > .dm-pa-pair > .dm-pa-link > svg { rotate: -90deg; transition: translate 0.25s var(--e-enter); }
+    .dm-pa[data-position-dialog]:hover [data-position-review]:has(.dm-flow-wsteps > li:is([data-step-state="wallet"], [data-step-state="chain"], [data-step-state="done"])) > .dm-pa-pair > .dm-pa-link > svg { translate: 2px 0; }
+    .dm-pa[data-position-dialog] [data-position-review]:has(.dm-flow-wsteps > li:is([data-step-state="wallet"], [data-step-state="chain"], [data-step-state="done"])) > .dm-pa-pair .dm-pa-token { min-height: 2.5rem; gap: 0.5625rem; }
+    .dm-pa[data-position-dialog] [data-position-review]:has(.dm-flow-wsteps > li:is([data-step-state="wallet"], [data-step-state="chain"], [data-step-state="done"])) > .dm-pa-pair .dm-pa-token > :first-child:not(.dm-pa-token-amount) { zoom: 0.786; }
+    .dm-pa[data-position-dialog] [data-position-review]:has(.dm-flow-wsteps > li:is([data-step-state="wallet"], [data-step-state="chain"], [data-step-state="done"])) > .dm-pa-pair .dm-pa-token-amount { font-size: 1.5625rem; }
+  }
+  .dm-pa[data-position-dialog] [data-position-review] > :is(.dm-receipt, .dm-pa-notes, .dm-pa-more, [data-position-converted]) { transition: opacity 0.35s var(--ease-std) 0.12s; }
+  .dm-pa[data-position-dialog] [data-position-review]:has(.dm-flow-wsteps > li:is([data-step-state="wallet"], [data-step-state="chain"], [data-step-state="done"])) > :is(.dm-receipt, .dm-pa-notes, .dm-pa-more, [data-position-converted]) { block-size: 0; margin-top: -0.625rem; padding-block: 0; overflow: clip; opacity: 0; pointer-events: none; transition: opacity 0.2s var(--ease-std); }
 
   /* ==== Auto-exit: the edges it closes at, round direction badges, serif prices ==================================== */
-  [data-v2in-dialog="mandate"] .dm-exit-edge-list { gap: 0.25rem; }
-  [data-v2in-dialog="mandate"] .dm-exit-edge { gap: 0.875rem; min-height: 3.25rem; }
-  [data-v2in-dialog="mandate"] .dm-exit-direction { width: 1.75rem; height: 1.75rem; border: 0; box-shadow: inset 0 0 0 1px var(--border-strong); font-size: 0.8125rem; color: var(--fg-muted); }
-  [data-v2in-dialog="mandate"] .dm-exit-edge-move { font-size: 0.84375rem; color: var(--fg-muted); }
-  [data-v2in-dialog="mandate"] .dm-exit-edge-price { font-family: var(--font-display); font-size: 1.75rem; line-height: 1.1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
-  [data-v2in-dialog="mandate"] .dm-exit-edge-unit { margin-left: 0.25rem; font-family: var(--font-sans); font-size: 0.8125rem; letter-spacing: -0.01em; color: var(--fg-subtle); }
+  /* "Closes if the price" (the kit's .as-edges): a well; its two 60px rows, each a 32px round badge, the verb and a 30px
+     serif price; a row warms on hover and its badge takes the Tangerine ring, its arrow moving 1.5px. */
+  [data-v2in-dialog="mandate"] .dm-exit-edges { margin: 0 -0.625rem; padding: 1rem 0.875rem 0.5rem; border-radius: 1.25rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border); }
+  [data-v2in-dialog="mandate"] .dm-exit-edges > .dm-pa-card-head { padding: 0 2px; font-size: 0.8125rem; }
+  [data-v2in-dialog="mandate"] .dm-exit-edges > .dm-pa-card-head .dm-pa-card-aside { font-size: 0.8125rem; color: var(--fg-subtle); }
+  [data-v2in-dialog="mandate"] .dm-exit-edge-list { gap: 2px; margin-top: 0.375rem; }
+  [data-v2in-dialog="mandate"] .dm-exit-edge { grid-template-columns: 2.125rem auto minmax(0, 1fr); gap: 0.75rem; min-height: 3.75rem; padding: 0.375rem 0.5rem; border-radius: 0.875rem; transition: background-color 0.18s var(--ease-std); }
+  [data-v2in-dialog="mandate"] .dm-exit-edge:hover { background: var(--v4-w04); }
+  [data-v2in-dialog="mandate"] .dm-exit-direction { width: 2rem; height: 2rem; border: 0; box-shadow: inset 0 0 0 1px var(--border-strong); font-size: 0.875rem; color: var(--fg-muted); transition: box-shadow 0.2s var(--ease-std), color 0.2s var(--ease-std), translate 0.3s var(--e-enter); }
+  [data-v2in-dialog="mandate"] .dm-exit-edge:hover .dm-exit-direction { box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.55); color: var(--primary); }
+  [data-v2in-dialog="mandate"] .dm-exit-edge-move { font-size: 0.84375rem; color: var(--fg-subtle); }
+  [data-v2in-dialog="mandate"] .dm-exit-edge-price { font-family: var(--font-display); font-size: 1.875rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
+  [data-v2in-dialog="mandate"] .dm-exit-edge-unit { margin-left: 0.5rem; font-family: var(--font-sans); font-size: 0.78125rem; letter-spacing: -0.01em; color: var(--fg-subtle); white-space: nowrap; }
+  @media (max-width: 859px) {
+    [data-v2in-dialog="mandate"] .dm-exit-edge-price { font-size: 1.625rem; }
+  }
+  /* The edges' track (the kit's .as-etrk), drawn when MandateDialog renders .dm-exit-track (decoration, aria-hidden): the
+     range as a green band on a grey line, a domino cap at each end, the price now as a white line and dot; pointing at a
+     row tilts its cap Tangerine (±18deg) and grows a dashed reach from the price now to that end; once on, both ends
+     keep a quiet Tangerine. */
+  [data-v2in-dialog="mandate"] .dm-exit-track { position: relative; height: 2.875rem; margin: 0.75rem 1rem 0.25rem; }
+  [data-v2in-dialog="mandate"] .dm-exit-track-line { position: absolute; left: 0; right: 0; top: 1.375rem; height: 2px; border-radius: 1px; background: var(--v4-w08); }
+  [data-v2in-dialog="mandate"] .dm-exit-track-band { position: absolute; left: 0; right: 0; top: 1.25rem; height: 0.375rem; border-radius: 0.1875rem; background: rgb(95 208 154 / 0.16); box-shadow: inset 0 0 0 1px rgb(95 208 154 / 0.26); }
+  [data-v2in-dialog="mandate"] .dm-exit-reach { position: absolute; top: 1.375rem; height: 2px; opacity: 0; background: linear-gradient(90deg, var(--primary) 0 0.25rem, transparent 0.25rem 0.5rem) 0 0 / 0.5rem 2px repeat-x; transform: scaleX(0.2); transition: opacity 0.2s var(--ease-std), transform 0.45s var(--e-enter); }
+  [data-v2in-dialog="mandate"] .dm-exit-reach-lo { left: 0; transform-origin: right center; }
+  [data-v2in-dialog="mandate"] .dm-exit-reach-hi { right: 0; transform-origin: left center; }
+  [data-v2in-dialog="mandate"] .dm-exit-now { position: absolute; left: 0; right: 0; top: 1.4375rem; height: 0; transition: transform 0.45s var(--e-enter); }
+  [data-v2in-dialog="mandate"] .dm-exit-now > i { position: absolute; left: -1px; top: -0.75rem; width: 2px; height: 1.5rem; border-radius: 1px; background: var(--fg); }
+  [data-v2in-dialog="mandate"] .dm-exit-now > b { position: absolute; left: -0.3125rem; top: -0.3125rem; width: 0.625rem; height: 0.625rem; border-radius: 50%; background: var(--fg); box-shadow: 0 0 0 0.1875rem rgb(22 20 17 / 0.9), 0 0 0 0.25rem rgb(247 241 234 / 0.22); }
+  [data-v2in-dialog="mandate"] .dm-exit-cap { position: absolute; top: 0.75rem; width: 0.75rem; height: 1.375rem; margin-left: -0.375rem; color: rgb(255 236 220 / 0.38); transition: color 0.2s var(--ease-std), transform 0.4s var(--e-enter), opacity 0.3s var(--ease-std); }
+  [data-v2in-dialog="mandate"] .dm-exit-cap > svg { display: block; width: 100%; height: 100%; }
+  [data-v2in-dialog="mandate"] .dm-exit-cap-lo { left: 0; }
+  [data-v2in-dialog="mandate"] .dm-exit-cap-hi { left: 100%; }
+  [data-v2in-dialog="mandate"] .dm-exit-edges:has(.dm-exit-edge[data-mandate-edge="falls"]:hover) .dm-exit-cap-lo { color: var(--primary); transform: rotate(-18deg); }
+  [data-v2in-dialog="mandate"] .dm-exit-edges:has(.dm-exit-edge[data-mandate-edge="rises"]:hover) .dm-exit-cap-hi { color: var(--primary); transform: rotate(18deg); }
+  [data-v2in-dialog="mandate"] .dm-exit-edges:has(.dm-exit-edge[data-mandate-edge="falls"]:hover) .dm-exit-reach-lo, [data-v2in-dialog="mandate"] .dm-exit-edges:has(.dm-exit-edge[data-mandate-edge="rises"]:hover) .dm-exit-reach-hi { opacity: 1; transform: none; }
+  [data-v2in-dialog="mandate"][data-mandate-phase="on"] .dm-exit-cap { color: rgb(255 157 98 / 0.62); }
+  [data-v2in-dialog="mandate"][data-mandate-phase="on"] .dm-exit-reach { opacity: 0.5; transform: none; background-image: linear-gradient(90deg, rgb(255 157 98 / 0.7) 0 0.25rem, transparent 0.25rem 0.5rem); }
+  /* The direction badges' arrows (when drawn as SVG): they move 1.5px toward their way on the row's hover. */
+  [data-v2in-dialog="mandate"] .dm-exit-direction > svg { transition: transform 0.3s var(--e-enter); }
+  [data-v2in-dialog="mandate"] .dm-exit-edge[data-mandate-edge="falls"]:hover .dm-exit-direction > svg { transform: translate(1.5px, 1.5px); }
+  [data-v2in-dialog="mandate"] .dm-exit-edge[data-mandate-edge="rises"]:hover .dm-exit-direction > svg { transform: translate(1.5px, -1.5px); }
+  @media (prefers-reduced-motion: reduce) {
+    [data-v2in-dialog="mandate"] :is(.dm-exit-reach, .dm-exit-now, .dm-exit-cap, .dm-exit-direction > svg) { transition-property: opacity, color !important; }
+    [data-v2in-dialog="mandate"] .dm-exit-edges:has(.dm-exit-edge:hover) :is(.dm-exit-cap, .dm-exit-direction > svg) { transform: none; }
+  }
+  /* The fee (the kit's .as-fact): its label on its own line, the sentence under it. */
+  [data-v2in-dialog="mandate"] [data-mandate-fee] > div { display: block; }
+  [data-v2in-dialog="mandate"] [data-mandate-fee] dt { max-width: none; font-size: 0.8125rem; font-weight: 500; }
+  [data-v2in-dialog="mandate"] [data-mandate-fee] dd { display: block; margin-top: 0.3125rem; font-size: 0.875rem; line-height: 1.45; text-align: left; }
+  /* The consent (the kit's .as-ant.em): full ink with a muted dot. */
   [data-v2in-dialog="mandate"] [data-mandate-consent] { color: var(--fg); }
-  [data-v2in-dialog="mandate"] .dm-exit-warnings { gap: 0.5rem; font-size: 0.8125rem; line-height: 1.5; color: var(--fg-muted); }
+  [data-v2in-dialog="mandate"] [data-mandate-consent]::before { background: var(--fg-muted); }
+  /* Details' bullets (the kit's .as-bl): small faint dots, quiet 13px lines. */
+  [data-v2in-dialog="mandate"] .dm-exit-warnings { gap: 0; margin: 0; padding: 0.375rem 0 0.25rem; list-style: none; font-size: 0.8125rem; line-height: 1.5; color: var(--fg-muted); }
+  [data-v2in-dialog="mandate"] .dm-exit-warnings > li { position: relative; padding: 0.3125rem 0.875rem 0.3125rem 1.875rem; list-style: none; }
+  [data-v2in-dialog="mandate"] .dm-exit-warnings > li::before { content: ''; position: absolute; left: 0.9375rem; top: 0.8125rem; width: 0.25rem; height: 0.25rem; border-radius: 50%; background: var(--fg-faint); }
+  [data-v2in-dialog="mandate"] .dm-exit-warnings > li::marker { content: none; }
+  /* Its wallet steps (the kit's .as-ws): a short connector between rows; done, a green tint and its check popping. */
+  [data-v2in-dialog="mandate"] [data-wallet-steps] > li[data-step-state="done"] .dm-step-marker { background: rgb(95 208 154 / 0.12); color: var(--money-in); animation: dm-v4-pip 0.45s var(--e-pop) backwards; }
   /* The pinned note at the foot: on the body's column, clear of the sheet's bottom edge (safe-area aware). */
   .dm-flow-dialog.dm-pa[data-v2in-dialog="mandate"] > .dm-pa-foot:has(> .dm-pa-locked) { padding: 0.75rem 1.5rem max(1.25rem, calc(env(safe-area-inset-bottom) + 0.5rem)); background-size: calc(100% - 3rem) 1px; }
   /* The Auto-exit card in the automation sheet: flat, its state a word, its buttons small. */
@@ -520,23 +813,50 @@
   [data-v2in-exit] .dm-exit-card-actions { gap: 0.5rem; }
   [data-v2in-exit] .dm-exit-card-actions .dm-btn { height: 2.125rem; padding: 0 0.8125rem; border-radius: 0.625rem; font-size: 0.8125rem; }
 
-  /* ==== The page's moment: a first load only; never when data refreshes ============================================ */
-  html:not(.dm-booted) main.dm-page:has(> [data-position-detail]) > .dm-pos-back { animation: dm-v4-up 0.5s var(--ease-enter) 0.06s backwards; }
-  html:not(.dm-booted) [data-position-detail] .dm-pos-name { animation: dm-v4-up 0.6s var(--ease-enter) 0.04s backwards; }
+  /* ==== The page's moment (site/position.html and position-base.html, the inner pages' .fast timings): it plays when the
+     page's figures arrive, and never when data refreshes (html:not(.dm-booted); PositionPage and KeyFigures end it).
+     The title's words rise through their line (v4-foundation's dm-v4-title) and its stop pops; the back pill, the discs,
+     the tags and the actions come up out of a blur one after another; the tiles and cards rise in their order; the range
+     track draws from its left end and the price now pops on it; the fees line draws in, its area and end after it. */
+  html:not(.dm-booted) main.dm-page:has(> [data-position-detail]) > .dm-pos-back { animation: dm-v4-up 0.5s var(--ease-enter) 0.08s backwards; }
   html:not(.dm-booted) [data-position-detail] .dm-pos-pair::after { animation: dm-v4-stop 0.4s var(--e-pop) 0.42s backwards; }
-  html:not(.dm-booted) [data-position-detail] :is(.dm-pos-actions, .dm-pos-stats > .dm-pos-stat, .dm-position-workspace, .dm-pos-grid > *) { animation: dm-v4p-fade 0.5s var(--ease-std) 0.24s backwards; }
-  html:not(.dm-booted) [data-position-detail] .dm-pos-stats > .dm-pos-stat:nth-child(2) { animation-delay: 0.28s; }
+  html:not(.dm-booted) [data-position-detail] .dm-pos-name > [aria-hidden="true"]:first-child { animation: dm-v4-up 0.5s var(--ease-enter) 0.14s backwards; }
+  html:not(.dm-booted) [data-position-detail] .dm-pos-chips { animation: dm-v4-up 0.5s var(--ease-enter) 0.2s backwards; }
+  html:not(.dm-booted) [data-position-detail] .dm-pos-actions { animation: dm-v4-up 0.5s var(--ease-enter) 0.24s backwards; }
+  html:not(.dm-booted) [data-position-detail] .dm-pos-actions .dm-automation-funds-dot { animation: dm-v4-pip 0.35s var(--e-pop) 0.5s backwards; }
+  html:not(.dm-booted) [data-position-detail] .dm-pos-stats > .dm-pos-stat { animation: dm-v4-card 0.5s var(--ease-enter) 0.26s backwards; }
+  html:not(.dm-booted) [data-position-detail] .dm-pos-stats > .dm-pos-stat:nth-child(2) { animation-delay: 0.29s; }
   html:not(.dm-booted) [data-position-detail] .dm-pos-stats > .dm-pos-stat:nth-child(3) { animation-delay: 0.32s; }
   html:not(.dm-booted) [data-position-detail] .dm-pos-stats > .dm-pos-stat:nth-child(4) { animation-delay: 0.35s; }
-  html:not(.dm-booted) [data-position-detail] :is(.dm-position-workspace, .dm-pos-grid > :first-child) { animation-delay: 0.34s; }
-  html:not(.dm-booted) [data-position-detail] .dm-pos-grid > :nth-child(n + 2) { animation-delay: 0.4s; }
+  html:not(.dm-booted) [data-position-detail] .dm-pos-span .dm-range-band { transform-origin: left center; animation: dm-v4p-band 0.45s var(--ease-enter) 0.4s backwards; }
+  html:not(.dm-booted) [data-position-detail] .dm-pos-span .dm-range-now { animation: dm-v4-pip 0.3s var(--ease-enter) 0.52s backwards; }
+  html:not(.dm-booted) [data-fee-reserves="position"] { animation: dm-v4-card 0.5s var(--ease-enter) 0.33s backwards; }
+  html:not(.dm-booted) [data-position-detail]:not([data-position-v2]) .dm-position-workspace { animation: dm-v4-card 0.5s var(--ease-enter) 0.34s backwards; }
+  html:not(.dm-booted) [data-position-detail]:not([data-position-v2]) .dm-pos-grid > :first-child { animation: dm-v4-card 0.5s var(--ease-enter) 0.38s backwards; }
+  html:not(.dm-booted) [data-position-detail]:not([data-position-v2]) .dm-pos-grid > :nth-child(n + 2) { animation: dm-v4-card 0.5s var(--ease-enter) 0.4s backwards; }
+  html:not(.dm-booted) [data-position-v2] .dm-pos-grid > :nth-child(1) { animation: dm-v4-card 0.5s var(--ease-enter) 0.35s backwards; }
+  html:not(.dm-booted) [data-position-v2] .dm-pos-grid > :nth-child(2) { animation: dm-v4-card 0.5s var(--ease-enter) 0.39s backwards; }
+  html:not(.dm-booted) [data-position-v2] .dm-pos-grid > :nth-child(n + 3) { animation: dm-v4-card 0.5s var(--ease-enter) 0.41s backwards; }
+  html:not(.dm-booted) [data-position-detail] .dm-position-analysis .dm-fees-chart > .dm-chart-series[data-reveal] { animation-delay: 0.36s; }
+  html:not(.dm-booted) [data-position-detail] .dm-position-analysis .dm-fees-chart > .dm-chart-series[data-reveal] :is(.dm-fees-collected, .dm-fees-waiting) { animation-delay: 0.52s; }
+  html:not(.dm-booted) [data-position-detail] .dm-position-analysis .dm-last-chip { animation: dm-v4-fade 0.3s var(--ease-std) 0.52s backwards; }
+  html:not(.dm-booted) [data-position-detail] .dm-position-analysis .dm-end-dot { animation-duration: 0.25s; animation-delay: 0.6s; }
+  html:not(.dm-booted) [data-position-detail] .dm-position-analysis :is([data-recorded-fee-points], [data-measured-points]) { animation: dm-v4-fade 0.3s var(--ease-std) 0.55s backwards; }
 
-  /* ==== Narrower: the tiles two by two below 1024px; the phone layout below 768px ================================== */
-  @media (max-width: 1023px) {
+  /* ==== Narrower: the approved phone (859px and under) puts Your APR and the price each on a full row under two half
+     tiles; a touch tablet (no compact root) keeps two by two up to 1023px; the rest of the phone layout below 768px === */
+  @media (min-width: 860px) and (max-width: 1023px) and (pointer: coarse) {
     :is([data-position-detail], [data-position-loading]) .dm-pos-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
+  @media (max-width: 859px) {
+    :is([data-position-detail], [data-position-loading]) .dm-pos-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    [data-position-detail] [data-position-overview] > :is([data-cell="apr"], [data-cell="price"]) { grid-column: 1 / -1; }
+    :is([data-position-v2^="base-"], [data-position-v2^="arbitrum-"]) .dm-pos-stats > .dm-pos-stat { min-height: 0; }
+    :is([data-position-v2^="base-"], [data-position-v2^="arbitrum-"]) .dm-pos-stat > .dm-stat-value { margin-top: 1.125rem; }
+  }
   @media (max-width: 767px) {
-    main.dm-page:has(> :is([data-position-detail], [data-position-loading], .dm-pos-empty)) > .dm-pos-back { position: relative; margin-top: 1rem; }
+    /* 16px under the header as the approved phone's .back (the page's own 12px top padding is part of it). */
+    main.dm-page:has(> :is([data-position-detail], [data-position-loading], .dm-pos-empty)) > .dm-pos-back { position: relative; margin-top: 0.25rem; }
     :is([data-position-detail], [data-position-loading]) .dm-pos-name { column-gap: 0.875rem; row-gap: 0.75rem; }
     :is([data-position-detail], [data-position-loading]) .dm-pos-name > :first-child { margin-bottom: 0.75rem; }
     [data-position-detail] .dm-pos-pair { white-space: normal; text-wrap: balance; overflow-wrap: anywhere; font-size: clamp(2.75rem, 13vw, 4.5rem); }
@@ -544,27 +864,32 @@
     [data-position-detail] .dm-pos-title > [data-position-actions-waiting] { margin-top: 1.5rem; }
     /* The actions (approved phone): Collect fees across, the outlines two by two, Close position on the right; 44px. */
     [data-position-detail] .dm-pos-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; margin-top: 1.5rem; }
-    [data-position-detail] .dm-pos-actions .dm-btn { justify-content: flex-start; height: 2.75rem; overflow: hidden; white-space: nowrap; text-align: left; }
-    [data-position-detail] .dm-pos-actions .dm-btn > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    /* A long label (an automation's name and its state, "Set up automation") wraps to a second line inside the 44px
+       button instead of losing its state word; two lines fit the 44px, a third grows the button. */
+    [data-position-detail] .dm-pos-actions .dm-btn { justify-content: flex-start; height: auto; min-height: 2.75rem; padding-block: 0.25rem; line-height: 1.125rem; white-space: normal; text-align: left; }
+    [data-position-detail] .dm-pos-actions .dm-btn > span { min-width: 0; overflow-wrap: break-word; }
     [data-position-detail] .dm-position-action-help > .dm-btn { width: 100%; }
     [data-position-detail] .dm-pos-actions :is([data-position-action="collect"], [data-position-v2-action="collect"]) { grid-column: 1 / -1; justify-content: center; height: 3rem; }
     [data-position-detail] .dm-pos-actions .dm-btn[data-position-action="close"] { grid-column: 1 / -1; justify-self: end; justify-content: center; margin-left: 0; height: 2.75rem; }
+    /* Base and Arbitrum (position-base.html, phone): Collect fees across at 50px, Add | Change range, Withdraw | Close
+       position (Close fills its cell, left-aligned), then the automation on its own row. */
+    [data-position-v2] .dm-pos-actions { grid-auto-flow: row dense; }
+    [data-position-v2] .dm-pos-actions [data-position-v2-action="collect"] { height: 3.125rem; font-size: 0.9375rem; }
+    /* The outlines at 14px there (position-base.html .pacts .btn-line), Close position at the page's 16px. */
+    [data-position-v2] .dm-pos-actions .dm-btn:not([data-position-v2-action="collect"]):not([data-position-action="close"]) { font-size: 0.875rem; }
+    [data-position-v2] .dm-pos-actions :is([data-automation-control], [data-automation-recovery-toggle]) { grid-column: 1 / -1; }
+    [data-position-v2] .dm-pos-actions .dm-btn[data-position-action="close"] { grid-column: auto; justify-self: stretch; justify-content: flex-start; padding: 0 0.875rem 0 0.625rem; }
     /* Set up automation is a bare label: a drawn glyph (decoration only) puts it on the others' alignment. */
     [data-position-detail] .dm-pos-actions .dm-btn[data-automation-control]:not(:has(> svg))::before { content: ''; flex: none; width: 1rem; height: 1rem; background: var(--fg-subtle); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M13 6.5A5.2 5.2 0 0 0 3.4 4.6M3 9.5a5.2 5.2 0 0 0 9.6 1.9'/%3E%3Cpath d='M3.2 2.2v2.6h2.6M12.8 13.8v-2.6h-2.6'/%3E%3C/svg%3E") center / 1rem no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M13 6.5A5.2 5.2 0 0 0 3.4 4.6M3 9.5a5.2 5.2 0 0 0 9.6 1.9'/%3E%3Cpath d='M3.2 2.2v2.6h2.6M12.8 13.8v-2.6h-2.6'/%3E%3C/svg%3E") center / 1rem no-repeat; transition: background-color 0.2s var(--ease-std); }
     [data-position-detail] .dm-pos-actions .dm-btn[data-automation-control]:not(:has(> svg)):hover:not(:disabled):not([aria-disabled="true"])::before { background: var(--primary); }
     [data-position-detail] .dm-position-action-tooltip:not([hidden]) { max-width: calc((100vw - 3rem) / 2); }
     :is([data-position-detail], [data-position-loading]) .dm-pos-stats { margin-top: 1.5rem; }
     :is([data-position-detail], [data-position-loading]) .dm-pos-stats > .dm-pos-stat { padding: 1rem; }
-    [data-position-detail] [data-position-overview] .dm-fig-lg { font-size: clamp(1.5rem, 7.5vw, 2.125rem); }
+    [data-position-detail] [data-position-overview] .dm-fig-lg { font-size: clamp(1.75rem, 9vw, 2.125rem); }
     [data-position-detail] [data-position-overview] [data-cell="principal"][data-long-value] .dm-fig-lg { font-size: 1.25rem; }
-    [data-position-detail] [data-position-overview] .dm-pos-price .dm-fig-lg { font-size: 1.5rem; }
     [data-position-detail] [data-position-overview] .dm-stat-value .dm-pos-amounts .dm-acct-amount { font-size: 1.25rem; }
-    [data-position-detail] [data-position-overview] .dm-pos-span { margin-top: 1.5rem; }
-    [data-position-detail] [data-position-overview] .dm-pos-span .dm-range-now::before { width: 3.75rem; height: 3.75rem; margin: -1.875rem 0 0 -1.875rem; }
-    [data-position-detail] [data-position-overview] .dm-pos-span-ends { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.25rem 0.5rem; font-size: 0.75rem; }
-    [data-position-detail] [data-position-overview] .dm-pos-span-word { grid-column: 1 / -1; grid-row: 2; }
     [data-position-detail] [data-position-overview] .dm-pos-span-ends > :not(.dm-pos-span-word) { white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
-    [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary { position: relative; margin-left: -0.375rem; padding: 0 0.25rem 0 0.375rem; font-size: 0.78125rem; white-space: nowrap; }
+    [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary { position: relative; margin-left: -0.375rem; padding: 0 0.25rem 0 0.375rem; white-space: nowrap; }
     [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary::after { width: 1.25rem; height: 1.25rem; }
     [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 2.75rem; margin-top: -1.375rem; }
     [data-position-detail] :is(.dm-position-workspace, .dm-pos-grid) { margin-top: 1rem; }
@@ -574,10 +899,16 @@
     [data-position-detail] .dm-position-chart-tabs > button { padding: 0 0.75rem; }
     [data-position-detail] .dm-position-chart-tools > button { position: relative; }
     [data-position-detail] .dm-position-chart-tools > button::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 2.75rem; margin-top: -1.375rem; }
+    /* The fees period switch (and Base's token switch) stays beside its label, compact: 30px buttons, an unseen 44px band
+       takes the tap. */
+    [data-position-detail] [data-position-chart-panel] .dm-fees-tabs { flex: 0 0 auto; }
+    [data-position-detail] [data-position-chart-panel] .dm-fees-tabs > .dm-seg { display: inline-flex; width: auto; }
+    [data-position-detail] [data-position-chart-panel] :is(.dm-fees-tabs > .dm-seg, .dm-recorded-fees-head .dm-seg) > .dm-seg-item { position: relative; flex: none; min-height: 0; height: 1.875rem; padding: 0 0.625rem; font-size: 0.8125rem; white-space: nowrap; }
+    [data-position-detail] [data-position-chart-panel] :is(.dm-fees-tabs > .dm-seg, .dm-recorded-fees-head .dm-seg) > .dm-seg-item::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 2.75rem; margin-top: -1.375rem; }
     [data-position-detail] .dm-position-fee-breakdown .dm-fees-legend { flex-direction: column; }
     [data-position-detail] .dm-position-fee-breakdown .dm-fees-legend-row { padding-right: 0; }
     [data-position-detail] .dm-position-fee-breakdown .dm-fees-legend-row + .dm-fees-legend-row { padding: 0.875rem 0 0; box-shadow: inset 0 1px 0 var(--border); }
-    [data-position-detail] .dm-pos-grid > .dm-pos-card > .dm-title, [data-position-detail] .dm-pos-grid .dm-activity-head > .dm-title { padding: 0.625rem 0.375rem 0.25rem 0.5rem; font-size: 1.75rem; text-wrap: balance; }
+    [data-position-detail] .dm-pos-grid > .dm-pos-card > .dm-title, [data-position-detail] .dm-pos-grid .dm-activity-head > .dm-title { padding: 1rem 0.625rem 0.375rem 0.75rem; font-size: 1.75rem; text-wrap: balance; }
     [data-fee-reserves="position"] .dm-acct-card-head > .dm-title { font-size: 1.75rem; text-wrap: balance; }
     .dm-pos-activity .dm-activity-list .dm-rcpt-operation > summary { padding: 0.75rem 0.5rem 0.75rem 0.75rem; }
     .dm-pos-activity .dm-rcpt-detail { padding: 0.25rem 0.375rem 0.875rem 0.75rem; }
@@ -589,6 +920,14 @@
     [data-position-detail] .dm-pos-facts dt { white-space: nowrap; }
     [data-position-detail] .dm-pos-links .dm-btn { height: 2.75rem; }
     [data-position-loading] .dm-pos-skel-h1 { height: 3rem; }
+  }
+  /* A price tile too narrow for its two bounds side by side: they stack as Low and High rows (after the phone rules). */
+  @container dm-pos-price (max-width: 12rem) {
+    [data-position-detail] [data-position-overview] .dm-pos-span-ends { grid-template-columns: minmax(0, 1fr); gap: 0.25rem; }
+    [data-position-detail] [data-position-overview] .dm-pos-span-word { grid-column: 1; grid-row: 1; text-align: left; }
+    [data-position-detail] [data-position-overview] .dm-pos-span-ends > :not(.dm-pos-span-word) { display: flex; align-items: baseline; justify-content: space-between; gap: 0.25rem; min-width: 0; white-space: nowrap; text-align: right; }
+    [data-position-detail] [data-position-overview] .dm-pos-span-ends > :first-child::before { content: 'Low'; font-weight: 400; color: var(--fg-subtle); }
+    [data-position-detail] [data-position-overview] .dm-pos-span-ends > :last-child::before { content: 'High'; font-weight: 400; color: var(--fg-subtle); }
   }
   @media (max-width: 420px) {
     [data-position-detail] .dm-pos-pair { font-size: clamp(2.375rem, 11.2vw, 2.875rem); }
@@ -602,6 +941,13 @@
   }
   @media (max-width: 639px) {
     .dm-flow-dialog.dm-pa[data-v2in-dialog="mandate"] > .dm-pa-foot:has(> .dm-pa-locked) { padding-inline: 1.25rem; background-size: calc(100% - 2.5rem) 1px; }
+    [data-v2in-dialog="mandate"] .dm-exit-edge { grid-template-columns: 2.125rem minmax(0, 1fr); row-gap: 0.125rem; }
+    [data-v2in-dialog="mandate"] .dm-exit-direction { grid-row: 1 / 3; }
+    [data-v2in-dialog="mandate"] .dm-exit-edge-price { grid-column: 2; justify-self: start; text-align: left; }
+    /* Change range on a phone: the widths two by two, the two ends stacked over a hairline. */
+    .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-choices--compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bounds { grid-template-columns: minmax(0, 1fr); }
+    .dm-pa[data-position-dialog] .dm-range-edit .dm-pa-bound + .dm-pa-bound::before { left: 1rem; right: 1rem; top: 0; bottom: auto; width: auto; height: 1px; }
     .dm-pa[data-position-dialog] .dm-flow-amount { padding: 0.75rem 0.75rem 0.75rem 0.875rem; }
     .dm-pa[data-position-dialog] .dm-flow-amount-input { font-size: 2.25rem; }
     .dm-pa[data-position-dialog] .dm-flow-amount-input[data-len="m"] { font-size: 1.875rem; }
@@ -614,7 +960,10 @@
   @media (max-width: 359px) {
     /* The outlines two by two at 320px: tighter, and a long label wraps to a second line instead of losing its state word. */
     [data-position-detail] .dm-pos-actions .dm-btn:not([data-position-action="close"]):not(:is([data-position-action="collect"], [data-position-v2-action="collect"])) { gap: 0.375rem; padding: 0 0.625rem; font-size: 0.8125rem; line-height: 1.0625rem; white-space: normal; }
-    [data-position-detail] .dm-pos-actions .dm-btn:not([data-position-action="close"]):not(:is([data-position-action="collect"], [data-position-v2-action="collect"])) > span { overflow: visible; text-overflow: clip; overflow-wrap: normal; }    /* Details at 320px: the label above its value, both from the left, the value across the row. */
+    [data-position-detail] .dm-pos-actions .dm-btn:not([data-position-action="close"]):not(:is([data-position-action="collect"], [data-position-v2-action="collect"])) > span { overflow: visible; text-overflow: clip; overflow-wrap: normal; }
+    /* The expanders keep inside a half tile at this width (the approved page's 16px would run past its edge). */
+    [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary { font-size: 0.8125rem; }
+    /* Details at 320px: the label above its value, both from the left, the value across the row. */
     [data-position-detail] .dm-pos-facts > div { flex-direction: column; flex-wrap: nowrap; align-items: stretch; justify-content: flex-start; gap: 0.25rem; padding-block: 0.625rem; }
     [data-position-detail] .dm-pos-facts dt { max-width: none; white-space: normal; }
     [data-position-detail] .dm-pos-facts dd, [data-position-detail] .dm-pos-facts > div:has(> dd .dm-pos-amounts) > dd { margin-left: 0; text-align: left; }
@@ -639,18 +988,51 @@
     [data-fee-reserves="position"] .dm-reserves-row::before, .dm-pos-activity .dm-activity-list .dm-rcpt-operation > summary::before, .dm-pa[data-position-dialog] .dm-pa-chip .dm-option::before { display: none; }
   }
 
+  /* ==== Expanders (the kit's .acc-b): a disclosure opens and closes in place, its rows growing over .45s and fading in;
+     the open attribute and the toggle stay the browser's own (where ::details-content exists; elsewhere at once) ==== */
+  @supports selector(::details-content) {
+    [data-position-detail] { interpolate-size: allow-keywords; }
+    [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown, .dm-pos-details, .dm-rcpt-operation)::details-content { block-size: 0; overflow: clip; opacity: 0; transition: block-size 0.45s var(--ease-enter), opacity 0.25s var(--ease-std), content-visibility 0.45s allow-discrete; transition-behavior: allow-discrete; }
+    [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown, .dm-pos-details, .dm-rcpt-operation)[open]::details-content { block-size: auto; opacity: 1; transition: block-size 0.45s var(--ease-enter), opacity 0.25s var(--ease-std); } /* opening never transitions content-visibility: the content is there (and readable) at once */
+    @media (prefers-reduced-motion: reduce) {
+      [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown, .dm-pos-details, .dm-rcpt-operation)::details-content { transition: none; }
+    }
+    html.dm-still [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown, .dm-pos-details, .dm-rcpt-operation)::details-content { transition: none; }
+  }
+
   /* ==== Reduced motion: colour, rings and opacity stay; nothing travels, turns or scales ========================= */
   @media (prefers-reduced-motion: reduce) {
-    main.dm-page > .dm-pos-back, [data-position-detail] :is(.dm-pos-name, .dm-pos-actions, .dm-pos-stat, .dm-position-workspace, .dm-pos-grid > *, [data-position-chart-panel], .dm-position-action-tooltip), [data-position-detail] .dm-pos-pair::after, .dm-pa[data-position-dialog] :is(.dm-flow-link, .dm-flow-wstep-note, [data-position-review-stage], [data-position-direct], [data-position-receipt]) { animation: none !important; }
-    main.dm-page > .dm-pos-back > svg, [data-position-detail] :is(.dm-pos-actions .dm-btn, .dm-pos-actions .dm-btn > svg, .dm-pos-name > [aria-hidden="true"]:first-child > *, .dm-position-chart-tabs > button, .dm-position-chart-tools > button, .dm-position-chart-tools svg, .dm-pos-details-head > svg, .dm-pos-links .dm-btn > svg, .dm-position-figure-detail > summary, .dm-position-fee-breakdown > summary), [data-position-detail] .dm-position-chart-tabs > button::after, [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary::after, [data-position-detail] .dm-pos-span .dm-range-band::before, [data-position-detail] .dm-pos-span .dm-range-band::after, .dm-pos-activity :is(.dm-receipt-check, .dm-rcpt-amount, .dm-rcpt-chevron), [data-fee-reserves="position"] .dm-reserves-row::before, .dm-pos-activity .dm-rcpt-operation > summary::before, .dm-pa[data-position-dialog] :is(.dm-pa-chip > .dm-select-trigger, .dm-pa-chip > .dm-select-trigger > svg:last-child, .dm-range-detail > summary, .dm-flow-wsteps .dm-step-marker), .dm-pa[data-position-dialog] .dm-pa-chip .dm-option::before, .dm-pa[data-position-dialog] .dm-range-detail > summary::before { transition-property: opacity, color, background-color, box-shadow !important; }
+    main.dm-page > .dm-pos-back, [data-position-detail] :is(.dm-pos-name, .dm-pos-name > [aria-hidden="true"]:first-child, .dm-pos-chips, .dm-pos-actions, .dm-automation-funds-dot, .dm-auto-word, .dm-pos-stat, .dm-position-workspace, .dm-pos-grid > *, [data-position-chart-panel], .dm-position-action-tooltip, .dm-range-band, .dm-range-now, .dm-chart, .dm-chart-series, .dm-fees-collected, .dm-fees-waiting, .dm-last-chip, .dm-end-dot, [data-recorded-fee-points], [data-measured-points], .dm-fees-window, .dm-recorded-fees-value .dm-fig-lg), [data-fee-reserves="position"], [data-position-detail] .dm-pos-pair::after, .dm-pa[data-position-dialog] :is(.dm-flow-link, .dm-flow-wstep-note, [data-position-review-stage], [data-position-direct], [data-position-receipt]) { animation: none !important; }
+    main.dm-page > .dm-pos-back > svg, [data-position-detail] :is(.dm-pos-actions .dm-btn, .dm-pos-actions .dm-btn > svg, .dm-pos-actions .dm-btn > svg :is(.dm-ar-l, .dm-ar-r), .dm-automation-funds-dot, .dm-pos-name > [aria-hidden="true"]:first-child > *, .dm-position-chart-tabs > button, .dm-position-chart-tools > button, .dm-position-chart-tools svg, .dm-pos-details-head > svg, .dm-pos-links .dm-btn > svg, .dm-position-figure-detail > summary, .dm-position-fee-breakdown > summary, .dm-pos-stat .dm-info-tip-trigger > svg, .dm-position-analysis .dm-chart), [data-position-detail] .dm-position-chart-tabs > button::after, [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary::after, [data-position-detail] .dm-pos-span .dm-range-band::before, [data-position-detail] .dm-pos-span .dm-range-band::after, [data-position-detail] .dm-pos-span .dm-range-now::after, .dm-pos-activity :is(.dm-receipt-check, .dm-rcpt-amount, .dm-rcpt-chevron), [data-fee-reserves="position"] .dm-reserves-row::before, .dm-pos-activity .dm-rcpt-operation > summary::before, .dm-pa[data-position-dialog] :is(.dm-pa-chip > .dm-select-trigger, .dm-pa-chip > .dm-select-trigger > svg:last-child, .dm-range-detail > summary, .dm-flow-wsteps .dm-step-marker), .dm-pa[data-position-dialog] .dm-pa-chip .dm-option::before, .dm-pa[data-position-dialog] .dm-range-detail > summary::before { transition-property: opacity, color, background-color, box-shadow !important; }
+    [data-position-detail] .dm-pos-span .dm-range-now::after { transform: translate(-50%, 0); }
+    .dm-pos-activity .dm-rcpt-operation > summary:hover .dm-rcpt-chevron, [data-position-detail] .dm-pos-actions .dm-btn > svg :is(.dm-ar-l, .dm-ar-r) { translate: none !important; }
+    [data-position-detail] .dm-pos-actions .dm-btn:hover .dm-automation-funds-dot, [data-position-detail] .dm-pos-stat .dm-info-tip-trigger:hover > svg { scale: none; }
     [data-position-detail] .dm-pos-actions .dm-btn:active, [data-position-detail] .dm-position-chart-tabs > button:active, [data-position-detail] .dm-position-chart-tools > button:active, [data-position-detail] :is(.dm-position-figure-detail, .dm-position-fee-breakdown) > summary:active, .dm-pa[data-position-dialog] :is(.dm-pa-chip > .dm-select-trigger, .dm-range-detail > summary):active { scale: none; }
+    /* The steps stand upright, and a done one still lies flat (its resting frame), with no travel between the two. */
     .dm-pa[data-position-dialog] .dm-flow-wsteps > li .dm-step-marker { rotate: none !important; translate: none !important; }
-    .dm-pa[data-position-dialog] .dm-flow-wsteps > li[data-step-state="done"] .dm-step-marker > svg { rotate: none; }
+    .dm-pa[data-position-dialog] .dm-flow-wsteps > li[data-step-state="done"] .dm-step-marker { rotate: 90deg !important; translate: -0.5625rem -0.4375rem !important; transition: none !important; }
+    .dm-pa[data-position-dialog] :is(.dm-pa-laid > i, .dm-pa-status, .dm-flow-wsteps .dm-step-marker, .dm-flow-wsteps .dm-step-marker > svg, [data-position-way-note], .dm-pa-chip > .dm-listbox, .dm-pa-chip .dm-option::after), .dm-pa[data-position-dialog] > .dm-pa-foot > *, .dm-pa[data-position-dialog] :is([data-position-receipt], [data-position-direct]) .dm-pa-status[data-state="done"]::after, .dm-pa[data-position-dialog] .dm-flow-wsteps span.dm-flow-wstep-note::before { animation: none !important; }
+    .dm-pa[data-position-dialog] :is(.dm-range-glyph .dm-gl-b, .dm-range-track .dm-pa-range-band, .dm-pa-chip .dm-option > :first-child, .dm-flow-pair > .dm-flow-link ~ .dm-flow-pair-row, [data-position-new-nft]::after, a.dm-flow-wstep-note::after, .dm-flow-wsteps > li::before), .dm-pa[data-position-dialog] .dm-range-track .dm-pa-range-band::before, .dm-pa[data-position-dialog] .dm-range-track .dm-pa-range-band::after, [data-v2in-dialog="mandate"] .dm-exit-direction { transition-property: opacity, color, background-color, box-shadow, fill, stroke !important; }
+    .dm-pa[data-position-dialog] .dm-pa-choice:hover .dm-range-glyph .dm-gl-b { transform: none; }
+    .dm-pa[data-position-dialog] .dm-pa-chip .dm-option:hover > :first-child, .dm-pa[data-position-dialog] .dm-range-edit .dm-range-track .dm-pa-range-band::before, .dm-pa[data-position-dialog] .dm-range-edit .dm-range-track .dm-pa-range-band::after { rotate: none !important; scale: none; }
+    .dm-pa[data-position-dialog] :is([data-position-new-nft], a.dm-flow-wstep-note):hover::after { translate: none; }
+    [data-v2in-dialog="mandate"] [data-wallet-steps] > li[data-step-state="done"] .dm-step-marker { animation: none; }
   }
-  html.dm-still :is(main.dm-page > .dm-pos-back, [data-position-detail] :is(.dm-pos-name, .dm-pos-actions, .dm-pos-stat, .dm-position-workspace, .dm-pos-grid > *, [data-position-chart-panel])), html.dm-still [data-position-detail] .dm-pos-pair::after { animation: none !important; }
+  html.dm-still :is(main.dm-page > .dm-pos-back, [data-position-detail] :is(.dm-pos-name, .dm-pos-name > [aria-hidden="true"]:first-child, .dm-pos-chips, .dm-pos-actions, .dm-automation-funds-dot, .dm-auto-word, .dm-pos-stat, .dm-position-workspace, .dm-pos-grid > *, [data-position-chart-panel], .dm-range-band, .dm-range-now, .dm-chart, .dm-chart-series, .dm-fees-collected, .dm-fees-waiting, .dm-last-chip, .dm-end-dot, [data-recorded-fee-points], [data-measured-points], .dm-fees-window, .dm-recorded-fees-value .dm-fig-lg), [data-fee-reserves="position"]), html.dm-still [data-position-detail] .dm-pos-pair::after { animation: none !important; }
+  html.dm-still [data-position-detail] .dm-position-analysis .dm-chart { transition: none; }
 }
 
 @keyframes dm-v4p-fade { from { opacity: 0.01; filter: blur(0.25rem); } to { opacity: 1; filter: none; } }
 @keyframes dm-v4p-up { from { opacity: 0.01; transform: translateY(0.375rem); } to { opacity: 1; transform: none; } }
 @keyframes dm-v4p-tip { from { opacity: 0.01; transform: translateY(-0.25rem) scale(0.98); } to { opacity: 1; transform: none; } }
 @keyframes dm-v4p-pop { from { opacity: 0.01; transform: scale(0.5) rotate(-90deg); } to { opacity: 1; transform: none; } }
+@keyframes dm-v4p-band { from { transform: scaleX(0); } to { transform: none; } }
+@keyframes dm-v4p-draw { from { clip-path: inset(-0.75rem 100% -0.75rem 0); } to { clip-path: inset(-0.75rem 0 -0.75rem 0); } }
+@keyframes dm-v4p-rise { from { transform: translateY(0.375rem); } to { transform: none; } }
+@keyframes dm-v4p-swap { from { opacity: 0.15; } to { opacity: 1; } }
+@keyframes dm-v4p-grow { from, to { clip-path: inset(-50rem -50rem 0 -50rem); } }
+@keyframes dm-v4p-tok { from { opacity: 0.01; transform: translateY(0.375rem); filter: blur(0.1875rem); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes dm-v4p-word { from { transform: translateY(105%); opacity: 0.2; } to { transform: none; opacity: 1; } }
+@keyframes dm-v4p-lay { from { transform: rotate(-90deg); opacity: 0.01; } to { transform: none; opacity: 1; } }
+@keyframes dm-v4p-shake { 0%, 100% { translate: 0 0; } 25% { translate: -2px 0; } 50% { translate: 2px 0; } 75% { translate: -1px 0; } }
+@keyframes dm-v4p-lbx { from { opacity: 0.01; transform: translateY(-0.25rem) scale(0.96); } to { opacity: 1; transform: none; } }

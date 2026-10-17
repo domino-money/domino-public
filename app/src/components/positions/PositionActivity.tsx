@@ -56,7 +56,7 @@ export function PositionActivity({ tokenId, automatic, owner, onMint }: { tokenI
     return basis && feesEvents(tokenId, list, basis, fees.state.currencies)
   }, [fees, tokenId])
   const legacy = !events || events.length === 0 || automatic === null ? null : (
-    <section className="dm-card dm-pos-card dm-pos-activity" aria-labelledby="position-activity-title" data-position-activity="">
+    <section className="dm-card dm-lit dm-pos-card dm-pos-activity" aria-labelledby="position-activity-title" data-position-activity="">
       <h2 id="position-activity-title" className="dm-title">
         Activity
       </h2>

@@ -841,7 +841,7 @@ export default function FeeReserves({ owner, placement, vault, root }: FeeReserv
     return (
       <li key={view.vault} className="dm-held-row dm-reserves-row" title={view.vault} data-reserve-vault={view.vault} data-reserve-root={view.rootTokenId.toString()}>
         <div className="dm-held-main">
-          <QuietMarkPair addresses={[view.baseCurrency, view.quoteCurrency]} size={32} />
+          <QuietMarkPair addresses={[view.baseCurrency, view.quoteCurrency]} size={placement === 'position' ? 26 : 32} />
           <div className="dm-held-text">
             {placement === 'positions' ? (
               <>
@@ -885,7 +885,7 @@ export default function FeeReserves({ owner, placement, vault, root }: FeeReserv
 
   return (
     <>
-      <section className="dm-card dm-acct-card dm-reserves" aria-labelledby={`reserves-title-${placement}`} data-fee-reserves={placement} data-fee-reserves-vaults={shown.length} data-fee-reserves-read={placement} data-fee-reserves-state={state}>
+      <section className="dm-card dm-lit dm-acct-card dm-reserves" aria-labelledby={`reserves-title-${placement}`} data-fee-reserves={placement} data-fee-reserves-vaults={shown.length} data-fee-reserves-read={placement} data-fee-reserves-state={state}>
         {head}
         <p className="dm-reserves-lede">{RESERVES_LEDE}</p>
         <ul className="dm-held-list">{rows}</ul>

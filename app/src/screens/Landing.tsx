@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { IconTile } from '../components/figures'
 import { MarketsTable } from '../components/MarketsTable'
 import { RangeSimulator } from '../components/RangeSimulator'
@@ -7,11 +7,13 @@ import { FeatureCards } from '../components/home/FeatureCards'
 import { HeroArt } from '../components/home/HeroArt'
 import { useHomeLight } from '../components/home/HomeLight'
 import { HomeMarquee } from '../components/home/HomeMarquee'
+import { HomeTraveller } from '../components/home/HomeTraveller'
+import { homeStory, locOf, useHomeStory, useHomeStoryState } from '../components/home/homeStory'
 import { ChapterTitle, Stop } from '../components/home/HomeType'
 import { GlyphKey, GlyphLoop, GlyphRange, GlyphValue } from '../components/home/LimitGlyphs'
 import { useInView } from '../components/home/Vignettes'
 import { IconChevronRight } from '../components/icons'
-import { Display, LinkButton, PageShell } from '../components/ui'
+import { Display, LinkButton, PageShell, cx } from '../components/ui'
 import { useRouteTitle } from '../lib/routeTitle'
 
 /*
@@ -103,6 +105,15 @@ function Hero() {
 }
 
 function HowItWorks() {
+  // The lesson folding or opening moves the travelling tile (it waits in the functions while the lesson is folded).
+  const lesson = useRef<HTMLDetailsElement>(null)
+  useEffect(() => {
+    const node = lesson.current
+    if (!node) return
+    const toggled = () => homeStory.setRangeOpen(node.open)
+    node.addEventListener('toggle', toggled)
+    return () => node.removeEventListener('toggle', toggled)
+  }, [])
   return (
     <section id="learn" className="dm-home-chapter dm-home-automations" aria-labelledby="dm-automation-title">
       <div className="dm-home-chapter-heading">
@@ -114,15 +125,18 @@ function HowItWorks() {
       </div>
       <FeatureCards />
       {/* V4 (the owner, D-H3): the lesson starts open; its title is the summary that folds it. */}
-      <details id="ranges" className="dm-home-range-guide" open>
+      <details ref={lesson} id="ranges" className="dm-home-range-guide" open>
         <summary className="dm-sx-t dm-rsum">
           <span className="dm-sx-l">What is a</span>{' '}<span className="dm-sx-l dm-sx-l2">price range<Stop>?</Stop><span className="dm-pl-lg" aria-hidden="true" /></span>
           <span className="dm-sx-t dm-sx-sh dm-rsum" aria-hidden="true" data-home-sheen="">
             <span className="dm-sx-l">What is a</span>{' '}<span className="dm-sx-l dm-sx-l2">price range<Stop>?</Stop></span>
           </span>
         </summary>
-        <div className="dm-home-range-card dm-lit">
-          <RangeSimulator title="Your price range" />
+        {/* The lesson's pad (V4 .rg-pad): the space above and below the card folds away with it. */}
+        <div className="dm-rg-pad">
+          <div className="dm-home-range-card dm-lit">
+            <RangeSimulator title="Your price range" />
+          </div>
         </div>
       </details>
     </section>
@@ -130,21 +144,49 @@ function HowItWorks() {
 }
 
 function Limits() {
+  const story = useHomeStoryState()
+  const list = useRef<HTMLDivElement>(null)
+  // V4 (the approved prototype's calm scene): the travelling tile comes to the left column when a topic opens, and stands
+  // as the last topic opened says (dark, sinking, facing you, pips lit). A look only: the topics stay native details.
+  useEffect(() => {
+    const node = list.current
+    if (!node) return
+    const toggled = (event: Event) => {
+      const target = event.target
+      if (!(target instanceof HTMLDetailsElement) || !target.classList.contains('dm-limit')) return
+      const topics = Array.from(node.querySelectorAll<HTMLDetailsElement>('details.dm-limit'))
+      let last = target.open ? topics.indexOf(target) : -1
+      if (!target.open) for (let index = topics.length - 1; index >= 0; index--) if (topics[index].open) { last = index; break }
+      homeStory.setCalm(last)
+    }
+    node.addEventListener('toggle', toggled, true)
+    return () => node.removeEventListener('toggle', toggled, true)
+  }, [])
+  const here = story.ready && locOf(story.act, story.rangeOpen) === 'calm'
   return (
     <section id="limits" className="dm-limits dm-home-chapter dm-home-control" aria-labelledby="dm-home-risks-title">
       <ChapterTitle id="dm-home-risks-title" first={<>Stay informed<Stop /></>} second={<>Stay in control<Stop /></>} />
-      <div className="dm-cm-side"><p className="dm-home-control-intro">Your wallet stays yours. Know how your position works before you start.</p></div>
-      <div className="dm-limits-grid">
-        {LIMITS.map((limit) => (
-          <details key={limit.title} className="dm-limit">
-            <summary>
-              <IconTile icon={limit.icon} />
-              <h3 className="dm-subtitle">{limit.title}</h3>
-              <IconChevronRight size={15} />
-            </summary>
-            <p className="dm-limit-body">{limit.body}</p>
-          </details>
-        ))}
+      {/* The calm grid (V4 .cm-grid): the intro and the tile's scene beside the topics, at least 420 design px tall. */}
+      <div className="dm-cm-grid">
+        <div className="dm-cm-side">
+          <p className="dm-home-control-intro">Your wallet stays yours. Know how your position works before you start.</p>
+          <div className="dm-cm-scene" aria-hidden="true">
+            <span className="dm-cm-floor" />
+            <span className={cx('dm-foot dm-cm-foot', !here && 'is-away')} />
+          </div>
+        </div>
+        <div ref={list} className="dm-limits-grid">
+          {LIMITS.map((limit) => (
+            <details key={limit.title} className="dm-limit">
+              <summary>
+                <IconTile icon={limit.icon} />
+                <h3 className="dm-subtitle">{limit.title}</h3>
+                <IconChevronRight size={15} />
+              </summary>
+              <p className="dm-limit-body">{limit.body}</p>
+            </details>
+          ))}
+        </div>
       </div>
     </section>
   )
@@ -154,20 +196,27 @@ export function Landing() {
   // Home's tab is the site's own name, given back on the way home from another screen (lib/routeTitle.ts, audit E11).
   useRouteTitle(null)
   useHomeLight()
+  useHomeStory()
   return (
     <PageShell className="dm-home">
       <Hero />
       <HomeMarquee />
-      <HomeCapabilities />
-      {/* Keep the shared provider and dialog ancestry intact: presentation adds no market reads. The frame only carries
-          the card's lit rim (no transform, filter or z-index: the figures dialog renders inside it). */}
+      {/* V4 (the approved prototype): Top pools sits right under the strip, in the first screen, before the story.
+          Keep the shared provider and dialog ancestry intact: presentation adds no market reads. The frame only carries
+          the card's lit rim and the first load's rise (a backwards fill ending on none: no transform, filter or z-index
+          stays on it, since the figures dialog renders inside it). */}
       <section id="pools" className="dm-home-pools">
-        <div className="dm-home-pools-frame dm-lit">
+        <div className="dm-home-pools-frame dm-lit dm-k-card">
           <MarketsTable variant="home" />
         </div>
       </section>
+      <HomeCapabilities />
       <HowItWorks />
       <Limits />
+      {/* V4 decoration, children of main and siblings of every section (never an ancestor of #pools): the dotted texture
+          the light reveals below the fold, and the one tile that travels through the story. */}
+      <span className="dm-home-zdots" aria-hidden="true" data-home-zdots="" />
+      <HomeTraveller />
     </PageShell>
   )
 }

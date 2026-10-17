@@ -85,7 +85,8 @@ export function PoolAprEstimate({ observation, now, detailed = false, compact = 
     <span data-apr-estimate={shown.state}>
       <span className={cx('tnum whitespace-nowrap', compact ? 'font-medium' : undefined, ink)} title={title}>
         {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): "Est. APR —", never "Est. APR unavailable". */}
-        {shown.text === null ? 'Est. APR —' : `${shown.text}% ${compact ? 'est.' : 'est. APR'}`}
+        {/* V4: a compact figure's "est." is quieter and smaller than the figure (.apr i, .stat-q); the words stay the same. */}
+        {shown.text === null ? 'Est. APR —' : compact ? <>{`${shown.text}% `}<span className="dm-apr-est">est.</span></> : `${shown.text}% est. APR`}
       </span>
     </span>
   )

@@ -4,6 +4,8 @@
   /* ===== Set up automation / Set up Auto-exit (#/sequence…): the frame (approved site/sequence.html .phead, .lede, .seq) =====
      The page takes the V4 content width (the steps beside a 26.25rem aside need it); the title is the foundation's. */
   .dm-page.dm-seq { max-width: calc(var(--content) + 2 * var(--gutter)); }
+  /* About 160px from the content to the footer's rule (its own margin is 6rem); no minimum height (site/sequence.html). */
+  main.dm-seq { min-height: 0; padding-bottom: 4rem; }
   /* Deposits and recovery (#/setup) keeps the same content width, so its title and cards line up with the header. The pool
      explorer ("Choose a pool" and its close) sits on one quiet plate (.pic), not loose on the page. */
   main.dm-page.dm-setup { max-width: calc(var(--content) + 2 * var(--gutter)); }
@@ -22,10 +24,11 @@
   .dm-seq-create > .dm-seq-grid::before { content: none; }
   .dm-seq-create :is(.dm-seq-steps, .dm-seq-aside) { position: relative; min-width: 0; border: 0; border-radius: 1.625rem; background: var(--v4-card-lift), var(--card); box-shadow: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 var(--v4-w06), var(--v4-card-drop); }
   .dm-seq-create .dm-seq-steps { padding: 0.875rem 1rem 0.625rem 0.75rem; }
-  .dm-seq-create .dm-seq-aside { position: relative; top: auto; display: grid; gap: 0.875rem; align-content: start; padding: 1.375rem 1rem 1.25rem; }
-  /* A faint Tangerine warmth at the aside's top (.as::before), under its content. */
-  .dm-seq-create .dm-seq-aside::before { content: ''; position: absolute; inset: 0 0 auto; height: 13.75rem; border-radius: 1.625rem 1.625rem 0 0; background: radial-gradient(22.5rem 12.5rem at 50% 0%, rgb(255 157 98 / 0.06), rgb(255 157 98 / 0) 72%); pointer-events: none; }
-  .dm-seq-create .dm-seq-aside > * { position: relative; }
+  .dm-seq-create .dm-seq-aside { position: relative; top: auto; display: grid; gap: 0.875rem; align-content: start; padding: 0.5rem 0.625rem 1rem; background: radial-gradient(22.5rem 12.5rem at 50% 0%, rgb(255 157 98 / 0.06), rgb(255 157 98 / 0) 72%) 0 0 / 100% 13.75rem no-repeat, var(--v4-card-lift), var(--card); }
+  /* A faint Tangerine warmth at the aside's top (.as::before), in the card's own background, under the lit rim and wash. */
+  /* The cards' content stays above their lit rim and wash (.dm-lit's pseudo layers; .st-list z-index 1). */
+  .dm-seq-create :is(.dm-seq-steps, .dm-seq-aside) > * { position: relative; z-index: 1; }
+  .dm-seq > :is(.dm-empty.dm-acct-block, .dm-seq-done) > * { position: relative; z-index: 1; }
   @media (max-width: 1180px) { .dm-seq-create > .dm-seq-grid { grid-template-columns: minmax(0, 1fr) 22.5rem; } }
   @media (max-width: 959px) { .dm-seq-create > .dm-seq-grid { grid-template-columns: minmax(0, 1fr); } }
 
@@ -35,7 +38,7 @@
 
   /* ----- Before the flow (states/Sequence.html frames 1-3) ----- */
   /* Reading the positions: a card of three quiet 4rem rows under one slow Tangerine sweep (.sk). */
-  .dm-seq .dm-seq-loading { position: relative; display: grid; gap: 2px; overflow: hidden; padding: 0.75rem 0.875rem 0.875rem; }
+  .dm-seq .dm-seq-loading { position: relative; display: grid; gap: 0.125rem; overflow: hidden; padding: 0.75rem 0.875rem 0.875rem; }
   .dm-seq .dm-seq-loading::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(100deg, rgb(255 157 98 / 0) 30%, rgb(255 190 146 / 0.06) 50%, rgb(255 157 98 / 0) 70%) 0 0 / 50% 100% no-repeat; animation: dm-v4-seq-skel 1.8s var(--e-std) infinite; }
   .dm-seq .dm-seq-loading-row.dm-skel { height: 4rem; border-radius: 0.875rem; background-color: var(--v4-w03); background-image: none; animation: none; }
 
@@ -55,17 +58,19 @@
   .dm-seq a.dm-btn--outline[href="#/automate"]::before { content: ''; flex: none; width: 0.875rem; height: 0.875rem; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='m6 4 4 4-4 4' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='m6 4 4 4-4 4' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat; transform: rotate(180deg); transition: transform 0.25s var(--e-enter); }
   .dm-seq a.dm-btn--outline[href="#/automate"]:hover { background: var(--v4-w04); box-shadow: none; color: var(--fg); }
   .dm-seq a.dm-btn--outline[href="#/automate"]:hover::before { transform: rotate(180deg) translateX(2px); }
-  .dm-seq > .dm-seq-create + .dm-acct-block:has(> a[href="#/automate"]:only-child) { margin-top: 1rem; }
+  .dm-seq > .dm-seq-create + .dm-acct-block:has(> a[href="#/automate"]:only-child) { margin-top: 1.75rem; }
 
   /* Connect your wallet and the empty states (.es / .es-sm): the plate on the left, the serif title and the action on the right. */
-  .dm-seq > .dm-empty.dm-acct-block { display: grid; grid-template-columns: 12.5rem minmax(0, 1fr); grid-template-rows: auto auto 1fr; column-gap: 2.5rem; align-items: start; max-width: 53.75rem; min-height: 0; padding: 2.25rem 2.75rem 2.5rem 2.25rem; border-radius: 1.625rem; background: var(--v4-card-lift), var(--card); box-shadow: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 var(--v4-w06), var(--v4-card-drop); text-align: left; }
+  .dm-seq > .dm-empty.dm-acct-block { display: grid; grid-template-columns: 12.5rem minmax(0, 1fr); grid-template-rows: 1fr auto auto auto 1fr; column-gap: 2.5rem; align-items: start; max-width: 53.75rem; min-height: 0; padding: 2.25rem 2.75rem 2.5rem 2.25rem; border-radius: 1.625rem; background: var(--v4-card-lift), var(--card); box-shadow: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 var(--v4-w06), var(--v4-card-drop); text-align: left; }
   .dm-seq > .dm-empty.dm-acct-block > .dm-empty-art { grid-column: 1; grid-row: 1 / -1; align-self: center; width: 100%; height: 10.625rem; margin: 0; border-radius: 1.375rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border); }
-  .dm-seq > .dm-empty.dm-acct-block > .dm-empty-title { grid-column: 2; align-self: end; margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 2.75rem; line-height: 1; letter-spacing: -0.02em; color: var(--fg); }
-  .dm-seq > .dm-empty.dm-acct-block > .dm-empty-body { grid-column: 2; max-width: 46ch; margin: 0.875rem 0 0; font-size: 0.96875rem; line-height: 1.5; color: var(--fg-muted); }
-  .dm-seq > .dm-empty.dm-acct-block > .dm-empty-action { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 0.625rem; margin-top: 1.75rem; }
+  .dm-seq > .dm-empty.dm-acct-block > .dm-empty-title { grid-column: 2; grid-row: 2; align-self: end; margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 2.75rem; line-height: 1; letter-spacing: -0.02em; color: var(--fg); }
+  .dm-seq > .dm-empty.dm-acct-block > .dm-empty-body { grid-column: 2; grid-row: 3; max-width: 46ch; margin: 0.875rem 0 0; font-size: 0.96875rem; line-height: 1.5; color: var(--fg-muted); }
+  .dm-seq > .dm-empty.dm-acct-block > .dm-empty-action { grid-column: 2; grid-row: 4; display: flex; flex-wrap: wrap; align-items: center; gap: 0.625rem; margin-top: 1.75rem; }
   .dm-seq > .dm-empty.dm-acct-block > .dm-empty-action > p[role="alert"] { flex-basis: 100%; margin: 0.25rem 0 0; }
   /* The main action is the large button in every empty state (Auto-exit's is drawn at the default size). */
-  .dm-seq > .dm-empty.dm-acct-block > .dm-empty-action > .dm-btn--primary { height: 3rem; padding: 0 1.375rem; border-radius: 0.875rem; font-size: 0.96875rem; line-height: 1.25rem; }
+  .dm-seq > .dm-empty.dm-acct-block > .dm-empty-action > .dm-btn--primary { height: 3.375rem; padding: 0 1.75rem; border-radius: 0.875rem; font-size: 0.96875rem; line-height: 1.25rem; }
+  /* A <button> takes the block's font in the prototype (.v4c button {font: inherit}): Connect wallet reads 16px, regular. */
+  .dm-seq > .dm-empty.dm-acct-block > .dm-empty-action > button.dm-btn--primary { font-size: 1rem; font-weight: 400; line-height: normal; }
   .dm-seq > .dm-empty.dm-acct-block[data-sequence-positions="empty"] { grid-template-columns: 7.5rem minmax(0, 1fr); column-gap: 1.75rem; max-width: none; padding: 1.75rem; }
   .dm-seq > .dm-empty.dm-acct-block[data-sequence-positions="empty"] > .dm-empty-art { height: 7.5rem; }
   .dm-seq > .dm-empty.dm-acct-block[data-sequence-positions="empty"] > .dm-empty-title { font-size: 2rem; }
@@ -75,21 +80,22 @@
   /* ----- The step rail (.st-h, .step-n, .conn, .st-b): a round marker, the serif step title, a 1px connector ----- */
   /* The legend stays a float with its marker inline, so its innerText keeps "1 · Your position" (automate.css:178). */
   .dm-seq-create .dm-seq-steps > .dm-acct-fieldset { gap: 0; padding: 0 0.375rem 1.875rem 3.5rem; }
-  .dm-seq-create .dm-seq-steps > .dm-acct-fieldset:last-child { padding-bottom: 0.5rem; }
+  .dm-seq-create .dm-seq-steps > .dm-acct-fieldset:last-child { padding-bottom: 1.875rem; }
   .dm-seq-create .dm-seq-steps > .dm-acct-fieldset > legend { width: calc(100% + 3.5rem); margin: 0 0 0.125rem -3.5rem; padding: 1.125rem 0.625rem; font-family: var(--font-display); font-weight: 400; font-size: 2rem; line-height: 1.875rem; letter-spacing: -0.02em; color: var(--fg); }
-  .dm-seq-create .dm-seq-steps > .dm-acct-fieldset::before { left: calc(1.5625rem - 0.5px); top: 3.25rem; bottom: -0.75rem; width: 1px; border-radius: 0; background: var(--border); }
-  .dm-seq-create .dm-seq-steps > .dm-acct-fieldset[data-state="done"]::before { background: rgb(255 157 98 / 0.45); }
+  .dm-seq-create .dm-seq-steps > .dm-acct-fieldset::before { left: calc(1.5625rem - 0.5px); top: 3.25rem; bottom: -0.75rem; width: 1px; border-radius: 0; background-color: var(--border); background-image: linear-gradient(rgb(255 157 98 / 0.45), rgb(255 157 98 / 0.45)); background-repeat: no-repeat; background-size: 100% 0; transition: background-size 0.45s var(--e-enter); }
+  .dm-seq-create .dm-seq-steps > .dm-acct-fieldset[data-state="done"]::before { background-size: 100% 100%; }
   .dm-seq-create .dm-seq-step { width: 1.875rem; height: 1.875rem; margin-right: 1rem; border-radius: 50%; background: var(--card); box-shadow: inset 0 0 0 1px var(--border-strong); color: var(--fg-subtle); font-family: var(--font-sans); font-size: 0.78125rem; line-height: 1rem; letter-spacing: -0.01em; transition: box-shadow 0.2s var(--e-std), color 0.2s var(--e-std), background-color 0.2s var(--e-std); }
   .dm-seq-create .dm-seq-step[data-state="current"] { background: var(--card); box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong), 0 0 0 0.25rem var(--v4-tan-halo); color: var(--primary); }
   .dm-seq-create .dm-seq-step[data-state="done"] { background: #1d2a22; box-shadow: none; color: transparent; }
   .dm-seq-create .dm-seq-step[data-state="done"]::after { width: 0.75rem; height: 0.75rem; -webkit-mask-size: 0.75rem; mask-size: 0.75rem; animation: dm-v4-seq-stamp 0.45s var(--e-pop) backwards; }
   /* Before a position: steps 2 and 3 as quiet ghost markers on the same rail (.st.ghost). */
-  .dm-seq-create .dm-seq-ghosts { gap: 0; padding: 0 0 0.5rem 0.625rem; }
+  .dm-seq-create .dm-seq-ghosts { gap: 0; padding: 0 0 0 0.625rem; }
   .dm-seq-create .dm-seq-ghosts > span { width: 1.875rem; height: 1.875rem; margin: 0.4375rem 0; border-radius: 50%; background: transparent; box-shadow: inset 0 0 0 1px var(--border); color: var(--fg-subtle); font-size: 0.78125rem; opacity: 0.75; }
   .dm-seq-create .dm-seq-ghosts > span:not(:last-child)::after { left: calc(0.9375rem - 0.5px); top: 2.3125rem; height: 0.75rem; width: 1px; border-radius: 0; opacity: 1; }
+  .dm-seq-create .dm-seq-ghosts > span[data-n]::before { content: attr(data-n); }
 
   /* ----- Step 1, the position picker (.pk, .pr): radio rows, cousins of the pool row ----- */
-  .dm-seq-create .dm-seq-picker { gap: 2px; margin-top: 2px; }
+  .dm-seq-create .dm-seq-picker { gap: 0.125rem; margin-top: 0.125rem; }
   .dm-seq-create .dm-seq-pick { grid-template-columns: 1.375rem auto minmax(0, 1fr) 8.25rem; grid-template-areas: "dot marks name range"; column-gap: 1.125rem; min-height: 4.75rem; padding: 0.5rem 1.125rem 0.5rem 1.25rem; border-radius: 0.875rem; background: transparent; box-shadow: none; transition: background-color 0.18s var(--e-std), box-shadow 0.2s var(--e-std), scale 0.1s var(--e-press); }
   .dm-seq-create .dm-seq-pick::before { content: ''; position: absolute; left: 0.5rem; top: 50%; width: 0.3125rem; height: 0.3125rem; margin-top: -0.15625rem; border-radius: 50%; background: var(--primary); opacity: 0; transform: scale(0.2); transition: opacity 0.2s var(--e-std), transform 0.35s var(--e-enter); pointer-events: none; }
   .dm-seq-create .dm-seq-pick:hover:not(:disabled) { background: var(--v4-w045); box-shadow: none; }
@@ -102,8 +108,8 @@
   .dm-seq-create .dm-seq-pick-dot::after { content: ''; position: absolute; inset: 0; width: 0.5rem; height: 0.5rem; margin: auto; border-radius: 50%; background: var(--primary); opacity: 0; transform: scale(0.3); transition: opacity 0.2s var(--e-std), transform 0.35s var(--e-enter); }
   .dm-seq-create .dm-seq-pick:hover:not(:disabled) .dm-seq-pick-dot { box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong); }
   .dm-seq-create .dm-seq-pick:hover:not(:disabled) .dm-seq-pick-dot::after { opacity: 0.5; transform: scale(0.7); }
-  .dm-seq-create .dm-seq-pick[aria-checked="true"] .dm-seq-pick-dot { box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.7); }
-  .dm-seq-create .dm-seq-pick[aria-checked="true"] .dm-seq-pick-dot::after { opacity: 1; transform: none; }
+  .dm-seq-create .dm-seq-pick[aria-checked="true"] .dm-seq-pick-dot, .dm-seq-create .dm-seq-pick[aria-checked="true"]:hover:not(:disabled) .dm-seq-pick-dot { box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.7); }
+  .dm-seq-create .dm-seq-pick[aria-checked="true"] .dm-seq-pick-dot::after, .dm-seq-create .dm-seq-pick[aria-checked="true"]:hover:not(:disabled) .dm-seq-pick-dot::after { opacity: 1; transform: none; }
   .dm-seq-create .dm-seq-pick-marks { grid-area: marks; margin-right: -0.25rem; }
   .dm-seq-create .dm-seq-pick-marks > * { transition: transform 0.3s var(--e-enter), box-shadow 0.18s var(--e-std); }
   .dm-seq-create .dm-seq-pick-marks > :last-child { box-shadow: 0 0 0 2px var(--card); }
@@ -113,11 +119,11 @@
   .dm-seq-create .dm-seq-pick-pair { font-size: 0.96875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); }
   /* The meta line: network and fee as one joined tag (.tag), the id at the end of the line. */
   .dm-seq-create .dm-seq-pick-meta { gap: 0.375rem 0; font-size: 0.78125rem; line-height: 1rem; color: var(--fg-subtle); }
-  .dm-seq-create .dm-seq-pick-meta > .dm-chip { min-height: 0; padding: 2px 0.4375rem; border-radius: 2px; background: var(--v4-w055); color: var(--fg-subtle); font-size: 0.75rem; line-height: 1rem; transition: box-shadow 0.2s var(--e-std), color 0.18s var(--e-std); }
+  .dm-seq-create .dm-seq-pick-meta > .dm-chip { min-height: 0; padding: 0.125rem 0.4375rem; border-radius: 0.125rem; background: var(--v4-w055); color: var(--fg-subtle); font-size: 0.75rem; line-height: 1rem; transition: box-shadow 0.2s var(--e-std), color 0.18s var(--e-std); }
   .dm-seq-create .dm-seq-pick-meta > .dm-chip:first-child { border-top-left-radius: 0.375rem; border-bottom-left-radius: 0.375rem; }
   .dm-seq-create .dm-seq-pick-meta > .dm-chip:not(:has(+ .dm-chip)) { border-top-right-radius: 0.375rem; border-bottom-right-radius: 0.375rem; }
   /* Spacing sits after each item, never before, so a wrapped line starts flush with the pair (a trailing space is invisible). */
-  .dm-seq-create .dm-seq-pick-meta > .dm-chip:has(+ .dm-chip) { margin-right: 2px; }
+  .dm-seq-create .dm-seq-pick-meta > .dm-chip:has(+ .dm-chip) { margin-right: 0.125rem; }
   .dm-seq-create .dm-seq-pick-meta > :is(.dm-chip:not(:has(+ .dm-chip)), span:not(.dm-chip):not(.dm-seq-pick-id):not(.dm-seq-pick-note)) { margin-right: 0.625rem; }
   .dm-seq-create .dm-seq-pick-id { margin-left: auto; padding-left: 0; font-size: 0.84375rem; line-height: 1rem; font-weight: 500; color: var(--fg-muted); transition: color 0.18s var(--e-std); }
   .dm-seq-create .dm-seq-pick:is(:hover:not(:disabled), [aria-checked="true"]) .dm-seq-pick-id { color: var(--fg); }
@@ -134,24 +140,52 @@
   .dm-seq-create .dm-seq-pick-range .dm-range-now { width: 0.4375rem; height: 0.4375rem; border-radius: 50%; background: var(--fg); box-shadow: 0 0 0 0.1875rem rgb(247 241 234 / 0.16); transition: translate 0.3s var(--e-enter); }
   .dm-seq-create .dm-seq-pick:hover:not(:disabled) .dm-seq-pick-range .dm-range-now { translate: -50% calc(-50% - 1px); }
   /* ----- Step 2, what Domino does (.md, .mr): radio rows with the small picture on a plate, a serif name and a check ring ----- */
-  .dm-seq-create .dm-acct-choices.dm-seq-modes { grid-template-columns: minmax(0, 1fr); gap: 0.25rem; margin-top: 2px; }
+  .dm-seq-create .dm-acct-choices.dm-seq-modes { grid-template-columns: minmax(0, 1fr); gap: 0.25rem; margin-top: 0.125rem; }
   .dm-seq-create .dm-seq-mode.dm-btn { position: relative; display: grid; grid-template-columns: 8rem minmax(0, 1fr) 1.75rem; align-items: center; justify-content: stretch; gap: 1.375rem; height: auto; min-height: 7rem; padding: 0.875rem 1.125rem 0.875rem 0.875rem; border-radius: 1.125rem; background: transparent; box-shadow: none; color: var(--fg); white-space: normal; text-align: left; translate: none; transition: background-color 0.18s var(--e-std), box-shadow 0.2s var(--e-std), scale 0.1s var(--e-press); }
   .dm-seq-create .dm-seq-mode.dm-btn:hover:not(:disabled) { translate: none; background: var(--v4-w04); box-shadow: none; color: var(--fg); }
   .dm-seq-create .dm-seq-mode.dm-btn:active:not(:disabled) { translate: none; scale: 0.997; }
-  .dm-seq-create .dm-seq-mode.dm-btn[aria-checked="true"] { background: rgb(255 157 98 / 0.045); box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.5); }
+  .dm-seq-create .dm-seq-mode.dm-btn[aria-checked="true"], .dm-seq-create .dm-seq-mode.dm-btn[aria-checked="true"]:hover:not(:disabled) { background: rgb(255 157 98 / 0.045); box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.5); }
   .dm-seq-create .dm-seq-mode.dm-btn:disabled { background: transparent; box-shadow: none; color: var(--fg); cursor: default; opacity: 0.6; }
   .dm-seq-create .dm-seq-mode.dm-btn[aria-checked="true"]:disabled { background: rgb(255 157 98 / 0.045); box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.5); opacity: 1; }
-  .dm-seq-create .dm-seq-mode > .dm-mode-art { width: 8rem; height: 5rem; padding: 0.375rem 0.5rem; border-radius: 0.875rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border); transition: box-shadow 0.2s var(--e-std), background-color 0.2s var(--e-std); }
-  .dm-seq-create .dm-seq-mode:hover:not(:disabled) > .dm-mode-art { box-shadow: inset 0 0 0 1px var(--border-lip); }
-  .dm-seq-create .dm-seq-mode[aria-checked="true"] > .dm-mode-art { background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.22); }
-  /* The pictures in V4 ink, here only (ModeArt is shared): ranges green-tinted, the tile a Tangerine outline, fees green. */
-  .dm-seq-create .dm-seq-mode .dm-mode-art .band { fill: rgb(95 208 154 / 0.06); }
-  .dm-seq-create .dm-seq-mode .dm-mode-art .band-fill { fill: rgb(95 208 154 / 0.14); }
-  .dm-seq-create .dm-seq-mode .dm-mode-art .band-edge { stroke: rgb(95 208 154 / 0.5); }
-  .dm-seq-create .dm-seq-mode .dm-mode-art .tile-solid .t-body { fill: rgb(255 157 98 / 0.08); stroke: rgb(255 157 98 / 0.6); stroke-width: 1.2px; }
-  .dm-seq-create .dm-seq-mode .dm-mode-art .tile-solid .t-pip { fill: rgb(255 157 98 / 0.6); }
-  .dm-seq-create .dm-seq-mode .dm-mode-art .tile-solid .t-div { stroke: rgb(255 157 98 / 0.5); stroke-opacity: 1; }
-  .dm-seq-create .dm-seq-mode .dm-mode-art :is(.drop-dot, .stack, .coin) { fill: var(--money-in); }
+  .dm-seq-create .dm-seq-mode > :is(.dm-mode-art, .dm-mode-thumb) { width: 8rem; height: 5rem; padding: 0.375rem 0.5rem; border-radius: 0.875rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border); transition: box-shadow 0.2s var(--e-std), background-color 0.2s var(--e-std); }
+  .dm-seq-create .dm-seq-mode > .dm-mode-thumb { flex: none; padding: 0; overflow: hidden; }
+  .dm-seq-create .dm-seq-mode:hover:not(:disabled) > :is(.dm-mode-art, .dm-mode-thumb) { box-shadow: inset 0 0 0 1px var(--border-lip); }
+  .dm-seq-create .dm-seq-mode[aria-checked="true"] > :is(.dm-mode-art, .dm-mode-thumb), .dm-seq-create .dm-seq-mode[aria-checked="true"]:hover:not(:disabled) > :is(.dm-mode-art, .dm-mode-thumb) { background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.22); }
+  /* The small pictures (.ma svg, components/automate-v4/ModeThumb.tsx) and the aside's (.pic): green ranges, an outlined
+     Tangerine tile, dotted arcs, green fees, the wallet's coins. A chosen row's picture plays once (pop and fade). */
+  .dm-seq-create :is(.dm-mode-thumb, .dm-seq-pic) .th-band { fill: rgb(95 208 154 / 0.14); stroke: rgb(95 208 154 / 0.5); stroke-width: 1; }
+  .dm-seq-create :is(.dm-mode-thumb, .dm-seq-pic) .th-dim { fill: rgb(255 236 220 / 0.05); stroke: rgb(255 236 220 / 0.2); stroke-width: 1; }
+  .dm-seq-create :is(.dm-mode-thumb, .dm-seq-pic) .th-ghost { fill: none; stroke: rgb(255 157 98 / 0.38); stroke-width: 1; stroke-dasharray: 2.5 2.5; }
+  .dm-seq-create :is(.dm-mode-thumb, .dm-seq-pic) .th-wave { fill: none; stroke: rgb(95 208 154 / 0.6); stroke-width: 1.1; stroke-linecap: round; }
+  .dm-seq-create :is(.dm-mode-thumb, .dm-seq-pic) .th-t { fill: rgb(255 157 98 / 0.08); stroke: rgb(255 157 98 / 0.6); stroke-width: 1.2; }
+  .dm-seq-create :is(.dm-mode-thumb, .dm-seq-pic) .th-tg { fill: none; stroke: rgb(255 157 98 / 0.25); stroke-width: 1.1; stroke-dasharray: 2 2; }
+  .dm-seq-create :is(.dm-mode-thumb, .dm-seq-pic) .th-g { stroke: rgb(255 157 98 / 0.5); stroke-width: 1.1; stroke-linecap: round; }
+  .dm-seq-create :is(.dm-mode-thumb, .dm-seq-pic) .th-p { fill: rgb(255 157 98 / 0.6); }
+  .dm-seq-create :is(.dm-mode-thumb, .dm-seq-pic) .th-arc { fill: none; stroke: rgb(255 236 220 / 0.32); stroke-width: 1.3; stroke-linecap: round; stroke-dasharray: 0 4.5; }
+  .dm-seq-create :is(.dm-mode-thumb, .dm-seq-pic) .th-fee { fill: var(--money-in); }
+  .dm-seq-create :is(.dm-mode-thumb, .dm-seq-pic) .th-trig { stroke: rgb(255 236 220 / 0.32); stroke-width: 1; stroke-dasharray: 2 3; }
+  .dm-seq-create :is(.dm-mode-thumb, .dm-seq-pic) .th-price { fill: none; stroke: var(--fg-muted); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+  .dm-seq-create :is(.dm-mode-thumb, .dm-seq-pic) .th-coin { fill: #d8d4c8; }
+  .dm-seq-create :is(.dm-mode-thumb, .dm-seq-pic) .th-coin2 { fill: #7aa85a; }
+  .dm-seq-create .dm-mode-thumb { display: block; }
+  .dm-seq-create .dm-mode-thumb .th-tile { transform-box: fill-box; transform-origin: 50% 100%; transition: transform 0.45s var(--e-enter); }
+  .dm-seq-create .dm-seq-mode:hover:not(:disabled) .dm-mode-thumb .th-tile { transform: rotate(-10deg); }
+  .dm-seq-create :is(.dm-mode-thumb, .dm-seq-pic) .ta { transform-box: fill-box; transform-origin: center; }
+  .dm-seq-create .dm-seq-mode[aria-checked="true"] .dm-mode-thumb .ta-p,
+  .dm-seq-pic[data-mode="compound"] > [data-scene="compound"] .ta-p,
+  .dm-seq-pic[data-mode="protection"] > [data-scene="protection"] .ta-p { animation: dm-v4-seq-pop 0.45s var(--e-pop) backwards; animation-delay: var(--d, 0s); }
+  .dm-seq-create .dm-seq-mode[aria-checked="true"] .dm-mode-thumb .ta-f,
+  .dm-seq-pic[data-mode="compound"] > [data-scene="compound"] .ta-f,
+  .dm-seq-pic[data-mode="protection"] > [data-scene="protection"] .ta-f { animation: dm-v4-seq-fade 0.5s var(--e-std) backwards; animation-delay: var(--d, 0s); }
+  .dm-seq-pic[data-mode="protection"] > [data-scene="protection"] .ta-d { animation: dm-v4-seq-draw 1.1s cubic-bezier(0.45, 0, 0.25, 1) backwards; animation-delay: var(--d, 0s); }
+  :is(.dm-mode-thumb, .dm-seq-pic) .d1s { --d: 0.1s; }
+  :is(.dm-mode-thumb, .dm-seq-pic) .d2s { --d: 0.2s; }
+  :is(.dm-mode-thumb, .dm-seq-pic) .d3s { --d: 0.3s; }
+  :is(.dm-mode-thumb, .dm-seq-pic) .d4s { --d: 0.45s; }
+  :is(.dm-mode-thumb, .dm-seq-pic) .d5s { --d: 0.6s; }
+  :is(.dm-mode-thumb, .dm-seq-pic) .d6s { --d: 0.9s; }
+  :is(.dm-mode-thumb, .dm-seq-pic) .d7s { --d: 1.1s; }
+  :is(.dm-mode-thumb, .dm-seq-pic) .d8s { --d: 1.25s; }
   .dm-seq-create .dm-seq-mode > .dm-mode-copy { display: flex; flex-direction: column; gap: 0; min-width: 0; padding: 0; }
   .dm-seq-create .dm-seq-mode .dm-mode-name { font-family: var(--font-display); font-weight: 400; font-size: 1.75rem; line-height: 1; letter-spacing: -0.02em; color: var(--fg); transition: color 0.3s var(--e-std); }
   .dm-seq-create .dm-seq-mode[aria-checked="true"] .dm-mode-name { color: var(--v4-lit); }
@@ -164,27 +198,33 @@
   .dm-seq-create .dm-seq-mode.dm-btn::after { content: ''; position: absolute; top: 1rem; right: 1.125rem; width: 1.625rem; height: 1.625rem; border-radius: 50%; background: transparent no-repeat center / 0.875rem; box-shadow: inset 0 0 0 1px var(--border-strong); -webkit-mask: none; mask: none; animation: none; transition: box-shadow 0.2s var(--e-std), background-color 0.2s var(--e-std); pointer-events: none; }
   .dm-seq-create .dm-seq-mode.dm-btn:hover:not(:disabled)::after { box-shadow: inset 0 0 0 1px var(--v4-tan-ring); }
   .dm-seq-create .dm-seq-mode.dm-btn[aria-checked="true"]::after { top: 1rem; right: 1.125rem; width: 1.625rem; height: 1.625rem; background-color: var(--v4-tan-12); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2l2.4 2.4 4.6-5' fill='none' stroke='%23ff9d62' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.6); animation: dm-v4-seq-stamp 0.45s var(--e-pop) backwards; }
+  .dm-seq-create .dm-seq-mode.dm-btn[aria-checked="true"]:hover:not(:disabled)::after { box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.6); }
   .dm-seq-create .dm-seq-modes + .dm-seq-hint { margin: 1rem 0.25rem 0; font-size: 0.84375rem; line-height: 1.5; color: var(--fg-subtle); }
   /* Step 3 · Auto-exit: one plain explanation (.lede2). */
-  .dm-seq-create[data-sequence-create-mode="protection"] .dm-seq-steps > .dm-acct-fieldset > legend + .dm-seq-hint { max-width: 62ch; margin: 2px 0 0; font-size: 0.9375rem; line-height: 1.55; color: var(--fg-muted); }
+  .dm-seq-create[data-sequence-create-mode="protection"] .dm-seq-steps > .dm-acct-fieldset > legend + .dm-seq-hint { max-width: 62ch; margin: 0.125rem 0 0; font-size: 0.9375rem; line-height: 1.55; color: var(--fg-muted); }
   @media (max-width: 859px) {
     .dm-seq-create .dm-seq-mode.dm-btn { grid-template-columns: 4.5rem minmax(0, 1fr) 1.625rem; gap: 0.875rem; min-height: 0; padding: 0.75rem; }
-    .dm-seq-create .dm-seq-mode > .dm-mode-art { width: 4.5rem; height: 3.5rem; padding: 0.25rem; }
+    .dm-seq-create .dm-seq-mode > :is(.dm-mode-art, .dm-mode-thumb) { width: 4.5rem; height: 3.5rem; padding: 0.25rem; }
+    .dm-seq-create .dm-seq-mode > .dm-mode-thumb { padding: 0; }
     .dm-seq-create .dm-seq-mode .dm-mode-name { font-size: 1.375rem; }
     .dm-seq-create .dm-seq-mode.dm-btn::after, .dm-seq-create .dm-seq-mode.dm-btn[aria-checked="true"]::after { top: 0.75rem; right: 0.75rem; }
   }
   @media (max-width: 359px) {
     .dm-seq-create .dm-seq-mode.dm-btn { grid-template-columns: minmax(0, 1fr) 1.625rem; }
-    .dm-seq-create .dm-seq-mode > .dm-mode-art { display: none; }
+    .dm-seq-create .dm-seq-mode > :is(.dm-mode-art, .dm-mode-thumb) { display: none; }
   }
 
   /* ----- Step 3, the limits (.lim): rows, not boxes; a top hairline each, the field to the right of the words ----- */
   /* The label is a subgrid of its row: its words fill the first cell, its input the second column across the row (the
      input stays inside its label, so the name, the focus on a click and every hook are unchanged). */
   .dm-seq-create .dm-seq-steps .dm-acct-fields { grid-template-columns: minmax(0, 1fr); gap: 0; }
-  .dm-seq-create .dm-seq-limit { display: grid; grid-template-columns: minmax(0, 1fr) 9.25rem; grid-template-rows: auto auto auto; column-gap: 1.75rem; row-gap: 0; align-items: start; min-width: 0; padding: 1.125rem 0.25rem 1.125rem 2px; border: 0; border-radius: 0; background: transparent; box-shadow: inset 0 1px 0 var(--border); }
-  .dm-seq-create .dm-seq-limit > .dm-acct-lf { grid-column: 1 / -1; grid-row: 1 / span 3; display: grid; grid-template-columns: subgrid; grid-template-rows: subgrid; gap: 0; align-items: start; font-size: 0.90625rem; line-height: 1.4; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); cursor: text; }
+  .dm-seq-create .dm-seq-steps .dm-acct-fields[data-domino-settings] { margin-top: 0.125rem; }
+  .dm-seq-create .dm-seq-limit { display: grid; grid-template-columns: minmax(0, 1fr) 9.25rem; grid-template-rows: auto auto auto; column-gap: 1.75rem; row-gap: 0; align-items: start; min-width: 0; padding: 1.125rem 0.25rem 1.125rem 0.125rem; border: 0; border-radius: 0; background: transparent; box-shadow: inset 0 1px 0 var(--border); }
+  .dm-seq-create .dm-seq-limit > .dm-acct-lf { grid-column: 1 / -1; grid-row: 1 / span 3; display: grid; grid-template-columns: subgrid; grid-template-rows: subgrid; gap: 0 1.75rem; align-items: start; font-size: 0.90625rem; line-height: normal; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); cursor: text; }
   .dm-seq-create .dm-seq-limit > .dm-acct-lf > .dm-field { grid-column: 2; grid-row: 1 / -1; align-self: start; width: 100%; height: 2.875rem; min-height: 0; padding: 0 0.875rem; border-radius: 0.75rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border-lip); color: var(--fg); font-size: 0.9375rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; text-align: right; font-variant-numeric: lining-nums tabular-nums; }
+  /* The unit (.fld span): 14px, subtle, 6px after the right-aligned value, inside the field's 14px padding. */
+  .dm-seq-create .dm-seq-limit > .dm-acct-lf > .dm-seq-limit-unit { grid-column: 2; grid-row: 1 / -1; align-self: start; justify-self: end; display: flex; align-items: center; height: 2.875rem; padding-right: 0.875rem; font-size: 0.875rem; font-weight: 400; letter-spacing: normal; color: var(--fg-subtle); translate: 0 0.125rem; pointer-events: none; }
+  .dm-seq-create .dm-seq-limit > .dm-acct-lf > .dm-field:has(+ .dm-seq-limit-unit) { padding-right: 1.9375rem; }
   .dm-seq-create .dm-seq-limit > .dm-acct-lf > .dm-field:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--border-strong); }
   .dm-seq-create .dm-seq-limit > .dm-acct-lf > .dm-field:focus-visible { outline: none; background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong), 0 0 0 0.25rem var(--v4-tan-halo); }
   .dm-seq-create .dm-seq-limit[data-invalid] > .dm-acct-lf > .dm-field { background: rgb(244 96 122 / 0.04); box-shadow: inset 0 0 0 1px rgb(244 96 122 / 0.6); }
@@ -193,7 +233,9 @@
   .dm-seq-create .dm-seq-limit > .dm-seq-limit-why { grid-column: 1; grid-row: 3; margin: 0.375rem 0 0; font-size: 0.8125rem; line-height: 1.5; color: var(--money-out); animation: dm-v4-seq-why 0.25s var(--e-enter) backwards; }
   /* More limits (.acc-h): a 3.625rem row on a hairline, the circled plus of the foundation's details turning 45° open. */
   .dm-seq-create .dm-acct-disclosure { margin: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
-  .dm-seq-create .dm-acct-disclosure > summary { min-height: 3.625rem; margin-top: 2px; padding: 0 0.625rem 0 0.25rem; border-radius: 0.875rem; box-shadow: inset 0 1px 0 var(--border); font-size: 0.9375rem; line-height: 1.375rem; font-weight: 500; color: var(--fg); }
+  /* The prototype's buttons take the block's font and ink (.v4c button {font: inherit; color: inherit} outranks the classes'
+     own sizes): More limits, the consent row and the aside's main button read 16px, regular, in --fg. */
+  .dm-seq-create .dm-acct-disclosure > summary { min-height: 3.625rem; margin-top: 0.125rem; padding: 0 0.625rem 0 0.25rem; border-radius: 0.875rem; box-shadow: inset 0 1px 0 var(--border); font-size: 1rem; line-height: 1.375rem; font-weight: 400; letter-spacing: normal; color: var(--fg); }
   .dm-seq-create .dm-acct-disclosure > summary:hover { background: var(--v4-w035); }
   .dm-seq-create .dm-acct-disclosure > .dm-acct-disclosure-body { gap: 0; padding: 0 0 0.25rem; }
   .dm-seq-create .dm-acct-disclosure > .dm-acct-disclosure-body > .dm-acct-fields:first-child > .dm-seq-limit:first-child { box-shadow: none; }
@@ -205,14 +247,16 @@
   .dm-seq-create [data-vault-limits] > [data-band-distance] { color: var(--fg-muted); }
   .dm-seq-create [data-vault-limits] > .dm-seq-limit-why { color: var(--money-out); }
   /* The consent plate (.cs): the native checkbox stays the control, drawn larger; ticked, the plate warms. */
-  .dm-seq-create .dm-seq-consent.dm-acct-check { display: grid; grid-template-columns: 1.375rem minmax(0, 1fr); align-items: start; gap: 0.875rem; margin-top: 1.25rem; padding: 1rem 1rem 1rem 0.875rem; border-radius: 1rem; background: rgb(255 236 220 / 0.025); box-shadow: inset 0 0 0 1px var(--border); color: var(--fg-muted); font-size: 0.875rem; line-height: 1.55; cursor: pointer; transition: background-color 0.18s var(--e-std), box-shadow 0.2s var(--e-std), color 0.18s var(--e-std); }
+  .dm-seq-create .dm-seq-consent.dm-acct-check { display: grid; grid-template-columns: 1.375rem minmax(0, 1fr); align-items: start; gap: 0.875rem; margin-top: 1.25rem; padding: 1rem 1rem 1rem 0.875rem; border-radius: 1rem; background: rgb(255 236 220 / 0.025); box-shadow: inset 0 0 0 1px var(--border); color: var(--fg); font-size: 1rem; line-height: normal; font-weight: 400; letter-spacing: normal; cursor: pointer; transition: background-color 0.18s var(--e-std), box-shadow 0.2s var(--e-std), color 0.18s var(--e-std); }
+  /* Under the review the prototype shows the consent as a still row (a div, not a button): 14px on 1.55. */
+  .dm-seq-create:has([data-v2in-review]) .dm-seq-consent.dm-acct-check { font-size: 0.875rem; line-height: 1.55; }
   .dm-seq-create .dm-seq-consent.dm-acct-check:hover { background: var(--v4-w04); box-shadow: inset 0 0 0 1px var(--border-lip); color: var(--fg); }
   .dm-seq-create .dm-seq-consent.dm-acct-check:has(> input:checked) { background: rgb(255 157 98 / 0.035); box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.35); color: var(--fg); }
   .dm-seq-create .dm-seq-consent.dm-acct-check > input { width: 1.375rem; height: 1.375rem; margin: 1px 0 0; border-radius: 0.4375rem; background-size: 0.875rem; }
   .dm-seq-create .dm-seq-consent.dm-acct-check:hover > input:not(:checked):not(:disabled) { box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong); }
   .dm-seq-create .dm-seq-consent.dm-acct-check > input:checked { background-color: rgb(255 157 98 / 0.14); box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.6); }
   /* Look before you change (Domino): pointing at a limit lights its part of the aside's axis. */
-  .dm-seq-create:has([data-setting="upsidePercent"]:is(:hover, :focus-within), [data-setting="maxPositions"]:is(:hover, :focus-within)) .dm-axis-band[data-kind="next"] > .dm-axis-line { background: var(--primary-hover); }
+  .dm-seq-create:has([data-setting="upsidePercent"]:is(:hover, :focus-within), [data-setting="maxPositions"]:is(:hover, :focus-within)) .dm-axis-band[data-kind="next"] > .dm-axis-dash > rect { stroke: var(--primary-hover); }
   .dm-seq-create:has([data-setting="maxOverlapPercent"]:is(:hover, :focus-within)) .dm-axis-band[data-kind="zone"] > .dm-axis-fill { filter: brightness(1.8); }
   .dm-seq-create:has([data-setting="triggerPercent"]:is(:hover, :focus-within)) .dm-axis-trigger > span { border-left-color: var(--primary-hover); }
   /* The preset chips beside a slider (Next range higher by): one row of equal chips under the field, never 3 + 1. */
@@ -223,42 +267,78 @@
   @media (max-width: 859px) {
     .dm-seq-create .dm-seq-limit:is([data-kind="slider"], [data-kind="log"]) > .dm-seq-limit-row { flex-wrap: nowrap; }
     .dm-seq-create .dm-seq-limit { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto auto; }
-    .dm-seq-create .dm-seq-limit > .dm-acct-lf { grid-row: 1 / span 2; }
-    .dm-seq-create .dm-seq-limit > .dm-acct-lf > .dm-field { grid-column: 1; grid-row: 2; margin-top: 0.75rem; }
-    .dm-seq-create .dm-seq-limit > .dm-seq-hint { grid-row: 3; }
-    .dm-seq-create .dm-seq-limit > .dm-seq-limit-why { grid-row: 4; }
+    /* One column (.lim at the phone): the words, the help and any problem, then the full-width field 12px under them. */
+    .dm-seq-create .dm-seq-limit > .dm-acct-lf { grid-row: 1 / span 4; }
+    .dm-seq-create .dm-seq-limit > .dm-acct-lf > .dm-field { grid-column: 1; grid-row: 4; margin-top: 0.75rem; }
+    .dm-seq-create .dm-seq-limit > .dm-acct-lf > .dm-seq-limit-unit { grid-column: 1; grid-row: 4; margin-top: 0.75rem; }
+    .dm-seq-create .dm-seq-limit > .dm-seq-hint { grid-row: 2; }
+    .dm-seq-create .dm-seq-limit > .dm-seq-limit-why { grid-row: 3; }
   }
 
   /* ----- The aside, "Your automation" (.as): the serif heading, the picture on its plate, the seam, the wallet steps ----- */
-  .dm-seq-create .dm-auto-aside-heading h2 { margin: 0; padding: 0.375rem 0.375rem 0.25rem; font-family: var(--font-display); font-weight: 400; font-size: 2.375rem; line-height: 1; letter-spacing: -0.02em; color: var(--fg); }
-  .dm-seq-create .dm-seq-aside > .dm-seq-hint { margin: 0 0.375rem; font-size: 0.875rem; line-height: 1.55; color: var(--fg-muted); }
+  .dm-seq-create .dm-auto-aside-heading h2 { margin: 0; padding: 1.375rem 1rem 0.25rem; font-family: var(--font-display); font-weight: 400; font-size: 2.375rem; line-height: 1; letter-spacing: -0.02em; color: var(--fg); }
+  .dm-seq-create .dm-seq-aside > .dm-seq-hint { margin: -0.125rem 1rem 0; font-size: 0.875rem; line-height: 1.55; color: var(--fg-muted); }
   .dm-seq-create .dm-seq-aside > .dm-seq-hint + .dm-seq-hint { margin-top: -0.5rem; color: var(--fg-subtle); }
-  /* The picture plate (.pic): the Domino axis or the Auto-compound picture, one flat warm plate. */
-  .dm-seq-create .dm-seq-aside > :is(.dm-seq-axis, .dm-seq-cpv) { gap: 0.625rem; margin: 0 0.125rem; padding: 0.875rem 0.75rem 1rem; border-radius: 1.125rem; background: rgb(255 236 220 / 0.02); box-shadow: inset 0 0 0 1px var(--border); }
-  .dm-seq-create .dm-seq-cpv > .dm-seq-stage.dm-dots-plate { height: 7.25rem; padding: 0.5rem 0.25rem 0; border-radius: 0; background: transparent; }
-  .dm-seq-create .dm-seq-cpv .dm-mode-art .band { fill: rgb(95 208 154 / 0.06); }
-  .dm-seq-create .dm-seq-cpv .dm-mode-art .band-fill { fill: rgb(95 208 154 / 0.12); }
-  .dm-seq-create .dm-seq-cpv .dm-mode-art .band-edge { stroke: rgb(95 208 154 / 0.45); }
-  .dm-seq-create .dm-seq-cpv .dm-mode-art .handle { fill: rgb(255 157 98 / 0.55); }
-  .dm-seq-create .dm-seq-cpv .dm-mode-art :is(.drop-dot, .stack) { fill: var(--money-in); }
-  .dm-seq-create .dm-seq-cpv .dm-mode-art .arc { stroke: rgb(255 236 220 / 0.3); }
-  .dm-seq-create .dm-seq-cpv .dm-mode-art .tile-solid .t-body { fill: rgb(255 157 98 / 0.08); stroke: rgb(255 157 98 / 0.6); stroke-width: 1.2px; }
-  .dm-seq-create .dm-seq-cpv .dm-mode-art .tile-solid .t-pip { fill: rgb(255 157 98 / 0.6); }
-  .dm-seq-create .dm-seq-cpv .dm-mode-art .tile-solid .t-div { stroke: rgb(255 157 98 / 0.5); stroke-opacity: 1; }
+  /* The picture plate (.pic): one flat warm plate holding the pictures stacked in one cell; the chosen one shows (the empty
+     plate before a position and a choice), the change a cross-fade with a little blur and rise. Those not shown are hidden. */
+  .dm-seq-create .dm-seq-aside > .dm-seq-pic { display: grid; min-width: 0; margin: 0 0.375rem; padding: 0.875rem 0.75rem 1rem; border-radius: 1.125rem; background: rgb(255 236 220 / 0.02); box-shadow: inset 0 0 0 1px var(--border); }
+  /* Set up automation's plate keeps the height of its tallest picture (the Domino axis) from the start, as the prototype's. */
+  .dm-seq-create .dm-seq-aside > .dm-seq-pic:has(> [data-scene="domino"]) { min-height: 21.25rem; }
+  .dm-seq-pic > .dm-seq-asc { grid-area: 1 / 1; align-self: center; min-width: 0; opacity: 0; visibility: hidden; filter: blur(0.375rem); transform: translateY(0.5rem); transition: opacity 0.35s var(--e-std), filter 0.45s var(--e-enter), transform 0.55s var(--e-enter), visibility 0s linear 0.35s; }
+  .dm-seq-pic[data-mode="none"] > [data-scene="none"], .dm-seq-pic[data-mode="compound"] > [data-scene="compound"], .dm-seq-pic[data-mode="domino"] > [data-scene="domino"], .dm-seq-pic[data-mode="protection"] > [data-scene="protection"] { opacity: 1; visibility: visible; filter: none; transform: none; transition-delay: 0s; }
+  .dm-seq-pic :is(.dm-seq-empty-plate, .dm-seq-exit-pic, .dm-cp-pic) { display: block; max-width: 100%; margin: 0 auto; overflow: visible; }
+  .dm-seq-pic .dm-seq-empty-plate { width: 100%; height: 9.375rem; }
+  .dm-seq-pic :is(.dm-seq-exit-pic, .dm-cp-pic) { width: 21.25rem; height: auto; }
+  .dm-seq-pic .ep-ring { fill: none; stroke: rgb(255 236 220 / 0.12); stroke-width: 1; stroke-dasharray: 3 5; }
+  .dm-seq-pic .ep-t { fill: none; stroke: rgb(255 236 220 / 0.2); stroke-width: 1.2; stroke-dasharray: 3 3; }
+  .dm-seq-pic .x-plate { fill: rgb(255 236 220 / 0.035); stroke: rgb(255 236 220 / 0.1); stroke-width: 1; }
+  .dm-seq-pic .x-lim { fill: none; stroke: rgb(255 236 220 / 0.42); stroke-width: 1; stroke-dasharray: 3 5; }
+  .dm-seq-pic .x-line { fill: none; stroke: var(--fg-muted); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 0; }
+  .dm-seq-pic .x-end { fill: var(--fg); }
+  .dm-seq-pic .x-halo { fill: rgb(255 236 220 / 0.12); }
+  .dm-seq-pic .x-arc { fill: none; stroke: rgb(255 236 220 / 0.28); stroke-width: 1.6; stroke-linecap: round; stroke-dasharray: 0 7; }
+  .dm-seq-pic .x-wal { fill: #1b1815; stroke: rgb(255 236 220 / 0.14); stroke-width: 1; }
+  .dm-seq-pic .x-slot { fill: #12100e; stroke: rgb(255 236 220 / 0.14); stroke-width: 1; }
+  /* Inside the plate the Domino axis and the Auto-compound picture carry no plate of their own. */
+  .dm-seq-create .dm-seq-pic :is(.dm-seq-axis, .dm-seq-cpv) { gap: 0.625rem; margin: 0; padding: 0; border-radius: 0; background: none; box-shadow: none; }
+  /* .axw: the heading, 6px to the chart, 6px to the legend, 10px to the note. */
+  .dm-seq-create .dm-seq-pic .dm-seq-axis { gap: 0.375rem; padding: 0.125rem 0.25rem 0; }
+  /* The Auto-compound picture (.asc-c): the drawing itself, no inner frame. */
+  .dm-seq-create .dm-seq-aside .dm-seq-cpv > .dm-seq-stage { display: block; height: auto; padding: 0; border-radius: 0; background: transparent; box-shadow: none; overflow: visible; }
+  .dm-seq-cpv .cp-band { fill: rgb(95 208 154 / 0.12); stroke: rgb(95 208 154 / 0.45); stroke-width: 1; }
+  .dm-seq-cpv .cp-hd { fill: rgb(255 157 98 / 0.55); }
+  .dm-seq-cpv .cp-fee { fill: var(--money-in); }
+  .dm-seq-cpv .cp-arc { fill: none; stroke: rgb(255 236 220 / 0.3); stroke-width: 1.6; stroke-linecap: round; stroke-dasharray: 0 7; }
   /* "● Earned fees → ○ Same position" (.fj) and the fee meter (.fm): one quiet 6px track, the service's sliver at its end. */
-  .dm-seq-create .dm-seq-cpv .dm-auto-journey { gap: 0.75rem; font-size: 0.8125rem; line-height: 1.25rem; font-weight: 500; color: var(--fg-muted); }
+  .dm-seq-create .dm-seq-cpv .dm-auto-journey { gap: 0.75rem; font-size: 0.8125rem; line-height: normal; font-weight: 500; color: var(--fg-muted); }
   .dm-seq-create .dm-seq-cpv .dm-auto-journey > span:not(.dm-auto-journey-arrow) { gap: 0.5rem; }
   .dm-seq-create .dm-seq-cpv .dm-auto-journey i { width: 0.5625rem; height: 0.5625rem; border: 0; background: transparent; box-shadow: inset 0 0 0 1.5px var(--fg-muted); }
   .dm-seq-create .dm-seq-cpv .dm-auto-journey > span:first-child i { background: var(--money-in); box-shadow: none; }
-  .dm-seq-create .dm-seq-cpv .dm-auto-journey-arrow { color: var(--fg-subtle); }
-  .dm-seq-create .dm-seq-cpv > .dm-fee-meter { --fee-earned: var(--v4-w06); --fee-cut: var(--fg-muted); margin: 0.375rem 1.625rem 2px; }
+  /* The arrow takes the line's free room on both sides (the prototype's .asc svg {margin: 0 auto} reaches it), so the two
+     ends sit apart across the plate. */
+  .dm-seq-create .dm-seq-cpv .dm-auto-journey-arrow { display: block; margin-inline: auto; color: var(--fg-subtle); }
+  .dm-seq-create .dm-seq-cpv .dm-auto-journey-arrow > svg { display: block; width: 1.875rem; height: 0.625rem; }
+  .dm-seq-create .dm-seq-cpv > .dm-fee-meter { --fee-earned: var(--v4-w06); --fee-cut: var(--fg-muted); margin: 0.375rem 1.625rem 0.125rem; }
   /* The Domino axis (.axw): Tangerine root, dashed next ranges, hatched zones, the trigger a dashed warm line. */
-  .dm-seq-create .dm-seq-axis .dm-auto-chart-heading h3 { font-size: 0.9375rem; line-height: 1.375rem; font-weight: 500; color: var(--fg); }
-  .dm-seq-create .dm-seq-axis .dm-auto-chart-heading > span { font-size: 0.78125rem; line-height: 1.25rem; color: var(--fg-subtle); }
-  .dm-seq-create .dm-seq-axis .dm-axis-base { background: rgb(255 236 220 / 0.14); }
+  .dm-seq-create .dm-seq-axis .dm-auto-chart-heading h3 { font-size: 0.9375rem; line-height: normal; font-weight: 500; color: var(--fg); }
+  .dm-seq-create .dm-seq-axis .dm-auto-chart-heading > span { font-size: 0.78125rem; line-height: normal; color: var(--fg-subtle); }
+  /* The plot (.ax, 360 x 200): its height matches SuccessorAxis H; the axis line runs 14/360 in from each side. */
+  .dm-seq-create .dm-seq-axis .dm-axis-plot { height: 12.375rem; }
+  /* The chart sits right under the subtitle (the prototype's .asc svg {margin: 0 auto} outranks .ax's 6px). */
+  .dm-seq-create .dm-seq-pic .dm-seq-axis > .dm-axis-plot { margin-top: -0.375rem; }
+  .dm-seq-create .dm-seq-axis .dm-axis-base { left: 3.9%; right: 3.9%; background: rgb(255 236 220 / 0.14); }
+  /* The tiles (.ax-t0 / .ax-t1): your position's solid, 15px in from its top end; each next range's outlined, centred on it. */
+  .dm-seq-create .dm-seq-axis .dm-axis-tile-root > svg { margin-left: -0.9375rem; }
+  .dm-seq-create .dm-seq-axis .dm-axis-tile-next > svg { margin-left: -0.28125rem; }
+  .dm-seq-create .dm-seq-axis .dm-axis-tile .dm-axis-tile-body { fill: none; stroke: rgb(255 157 98 / 0.6); stroke-width: 1px; }
+  .dm-seq-create .dm-seq-axis .dm-axis-tile.tile-solid .dm-axis-tile-body { fill: var(--primary); stroke: none; }
+  /* The trigger (.ax-trig) from 30 down to the axis line; the ticks (.ax-tk) 6px under the line, their words under them. */
+  .dm-seq-create .dm-seq-axis .dm-axis-trigger > span { height: 8.5rem; }
+  .dm-seq-create .dm-seq-axis .dm-axis-tick::before { content: ''; position: absolute; left: 0; top: -0.5625rem; width: 1px; height: 0.375rem; background: rgb(255 236 220 / 0.22); }
   .dm-seq-create .dm-seq-axis .dm-axis-band[data-kind="root"] > .dm-axis-line { background: rgb(255 157 98 / 0.6); }
   .dm-seq-create .dm-seq-axis .dm-axis-band[data-kind="root"] > .dm-axis-fill { background: linear-gradient(rgb(255 157 98 / 0.2), rgb(255 157 98 / 0.2)), var(--card); }
-  .dm-seq-create .dm-seq-axis .dm-axis-band[data-kind="next"] > .dm-axis-line { background: rgb(255 157 98 / 0.55); transition: background-color 0.2s var(--e-std); }
+  .dm-seq-create .dm-seq-axis .dm-axis-band[data-kind="next"] > .dm-axis-dash { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+  .dm-seq-create .dm-seq-axis .dm-axis-band[data-kind="next"] > .dm-axis-dash > rect { fill: none; stroke: rgb(255 157 98 / 0.55); stroke-width: 1px; stroke-dasharray: 3 3; transition: x var(--dur-step) var(--ease-enter), width var(--dur-step) var(--ease-enter), stroke 0.2s var(--e-std); }
   .dm-seq-create .dm-seq-axis .dm-axis-band[data-kind="next"] > .dm-axis-fill { background: linear-gradient(rgb(255 157 98 / 0.05), rgb(255 157 98 / 0.05)), var(--card); }
   .dm-seq-create .dm-seq-axis .dm-axis-band[data-kind="zone"] > .dm-axis-fill { background: repeating-linear-gradient(135deg, rgb(255 157 98 / 0.4) 0 1px, transparent 1px 0.3125rem); transition: filter 0.2s var(--e-std); }
   .dm-seq-create .dm-seq-axis .dm-axis-trigger > span { border-left: 1px dashed rgb(255 236 220 / 0.42); transition: border-color 0.2s var(--e-std); }
@@ -266,17 +346,24 @@
   /* The position's id: in a box the root band's size, outside the band's clip (SuccessorAxis). It shows only when the band
      can hold it whole (a narrow band is named by the legend and the aside); a longer id ends in an ellipsis, never a cut glyph. */
   .dm-seq-axis .dm-axis-nft-box { position: absolute; container-type: inline-size; overflow: hidden; pointer-events: none; transition: left var(--dur-step) var(--ease-enter), width var(--dur-step) var(--ease-enter); }
-  .dm-seq-axis .dm-axis-nft-box > .dm-axis-nft { max-width: calc(100% - 0.875rem); overflow: hidden; text-overflow: ellipsis; font-size: 0.6875rem; line-height: 0.875rem; }
+  /* Your position's #id (.ax-id) above its band, from the band's start: 12px, regular, muted. */
+  .dm-seq-axis .dm-axis-nft-box > .dm-axis-nft { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: 0.75rem; line-height: 0.875rem; font-weight: 400; letter-spacing: 0; }
   @container (width < 4.5rem) { .dm-seq-axis .dm-axis-nft-box > .dm-axis-nft { visibility: hidden; } }
   .dm-seq-create .dm-seq-axis .dm-axis-tick > span { color: var(--fg-subtle); }
-  .dm-seq-create .dm-seq-axis .dm-axis-more { background: var(--s2); box-shadow: inset 0 0 0 1px var(--border-lip); color: var(--fg); font-size: 0.75rem; }
-  .dm-seq-create .dm-seq-axis .dm-auto-chart-legend { gap: 0.5rem 1.125rem; font-size: 0.78125rem; line-height: 1.25rem; color: var(--fg-muted); }
+  .dm-seq-create .dm-seq-axis .dm-axis-more { top: 1.125rem; right: 1.25rem; display: inline-flex; align-items: center; justify-content: center; min-width: 2.5rem; height: 1.375rem; padding: 0 0.5rem; background: var(--s2); box-shadow: inset 0 0 0 1px var(--border-lip); color: var(--fg); font-size: 0.75rem; }
+  .dm-seq-create .dm-seq-axis .dm-auto-chart-legend { gap: 0.5rem 1.125rem; font-size: 0.78125rem; line-height: normal; color: var(--fg-muted); }
   .dm-seq-create .dm-seq-axis .dm-auto-chart-legend i { width: 1rem; height: 0.5625rem; border: 0; border-radius: 2px; }
   .dm-seq-create .dm-seq-axis .dm-auto-chart-legend i[data-kind="root"] { background: rgb(255 157 98 / 0.2); box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.6); }
   .dm-seq-create .dm-seq-axis .dm-auto-chart-legend i[data-kind="next"] { background: linear-gradient(90deg, rgb(255 157 98 / 0.6) 50%, transparent 0) 0 0 / 0.25rem 1px repeat-x, linear-gradient(90deg, rgb(255 157 98 / 0.6) 50%, transparent 0) 0 100% / 0.25rem 1px repeat-x, linear-gradient(rgb(255 157 98 / 0.6) 50%, transparent 0) 0 0 / 1px 0.25rem repeat-y, linear-gradient(rgb(255 157 98 / 0.6) 50%, transparent 0) 100% 0 / 1px 0.25rem repeat-y; }
-  .dm-seq-create .dm-seq-axis :is(.dm-auto-preview-note, .dm-axis-note) { margin: 0; font-size: 0.78125rem; line-height: 1.5; color: var(--fg-subtle); }
-  /* The seam (.seam): the aside is a domino face, split by the tile's groove above the wallet steps. */
-  .dm-seq-create .dm-seq-aside > .dm-seq-wsteps::before { content: ''; display: block; height: 2px; margin: 0.375rem 0.875rem 0.25rem; background: linear-gradient(rgb(0 0 0 / 0.5), rgb(0 0 0 / 0.5)) 0 0 / 100% 1px no-repeat, linear-gradient(rgb(255 236 220 / 0.075), rgb(255 236 220 / 0.075)) 0 1px / 100% 1px no-repeat; }
+  .dm-seq-create .dm-seq-axis :is(.dm-auto-preview-note, .dm-axis-note) { margin: 0.25rem 0 0; font-size: 0.78125rem; line-height: 1.5; color: var(--fg-subtle); }
+  /* The seam (.seam): the aside is a domino face, split by the tile's groove above the wallet steps; its lower line catches
+     the ember where the pointer passes (.seam-lit; the aside carries [data-ember], so --ex and --ember-on reach it). */
+  .dm-seq-create .dm-seq-aside > .dm-seq-seam { display: block; height: 0.125rem; margin: 0.375rem 0.875rem 0; background: linear-gradient(rgb(0 0 0 / 0.5), rgb(0 0 0 / 0.5)) 0 0 / 100% 50% no-repeat, linear-gradient(rgb(255 236 220 / 0.075), rgb(255 236 220 / 0.075)) 0 100% / 100% 50% no-repeat; }
+  /* The seam's 6px and the list's 8px collapse to 8 in the prototype (.seam + .ws). */
+  .dm-seq-create .dm-seq-aside > .dm-seq-seam + .dm-seq-wsteps { margin-top: -0.375rem; }
+  /* With no wallet list (Auto-exit), the button keeps the prototype's 6px under the seam plus the 18px above the button. */
+  .dm-seq-create .dm-seq-aside > .dm-seq-seam + .dm-btn { margin-top: 0.625rem; }
+  .dm-seq-create .dm-seq-aside > .dm-seq-seam > .dm-seam-lit { position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background-image: linear-gradient(90deg, rgb(255 190 146 / 0), rgb(255 190 146 / 0.8), rgb(255 190 146 / 0)); background-size: 16.25rem 1px; background-repeat: repeat-y; background-attachment: fixed; background-position: calc(var(--ex, -100rem) - 8.125rem) 0; opacity: var(--ember-on, 0); transition: opacity 0.45s var(--e-std), background-position 0.5s var(--e-drift); pointer-events: none; }
 
   /* ----- The wallet steps (.ws .w), here and on the done card only (WalletSteps also renders in the shared dialogs) ----- */
   :is(.dm-seq-aside, .dm-seq-done) > .dm-seq-wsteps { margin: 0 0.25rem; }
@@ -288,11 +375,15 @@
   :is(.dm-seq-aside, .dm-seq-done) > .dm-seq-wsteps .dm-step-marker[data-state="current"]::after { content: none; }
   /* Sent: a Tangerine arc spins around the marker until the network has it. */
   :is(.dm-seq-aside, .dm-seq-done) > .dm-seq-wsteps > li[data-step-phase="sent"] .dm-step-marker::after { content: ''; position: absolute; inset: -0.25rem; padding: 0; border-radius: 50%; background: conic-gradient(from var(--dm-spin), rgb(255 157 98 / 0) 0deg, rgb(255 157 98 / 0.9) 90deg, rgb(255 157 98 / 0) 91deg); -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 1.5px), #000 calc(100% - 1px)); mask: radial-gradient(closest-side, transparent calc(100% - 1.5px), #000 calc(100% - 1px)); -webkit-mask-composite: source-over; mask-composite: add; animation: dm-spin 1.1s linear infinite; pointer-events: none; }
-  :is(.dm-seq-aside, .dm-seq-done) > .dm-seq-wsteps > li[data-step-state="done"] .dm-step-marker { background: #1d2a22; box-shadow: none; color: var(--money-in); animation: dm-v4-seq-stamp 0.45s var(--e-pop) backwards; }
+  /* Done: the disc turns green at once and only the drawn check stamps in (the glyph stays in the DOM, transparent). */
+  :is(.dm-seq-aside, .dm-seq-done) > .dm-seq-wsteps > li[data-step-state="done"] .dm-step-marker { background: #1d2a22; box-shadow: none; color: transparent; animation: none; }
+  :is(.dm-seq-aside, .dm-seq-done) > .dm-seq-wsteps > li[data-step-state="done"] .dm-step-marker::before { content: ''; position: absolute; inset: 0; width: 0.75rem; height: 0.75rem; margin: auto; background: var(--money-in); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 6.4 5.1 8.5 9.2 3.8' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 6.4 5.1 8.5 9.2 3.8' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat; animation: dm-v4-seq-stamp 0.45s var(--e-pop) backwards; }
   :is(.dm-seq-aside, .dm-seq-done) > .dm-seq-wsteps > li[data-step-state="failed"] .dm-step-marker { background: rgb(244 96 122 / 0.08); box-shadow: inset 0 0 0 1px rgb(244 96 122 / 0.55); color: var(--money-out); }
   :is(.dm-seq-aside, .dm-seq-done) > .dm-seq-wsteps .dm-flow-wstep-body { gap: 0.25rem; padding-top: 0.3125rem; }
   :is(.dm-seq-aside, .dm-seq-done) > .dm-seq-wsteps .dm-flow-wstep-title { font-size: 0.90625rem; line-height: 1.35; font-weight: 500; color: var(--fg); }
   :is(.dm-seq-aside, .dm-seq-done) > .dm-seq-wsteps > li[data-step-state="upcoming"] .dm-flow-wstep-title { color: var(--fg-muted); }
+  /* The preview's one step is not "upcoming" in the prototype (.ws5 .w, no .up): its title reads in --fg. */
+  .dm-seq-aside > .dm-seq-wsteps[data-wallet-steps="setup-preview"] > li .dm-flow-wstep-title { color: var(--fg); }
   :is(.dm-seq-aside, .dm-seq-done) > .dm-seq-wsteps .dm-flow-wstep-note { font-size: 0.8125rem; line-height: 1.45; color: var(--fg-subtle); }
   :is(.dm-seq-aside, .dm-seq-done) > .dm-seq-wsteps > li[data-step-state="current"] .dm-flow-wstep-note { color: var(--fg-muted); }
   :is(.dm-seq-aside, .dm-seq-done) > .dm-seq-wsteps > li[data-step-state="done"] .dm-flow-wstep-note { color: var(--money-in); }
@@ -300,12 +391,12 @@
   :is(.dm-seq-aside, .dm-seq-done) > .dm-seq-wsteps [data-step-explorer]:hover { color: var(--primary-hover); text-decoration-color: rgb(255 157 98 / 0.6); }
 
   /* ----- The main button (.go .btn-x), its reason (.why3), the review (.rv), the locked well (.lock), notes and errors ----- */
-  .dm-seq-create .dm-seq-aside > .dm-btn { width: 100%; height: 3.5rem; min-height: 0; margin-top: 0.25rem; border-radius: 0.875rem; font-size: 0.96875rem; }
-  .dm-seq-create .dm-seq-aside > :is(.dm-btn--primary, .dm-btn--accent):is(:disabled, [aria-disabled="true"]) { background: var(--v4-w06); box-shadow: inset 0 0 0 1px var(--border); color: var(--fg-subtle); cursor: not-allowed; }
+  .dm-seq-create .dm-seq-aside > .dm-btn { width: auto; height: 3.5rem; min-height: 0; margin: 0.25rem 0.25rem 0; border-radius: 0.875rem; font-size: 1rem; font-weight: 400; }
+  .dm-seq-create .dm-seq-aside > :is(.dm-btn--primary, .dm-btn--accent):is(:disabled, [aria-disabled="true"]) { background: var(--v4-w06); box-shadow: inset 0 0 0 1px var(--border); color: var(--fg); cursor: not-allowed; }
   .dm-seq-create .dm-seq-aside > :is(.dm-btn--primary, .dm-btn--accent)[aria-busy="true"]:disabled { background: rgb(255 157 98 / 0.08); box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.32); color: var(--primary-hover); cursor: progress; }
-  .dm-seq-create .dm-seq-aside > .dm-flow-reason { margin: -0.25rem 0.375rem 0; font-size: 0.84375rem; line-height: 1.5; color: var(--fg-subtle); transition: color 0.2s var(--e-std); }
+  .dm-seq-create .dm-seq-aside > .dm-flow-reason { margin: -0.125rem 0.625rem 0; font-size: 0.84375rem; line-height: 1.5; color: var(--fg-subtle); transition: color 0.2s var(--e-std); }
   .dm-seq-create .dm-seq-aside:has(> .dm-btn:disabled:hover) > .dm-flow-reason { color: var(--fg); }
-  .dm-seq-create .dm-auto-review { gap: 0; margin: 0.5rem 0.25rem 0; padding: 1.25rem 0 0; border: 0; border-radius: 0; background: transparent; box-shadow: inset 0 1px 0 var(--border); }
+  .dm-seq-create .dm-auto-review { gap: 0; margin: 0.375rem 0.25rem 0; padding: 1.25rem 0 0; border: 0; border-radius: 0; background: transparent; box-shadow: inset 0 1px 0 var(--border); }
   .dm-seq-create .dm-auto-review > h3 { margin: 0 0.75rem 0.5rem; font-family: var(--font-display); font-weight: 400; font-size: 1.75rem; line-height: 1; letter-spacing: -0.02em; color: var(--fg); }
   .dm-seq-create .dm-auto-review-facts > div { align-items: center; min-height: 2.625rem; padding: 0.375rem 0.75rem; border: 0; border-radius: 0.75rem; transition: background-color 0.18s var(--e-std); }
   .dm-seq-create .dm-auto-review-facts > div:is(:first-child, :last-child) { padding-top: 0.375rem; padding-bottom: 0.375rem; }
@@ -315,60 +406,74 @@
   .dm-seq-create .dm-auto-review > .dm-seq-hint { margin: 0.625rem 0.75rem 0; font-size: 0.8125rem; line-height: 1.5; color: var(--fg-subtle); }
   .dm-seq-create .dm-auto-review > [data-v2-locked] { display: flex; align-items: center; gap: 0.8125rem; min-height: 3.625rem; margin: 0.875rem 0.25rem 0; padding: 0.75rem 1rem 0.75rem 0.8125rem; border-radius: 0.875rem; background: rgb(0 0 0 / 0.2); box-shadow: inset 0 2px 0.3125rem rgb(0 0 0 / 0.5), inset 0 0 0 1px rgb(255 236 220 / 0.05), 0 1px 0 rgb(255 236 220 / 0.07); font-size: 0.84375rem; line-height: 1.45; color: var(--fg-muted); text-align: left; }
   .dm-seq-create .dm-auto-review > [data-v2-locked]::before { flex: none; width: 2rem; height: 2rem; margin: 0; border-radius: 50%; background: var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23c3bcb2' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.5' y='7' width='9' height='6.5' rx='1.6'/%3E%3Cpath d='M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7'/%3E%3C/svg%3E") center / 0.875rem no-repeat; box-shadow: inset 0 0 0 1px var(--border-lip), 0 1px 0 rgb(0 0 0 / 0.4); }
-  .dm-seq-create .dm-seq-aside > [data-v3-owed-to-wallet] { display: flex; gap: 0.625rem; align-items: baseline; margin: 0 0.375rem; font-size: 0.8125rem; line-height: 1.5; color: var(--fg-subtle); }
+  .dm-seq-create .dm-seq-aside > [data-v3-owed-to-wallet] { display: flex; gap: 0.625rem; align-items: baseline; margin: 0 0.75rem; font-size: 0.8125rem; line-height: 1.5; color: var(--fg-subtle); }
   .dm-seq-create .dm-seq-aside > [data-v3-owed-to-wallet]::before { content: ''; flex: none; width: 0.375rem; height: 0.375rem; border-radius: 50%; background: var(--fg-subtle); transform: translateY(-1px); }
-  .dm-seq-create .dm-seq-aside > [role="alert"][data-error-code] { display: flex; gap: 0.625rem; align-items: baseline; margin: 0 0.375rem; font-size: 0.84375rem; line-height: 1.5; color: var(--fg-muted); }
+  .dm-seq-create .dm-seq-aside > [role="alert"][data-error-code] { display: flex; gap: 0.625rem; align-items: baseline; margin: 0 0.75rem; font-size: 0.84375rem; line-height: 1.5; color: var(--fg-muted); }
   .dm-seq-create .dm-seq-aside > [role="alert"][data-error-code]::before { content: ''; flex: none; width: 0.375rem; height: 0.375rem; border-radius: 50%; background: var(--money-out); box-shadow: 0 0 0 0.1875rem rgb(244 96 122 / 0.14); transform: translateY(-1px); }
 
   /* ----- Set up (.done): one card, the mode at work on a plate at the left, the serif line, the steps all green, the way on ----- */
   .dm-seq > .dm-seq-done { display: grid; grid-template-columns: 28rem minmax(0, 1fr); grid-template-rows: 1fr auto auto auto auto 1fr; column-gap: 3.25rem; row-gap: 0; align-items: start; justify-items: start; padding: 2.5rem; border-radius: 1.625rem; }
-  .dm-seq > .dm-seq-done > .dm-seq-stage { grid-column: 1; grid-row: 1 / -1; justify-self: stretch; align-items: center; height: 27rem; padding: 2.5rem 2rem; border-radius: 1.375rem; background: rgb(255 236 220 / 0.02); box-shadow: inset 0 0 0 1px var(--border); }
-  .dm-seq > .dm-seq-done > .dm-seq-stage[data-mode="domino"] { background: radial-gradient(20rem 15rem at 74% 46%, rgb(255 157 98 / 0.12), rgb(255 157 98 / 0) 70%), rgb(255 236 220 / 0.02); }
-  .dm-seq > .dm-seq-done > .dm-seq-stage > div { width: 100%; }
-  .dm-seq > .dm-seq-done > .dm-seq-stage .dm-mode-art { width: 100%; max-width: none; height: auto; }
-  .dm-seq > .dm-seq-done > .dm-seq-stage .dm-mode-art .band { fill: rgb(95 208 154 / 0.06); }
-  .dm-seq > .dm-seq-done > .dm-seq-stage .dm-mode-art .band-fill { fill: rgb(95 208 154 / 0.14); }
-  .dm-seq > .dm-seq-done > .dm-seq-stage .dm-mode-art .band-edge { stroke: rgb(95 208 154 / 0.5); }
-  .dm-seq > .dm-seq-done > .dm-seq-stage .dm-mode-art :is(.drop-dot, .stack) { fill: var(--money-in); }
+  .dm-seq > .dm-seq-done > .dm-seq-stage { position: relative; grid-column: 1; grid-row: 1 / -1; justify-self: stretch; align-self: center; display: block; height: 27rem; padding: 0; overflow: hidden; border-radius: 1.375rem; background: rgb(255 236 220 / 0.02); box-shadow: inset 0 0 0 1px var(--border); }
+  /* Domino-compound's warmth behind its scene (.dn-art.m-domino::before). */
+  .dm-seq > .dm-seq-done > .dm-seq-stage::before { content: ''; position: absolute; inset: 0; background: radial-gradient(20rem 15rem at 74% 46%, rgb(255 157 98 / 0.12), rgb(255 157 98 / 0) 70%); opacity: 0; transition: opacity 0.6s var(--e-std); pointer-events: none; }
+  .dm-seq > .dm-seq-done > .dm-seq-stage[data-mode="domino"]::before { opacity: 1; }
+  /* Automate's scene for the mode at .8, without its labels; the tile settles out of a blur (.enter), the fees travel once. */
+  .dm-seq-done .dm-automate-stage { position: absolute; inset: 0; pointer-events: none; }
+  .dm-seq-done .dm-automate-stage .sbox { transform: scale(0.8); transform-origin: 0 0; }
+  .dm-automate-stage.enter .tin { animation: dm-auto-tile 1.1s var(--e-enter) both; }
+  /* The words rise once (.dn-tx); View position's chevron slides on hover. */
+  .dm-seq > .dm-seq-done > :is(h2, .dm-seq-done-line, .dm-seq-wsteps, .dm-seq-done-links) { animation: dm-v4-up 0.7s var(--ease-enter) 0.15s backwards; }
+  .dm-seq-done-link > svg { flex: none; transition: transform 0.25s var(--e-enter); }
+  .dm-seq-done-link:hover > svg { transform: translateX(2px); }
   .dm-seq > .dm-seq-done > :not(.dm-seq-stage) { grid-column: 2; }
   .dm-seq > .dm-seq-done > h2 { grid-row: 2; max-width: 16ch; margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3.5rem; line-height: 0.98; letter-spacing: -0.025em; color: var(--fg); }
   .dm-seq > .dm-seq-done > .dm-seq-done-line { grid-row: 3; max-width: 46ch; margin: 1.125rem 0 0; font-size: 1rem; line-height: 1.5; color: var(--fg-muted); }
   .dm-seq > .dm-seq-done > .dm-seq-wsteps { grid-row: 4; justify-self: stretch; max-width: 27.5rem; margin: 1.375rem -0.5rem 0; }
   /* The green discs are there from the first frame (no empty gutter beside a lone connector); only the check comes in. */
-  .dm-seq > .dm-seq-done > .dm-seq-wsteps > li[data-step-state="done"] .dm-step-marker { animation: dm-v4-seq-check 0.45s var(--e-std) backwards; }
-  .dm-seq > .dm-seq-done > .dm-seq-wsteps > li:nth-child(1) .dm-step-marker { animation-delay: 0.9s; }
-  .dm-seq > .dm-seq-done > .dm-seq-wsteps > li:nth-child(2) .dm-step-marker { animation-delay: 1.02s; }
+  .dm-seq > .dm-seq-done > .dm-seq-wsteps > li[data-step-state="done"] .dm-step-marker { animation: none; }
+  .dm-seq > .dm-seq-done > .dm-seq-wsteps > li:nth-child(1) .dm-step-marker::before { animation-delay: 0.9s; }
+  .dm-seq > .dm-seq-done > .dm-seq-wsteps > li:nth-child(2) .dm-step-marker::before { animation-delay: 1.02s; }
   .dm-seq > .dm-seq-done > .dm-seq-done-links { grid-row: 5; margin-top: 1.625rem; }
   @media (max-width: 1180px) {
     .dm-seq > .dm-seq-done { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
-    .dm-seq > .dm-seq-done > .dm-seq-stage { grid-row: auto; justify-self: start; width: 100%; max-width: 28rem; height: 22rem; margin-bottom: 2rem; }
+    .dm-seq > .dm-seq-done > .dm-seq-stage { grid-row: auto; justify-self: start; width: 100%; max-width: 28rem; height: 27rem; margin-bottom: 2rem; }
     .dm-seq > .dm-seq-done > :not(.dm-seq-stage) { grid-column: 1; grid-row: auto; }
   }
   @media (max-width: 859px) {
     .dm-seq > .dm-seq-done { padding: 1.75rem 1.25rem; border-radius: 1.25rem; }
-    .dm-seq > .dm-seq-done > .dm-seq-stage { height: 15rem; padding: 1.5rem 1rem; margin-bottom: 1.5rem; }
+    .dm-seq > .dm-seq-done > .dm-seq-stage { justify-self: center; width: 17.5rem; max-width: 100%; height: 16.875rem; margin: 0 auto 1.5rem; }
+    .dm-seq-done .dm-automate-stage .sbox { transform: scale(0.5); }
     .dm-seq > .dm-seq-done > h2 { font-size: 2.25rem; }
     .dm-seq > .dm-seq-done > .dm-seq-done-links { justify-self: stretch; }
   }
 
   /* ===== Automate (#/automate, approved site/automate.html): the title with the plain choice beside it, then one card of
-     three function rows beside one stage. No wrapper is added: the page is a grid of its three children, the rows card is
-     the grid's own first cell, and the stage is the three existing demonstrations stacked in the second column (each
-     still inside its own [data-automation-card], in view and looping; the one not shown is only transparent). ===== */
-  main[data-automate] { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 2rem; align-items: end; align-content: start; }
-  main[data-automate] > :first-child { grid-column: 1; grid-row: 1; padding-top: 2.25rem; }
-  main[data-automate] > .dm-automation-start { grid-column: 2; grid-row: 1; width: min(43.75rem, 100%); margin-top: 0; }
+     three function rows beside one stage (components/automate-v4/AutomateStage.tsx) where the one tile performs the chosen
+     function once. The rows' own drawings stay mounted inside their [data-automation-card] (laid out, in view, looping and
+     read by the tests) but transparent, at the stage's place. ===== */
+  main[data-automate] { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 2rem; align-items: end; align-content: start; min-height: 0; padding-bottom: 4.625rem; }
+  main[data-automate] > :first-child { grid-column: 1; grid-row: 1; padding-top: 0; }
+  /* The title's line box carries .05em above the letters, as the prototype's .ptitle .ln does (the foundation gives it only
+     to line-split titles, .dm-ln); the same property on the h1, so a global rule would coincide with this one. */
+  main[data-automate] > :first-child h1, main.dm-seq > h1 { padding-top: 0.05em; }
+  main[data-automate] > .dm-automation-start { grid-column: 2; grid-row: 1; width: 43.75rem; max-width: 100%; margin-top: 0; }
   main[data-automate] > .dm-automation-choice-grid { grid-column: 1 / -1; grid-row: 2; }
-  /* No lift, no zoom, nothing that would make a card the stage's containing block (render.test.mjs:931-1100). */
+  /* No lift, no zoom, nothing that would make a row the hidden drawings' containing block (render.test.mjs:931-1100). */
   [data-automate] .dm-automation-choice { overflow: visible; translate: none; border: 0; }
   [data-automate] .dm-automation-choice:is(:hover, :focus-within) { translate: none; }
   [data-automate] .dm-automation-choice-art > svg { scale: none; transition: none; }
 
-  /* The plain choice (.npb): a quiet plate, the small picture, the words, the meta line, the ghost button with its circled plus. */
-  [data-automate] .dm-automation-start > .dm-automation-choice { display: grid; grid-template-columns: 6rem minmax(0, 1fr); align-items: center; gap: 1.25rem; padding: 1.125rem 0.875rem 1.125rem 1.375rem; border-radius: 1.375rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border); transition: box-shadow 0.2s var(--e-std), background-color 0.2s var(--e-std); }
+  /* The plain choice (.npb): a quiet plate, the small still tile, the words, the meta line, the ghost button with its circled plus. */
+  [data-automate] .dm-automation-start > .dm-automation-choice { position: relative; display: grid; grid-template-columns: 2.75rem minmax(0, 1fr); align-items: center; gap: 1.25rem; padding: 1.125rem 0.875rem 1.125rem 1.375rem; border-radius: 1.375rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border); transition: box-shadow 0.2s var(--e-std), background-color 0.2s var(--e-std); }
   [data-automate] .dm-automation-start > .dm-automation-choice:hover { background: var(--v4-w04); box-shadow: inset 0 0 0 1px var(--border-lip); }
-  [data-automate] .dm-automation-start .dm-automation-choice-art { display: grid; place-items: center; height: 3.875rem; padding: 0; border: 0; border-radius: 0; background: none; }
-  [data-automate] .dm-automation-start .dm-automation-choice-art > svg { width: 100%; height: 3.875rem; max-height: none; }
+  [data-automate] .dm-automation-start .dm-automation-choice-art { position: relative; display: flex; align-items: flex-end; justify-content: center; height: 3.875rem; padding: 0; border: 0; border-radius: 0; background: none; }
+  /* The animated picture stays mounted and laid out in the art's box (the tests drive it), transparent. */
+  [data-automate] .dm-automation-start .dm-automation-choice-art > .dm-position-choice-art { position: absolute; inset: 0; width: 100%; height: 100%; max-height: none; opacity: 0; pointer-events: none; }
+  [data-automate] .dm-automation-start .dm-npb-tile { flex: none; width: 2.5rem; height: 3.625rem; overflow: visible; }
+  [data-automate] .dm-automation-start .dm-npb-tile .npb-t { transform-box: fill-box; transform-origin: 50% 100%; transition: transform 0.45s var(--e-enter); }
+  [data-automate] .dm-automation-start > .dm-automation-choice:hover .dm-npb-tile .npb-t { transform: rotate(-10deg); }
+  [data-automate] .dm-automation-start .dm-npb-tile .npb-plate { fill: rgb(255 236 220 / 0.07); transition: fill 0.2s var(--e-std); }
+  [data-automate] .dm-automation-start > .dm-automation-choice:hover .dm-npb-tile .npb-plate { fill: rgb(255 236 220 / 0.12); }
   [data-automate] .dm-automation-start .dm-automation-choice-body { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; column-gap: 0; align-items: center; padding: 0; }
   [data-automate] .dm-automation-start .dm-automation-choice-heading { grid-column: 1 / 4; grid-row: 1; }
   [data-automate] .dm-automation-start .dm-automation-choice-heading > h2 { font-size: 1.875rem; line-height: 1; letter-spacing: -0.02em; color: var(--fg); }
@@ -381,101 +486,249 @@
   [data-automate] .dm-automation-start .dm-automation-choice-entry > .dm-btn > svg { width: 1.625rem; height: 1.625rem; padding: 0.4375rem; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--border-strong); color: var(--fg-muted); transition: transform 0.35s var(--e-enter), box-shadow 0.2s var(--e-std), color 0.2s var(--e-std); }
   [data-automate] .dm-automation-start .dm-automation-choice-entry > .dm-btn:hover > svg { transform: rotate(90deg); box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong); color: var(--primary); }
 
-  /* "How it works" (.how): a quiet text link with the book, which turns Tangerine and tips on hover. */
-  [data-automate] .dm-automation-choice-doc { display: inline-flex; align-items: center; gap: 0.4375rem; min-height: 1.75rem; height: auto; padding: 0 0.375rem 0 0.25rem; border-radius: 0.5rem; background: transparent; color: var(--fg-muted); font-size: 0.84375rem; line-height: 1.25rem; font-weight: 500; transition: color 0.18s var(--e-std), background-color 0.18s var(--e-std); }
-  [data-automate] .dm-automation-choice-doc > svg { flex: none; color: var(--fg-subtle); transition: color 0.18s var(--e-std), transform 0.3s var(--e-enter); }
+  /* "How it works" (.how): a text link in the ink of its block (the prototype's links inherit it: .v4c a outranks .how) with
+     the book, which turns Tangerine and tips on hover, and gives a little. */
+  [data-automate] .dm-automation-choice-doc { position: relative; display: inline-flex; align-items: center; gap: 0.4375rem; min-height: 1.75rem; height: auto; padding: 0 0.375rem 0 0.25rem; border-radius: 0.5rem; background: transparent; color: var(--fg); font-size: 0.84375rem; line-height: normal; font-weight: 500; transition: color 0.18s var(--e-std), background-color 0.18s var(--e-std), scale 0.1s var(--e-press); }
+  [data-automate] .dm-automation-choice-doc > svg { flex: none; width: 0.875rem; height: 0.875rem; color: var(--fg-subtle); transition: color 0.18s var(--e-std), transform 0.3s var(--e-enter); }
   [data-automate] .dm-automation-choice-doc:is(:hover, :focus-visible) { background: var(--v4-w04); color: var(--fg); }
   [data-automate] .dm-automation-choice-doc:hover > svg { color: var(--primary); transform: translateY(-1px) rotate(-8deg); }
+  [data-automate] .dm-automation-choice-doc:active { scale: 0.97; }
+  /* A finger gets a 44px target without the pill growing (the prototype's phone .how::after). */
+  @media (pointer: coarse), (max-width: 859px) {
+    [data-automate] .dm-automation-choice-doc { white-space: nowrap; }
+    [data-automate] .dm-automation-choice-doc::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 2.75rem; margin-top: -1.375rem; }
+  }
 
-  /* The function list (.fx): the rows card in the first column, the stage (35 x 33.75rem) in the second. */
-  [data-automate] .dm-automation-choice-grid { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 35rem; grid-auto-rows: auto; gap: 2px 2.5rem; align-content: start; min-height: 33.75rem; margin-top: 2.75rem; }
+  /* The function list (.fx): the rows card in the first column, the stage (35 x 33.75rem) at the right. */
+  [data-automate] .dm-automation-choice-grid { position: relative; isolation: isolate; display: grid; grid-template-columns: minmax(0, 1fr) 35rem; grid-auto-rows: auto; gap: 0.125rem 2.5rem; align-content: start; min-height: 33.75rem; margin-top: 2.75rem; }
   [data-automate] .dm-automation-choice-grid:not(:has([data-automation-card="protection"])) { grid-template-columns: minmax(0, 1fr) 35rem; }
-  /* The card behind the rows: the grid's own first item, painted before them (no z-index, no positioning). */
-  [data-automate] .dm-automation-choice-grid::before { content: ''; grid-column: 1; grid-row: 1 / 4; border-radius: 1.625rem; background: var(--v4-card-lift), var(--card); box-shadow: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 var(--v4-w06), var(--v4-card-drop); pointer-events: none; }
+  /* The card behind the rows (.card): its own lit element under them (z-index -1 inside the isolated grid). */
+  [data-automate] .dm-automation-choice-grid > .dm-automate-card { position: relative; z-index: -1; grid-column: 1; grid-row: 1 / 4; border-radius: 1.625rem; background: var(--v4-card-lift), var(--card); box-shadow: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 var(--v4-w06), var(--v4-card-drop); pointer-events: none; }
   [data-automate] .dm-automation-choice-grid > [data-automation-card="compound"] { grid-row: 1; margin-top: 0.5rem; }
   [data-automate] .dm-automation-choice-grid > [data-automation-card="domino"] { grid-row: 2; }
   [data-automate] .dm-automation-choice-grid > [data-automation-card="protection"] { grid-row: 3; }
-  [data-automate] .dm-automation-choice-grid > .dm-automation-choice:last-child { margin-bottom: 0.75rem; }
-  /* A row (.fn): no card of its own; a hairline above each but the first (gone beside the chosen row), the pip at its left. */
+  [data-automate] .dm-automation-choice-grid > article.dm-automation-choice:last-of-type { margin-bottom: 0.75rem; }
+  /* A row (.fn): no card of its own; a hairline above each but the first (gone beside the chosen or pointed row), the pip at
+     its left. The rows stay static: the hidden drawings are placed by the grid. */
   [data-automate] .dm-automation-choice-grid > .dm-automation-choice { position: static; grid-column: 1; display: block; min-width: 0; margin-inline: 0.625rem; padding: 1.625rem 1.375rem 1.625rem 2.25rem; border-radius: 1.125rem; background: transparent; box-shadow: none; transition: background-color 0.18s var(--e-std); }
-  [data-automate] .dm-automation-choice-grid > .dm-automation-choice + .dm-automation-choice { background: linear-gradient(var(--border), var(--border)) 2.25rem 0 / calc(100% - 3.625rem) 1px no-repeat; }
   [data-automate] .dm-automation-choice-grid > .dm-automation-choice:hover { background-color: var(--v4-w03); }
-  /* The chosen row: the one under the pointer or focus, else Auto-compound. Its pip, its warm name, its solid action. */
-  [data-automate] .dm-automation-choice-grid:not(:has(> .dm-automation-choice:is(:hover, :focus-within))) > [data-automation-card="compound"],
-  [data-automate] .dm-automation-choice-grid > .dm-automation-choice:is(:hover, :focus-within) { background: radial-gradient(circle closest-side, var(--primary) 0 96%, transparent) 0.84375rem 2.53125rem / 0.3125rem 0.3125rem no-repeat, var(--v4-w045); }
-  [data-automate] .dm-automation-choice-grid:not(:has(> .dm-automation-choice:is(:hover, :focus-within))) > [data-automation-card="compound"] + .dm-automation-choice,
-  [data-automate] .dm-automation-choice-grid > .dm-automation-choice:is(:hover, :focus-within) + .dm-automation-choice { background-image: none; }
-  [data-automate] .dm-automation-choice-grid .dm-automation-choice-body { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 1.5rem; align-items: start; padding: 0; }
+  [data-automate] .dm-automation-choice-grid > .dm-automation-choice[data-chosen] { background-color: var(--v4-w045); }
+  [data-automate] .dm-automation-choice-grid .dm-automation-choice-body { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 1.5rem; align-items: start; padding: 0; }
+  /* The pip (.rpip): 16px from the row, centred 43px down; a pointed row shows it faint, the chosen row whole. */
+  [data-automate] .dm-automation-choice-grid .dm-automation-choice-body::before { content: ''; position: absolute; left: -1.25rem; top: 0.90625rem; width: 0.3125rem; height: 0.3125rem; border-radius: 50%; background: var(--primary); opacity: 0; transform: scale(0.2); transition: opacity 0.2s var(--e-std), transform 0.35s var(--e-enter); pointer-events: none; }
+  [data-automate] .dm-automation-choice-grid > .dm-automation-choice:hover:not([data-chosen]) .dm-automation-choice-body::before { opacity: 0.45; transform: scale(0.7); }
+  [data-automate] .dm-automation-choice-grid > .dm-automation-choice[data-chosen] .dm-automation-choice-body::before { opacity: 1; transform: none; }
+  /* The hairline (.fn + .fn::before): from the words' left edge to the row's right padding, in the 2px gap above the row. */
+  [data-automate] .dm-automation-choice-grid .dm-automation-choice-body::after { content: ''; position: absolute; left: 0; right: 0; top: -1.75rem; height: 1px; background: var(--border); transition: opacity 0.2s var(--e-std); pointer-events: none; }
+  [data-automate] .dm-automation-choice-grid > article.dm-automation-choice:first-of-type .dm-automation-choice-body::after { content: none; }
+  [data-automate] .dm-automation-choice-grid > .dm-automation-choice:is([data-chosen], :hover) .dm-automation-choice-body::after,
+  [data-automate] .dm-automation-choice-grid > .dm-automation-choice:is([data-chosen], :hover) + .dm-automation-choice .dm-automation-choice-body::after { opacity: 0; }
   [data-automate] .dm-automation-choice-grid .dm-automation-choice-heading,
   [data-automate] .dm-automation-choice-grid .dm-automation-choice-description,
   [data-automate] .dm-automation-choice-grid .dm-automation-choice-fee { grid-column: 1; }
   [data-automate] .dm-automation-choice-grid .dm-automation-choice-heading { grid-row: 1; }
   [data-automate] .dm-automation-choice-grid .dm-automation-choice-heading > h2 { font-size: 2.375rem; line-height: 1; letter-spacing: -0.02em; color: var(--fg); transition: color 0.3s var(--e-std); }
-  [data-automate] .dm-automation-choice-grid:not(:has(> .dm-automation-choice:is(:hover, :focus-within))) > [data-automation-card="compound"] .dm-automation-choice-heading > h2,
-  [data-automate] .dm-automation-choice-grid > .dm-automation-choice:is(:hover, :focus-within) .dm-automation-choice-heading > h2 { color: var(--v4-lit); }
+  [data-automate] .dm-automation-choice-grid > .dm-automation-choice[data-chosen] .dm-automation-choice-heading > h2 { color: var(--v4-lit); }
   [data-automate] .dm-automation-choice-grid .dm-automation-choice-description { grid-row: 2; min-height: 0; max-width: 40ch; margin: 0.75rem 0 0; font-size: 0.9375rem; line-height: 1.47; color: var(--fg-muted); }
-  [data-automate] .dm-automation-choice-grid .dm-automation-choice-fee { grid-row: 3; min-height: 0; margin: 0.75rem 0 0; font-size: 0.8125rem; line-height: 1.4; color: var(--fg-subtle); }
+  [data-automate] .dm-automation-choice-grid .dm-automation-choice-fee { grid-row: 3; min-height: 0; margin: 0.75rem 0 0; font-size: 0.8125rem; line-height: normal; color: var(--fg-subtle); }
   [data-automate] .dm-automation-choice-fee > b { font-weight: 500; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; }
-  /* The actions (.fn-acts): the button over "How it works", at the right. */
-  [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry { grid-column: 2; grid-row: 1 / span 2; align-self: end; justify-self: end; margin: 0 0 0.625rem; }
-  [data-automate] .dm-automation-choice-grid .dm-automation-choice-doc { grid-column: 2; grid-row: 3; align-self: start; justify-self: end; margin: 0; }
+  /* The actions (.fn-acts): the button over "How it works", one block centred against the words, at the right. */
+  [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry { grid-column: 2; grid-row: 1 / span 3; align-self: center; justify-self: end; margin: 0 0 2.375rem; }
+  [data-automate] .dm-automation-choice-grid .dm-automation-choice-doc { grid-column: 2; grid-row: 1 / span 3; align-self: center; justify-self: end; margin: 3.125rem 0 0; }
   /* The row action (.act): an outline button; the chosen row's is the page's one solid Tangerine button. */
-  [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry > .dm-btn { width: auto; min-height: 0; height: 2.5rem; gap: 0.5rem; padding: 0 0.75rem 0 1rem; border-radius: 0.75rem; font-size: 0.875rem; line-height: 1.25rem; white-space: nowrap; transition: background-color 0.18s var(--e-std), box-shadow 0.25s var(--e-std), color 0.18s var(--e-std), scale 0.1s var(--e-press); }
+  [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry > .dm-btn { width: auto; min-height: 0; height: 2.5rem; gap: 0.5rem; padding: 0 0.75rem 0 1rem; border-radius: 0.75rem; font-size: 0.875rem; line-height: normal; white-space: nowrap; transition: background-color 0.18s var(--e-std), box-shadow 0.25s var(--e-std), color 0.18s var(--e-std), scale 0.1s var(--e-press); }
   [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry > a.dm-btn { background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border-lip); color: var(--fg); }
   [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry > button.dm-btn:is(:disabled, [aria-disabled="true"]) { background: var(--v4-w06); box-shadow: inset 0 0 0 1px var(--border); color: var(--fg-subtle); cursor: not-allowed; }
   [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry > a.dm-btn:hover { background: var(--v4-tan-07); box-shadow: inset 0 0 0 1px var(--v4-tan-ring); color: var(--primary-hover); }
-  [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry > .dm-btn > svg { flex: none; transition: transform 0.25s var(--e-enter); }
+  [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry > .dm-btn > svg { flex: none; width: 0.875rem; height: 0.875rem; transition: transform 0.25s var(--e-enter); }
   [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry > a.dm-btn:hover > svg { transform: translateX(2px); }
-  [data-automate] .dm-automation-choice-grid:not(:has(> .dm-automation-choice:is(:hover, :focus-within))) > [data-automation-card="compound"] .dm-automation-choice-entry > a.dm-btn,
-  [data-automate] .dm-automation-choice-grid > .dm-automation-choice:is(:hover, :focus-within) .dm-automation-choice-entry > a.dm-btn { background: var(--primary); color: var(--primary-fg); box-shadow: inset 0 1px 0 rgb(255 240 228 / 0.5), inset 0 -1px 0 rgb(120 50 15 / 0.25), 0 0.625rem 1.75rem -0.875rem rgb(255 157 98 / 0.55); }
-  [data-automate] .dm-automation-choice-grid > .dm-automation-choice .dm-automation-choice-entry > a.dm-btn:is(:hover, :focus-visible) { background: var(--primary-hover); color: var(--primary-fg); box-shadow: inset 0 1px 0 rgb(255 240 228 / 0.6), inset 0 -1px 0 rgb(120 50 15 / 0.2), 0 0.875rem 2.125rem -0.75rem rgb(255 157 98 / 0.7); }
-  [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry > a.dm-btn:active { background: var(--primary-press); scale: 0.98; }
-  /* The stage (.stage2): the three demonstrations stacked in the second column, the chosen one shown; the others are only
-     transparent (still in layout, in view and readable), and the change is a transition on the wrapper, never an
-     animation on or inside a drawing. */
-  [data-automate] .dm-automation-choice-grid .dm-automation-choice-art { position: absolute; top: 0; right: 0; display: grid; place-items: center; width: 35rem; height: 33.75rem; padding: 0; border: 0; border-radius: 0; background: none; opacity: 0; filter: blur(0.375rem); translate: 0 0.5rem; pointer-events: none; transition: opacity 0.35s var(--e-std), filter 0.45s var(--e-enter), translate 0.55s var(--e-enter); }
+  [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry > a.dm-btn:active { scale: 0.98; }
+  [data-automate] .dm-automation-choice-grid > .dm-automation-choice[data-chosen] .dm-automation-choice-entry > a.dm-btn { background: var(--primary); color: var(--primary-fg); box-shadow: inset 0 1px 0 rgb(255 240 228 / 0.5), inset 0 -1px 0 rgb(120 50 15 / 0.25), 0 0.625rem 1.75rem -0.875rem rgb(255 157 98 / 0.55); }
+  [data-automate] .dm-automation-choice-grid > .dm-automation-choice[data-chosen] .dm-automation-choice-entry > a.dm-btn:is(:hover, :focus-visible) { background: var(--primary-hover); color: var(--primary-fg); box-shadow: inset 0 1px 0 rgb(255 240 228 / 0.6), inset 0 -1px 0 rgb(120 50 15 / 0.2), 0 0.875rem 2.125rem -0.75rem rgb(255 157 98 / 0.7); }
+  [data-automate] .dm-automation-choice-grid > .dm-automation-choice[data-chosen] .dm-automation-choice-entry > a.dm-btn:active { background: var(--primary-press); }
+  /* A finger keeps 44px row actions. */
+  @media (pointer: coarse) { [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry > .dm-btn { min-height: 2.75rem; } }
+  /* The rows' own drawings: at the stage's place, transparent and still laid out (in view for their loops and the tests). */
+  [data-automate] .dm-automation-choice-grid .dm-automation-choice-art { position: absolute; top: 0; right: 0; display: grid; place-items: center; width: 35rem; height: 33.75rem; padding: 0; border: 0; border-radius: 0; background: none; opacity: 0; filter: none; translate: none; pointer-events: none; transition: none; }
   [data-automate] .dm-automation-choice-grid .dm-automation-choice-art > .dm-automation-story-art { width: 100%; height: auto; max-height: 100%; }
-  [data-automate] .dm-automation-choice-grid:not(:has(> .dm-automation-choice:is(:hover, :focus-within))) > [data-automation-card="compound"] .dm-automation-choice-art,
-  [data-automate] .dm-automation-choice-grid > .dm-automation-choice:is(:hover, :focus-within) .dm-automation-choice-art { opacity: 1; filter: none; translate: none; }
 
-  /* Small laptops and tablets (860-1199px): the plain choice under the title, a smaller stage, actions under the words. */
+  /* The stage (.stage2 .sfit .sbox): three scenes stacked, the chosen one shown (a cross-fade with a little blur and rise);
+     the tile on top. Shared by Automate and by Set up automation's set up card (.dm-seq-done). */
+  [data-automate] .dm-automate-stage { position: absolute; top: 0; right: 0; width: 35rem; height: 33.75rem; pointer-events: none; }
+  .dm-automate-stage .sbox { position: absolute; left: 0; top: 0; width: 35rem; height: 33.75rem; }
+  .dm-automate-stage .sdefs { position: absolute; width: 0; height: 0; overflow: hidden; }
+  .dm-automate-stage .sc { position: absolute; inset: 0; opacity: 0; filter: blur(0.375rem); transform: translateY(0.5rem); transition: opacity 0.35s var(--e-std), filter 0.45s var(--e-enter), transform 0.55s var(--e-enter); }
+  .dm-automate-stage .sc.on { opacity: 1; filter: none; transform: none; }
+  .dm-automate-stage .sc > svg { display: block; overflow: visible; }
+  /* Labels: 13 user units are 13 design px, the 560-unit drawing filling 35rem. */
+  .dm-automate-stage .lb { font-family: var(--font-sans); font-size: 13px; font-weight: 500; letter-spacing: -0.01em; fill: var(--fg-subtle); text-anchor: middle; }
+  .dm-automate-stage .lb.hi { font-size: 14px; fill: var(--fg); }
+  .dm-automate-stage .arc { fill: none; stroke: rgb(255 236 220 / 0.28); stroke-width: 1.6; stroke-linecap: round; stroke-dasharray: 0 7; }
+  .dm-automate-stage .rim { fill: none; stroke: rgb(255 236 220 / 0.1); stroke-width: 1; }
+  .dm-automate-stage .lipl { fill: none; stroke: rgb(255 236 220 / 0.16); stroke-width: 1; stroke-linecap: round; }
+  .dm-automate-stage .grow { transform-box: fill-box; transform-origin: 0 50%; }
+  .dm-automate-stage .popc { transform-box: fill-box; transform-origin: center; }
+  .dm-automate-stage .x-line { fill: none; stroke: var(--fg-muted); stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 0; }
+  .dm-automate-stage .x-lim { fill: none; stroke: rgb(255 236 220 / 0.45); stroke-width: 1; stroke-dasharray: 3 5; opacity: 1; }
+  .dm-automate-stage .x-area { opacity: 0.22; }
+  .dm-automate-stage .x-end { fill: var(--fg); }
+  .dm-automate-stage .x-halo { fill: rgb(255 236 220 / 0.12); }
+  .dm-automate-stage .g-ghost { fill: none; stroke: rgb(255 157 98 / 0.55); stroke-width: 1.2; }
+  .dm-automate-stage .g-pip { fill: rgb(255 157 98 / 0.55); }
+  /* The travelling fees and tokens (Domino's own coins): on CSS motion paths in the drawing's units, hidden where those
+     are not supported. */
+  .dm-automate-stage .dz { opacity: 0; offset-rotate: 0deg; offset-distance: 100%; animation-duration: 1.15s; animation-timing-function: cubic-bezier(0.55, 0.05, 0.25, 1); }
+  .dm-automate-stage .dz-x { animation-duration: 1s; }
+  @supports not (offset-path: path('M0 0 L1 1')) { .dm-automate-stage .dz { display: none; } }
+  /* The demonstration: once per choice, every part filling both ways, so it rests on its final frame (bars full, pips and
+     tokens shown, coins gone). --dd is .75s on a page's load, .2s after a choice; run-a/run-b restart it. */
+  .dm-automate-stage .an { animation-fill-mode: both; animation-delay: calc(var(--dd, 0s) + var(--d, 0s)); }
+  .dm-automate-stage .grow.an { animation-duration: 0.8s; animation-timing-function: var(--e-enter); }
+  .dm-automate-stage .popc.an { animation-duration: 0.45s; animation-timing-function: var(--e-pop); }
+  .dm-automate-stage .fadein.an { animation-duration: 0.5s; animation-timing-function: var(--e-std); }
+  .dm-automate-stage .x-line.an { animation-duration: 1.2s; animation-timing-function: cubic-bezier(0.45, 0, 0.25, 1); }
+  .dm-automate-stage .x-lim.an { animation-duration: 0.4s; animation-timing-function: var(--e-std); }
+  .dm-automate-stage .x-area.an { animation-duration: 0.6s; animation-timing-function: var(--e-std); }
+  .dm-automate-stage .w016 { --d: 0.16s; }
+  .dm-automate-stage .w018 { --d: 0.18s; }
+  .dm-automate-stage .w032 { --d: 0.32s; }
+  .dm-automate-stage .w100 { --d: 1s; }
+  .dm-automate-stage .w110 { --d: 1.1s; }
+  .dm-automate-stage .w115 { --d: 1.15s; }
+  .dm-automate-stage .w120 { --d: 1.2s; }
+  .dm-automate-stage .w125 { --d: 1.25s; }
+  .dm-automate-stage .w130 { --d: 1.3s; }
+  .dm-automate-stage .w135 { --d: 1.35s; }
+  .dm-automate-stage .w140 { --d: 1.4s; }
+  .dm-automate-stage .w145 { --d: 1.45s; }
+  .dm-automate-stage .w150 { --d: 1.5s; }
+  .dm-automate-stage .w235 { --d: 2.35s; }
+  .dm-automate-stage .w250 { --d: 2.5s; }
+  .dm-automate-stage .run-a .sc.on .dz { animation-name: dm-auto-trav-a; }
+  .dm-automate-stage .run-b .sc.on .dz { animation-name: dm-auto-trav-b; }
+  .dm-automate-stage .run-a .sc.on .grow.an { animation-name: dm-auto-grow-a; }
+  .dm-automate-stage .run-b .sc.on .grow.an { animation-name: dm-auto-grow-b; }
+  .dm-automate-stage .run-a .sc.on .popc.an { animation-name: dm-auto-pop-a; }
+  .dm-automate-stage .run-b .sc.on .popc.an { animation-name: dm-auto-pop-b; }
+  .dm-automate-stage .run-a .sc.on .fadein.an { animation-name: dm-auto-fade-a; }
+  .dm-automate-stage .run-b .sc.on .fadein.an { animation-name: dm-auto-fade-b; }
+  .dm-automate-stage .run-a .sc.on .x-line.an { animation-name: dm-auto-draw-a; }
+  .dm-automate-stage .run-b .sc.on .x-line.an { animation-name: dm-auto-draw-b; }
+  .dm-automate-stage .run-a .sc.on .x-lim.an { animation-name: dm-auto-dim-a; }
+  .dm-automate-stage .run-b .sc.on .x-lim.an { animation-name: dm-auto-dim-b; }
+  .dm-automate-stage .run-a .sc.on .x-area.an { animation-name: dm-auto-drain-a; }
+  .dm-automate-stage .run-b .sc.on .x-area.an { animation-name: dm-auto-drain-b; }
+  /* The one tile (188 x 330, drawn at half size): its place glides to the chosen scene, the tile lifts and leans toward
+     where it goes, its floor shadow thins at the top of the lift. */
+  .dm-automate-stage .tpos { position: absolute; left: 0; top: 0; z-index: 3; width: 5.875rem; height: 10.3125rem; transition: transform 0.85s var(--e-enter); }
+  .dm-automate-stage .at-compound { transform: translate(14.5625rem, 13.75rem); }
+  .dm-automate-stage .at-domino { transform: translate(7.6875rem, 15rem); }
+  .dm-automate-stage .at-autoexit { transform: translate(4rem, 8.0625rem); }
+  .dm-automate-stage .tilt-r { --tilt: -4deg; }
+  .dm-automate-stage .tilt-l { --tilt: 4deg; }
+  .dm-automate-stage .tlift { transform-origin: 50% 100%; }
+  .dm-automate-stage .lift-a .tlift { animation: dm-auto-lift-a 0.85s var(--e-std) both; }
+  .dm-automate-stage .lift-b .tlift { animation: dm-auto-lift-b 0.85s var(--e-std) both; }
+  .dm-automate-stage .lift-a .tsh { animation: dm-auto-shadow-a 0.85s var(--e-std) both; }
+  .dm-automate-stage .lift-b .tsh { animation: dm-auto-shadow-b 0.85s var(--e-std) both; }
+  .dm-automate-stage .tsc { width: 11.75rem; height: 20.625rem; transform: scale(0.5); transform-origin: 0 0; }
+  .dm-automate-stage .tin { position: relative; }
+  .dm-automate-stage .tsh { position: absolute; left: -0.75rem; top: 9.375rem; width: 7.375rem; height: 1.375rem; border-radius: 50%; background: radial-gradient(closest-side, rgb(0 0 0 / 0.75), rgb(0 0 0 / 0.3) 55%, rgb(0 0 0 / 0)); filter: blur(0.25rem); transition: transform 1s var(--e-drift); }
+  .dm-automate-stage .dm-at-persp { position: relative; width: 11.75rem; height: 20.625rem; perspective: 62.5rem; }
+  .dm-automate-stage .dm-at-3d { position: absolute; inset: 0; transform-style: preserve-3d; transform: rotateX(6deg) rotateY(-18deg) rotateZ(-7deg); transition: transform 1s var(--e-drift); will-change: transform; }
+  .dm-automate-stage .dm-at-slab { position: absolute; inset: 0; border-radius: 1.875rem; }
+  .dm-automate-stage .dm-at-z1 { transform: translateZ(-0.1875rem); background: #ec8549; }
+  .dm-automate-stage .dm-at-z2 { transform: translateZ(-0.375rem); background: #e27d43; }
+  .dm-automate-stage .dm-at-z3 { transform: translateZ(-0.5625rem); background: #d8753e; }
+  .dm-automate-stage .dm-at-z4 { transform: translateZ(-0.75rem); background: #cd6d39; }
+  .dm-automate-stage .dm-at-z5 { transform: translateZ(-0.9375rem); background: #c06534; }
+  .dm-automate-stage .dm-at-z6 { transform: translateZ(-1.125rem); background: #b05c2f; }
+  .dm-automate-stage .dm-at-z7 { transform: translateZ(-1.3125rem); background: #9c522a; }
+  .dm-automate-stage .dm-at-z8 { transform: translateZ(-1.5rem); background: #7c4223; box-shadow: 0 1.875rem 3.75rem -0.625rem rgb(0 0 0 / 0.6); }
+  .dm-automate-stage .dm-at-face { position: absolute; inset: 0; overflow: hidden; border-radius: 1.875rem; transform: translateZ(1px); background: linear-gradient(158deg, #ffc39c 0%, #ffa771 30%, #ff9d62 55%, #f28a4c 100%); box-shadow: inset 0 2px 0 rgb(255 240 228 / 0.7), inset 0 0 0 1px rgb(255 220 196 / 0.35), inset 0 -0.375rem 0.875rem rgb(130 52 14 / 0.35); }
+  .dm-automate-stage .dm-at-groove { position: absolute; left: 1.125rem; right: 1.125rem; top: 50%; height: 0.1875rem; margin-top: -1.5px; border-radius: 2px; background: rgb(84 34 8 / 0.55); box-shadow: 0 1px 0 rgb(255 226 204 / 0.55); }
+  .dm-automate-stage .dm-at-pip { position: absolute; width: 2rem; height: 2rem; margin: -1rem 0 0 -1rem; border-radius: 50%; background: radial-gradient(circle at 50% 38%, #1a110b, #3b2416 70%, #4a2c1a); box-shadow: inset 0 0.1875rem 0.3125rem rgb(0 0 0 / 0.65), 0 1px 0 rgb(255 228 206 / 0.65); }
+  .dm-automate-stage .dm-at-p1 { left: 31%; top: 15%; }
+  .dm-automate-stage .dm-at-p2 { left: 69%; top: 35%; }
+  .dm-automate-stage .dm-at-p3 { left: 28%; top: 62%; }
+  .dm-automate-stage .dm-at-p4 { left: 50%; top: 75%; }
+  .dm-automate-stage .dm-at-p5 { left: 72%; top: 88%; }
+  /* The glares rest where the resting light leaves them (just above the tile's top left corner); the light moves them. */
+  .dm-automate-stage :is(.dm-at-glare, .dm-at-glare2) { position: absolute; inset: 0; background-repeat: no-repeat; transition: background-position 1s var(--e-drift); }
+  .dm-automate-stage .dm-at-glare { background-image: radial-gradient(closest-side, rgb(255 247 238 / 0.7), rgb(255 247 238 / 0.18) 45%, rgb(255 247 238 / 0)); background-size: 26.25rem 26.25rem; background-position: -12.375rem -17.375rem; mix-blend-mode: soft-light; }
+  .dm-automate-stage .dm-at-glare2 { background-image: radial-gradient(closest-side, rgb(255 247 238 / 0.32), rgb(255 247 238 / 0)); background-size: 15rem 15rem; background-position: -6.75rem -11.75rem; mix-blend-mode: screen; }
+
+  /* The page's load moment, on every visit (the kit's fast inner-page timings): the plate rises, the rows' card rises (the
+     grid moves as one block, so the hidden drawings keep their place against the rows; the stage inside it is held still by
+     the same move backwards and fades in on its own), the tile lands out of a blur, its pips pop; the first demonstration
+     then starts at .75s. */
+  main[data-automate] > .dm-automation-start { animation: dm-v4-up 0.5s var(--ease-enter) 0.14s backwards; }
+  main[data-automate] > .dm-automation-choice-grid { animation: dm-auto-rise 0.55s var(--ease-enter) 0.24s backwards; }
+  main[data-automate] > .dm-automation-choice-grid > :is(.dm-automate-card, article) { animation: dm-auto-show 0.55s var(--ease-enter) 0.24s backwards; }
+  [data-automate] .dm-automate-stage { animation: dm-v4-fade 0.5s var(--ease-std) 0.16s backwards, dm-auto-counter 0.55s var(--ease-enter) 0.24s backwards; }
+  [data-automate] .dm-automate-stage .tin { animation: dm-auto-tile 0.55s var(--ease-enter) 0.18s backwards; }
+  [data-automate] .dm-automate-stage .dm-at-pip { animation: dm-v4-pip 0.28s var(--e-pop) backwards; }
+  [data-automate] .dm-automate-stage .dm-at-p1 { animation-delay: 0.44s; }
+  [data-automate] .dm-automate-stage .dm-at-p2 { animation-delay: 0.48s; }
+  [data-automate] .dm-automate-stage .dm-at-p3 { animation-delay: 0.52s; }
+  [data-automate] .dm-automate-stage .dm-at-p4 { animation-delay: 0.56s; }
+  [data-automate] .dm-automate-stage .dm-at-p5 { animation-delay: 0.6s; }
+
+  /* Small laptops and tablets (860-1199px): the plain choice under the title, a smaller stage (.8), actions under the words. */
   @media (max-width: 1199px) {
-    main[data-automate] { grid-template-columns: minmax(0, 1fr); row-gap: 1.75rem; }
-    main[data-automate] > .dm-automation-start { grid-column: 1; grid-row: 2; }
-    main[data-automate] > .dm-automation-choice-grid { grid-row: 3; }
+    /* The head wraps only when the plate no longer fits beside the title (.phead flex-wrap, row-gap 28px). */
+    main[data-automate] { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; column-gap: 2rem; row-gap: 1.75rem; }
+    main[data-automate] > .dm-automation-choice-grid { flex: 0 0 100%; min-width: 0; }
     [data-automate] .dm-automation-choice-grid, [data-automate] .dm-automation-choice-grid:not(:has([data-automation-card="protection"])) { grid-template-columns: minmax(0, 1fr) 28rem; column-gap: 1.75rem; min-height: 27rem; margin-top: 1rem; }
     [data-automate] .dm-automation-choice-grid .dm-automation-choice-art { width: 28rem; height: 27rem; }
+    [data-automate] .dm-automate-stage { width: 28rem; height: 27rem; }
+    [data-automate] .dm-automate-stage .sbox { transform: scale(0.8); transform-origin: 0 0; }
     [data-automate] .dm-automation-choice-grid .dm-automation-choice-body { grid-template-columns: auto minmax(0, 1fr); column-gap: 0.75rem; }
     [data-automate] .dm-automation-choice-grid :is(.dm-automation-choice-heading, .dm-automation-choice-description, .dm-automation-choice-fee) { grid-column: 1 / -1; }
     [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry { grid-column: 1; grid-row: 4; align-self: center; justify-self: start; margin: 1rem 0 0; }
-    [data-automate] .dm-automation-choice-grid .dm-automation-choice-doc { grid-column: 2; grid-row: 4; align-self: center; justify-self: start; margin: 1rem 0 0; }
+    [data-automate] .dm-automation-choice-grid .dm-automation-choice-doc { grid-column: 2; grid-row: 4; align-self: center; justify-self: start; margin: 1rem 0 0 -0.25rem; }
   }
-  /* Phone (859px and below): one column; each demonstration returns to its own row, above its words. */
+  /* Phone (859px and below): one stage above the rows card, centred (.6); New position's tile beside its words with the
+     button on its own line; the rows' actions side by side when they fit. */
   @media (max-width: 859px) {
-    main[data-automate] { row-gap: 1.375rem; }
+    main[data-automate] { row-gap: 1.375rem; padding-bottom: 0; }
     main[data-automate] > :first-child { padding-top: 0.75rem; }
-    [data-automate] .dm-automation-start > .dm-automation-choice { grid-template-columns: minmax(0, 1fr); gap: 0.75rem; padding: 1rem; }
-    [data-automate] .dm-automation-start .dm-automation-choice-art { justify-self: start; width: 6rem; }
-    [data-automate] .dm-automation-start .dm-automation-choice-art, [data-automate] .dm-automation-start .dm-automation-choice-art > svg { height: 3.25rem; }
-    [data-automate] .dm-automation-start .dm-automation-choice-body { grid-template-columns: minmax(0, 1fr); }
-    [data-automate] .dm-automation-start :is(.dm-automation-choice-heading, .dm-automation-choice-description, .dm-automation-choice-fee) { grid-column: 1; }
-    [data-automate] .dm-automation-start .dm-automation-choice-heading > h2 { font-size: 1.625rem; }
-    [data-automate] .dm-automation-start .dm-automation-choice-doc { grid-column: 1; grid-row: 4; margin: 0.25rem 0 0 -0.25rem; }
-    [data-automate] .dm-automation-start .dm-automation-choice-entry { grid-column: 1; grid-row: 5; justify-self: start; margin: 0.75rem 0 0 -1.125rem; }
+    [data-automate] .dm-automation-start > .dm-automation-choice { grid-template-columns: 2.5rem minmax(0, 1fr); gap: 0.875rem; align-items: center; padding: 1rem 1rem 5rem; }
+    [data-automate] .dm-automation-start .dm-automation-choice-art { width: 2.5rem; height: 3.875rem; justify-self: auto; }
+    [data-automate] .dm-automation-start .dm-automation-choice-body { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; }
+    [data-automate] .dm-automation-start :is(.dm-automation-choice-heading, .dm-automation-choice-description) { flex: 0 0 100%; }
+    [data-automate] .dm-automation-start .dm-automation-choice-heading > h2 { font-size: 1.625rem; text-wrap: balance; }
+    [data-automate] .dm-automation-start .dm-automation-choice-fee { margin: 0.5rem 1.125rem 0 0; line-height: normal; white-space: nowrap; }
+    [data-automate] .dm-automation-start .dm-automation-choice-doc { margin: 0.5rem 0 0 -0.25rem; }
+    [data-automate] .dm-automation-start .dm-automation-choice-entry { position: absolute; left: 1rem; bottom: 1rem; margin: 0; }
     [data-automate] .dm-automation-start .dm-automation-choice-entry > .dm-btn { height: 3.125rem; }
-    [data-automate] .dm-automation-choice-grid, [data-automate] .dm-automation-choice-grid:not(:has([data-automation-card="protection"])) { grid-template-columns: minmax(0, 1fr); min-height: 0; margin-top: 0.5rem; }
-    [data-automate] .dm-automation-choice-grid > .dm-automation-choice { margin-inline: 0.5rem; padding: 1.25rem 0.875rem 1.25rem 1.75rem; }
-    [data-automate] .dm-automation-choice-grid > .dm-automation-choice + .dm-automation-choice { background-position: 1.75rem 0; background-size: calc(100% - 2.625rem) 1px; }
-    [data-automate] .dm-automation-choice-grid:not(:has(> .dm-automation-choice:is(:hover, :focus-within))) > [data-automation-card="compound"],
-    [data-automate] .dm-automation-choice-grid > .dm-automation-choice:is(:hover, :focus-within) { background-position: 0.59375rem 2.1rem, 0 0; }
-    [data-automate] .dm-automation-choice-grid .dm-automation-choice-art { position: static; width: auto; height: auto; max-width: 21rem; margin: 0 auto 1rem; opacity: 1; filter: none; translate: none; transition: none; }
-    [data-automate] .dm-automation-choice-grid .dm-automation-choice-heading > h2 { font-size: 1.75rem; }
-    [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry { grid-column: 1 / -1; }
-    [data-automate] .dm-automation-choice-grid .dm-automation-choice-doc { grid-column: 1 / -1; grid-row: 5; margin: 0.5rem 0 0 -0.25rem; }
+    [data-automate] .dm-automation-choice-grid, [data-automate] .dm-automation-choice-grid:not(:has([data-automation-card="protection"])) { grid-template-columns: minmax(0, 1fr); min-height: 0; margin-top: 0.375rem; padding-top: calc(20.25rem + 1.25rem); }
+    [data-automate] .dm-automate-stage { top: 0; left: 50%; right: auto; translate: -50% 0; width: 21rem; height: 20.25rem; }
+    [data-automate] .dm-automate-stage .sbox { transform: scale(0.6); transform-origin: 0 0; }
+    [data-automate] .dm-automation-choice-grid .dm-automation-choice-art { top: 0; left: 50%; right: auto; translate: -50% 0; width: 21rem; height: 20.25rem; max-width: calc(100% - 1rem); margin: 0; }
+    [data-automate] .dm-automation-choice-grid > .dm-automation-choice { margin-inline: 0.625rem; padding: 1.25rem 0.875rem 1.25rem 1.75rem; }
+    [data-automate] .dm-automation-choice-grid .dm-automation-choice-body { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; column-gap: 0.75rem; row-gap: 0; }
+    [data-automate] .dm-automation-choice-grid .dm-automation-choice-body::before { left: -1rem; top: 0.71875rem; }
+    [data-automate] .dm-automation-choice-grid .dm-automation-choice-body::after { top: -1.375rem; }
+    [data-automate] .dm-automation-choice-grid :is(.dm-automation-choice-heading, .dm-automation-choice-description, .dm-automation-choice-fee) { flex: 0 0 100%; }
+    [data-automate] .dm-automation-choice-grid .dm-automation-choice-heading > h2 { font-size: 1.75rem; text-wrap: balance; }
+    [data-automate] .dm-automation-choice-grid .dm-automation-choice-fee { margin-bottom: 0.25rem; white-space: nowrap; font-size: 0.78125rem; }
+    [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry { margin: 0.75rem 0 0; }
+    [data-automate] .dm-automation-choice-grid .dm-automation-choice-doc { margin: 0.75rem 0 0 -0.25rem; }
+    [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry > .dm-btn { height: 2.75rem; }
   }
+  /* A narrow phone draws the stage at .5, so it never runs past the screen. */
+  @media (max-width: 367px) {
+    [data-automate] .dm-automation-choice-grid, [data-automate] .dm-automation-choice-grid:not(:has([data-automation-card="protection"])) { padding-top: calc(16.875rem + 1.25rem); }
+    [data-automate] .dm-automate-stage { width: 17.5rem; height: 16.875rem; }
+    [data-automate] .dm-automate-stage .sbox { transform: scale(0.5); }
+    [data-automate] .dm-automation-choice-grid .dm-automation-choice-art { width: 17.5rem; height: 16.875rem; }
+  }
+  @media (max-width: 359px) { [data-automate] .dm-automation-choice-grid .dm-automation-choice-fee { white-space: normal; } }
+  @media (max-width: 767px) { main[data-automate] { padding-bottom: 2rem; } }
+  /* Touch: a pointed row shows no pip (only the chosen row keeps its own). */
   @media (hover: none) {
-    [data-automate] .dm-automation-choice-grid:not(:has(> .dm-automation-choice:is(:hover, :focus-within))) > [data-automation-card="compound"],
-    [data-automate] .dm-automation-choice-grid > .dm-automation-choice:is(:hover, :focus-within) { background-image: none; }
+    [data-automate] .dm-automation-choice-grid > .dm-automation-choice:hover:not([data-chosen]) .dm-automation-choice-body::before { opacity: 0; }
   }
 
   /* ===== The position page's automation (states/Automation.html): the control's funds dot, the management sheet's content,
@@ -501,9 +754,10 @@
   [data-automation-management] .dm-automation-panel > [data-automation-refresh],
   [data-automation-management] .dm-btn--sm[data-vault-more="leave"] { height: 2.125rem; padding: 0 0.875rem; border-radius: 0.625rem; font-size: 0.8125rem; }
   [data-automation-management] .dm-automation-panel > [data-automation-refresh] { justify-self: start; }
-  /* Leave automation: an outline in the money-out colour, never filled. */
-  [data-automation-management] :is([data-vault-actions] > .dm-btn--danger, .dm-btn[data-vault-more="leave"]) { background: transparent; box-shadow: inset 0 0 0 1px rgb(244 96 122 / 0.45); color: #f78a9d; }
-  [data-automation-management] :is([data-vault-actions] > .dm-btn--danger, .dm-btn[data-vault-more="leave"]):hover:not(:disabled) { background: rgb(244 96 122 / 0.08); box-shadow: inset 0 0 0 1px rgb(244 96 122 / 0.6); color: #f9a3b2; }
+  /* Leave automation (.bs.dng): quiet at rest, a neutral outline; it turns money-out red only under the pointer. */
+  [data-automation-management] :is([data-vault-actions] > .dm-btn--danger, .dm-btn[data-vault-more="leave"]) { background: transparent; box-shadow: inset 0 0 0 1px var(--border); color: var(--fg-muted); transition: background-color 0.18s var(--e-std), box-shadow 0.2s var(--e-std), color 0.18s var(--e-std), scale 0.1s var(--e-press); }
+  [data-automation-management] :is([data-vault-actions] > .dm-btn--danger, .dm-btn[data-vault-more="leave"]):hover:not(:disabled) { background: rgb(244 96 122 / 0.07); box-shadow: inset 0 0 0 1px rgb(244 96 122 / 0.5); color: #f78a9d; }
+  [data-automation-management] :is([data-vault-actions] > .dm-btn--danger, .dm-btn[data-vault-more="leave"]):active:not(:disabled) { scale: 0.97; }
   /* The sequence (.sq): each member a quiet row that warms under the pointer. */
   [data-automation-management] .dm-v2in-sequence > li { padding: 0.625rem 0.75rem; border-radius: 0.75rem; transition: background-color 0.18s var(--e-std); }
   [data-automation-management] .dm-v2in-sequence > li:hover { background: var(--v4-w035); }
@@ -511,7 +765,8 @@
   [data-automation-management] .dm-automation-recovery { padding: 0.75rem 0; box-shadow: inset 0 1px 0 var(--border); }
   /* Its recovery buttons: two equal columns (one under 360px), never a ragged wrap of natural widths. */
   [data-automation-management] .dm-automation-recovery > .flex-wrap { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
-  [data-automation-management] .dm-automation-recovery > .flex-wrap > .dm-btn { width: 100%; min-width: 0; }
+  /* A label longer than its column wraps inside its button (a two-line button grows; one-line ones keep 2.125rem). */
+  [data-automation-management] .dm-automation-recovery > .flex-wrap > .dm-btn { width: 100%; min-width: 0; height: auto; min-height: 2.125rem; padding-block: 0.4375rem; white-space: normal; line-height: 1.125rem; text-wrap: balance; }
   @media (max-width: 359px) { [data-automation-management] .dm-automation-recovery > .flex-wrap { grid-template-columns: minmax(0, 1fr); } }
   /* The vault dialogs (.os): fields as V4 inputs, quiet hints, the error in the money-out ink; the consent as the setup's plate. */
   [data-v2in-dialog^="vault-"] .dm-v2in-field { font-size: 0.875rem; line-height: 1.4; font-weight: 500; color: var(--fg); }
@@ -528,8 +783,8 @@
   @media (max-width: 859px) {
     .dm-seq-create .dm-seq-steps { padding: 0.75rem 0.75rem 0.5rem; }
     .dm-seq-create .dm-seq-steps > .dm-acct-fieldset { padding: 0 0 1.625rem; }
-    .dm-seq-create .dm-seq-steps > .dm-acct-fieldset:has(+ .dm-seq-ghosts) { padding-bottom: 0.5rem; }
-    .dm-seq-create .dm-seq-steps > .dm-acct-fieldset > legend { width: 100%; margin-left: 0; padding: 0.875rem 0.25rem; font-size: 1.5rem; line-height: 1.625rem; }
+    .dm-seq-create .dm-seq-steps > .dm-acct-fieldset:last-child { padding-bottom: 1.625rem; }
+    .dm-seq-create .dm-seq-steps > .dm-acct-fieldset > legend { width: 100%; margin-left: 0; padding: 1.25rem 0.25rem; font-size: 1.5rem; line-height: 1.625rem; }
     .dm-seq-create .dm-seq-steps > .dm-acct-fieldset::before { display: none; }
     .dm-seq-create .dm-seq-step { width: 1.625rem; height: 1.625rem; margin-right: 0.75rem; }
     .dm-seq-create .dm-seq-ghosts { display: none; }
@@ -541,9 +796,65 @@
     .dm-seq > .dm-empty.dm-acct-block, .dm-seq > .dm-empty.dm-acct-block[data-sequence-positions="empty"] { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; padding: 1.5rem; }
     .dm-seq > .dm-empty.dm-acct-block > .dm-empty-art { grid-column: 1; grid-row: auto; height: 7.5rem; margin-bottom: 1.25rem; }
     .dm-seq > .dm-empty.dm-acct-block > :is(.dm-empty-title, .dm-empty-body, .dm-empty-action) { grid-column: 1; }
-    .dm-seq > .dm-empty.dm-acct-block > .dm-empty-title { font-size: 2rem; }
+    .dm-seq > .dm-empty.dm-acct-block > .dm-empty-title { font-size: 2.125rem; }
     .dm-seq > :is([data-v2in-setup="unavailable"], [data-sequence-positions="failed"], div.dm-acct-block:not(.dm-card):has(> p.text-body)) { padding: 1.125rem 1.25rem; border-radius: 1.25rem; }
   }
+  /* ----- Set up automation's motion (approved site/sequence.html, the kit's fast inner-page timings) ----- */
+  /* The load moment, on every visit: the lede rises, then the content block. */
+  main.dm-seq > .dm-acct-lede { animation: dm-v4-up 0.5s var(--ease-enter) 0.14s backwards; }
+  main.dm-seq > :is(.dm-seq-create, .dm-acct-block, .dm-acct-note, .dm-seq-done) { animation: dm-v4-card 0.55s var(--ease-enter) 0.24s backwards; }
+  /* A step that appears rises out of a little blur (sq-sw); a change of mode replays step 3's body only (its header stays). */
+  .dm-seq-create .dm-seq-steps > .dm-acct-fieldset { animation: dm-v4-seq-panel-a 0.5s var(--e-enter) backwards; }
+  .dm-seq-create:is([data-sequence-create-mode="compound"], [data-sequence-create-mode="protection"]) .dm-seq-steps > .dm-acct-fieldset:last-of-type > :not(legend) { animation: dm-v4-seq-panel-a 0.5s var(--e-enter) backwards; }
+  .dm-seq-create[data-sequence-create-mode="domino"] .dm-seq-steps > .dm-acct-fieldset:last-of-type > :not(legend) { animation: dm-v4-seq-panel-b 0.5s var(--e-enter) backwards; }
+  /* Opening the review rises it. */
+  .dm-seq-create .dm-auto-review { animation: dm-v4-seq-panel-a 0.5s var(--e-enter) backwards; }
+
+  /* ----- The empty states' plates (.es-plate): Connect's tile slips into the wallet, No positions' arc swings ----- */
+  .dm-seq > .dm-empty.dm-acct-block > .dm-empty-art { overflow: hidden; }
+  .dm-seq > .dm-empty.dm-acct-block > .dm-empty-art > .dm-empty-ring { display: none; }
+  .dm-seq > .dm-empty.dm-acct-block > .dm-empty-art > .dm-empty-tile { display: block; width: auto; height: auto; border-radius: 0; background: none; box-shadow: none; }
+  .dm-seq > .dm-empty.dm-acct-block > .dm-empty-art > .dm-empty-tile > svg.dm-seq-plate-art { display: block; overflow: visible; }
+  .dm-seq > .dm-empty.dm-acct-block > .dm-empty-art > .dm-empty-tile > svg.dm-seq-plate-art[data-art="connect"] { width: 8.25rem; height: 6.5rem; }
+  .dm-seq > .dm-empty.dm-acct-block > .dm-empty-art > .dm-empty-tile > svg.dm-seq-plate-art[data-art="empty"] { width: 6rem; height: 5rem; }
+  .dm-seq-plate-art .es-tile { transition: transform 0.45s var(--e-enter); }
+  .dm-seq > .dm-empty.dm-acct-block:has(> .dm-empty-action > .dm-btn--primary:hover) .es-tile, .dm-seq > .dm-empty.dm-acct-block > .dm-empty-art:hover .es-tile { transform: translateY(11px); }
+  .dm-seq-plate-art .es-arc { transform-box: view-box; transform-origin: 48px 40px; transition: transform 0.6s var(--e-enter); }
+  .dm-seq > .dm-empty.dm-acct-block:has(> .dm-empty-action > .dm-btn--primary:hover) .es-arc, .dm-seq > .dm-empty.dm-acct-block > .dm-empty-art:hover .es-arc { transform: rotate(-28deg); }
+
+  /* ----- The position row's #id (.pid): its own column, centred between the name and the 132px range bar ----- */
+  @media (min-width: 860px) {
+    .dm-seq-create .dm-seq-pick-id { position: absolute; right: calc(1.125rem + 8.25rem + 1.125rem); top: 50%; translate: 0 -50%; margin: 0; white-space: nowrap; }
+    .dm-seq-create .dm-seq-pick-name { padding-right: 5.5rem; }
+  }
+
+  /* ----- Set up automation on the phone (sequence.html phone polish) ----- */
+  @media (max-width: 859px) {
+    /* The title 24px clear of the nav strip, on one line at 375px (.phead 24px, .ptitle 11vw); Back 24px under the setup. */
+    main.dm-seq { padding-top: 1.5rem; padding-bottom: 0; }
+    main.dm-seq > h1 { font-size: clamp(2.375rem, 11vw, 4.5rem); }
+    .dm-seq > .dm-seq-create + .dm-acct-block:has(> a[href="#/automate"]:only-child) { margin-top: 1.5rem; }
+    /* What Domino does: the picture, the name and the check on one line; the purpose and the one-line fee get the full width. */
+    .dm-seq-create .dm-seq-mode.dm-btn { align-items: start; }
+    .dm-seq-create .dm-seq-mode .dm-mode-name { display: flex; align-items: center; min-height: 3.5rem; text-wrap: balance; }
+    .dm-seq-create .dm-seq-mode :is(.dm-mode-purpose, .dm-mode-cost) { margin-left: calc(-4.5rem - 0.875rem); margin-right: calc(-1.625rem - 0.875rem); }
+    .dm-seq-create .dm-seq-mode .dm-mode-purpose { margin-top: 0.75rem; }
+    .dm-seq-create .dm-seq-mode .dm-mode-cost { white-space: nowrap; font-size: 0.78125rem; }
+    .dm-seq-create .dm-seq-mode.dm-btn::after, .dm-seq-create .dm-seq-mode.dm-btn[aria-checked="true"]::after { top: 1.6875rem; }
+    /* Position rows: the name and tags on the first line; the range bar at its own size and the #id on the second. */
+    .dm-seq-create .dm-seq-pick { grid-template-areas: "dot marks name" ". range range"; column-gap: 0.75rem; row-gap: 0.625rem; padding: 0.875rem 0.875rem 0.875rem 1rem; }
+    .dm-seq-create .dm-seq-pick-range { justify-self: start; width: 8.25rem; }
+    .dm-seq-create .dm-seq-pick-id { position: absolute; right: 0.875rem; bottom: calc(0.875rem + 0.8125rem); translate: 0 50%; margin: 0; white-space: nowrap; }
+    .dm-seq-create .dm-seq-pick-name { padding-right: 0; }
+    .dm-seq-create .dm-auto-aside-heading h2 { font-size: 1.875rem; text-wrap: balance; }
+    .dm-seq > .dm-empty.dm-acct-block > .dm-empty-title { text-wrap: balance; }
+  }
+  @media (max-width: 359px) {
+    .dm-seq-create .dm-seq-mode .dm-mode-cost { white-space: normal; }
+    .dm-seq-create .dm-seq-mode :is(.dm-mode-purpose, .dm-mode-cost) { margin-left: 0; }
+    .dm-seq-create .dm-seq-mode .dm-mode-name { min-height: 0; }
+  }
+  @media (max-width: 767px) { main.dm-seq { padding-bottom: 2rem; } }
   @media (prefers-reduced-motion: reduce) {
     .dm-seq-create[aria-busy="true"]::after { left: 30%; right: 30%; animation: none; background-size: 100% 100%; }
     .dm-seq .dm-seq-loading::after { content: none; }
@@ -558,14 +869,30 @@
     [data-automation-control] > svg { transition: none; }
     [data-automation-control]:hover:not(:disabled) > svg { transform: none; }
     [data-automate] .dm-automation-start .dm-automation-choice-entry > .dm-btn:hover > svg, [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry > a.dm-btn:hover > svg, [data-automate] .dm-automation-choice-doc:hover > svg { transform: none; }
-    [data-automate] .dm-automation-choice-grid .dm-automation-choice-art { filter: none; translate: none; transition: opacity 0.2s var(--e-std); }
-    [data-automate] .dm-automation-start .dm-automation-choice-entry > .dm-btn > svg, [data-automate] .dm-automation-choice-doc > svg, [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry > .dm-btn > svg { transition-property: opacity, color, background-color, box-shadow; transform: none; }
-    [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry > a.dm-btn:active { scale: none; }
+    [data-automate] .dm-automation-start .dm-automation-choice-entry > .dm-btn > svg, [data-automate] .dm-automation-choice-doc > svg, [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry > .dm-btn > svg, [data-automate] .dm-automation-start .dm-npb-tile .npb-t { transition-property: opacity, color, background-color, box-shadow; transform: none; }
+    [data-automate] .dm-automation-choice-grid .dm-automation-choice-body::before { transition-property: opacity; }
+    [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry > a.dm-btn:active, [data-automate] .dm-automation-choice-doc:active { scale: none; }
+    main[data-automate] > .dm-automation-start, main[data-automate] > .dm-automation-choice-grid, main[data-automate] > .dm-automation-choice-grid > :is(.dm-automate-card, article), [data-automate] .dm-automate-stage, [data-automate] .dm-automate-stage .dm-at-pip { animation: none; }
+    .dm-automate-stage .sc, .dm-automate-stage .sc * { animation: none !important; }
+    .dm-automate-stage .dz { display: none; }
+    .dm-automate-stage .sc { filter: none; transform: none; transition: opacity 0.2s var(--e-std); }
+    .dm-automate-stage .tpos { transition: none; }
+    .dm-automate-stage :is(.tlift, .tsh, .tin) { animation: none !important; }
+    .dm-automate-stage .dm-at-3d { transform: rotateX(6deg) rotateY(-18deg) rotateZ(-7deg) !important; transition: none; }
+    .dm-automate-stage .tsh { transform: none !important; transition: none; }
+    .dm-automate-stage :is(.dm-at-glare, .dm-at-glare2) { transition: none; }
     :is(.dm-seq-aside, .dm-seq-done) > .dm-seq-wsteps > li[data-step-phase="sent"] .dm-step-marker::after { animation: none; background: conic-gradient(rgb(255 157 98 / 0.7) 0deg 120deg, rgb(255 157 98 / 0) 120deg); }
     :is(.dm-seq-aside, .dm-seq-done) > .dm-seq-wsteps > li[data-step-state="done"] .dm-step-marker { animation: none; }
     .dm-seq > .dm-seq-done > .dm-seq-wsteps > li[data-step-state="done"] .dm-step-marker { animation: none; }
     .dm-seq-axis .dm-axis-nft-box { transition: none; }
+    .dm-seq-create .dm-seq-axis .dm-axis-band[data-kind="next"] > .dm-axis-dash > rect { transition: stroke 0.2s var(--e-std); }
     .dm-seq-create .dm-seq-limit > .dm-seq-limit-why { animation: none; }
+    main.dm-seq > .dm-acct-lede, main.dm-seq > :is(.dm-seq-create, .dm-acct-block, .dm-acct-note, .dm-seq-done), .dm-seq-create .dm-seq-steps > .dm-acct-fieldset, .dm-seq-create .dm-seq-steps > .dm-acct-fieldset:last-of-type > :not(legend), .dm-seq-create .dm-auto-review, .dm-seq > .dm-seq-done > :is(h2, .dm-seq-done-line, .dm-seq-wsteps, .dm-seq-done-links), .dm-seq-create :is(.dm-mode-thumb, .dm-seq-pic) .ta, :is(.dm-seq-aside, .dm-seq-done) > .dm-seq-wsteps > li[data-step-state="done"] .dm-step-marker::before { animation: none; }
+    .dm-seq-create .dm-seq-steps > .dm-acct-fieldset::before { transition: none; }
+    .dm-seq-pic > .dm-seq-asc { filter: none; transform: none; transition: opacity 0.2s var(--e-std), visibility 0s linear 0.2s; }
+    .dm-seq-create .dm-mode-thumb .th-tile, .dm-seq-plate-art :is(.es-tile, .es-arc), .dm-seq-done-link > svg, .dm-seq-create .dm-seq-aside > .dm-seq-seam > .dm-seam-lit { transition: none; }
+    .dm-seq-create .dm-seq-mode:hover:not(:disabled) .dm-mode-thumb .th-tile, .dm-seq > .dm-empty.dm-acct-block:has(> .dm-empty-action > .dm-btn--primary:hover) :is(.es-tile, .es-arc), .dm-seq > .dm-empty.dm-acct-block > .dm-empty-art:hover :is(.es-tile, .es-arc), .dm-seq-done-link:hover > svg { transform: none; }
+    [data-automation-management] :is([data-vault-actions] > .dm-btn--danger, .dm-btn[data-vault-more="leave"]):active:not(:disabled) { scale: none; }
   }
   /* html.dm-still (the app's own stillness switch): the same as reduced motion for this area's moving parts. */
   html.dm-still .dm-seq-create[aria-busy="true"]::after { left: 30%; right: 30%; animation: none; background-size: 100% 100%; }
@@ -576,10 +903,54 @@
   html.dm-still :is(.dm-seq-aside, .dm-seq-done) > .dm-seq-wsteps > li[data-step-state="done"] .dm-step-marker,
   html.dm-still .dm-seq > .dm-seq-done > .dm-seq-wsteps > li[data-step-state="done"] .dm-step-marker { animation: none; }
   html.dm-still :is(.dm-seq-aside, .dm-seq-done) > .dm-seq-wsteps > li[data-step-phase="sent"] .dm-step-marker::after { animation: none; background: conic-gradient(rgb(255 157 98 / 0.7) 0deg 120deg, rgb(255 157 98 / 0) 120deg); }
-  html.dm-still [data-automate] .dm-automation-choice-grid .dm-automation-choice-art { filter: none; translate: none; transition: opacity 0.2s var(--e-std); }
+  html.dm-still [data-automate] .dm-automation-start .dm-automation-choice-entry > .dm-btn:hover > svg, html.dm-still [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry > a.dm-btn:hover > svg, html.dm-still [data-automate] .dm-automation-choice-doc:hover > svg { transform: none; }
+  html.dm-still [data-automate] .dm-automation-start .dm-automation-choice-entry > .dm-btn > svg, html.dm-still [data-automate] .dm-automation-choice-doc > svg, html.dm-still [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry > .dm-btn > svg, html.dm-still [data-automate] .dm-automation-start .dm-npb-tile .npb-t { transition-property: opacity, color, background-color, box-shadow; transform: none; }
+  html.dm-still [data-automate] .dm-automation-choice-grid .dm-automation-choice-body::before { transition-property: opacity; }
+  html.dm-still [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry > a.dm-btn:active, html.dm-still [data-automate] .dm-automation-choice-doc:active { scale: none; }
+  html.dm-still main[data-automate] > .dm-automation-start, html.dm-still main[data-automate] > .dm-automation-choice-grid, html.dm-still main[data-automate] > .dm-automation-choice-grid > :is(.dm-automate-card, article), html.dm-still [data-automate] .dm-automate-stage, html.dm-still [data-automate] .dm-automate-stage .dm-at-pip { animation: none; }
+  html.dm-still .dm-automate-stage .sc, html.dm-still .dm-automate-stage .sc * { animation: none !important; }
+  html.dm-still .dm-automate-stage .dz { display: none; }
+  html.dm-still .dm-automate-stage .sc { filter: none; transform: none; transition: opacity 0.2s var(--e-std); }
+  html.dm-still .dm-automate-stage .tpos { transition: none; }
+  html.dm-still .dm-automate-stage :is(.tlift, .tsh, .tin) { animation: none !important; }
+  html.dm-still .dm-automate-stage .dm-at-3d { transform: rotateX(6deg) rotateY(-18deg) rotateZ(-7deg) !important; transition: none; }
+  html.dm-still .dm-automate-stage .tsh { transform: none !important; transition: none; }
+  html.dm-still .dm-automate-stage :is(.dm-at-glare, .dm-at-glare2) { transition: none; }
+  html.dm-still main.dm-seq > .dm-acct-lede, html.dm-still main.dm-seq > :is(.dm-seq-create, .dm-acct-block, .dm-acct-note, .dm-seq-done), html.dm-still .dm-seq-create .dm-seq-steps > .dm-acct-fieldset, html.dm-still .dm-seq-create .dm-seq-steps > .dm-acct-fieldset:last-of-type > :not(legend), html.dm-still .dm-seq-create .dm-auto-review, html.dm-still .dm-seq > .dm-seq-done > :is(h2, .dm-seq-done-line, .dm-seq-wsteps, .dm-seq-done-links), html.dm-still .dm-seq-create :is(.dm-mode-thumb, .dm-seq-pic) .ta, html.dm-still :is(.dm-seq-aside, .dm-seq-done) > .dm-seq-wsteps > li[data-step-state="done"] .dm-step-marker::before { animation: none; }
+  html.dm-still .dm-seq-create .dm-seq-steps > .dm-acct-fieldset::before { transition: none; }
+  html.dm-still .dm-seq-pic > .dm-seq-asc { filter: none; transform: none; transition: opacity 0.2s var(--e-std), visibility 0s linear 0.2s; }
+  html.dm-still .dm-seq-create .dm-mode-thumb .th-tile, html.dm-still .dm-seq-plate-art :is(.es-tile, .es-arc), html.dm-still .dm-seq-done-link > svg, html.dm-still .dm-seq-create .dm-seq-aside > .dm-seq-seam > .dm-seam-lit { transition: none; }
+  html.dm-still .dm-seq-create .dm-seq-mode:hover:not(:disabled) .dm-mode-thumb .th-tile, html.dm-still .dm-seq > .dm-empty.dm-acct-block:has(> .dm-empty-action > .dm-btn--primary:hover) :is(.es-tile, .es-arc), html.dm-still .dm-seq > .dm-empty.dm-acct-block > .dm-empty-art:hover :is(.es-tile, .es-arc), html.dm-still .dm-seq-done-link:hover > svg { transform: none; }
+  html.dm-still [data-automation-management] :is([data-vault-actions] > .dm-btn--danger, .dm-btn[data-vault-more="leave"]):active:not(:disabled) { scale: none; }
 }
 @keyframes dm-v4-seq-sweep { from { background-position: -11.25rem 0; } to { background-position: calc(100% + 11.25rem) 0; } }
-@keyframes dm-v4-seq-check { from { color: transparent; } }
 @keyframes dm-v4-seq-stamp { from { opacity: 0; transform: scale(0.5) rotate(-12deg); } }
 @keyframes dm-v4-seq-why { from { opacity: 0; transform: translateY(-0.1875rem); } }
 @keyframes dm-v4-seq-skel { from { background-position: -100% 0; } to { background-position: 250% 0; } }
+@keyframes dm-auto-trav-a { 0% { offset-distance: 0%; opacity: 0; } 10% { opacity: 1; } 86% { opacity: 1; } 100% { offset-distance: 100%; opacity: 0; } }
+@keyframes dm-auto-trav-b { 0% { offset-distance: 0%; opacity: 0; } 10% { opacity: 1; } 86% { opacity: 1; } 100% { offset-distance: 100%; opacity: 0; } }
+@keyframes dm-auto-grow-a { from { transform: scaleX(0); } to { transform: none; } }
+@keyframes dm-auto-grow-b { from { transform: scaleX(0); } to { transform: none; } }
+@keyframes dm-auto-pop-a { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: none; } }
+@keyframes dm-auto-pop-b { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: none; } }
+@keyframes dm-auto-fade-a { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dm-auto-fade-b { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dm-auto-draw-a { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes dm-auto-draw-b { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes dm-auto-dim-a { from { opacity: 0.3; } to { opacity: 1; } }
+@keyframes dm-auto-dim-b { from { opacity: 0.3; } to { opacity: 1; } }
+@keyframes dm-auto-drain-a { from { opacity: 1; } to { opacity: 0.22; } }
+@keyframes dm-auto-drain-b { from { opacity: 1; } to { opacity: 0.22; } }
+@keyframes dm-auto-lift-a { 0% { transform: none; } 42% { transform: translateY(-1rem) rotate(var(--tilt, 4deg)); } 100% { transform: none; } }
+@keyframes dm-auto-lift-b { 0% { transform: none; } 42% { transform: translateY(-1rem) rotate(var(--tilt, 4deg)); } 100% { transform: none; } }
+@keyframes dm-auto-shadow-a { 0% { opacity: 1; } 42% { opacity: 0.5; } 100% { opacity: 1; } }
+@keyframes dm-auto-shadow-b { 0% { opacity: 1; } 42% { opacity: 0.5; } 100% { opacity: 1; } }
+@keyframes dm-auto-rise { from { transform: translateY(1.125rem); } to { transform: none; } }
+@keyframes dm-auto-show { from { opacity: 0.01; } }
+@keyframes dm-auto-counter { from { transform: translateY(-1.125rem); } to { transform: none; } }
+@keyframes dm-auto-tile { from { opacity: 0.01; transform: translateY(4rem) scale(0.96); filter: blur(0.625rem); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes dm-v4-seq-pop { from { opacity: 0; transform: scale(0.4); } }
+@keyframes dm-v4-seq-fade { from { opacity: 0; } }
+@keyframes dm-v4-seq-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes dm-v4-seq-panel-a { from { opacity: 0; transform: translateY(0.625rem); filter: blur(0.25rem); } }
+@keyframes dm-v4-seq-panel-b { from { opacity: 0; transform: translateY(0.625rem); filter: blur(0.25rem); } }

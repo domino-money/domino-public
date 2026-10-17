@@ -55,6 +55,8 @@ export default function RecordedInsights({ answer, position, card, price, book, 
 
 function RecordedFees({ rows, position, book, stale }: { rows: readonly PositionReading[]; position: LiveV6Position; book: TokenBook; stale: boolean }) {
   const [token, setToken] = useState<0 | 1>(0)
+  // The value rises in when the token is switched (V4's tk-a), never on the first draw or when a reading arrives.
+  const [switched, setSwitched] = useState(false)
   const phone = useMediaQuery('(max-width: 767px)')
   const { expanded, showPoints } = usePositionChartOptions()
   const address = token === 0 ? position.pool.currency0 : position.pool.currency1
@@ -74,21 +76,21 @@ function RecordedFees({ rows, position, book, stale }: { rows: readonly Position
     <div className="dm-recorded-fees-head">
       <h2 className="dm-title">Fees ready to collect</h2>
       <div className="dm-seg" role="group" aria-label="Fees token">
-        {([position.pool.currency0, position.pool.currency1] as const).map((item, index) => <button key={item} className="dm-seg-item" type="button" aria-pressed={token === index} onClick={() => setToken(index as 0 | 1)}>{labelOf(book, item)}</button>)}
+        {([position.pool.currency0, position.pool.currency1] as const).map((item, index) => <button key={item} className="dm-seg-item" type="button" aria-pressed={token === index} onClick={() => { setSwitched(true); setToken(index as 0 | 1) }}>{labelOf(book, item)}</button>)}
       </div>
     </div>
-    <p className="dm-recorded-fees-value"><span className="dm-fig-lg" title={current === undefined ? undefined : exact(current.toString())}>{current === undefined ? '—' : formatUnitsText(current, usable ? decimals : null)}</span>{' '}<span>{usable ? label : `raw units of ${label}`}</span></p>
+    <p className="dm-recorded-fees-value"><span key={token} className="dm-fig-lg" data-switched={switched ? '' : undefined} title={current === undefined ? undefined : exact(current.toString())}>{current === undefined ? '—' : formatUnitsText(current, usable ? decimals : null)}</span>{' '}<span>{usable ? label : `raw units of ${label}`}</span></p>
     {points.length > 0 ? <ChartFrame
-      className="dm-recorded-fees-chart" height={positionPlotHeight(phone ? 160 : 176, phone, expanded)}
+      className="dm-recorded-fees-chart" height={positionPlotHeight(phone ? 160 : 220, phone, expanded, 340)}
       padding={{ top: 12, right: phone ? 10 : 76, bottom: 26, left: 8 }} label={`Recorded fees ready to collect in ${label}.`}
       points={points.length} indexAt={(px, plot) => nearestIndex(xs, start + Math.max(0, Math.min(1, (px - plot.left) / Math.max(1, plot.right - plot.left))) * (end - start))}
       valueText={index => `${time(points[index].t)}, ${exact(points[index].raw)} ${label} ready to collect`}
-      axes={plot => <><XAxis ticks={points.length === 1 ? [{ x: x(start, plot), label: shortTime(start) }] : [{ x: x(start, plot), label: shortTime(start) }, { x: x(end, plot), label: shortTime(end) }]} anchor={plot.bottom + 22} left={plot.left} right={plot.right} />
+      axes={plot => <><XAxis ticks={points.length === 1 ? [{ x: x(start, plot), label: time(start) }] : [{ x: x(start, plot), label: time(start) }, { x: x(end, plot), label: time(end) }]} anchor={plot.bottom + 22} left={plot.left} right={plot.right} />
         {!phone && <YAxis ticks={max > 0 ? [{ y: y(max, plot), label: priceFigure(max) }, { y: plot.bottom, label: '0' }] : [{ y: plot.bottom, label: '0' }]} anchor={plot.right + 10} />}</>}
-      series={plot => <g data-recorded-fee-points="">{points.map(point => <circle key={point.t} cx={x(point.t, plot)} cy={y(point.value, plot)} r={showPoints ? 4 : 3} className="dm-position-measured-point" data-tone="in" />)}</g>}
+      series={plot => <g data-recorded-fee-points="">{points.map((point, index) => <circle key={point.t} cx={x(point.t, plot)} cy={y(point.value, plot)} r={showPoints ? 4 : 3} className={index === points.length - 1 ? 'dm-position-measured-point dm-position-measured-point--last' : 'dm-position-measured-point'} data-tone="fees" />)}</g>}
       inspect={(plot, index) => index === null ? null : <Crosshair x={x(points[index].t, plot)} top={plot.top} bottom={plot.bottom} left={plot.left} right={plot.right} />}
       overlay={(plot, index) => index === null ? null : <ChartTooltip x={x(points[index].t, plot)} plot={plot} head={time(points[index].t)}><ChartTooltipRow label="Ready to collect">{exact(points[index].raw)} {label}</ChartTooltipRow></ChartTooltip>}
-    /> : <PendingPlot label="Recorded fees" busy={false} />}
+    /> : <PendingPlot label="Recorded fees" busy={false} box={positionPlotHeight(phone ? 160 : 220, phone, expanded, 340) + 38} />}
     {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no "Waiting for a current reading." / "Waiting for a timestamped reading." over the empty plot, and no line
         under it ("Last recorded readings" or "Recorded this session" · its time or "Waiting", with what this browser
         session recorded, and that earlier history isn't available, in its title and in the chart's label). */}

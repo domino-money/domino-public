@@ -18,7 +18,8 @@ export function HeroArt({ className, running }: { className?: string; running?: 
       <span className="dm-tile-shadow dm-k-shadow" />
       <div className="dm-tile-in dm-k-tile">
         <div className="dm-sculpture-front">
-          <div className="dm-tile-persp" data-home-tile="">
+          {/* The ember rests where this tile's light does (EmberLight.tsx: just above its top left corner). */}
+          <div className="dm-tile-persp" data-home-tile="" data-ember-rest="">
             <div className="dm-tile-3d">
               {SLABS.map((z) => <span key={z} className={`dm-tile-slab dm-tile-z${z}`} />)}
               <div className="dm-tile-face">

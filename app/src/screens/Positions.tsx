@@ -288,43 +288,57 @@ function ReceiptsPage() {
 /**
  * A short introduction to both modes. Actual automation status belongs to each position. Changed on purpose 2026-10-06
  * (the integration review, ux #9): in a build that carries V2, Auto-exit too, by its own name and line, so Automate's
- * "Choose a position" lands where Auto-exit is named (each position's own page turns it on).
+ * "Choose a position" lands where Auto-exit is named (each position's own page turns it on). V4 (2026-10-17, the
+ * approved positions.html): each function is a row that opens Automate, with its round chevron, lit on hover and focus,
+ * as the approved card draws it; its words and markers are unchanged.
  */
 function AutomationCard() {
   return (
-    <section className="dm-card dm-acct-rail dm-acct-auto dm-acct-o6" aria-labelledby="automation-title">
+    <section className="dm-card dm-lit dm-acct-rail dm-acct-auto dm-acct-o6" aria-labelledby="automation-title">
       <div className="dm-acct-auto-head">
         <h2 id="automation-title" className="dm-title">Automation</h2>
         <LinkButton href={automateHref} variant="ghost" size="sm" aria-label="Open Automate">Explore</LinkButton>
       </div>
       <ul className="dm-acct-auto-list">
         <li>
-          <span aria-hidden="true" className="dm-acct-auto-ic dm-acct-auto-ic--cmp" />
-          <div className="min-w-0">
-            <p className="dm-acct-auto-name">
-              <span>Auto-compound</span>
-            </p>
-            <p className="dm-acct-auto-text">Reinvest earned fees</p>
-          </div>
+          {/* oxlint-disable-next-line jsx-a11y/control-has-associated-label -- its name is the function's name and line inside it */}
+          <a href={automateHref} className="dm-acct-auto-row">
+            <span aria-hidden="true" className="dm-acct-auto-ic dm-acct-auto-ic--cmp" />
+            <div className="min-w-0">
+              <p className="dm-acct-auto-name">
+                <span>Auto-compound</span>
+              </p>
+              <p className="dm-acct-auto-text">Reinvest earned fees</p>
+            </div>
+            <span aria-hidden="true" className="dm-acct-auto-chev" />
+          </a>
         </li>
         <li>
-          <span aria-hidden="true" className="dm-acct-auto-ic dm-acct-auto-ic--dom" />
-          <div className="min-w-0">
-            <p className="dm-acct-auto-name">
-              <span>Domino-compound</span>
-            </p>
-            <p className="dm-acct-auto-text">Fund the next range</p>
-          </div>
+          {/* oxlint-disable-next-line jsx-a11y/control-has-associated-label -- its name is the function's name and line inside it */}
+          <a href={automateHref} className="dm-acct-auto-row">
+            <span aria-hidden="true" className="dm-acct-auto-ic dm-acct-auto-ic--dom" />
+            <div className="min-w-0">
+              <p className="dm-acct-auto-name">
+                <span>Domino-compound</span>
+              </p>
+              <p className="dm-acct-auto-text">Fund the next range</p>
+            </div>
+            <span aria-hidden="true" className="dm-acct-auto-chev" />
+          </a>
         </li>
         {__DOMINO_V2__ && (
           <li data-automation-feature="auto-exit">
-            <span aria-hidden="true" className="dm-acct-auto-ic dm-acct-auto-ic--exit" />
-            <div className="min-w-0">
-              <p className="dm-acct-auto-name">
-                <span>{AUTO_EXIT_FEATURE.name}</span>
-              </p>
-              <p className="dm-acct-auto-text">Close at the range limit</p>
-            </div>
+            {/* oxlint-disable-next-line jsx-a11y/control-has-associated-label -- its name is the function's name and line inside it */}
+            <a href={automateHref} className="dm-acct-auto-row">
+              <span aria-hidden="true" className="dm-acct-auto-ic dm-acct-auto-ic--exit" />
+              <div className="min-w-0">
+                <p className="dm-acct-auto-name">
+                  <span>{AUTO_EXIT_FEATURE.name}</span>
+                </p>
+                <p className="dm-acct-auto-text">Close at the range limit</p>
+              </div>
+              <span aria-hidden="true" className="dm-acct-auto-chev" />
+            </a>
           </li>
         )}
       </ul>

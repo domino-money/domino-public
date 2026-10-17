@@ -16,6 +16,7 @@ import { useBatchAbility, useCreateProgress, useCreated, type LiveState } from '
 import { useRoutedReview } from '../../lib/create/routedReview'
 import { PoolPair, RangeSummary } from './StepList'
 import { CreatedNext } from './CreatedNext'
+import { NewPositionAgain } from './createdParts'
 import { AmountText, UsdText } from '../figures'
 import { TokenMarkPair } from '../TokenIcon'
 import { heldAmounts, rawBalances } from './valuation'
@@ -40,10 +41,22 @@ const sideOf = (pool: PoolOption, index: 0 | 1, raw: bigint | string): HeldSide 
  * untrusted text, isolated by SymbolText.
  */
 function Side({ side, index, lead }: { side: HeldSide; index: 0 | 1; lead?: string }) {
+  // The words as before, each part in its own inline span for the V4 well (new.html .yp-a): "About" and the unit small,
+  // the figure in the serif, the + quiet. The lead keeps its trailing space as a text node.
+  const word = lead?.trim()
   return (
     <span className="dm-flow-headline-side" data-review-side={index} data-exact={side.amount}>
-      {lead}
-      <AmountText text={side.amount} /> <SymbolText token={side.token} />
+      {word && (
+        <>
+          <span className={word === '+' ? 'dm-rv-plus' : 'dm-rv-about'}>{word}</span>{lead?.slice(lead.indexOf(word) + word.length)}
+        </>
+      )}
+      <span className="dm-rv-num">
+        <AmountText text={side.amount} />
+      </span>{' '}
+      <span className="dm-rv-unit">
+        <SymbolText token={side.token} />
+      </span>
     </span>
   )
 }
@@ -127,6 +140,8 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
   const whole = swap !== null && swap.swap >= swap.deposit
   return (
     <div className="dm-flow-stack" data-stage="review">
+      {/* The created view opens here, above Your position, once the position exists (CreatedNext, createdParts.tsx). */}
+      <div data-created-slot="" />
       <section aria-labelledby="create-choices-heading" className="dm-flow-section">
         <h3 id="create-choices-heading" className="dm-flow-subtitle">
           {CREATE.review.choices}
@@ -136,7 +151,7 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
           <p className="dm-flow-headline-pair">
             {pool ? (
               <>
-                <TokenMarkPair base={pool.currencies[0]} quote={pool.currencies[1]} size={24} ring="var(--flow-well, var(--surface-1))" />
+                <TokenMarkPair base={pool.currencies[0]} quote={pool.currencies[1]} size={40} ring="#1a1815" />
                 <span className="min-w-0">
                   <PoolPair option={pool} />
                 </span>
@@ -303,6 +318,8 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
             </li>
           ))}
         </ol>
+        {/* Where the ember rests while no pointer moves (new.html: 70px in from the card's left, 40px over its top). */}
+        <span className="dm-np-ember-at" data-ember-rest="" aria-hidden="true" />
       </section>
 
       {/* The technical facts behind the position, closed until opened: for whoever wants them, never in the way. */}
@@ -424,6 +441,7 @@ export function FinalControl({ state, balances, onBusy }: { state: JourneyState;
           <Control state={state} reviewed={planFor(state, balances)} onBusy={onBusy} />
         </Suspense>
         {created && <CreatedNext tokenId={created} state={state} />}
+        {created && <NewPositionAgain />}
       </>
     )
   }

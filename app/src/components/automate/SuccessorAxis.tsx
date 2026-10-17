@@ -1,5 +1,4 @@
 import type { CSSProperties, ReactNode } from 'react'
-import { ArtTile } from '../home/Vignettes'
 import { cx } from '../ui'
 import { CREATE } from '../../lib/create/copy'
 import { rem } from '../../lib/rootScale'
@@ -27,20 +26,29 @@ import type { AxisRoot } from './types'
 /**
  * The plot's height and its axis line; each successor stands RISE higher than the one before. Design px, written in rem
  * (changed on purpose 2026-10-03, lib/rootScale.ts); the 1px inset of a band's fill stays a hairline.
+ * V4 (2026-10-17, the owner's approved sequence.html .ax, 360 x 200 drawn in the 420px aside): thin 16px bands 2px over
+ * the axis line, 32px apart, 6.1% side room, small plain tiles; the placement logic is unchanged.
  */
-const H = 160
-const BASE = 132
-const BAND = 28
-const RISE = 18
-const PAD = 5
+const H = 198
+const BASE = 166
+const BAND = 16
+const ROOT = BASE - 2 - BAND
+const RISE = 32
+const PAD = 6.1
 
 /** One band as two clipped layers (its line, then its fill inset by 1 px), so corners and hatching never stretch. */
 function Band({ kind, from, to, top, index, children }: { kind: 'root' | 'next' | 'zone'; from: number; to: number; top: number; index: number; children?: ReactNode }) {
-  const clip = (inset: number) => ({ clipPath: `inset(calc(${rem(top)} + ${inset}px) calc(${100 - to}% + ${inset}px) calc(${rem(H - top - BAND)} + ${inset}px) calc(${from}% + ${inset}px) round calc(${rem(6)} - ${inset}px))` })
+  const clip = (inset: number) => ({ clipPath: `inset(calc(${rem(top)} + ${inset}px) calc(${100 - to}% + ${inset}px) calc(${rem(H - top - BAND)} + ${inset}px) calc(${from}% + ${inset}px) round calc(${rem(3)} - ${inset}px))` })
   return (
     <div className="dm-axis-band" data-kind={kind} style={{ '--i': index } as CSSProperties}>
-      {kind !== 'zone' && <div className="dm-axis-line" style={clip(0)} />}
-      <div className="dm-axis-fill" style={clip(kind === 'zone' ? 0 : 1)} />
+      {kind === 'root' && <div className="dm-axis-line" style={clip(0)} />}
+      <div className="dm-axis-fill" style={clip(kind === 'root' ? 1 : 0)} />
+      {/* V4: a next range is outlined in dashes (the approved .ax-sb, stroke-dasharray 3 3), drawn over its fill. */}
+      {kind === 'next' && (
+        <svg className="dm-axis-dash" focusable="false">
+          <rect style={{ x: `${from}%`, y: rem(top), width: `${Math.max(0, to - from)}%`, height: rem(BAND), rx: rem(3) } as CSSProperties} />
+        </svg>
+      )}
       {children}
     </div>
   )
@@ -55,15 +63,14 @@ function At({ at, top, index, className, children }: { at: number; top: number; 
   )
 }
 
-function Tile({ solid, layout }: { solid: boolean; layout: readonly [number, number] }) {
+/** The approved .ax-t0 / .ax-t1: a 9 x 16 tile, solid Tangerine on your position, outlined on the next ranges. */
+function Tile({ solid }: { solid: boolean }) {
   return (
-    <svg className={cx('dm-axis-tile', solid && 'tile-solid')} width="0.875rem" height="1.53125rem" viewBox="0 0 14 24.5" focusable="false">
-      <ArtTile w={14} layout={layout} parts={solid ? 'solid' : 'outline'} />
+    <svg className={cx('dm-axis-tile', solid && 'tile-solid')} width="0.5625rem" height="1rem" viewBox="0 0 9 16" focusable="false">
+      <rect className="dm-axis-tile-body" x="0" y="0" width="9" height="16" rx="2.4" />
     </svg>
   )
 }
-
-const LAYOUTS: ReadonlyArray<readonly [number, number]> = [[1, 3], [2, 3], [0, 3]]
 
 function numbers(form: SequenceForm) {
   const read = (text: string) => (/^\d+(\.\d+)?$/.test(text.trim()) ? Number(text.trim()) : Number.NaN)
@@ -99,33 +106,33 @@ export function SuccessorAxis({ root, inverse, form }: { root: AxisRoot; inverse
       <div className="dm-auto-chart-heading"><h3>How the next ranges line up</h3><span>Illustration of your settings</span></div>
       <div className="dm-axis-plot" aria-hidden="true">
         <div className="dm-axis-base" style={{ top: rem(BASE) }} />
-        <Band kind="root" from={x(Math.max(plan.floor, lo))} to={x(0)} top={BASE - BAND} index={0}>
+        <Band kind="root" from={x(Math.max(plan.floor, lo))} to={x(0)} top={ROOT} index={0}>
           {/* The id sits in a box the band's size, outside its clip: it shows when the band can hold it (v4-automate.css). */}
-          <span className="dm-axis-nft-box" style={{ left: `${x(Math.max(plan.floor, lo))}%`, width: `${x(0) - x(Math.max(plan.floor, lo))}%`, top: rem(BASE - BAND), height: rem(BAND) }}>
-            <span className={cx('dm-axis-nft', cut && 'is-cut')} style={{ left: rem(10), top: rem(7) }}>
+          <span className="dm-axis-nft-box" style={{ left: `${x(Math.max(plan.floor, lo))}%`, width: `${x(0) - x(Math.max(plan.floor, lo))}%`, top: rem(ROOT - 16), height: rem(14) }}>
+            <span className={cx('dm-axis-nft', cut && 'is-cut')} style={{ left: 0, top: 0 }}>
               #{root.tokenId}
             </span>
           </span>
         </Band>
         {steps.map((step, index) => (
           <div key={index} className="dm-axis-step" style={{ opacity: [1, 0.62, 0.36][index] }}>
-            {step.floorMin < step.anchor && <Band kind="zone" from={x(step.floorMin)} to={x(step.anchor)} top={BASE - BAND - RISE * (index + 1)} index={index + 1} />}
-            <Band kind="next" from={x(step.anchor)} to={x(step.ceiling)} top={BASE - BAND - RISE * (index + 1)} index={index + 1} />
-            <At at={x(step.ceiling)} top={BASE - BAND - RISE * (index + 1) - 24.5} index={index + 1} className="dm-axis-tile-at">
-              <Tile solid={false} layout={LAYOUTS[index]} />
+            {step.floorMin < step.anchor && <Band kind="zone" from={x(step.floorMin)} to={x(step.anchor)} top={ROOT - RISE * (index + 1)} index={index + 1} />}
+            <Band kind="next" from={x(step.anchor)} to={x(step.ceiling)} top={ROOT - RISE * (index + 1)} index={index + 1} />
+            <At at={(x(step.anchor) + x(step.ceiling)) / 2} top={ROOT - RISE * (index + 1) - 17} index={index + 1} className="dm-axis-tile-at dm-axis-tile-next">
+              <Tile solid={false} />
             </At>
           </div>
         ))}
-        <At at={x(0)} top={BASE - BAND - 24.5} index={0} className="dm-axis-tile-at">
-          <Tile solid layout={[3, 1]} />
+        <At at={x(0)} top={ROOT - 17} index={0} className="dm-axis-tile-at dm-axis-tile-root">
+          <Tile solid />
         </At>
         {live && (
-          <At at={x(plan.trigger)} top={12} index={1} className="dm-axis-trigger">
+          <At at={x(plan.trigger)} top={30} index={1} className="dm-axis-trigger">
             <span />
           </At>
         )}
         {labels.map((label) => (
-          <At key={label.text} at={label.at} top={BASE + 6} index={0} className="dm-axis-tick">
+          <At key={label.text} at={label.at} top={BASE + 9} index={0} className="dm-axis-tick">
             <span data-edge={label.edge}>{label.text}</span>
           </At>
         ))}

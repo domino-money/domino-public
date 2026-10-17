@@ -258,8 +258,10 @@
   --vwk: 1;
 }
 
-@media (max-width: 767px) { :root { --header-h: 6.625rem; } }
-@media (min-width: 860px), (min-width: 768px) and (pointer: fine) { :root { --gutter: 3.5rem; } }
+/* One phone switch at 859px, whatever the pointer (V4: every phone block of the prototype); the 67.5% root stays a desktop
+   pointer's from 768px, as the prototype's zoom. */
+@media (max-width: 859px) { :root { --header-h: 6.625rem; } }
+@media (min-width: 860px) { :root { --gutter: 3.5rem; } }
 @media (min-width: 768px) and (pointer: fine) { :root { --vwk: 0.675; } }
 /* Compact controls should not squeeze the flows into a narrow column: retain 924/896px at the default font size (the main
    column is --content at every width since V4). */
@@ -385,9 +387,8 @@
 
   html {
     background-color: var(--bg);
-    /* A control the keyboard moves to is scrolled into view below the sticky header, never under it (audit E12,
-       2026-10-01: a pool page's Estimate your earnings field hid there). Section links scroll by script
-       (lib/sectionScroll.ts), which this does not move. */
+    /* A control the keyboard moves to is scrolled into view below the sticky header (audit E12). Section links scroll by
+       script (lib/sectionScroll.ts), which this does not move. */
     scroll-padding-top: calc(var(--header-h) + 0.75rem);
   }
 
@@ -519,9 +520,9 @@
   }
 }
 
-/* First load rises, navigation crossfades (DESIGN-V2 §5.5): App puts dm-booted on <html> at the first route
-   change, and from then on page blocks no longer rise; the 180ms page fade is the only navigation motion.
-   In the utilities layer, so it beats the animate-rise utility. */
+/* The page blocks' rise plays with the screen's load moment (V4: on the first load and for 1.5 s after each route change,
+   App.tsx) and never on content that mounts later, once <html> carries dm-booted. In the utilities layer, so it beats the
+   animate-rise utility. */
 @layer utilities {
   .dm-booted :is(.animate-rise, .dm-rise, .dm-flow-rise) {
     animation: none;
@@ -543,10 +544,6 @@
   to { opacity: 1; }
 }
 
-@keyframes dm-page-in {
-  from { opacity: 0.01; }
-}
-
 @keyframes dm-pop {
   from { opacity: 0; scale: 0.97; translate: 0 -0.25rem; }
 }
@@ -555,9 +552,28 @@
   from { opacity: 0; translate: 0 0.75rem; }
 }
 
+/* V4 menus (site/_kit.md): the ··· menu and the ≡ sheet in and out; the ≡ scrim's fade out. */
+@keyframes dm-menu-in { from { scale: 0.96; translate: 0 -0.25rem; } }
+@keyframes dm-menu-out { to { opacity: 0; scale: 0.96; translate: 0 -0.25rem; } }
+@keyframes dm-psheet-in { from { scale: 0.98; translate: 0 -0.375rem; } }
+@keyframes dm-psheet-out { to { opacity: 0; scale: 0.98; translate: 0 -0.375rem; } }
+@keyframes dm-fade-out { to { opacity: 0; } }
+
 @keyframes dm-dialog-in {
   from { opacity: 0; translate: 0 0.5rem; scale: 0.98; }
 }
+
+/* V4 dialogs (site/_kit.md .ch-dlg, states/Wallet.html): the sheet's rise apart from its fade; its way out (centred, and a
+   phone's bottom sheet); the wallet dialog's content, foot and status sentence arriving; the waiting row's arc; the
+   seam's running light. */
+@keyframes dm-dialog-rise { from { translate: 0 0.5rem; scale: 0.98; } }
+@keyframes dm-dialog-out { to { opacity: 0; translate: 0 0.5rem; scale: 0.98; } }
+@keyframes dm-sheet-down { to { translate: 0 104%; } }
+@keyframes dm-wd-in { from { opacity: 0; transform: translateY(0.25rem); filter: blur(0.1875rem); } }
+@keyframes dm-wd-foot { from { opacity: 0; transform: translateY(0.375rem); filter: blur(0.1875rem); } }
+@keyframes dm-wd-sw { from { opacity: 0; transform: translateY(0.3125rem); filter: blur(0.1875rem); } }
+@keyframes dm-spin-r { to { rotate: 360deg; } }
+@keyframes dm-seam-run { from { background-position: -51.5% 0; } to { background-position: 154.5% 0; } }
 
 @keyframes dm-sheet-up {
   from { translate: 0 100%; }
@@ -636,13 +652,16 @@
 }
 
 /* V4 load moment (2026-10-16, study/20-v4-language.md §6.1; the inner pages' short timings, site/_kit.md): one moment per
-   screen on its first load only, done in under a second. A screen puts dm-k-* on its own elements; nothing animates once
-   <html> carries dm-booted (App.tsx), and data that refreshes never animates. Fills are backwards only, so once a
-   moment ends nothing keeps a transform or a filter. Opacity starts at 0.01 (the LCP note above). Reduced motion: none. */
+   screen, done in under a second, on the page's first load and again on every route change, as each page of the prototype
+   plays its own on its own load: App.tsx takes dm-booted off <html> for 1.5 s after a route change, so what mounts then
+   plays, and nothing that mounts later, a tab switch or data that refreshes ever animates. The header and the ember are
+   the frame, which never changes between screens (states/System.html 'Changing pages'): they fade in on the first load
+   only (dm-started). Fills are backwards only, so once a moment ends nothing keeps a transform or a filter. Opacity
+   starts at 0.01 (the LCP note above). Reduced motion: none. */
 @layer utilities {
-  html:not(.dm-booted) .dm-k-glow { animation: dm-v4-glow 0.8s var(--ease-std) backwards; }
-  html:not(.dm-booted) :is(.dm-k-top, .dm-k-sheen) { animation: dm-v4-fade 0.4s var(--ease-std) backwards; }
-  html:not(.dm-booted) .dm-k-sheen { animation-delay: 0.45s; }
+  html:not(.dm-started) .dm-k-glow { animation: dm-v4-glow 0.8s var(--ease-std) backwards; }
+  html:not(.dm-started) .dm-k-top { animation: dm-v4-fade 0.4s var(--ease-std) backwards; }
+  html:not(.dm-booted) .dm-k-sheen { animation: dm-v4-fade 0.4s var(--ease-std) 0.45s backwards; }
   html:not(.dm-booted) :is(.dm-k-l1, .dm-k-l2) { animation: dm-v4-rise 0.7s var(--ease-enter) 0.04s backwards; }
   html:not(.dm-booted) .dm-k-l2 { animation-delay: 0.1s; }
   html:not(.dm-booted) :is(.dm-k-s1, .dm-k-s2) { animation: dm-v4-stop 0.4s var(--e-pop) 0.42s backwards; }

@@ -56,14 +56,17 @@ function RangeStage({ view, poolTick, lowerTick, upperTick, priceText }: { view:
   const middle = (geo.lower + geo.upper) / 2
   const lowerAt = view.lower > 0 ? geo.lower : null
   const upperAt = Number.isFinite(view.upper) ? geo.upper : null
+  // The band's ends and the point it stretches about (today's price, else its middle), as numbers of the window's width:
+  // the CSS draws the band from them (--lo, --hi), so a pointed-at Wider or Custom can stretch it (styles/v4-newposition.css).
+  const ends = { '--pv-lo': geo.lower, '--pv-hi': geo.upper, '--pv-mid': geo.current ?? middle } as CSSProperties
   return (
-    <div className="dm-flow-pv-range" data-in={view.inRange ? 'true' : 'false'}>
+    <div className="dm-flow-pv-range" data-in={view.inRange ? 'true' : 'false'} style={ends}>
       <span className="dm-flow-pv-range-glow" style={at(middle - 50)} />
-      <span className="dm-flow-pv-range-band" style={{ clipPath: `inset(0 ${100 - geo.upper}% 0 ${geo.lower}% round ${rem(10)} ${rem(10)} 0 0)` }} />
-      <span className="dm-flow-pv-range-edge" data-end="lower" data-at={lowerAt === null ? 'edge' : undefined} style={at(geo.lower)}>
+      <span className="dm-flow-pv-range-band" style={{ clipPath: `inset(0 calc(100% - var(--hi)) 0 var(--lo) round ${rem(10)} ${rem(10)} 0 0)` }} />
+      <span className="dm-flow-pv-range-edge" data-end="lower" data-at={lowerAt === null ? 'edge' : undefined} style={{ translate: 'var(--lo) 0' }}>
         <span className="dm-flow-pv-range-grip" />
       </span>
-      <span className="dm-flow-pv-range-edge" data-end="upper" data-at={upperAt === null ? 'edge' : undefined} style={at(geo.upper)}>
+      <span className="dm-flow-pv-range-edge" data-end="upper" data-at={upperAt === null ? 'edge' : undefined} style={{ translate: 'var(--hi) 0' }}>
         <span className="dm-flow-pv-range-grip" />
       </span>
       <span className="dm-flow-pv-range-axis" />
@@ -75,12 +78,12 @@ function RangeStage({ view, poolTick, lowerTick, upperTick, priceText }: { view:
         </span>
       )}
       {lowerAt !== null && (
-        <span className="dm-flow-pv-range-mark" style={at(lowerAt)}>
+        <span className="dm-flow-pv-range-mark dm-flow-pv-range-mark--lo" style={at(lowerAt)}>
           <span data-side={side(lowerAt, geo.upper, 'lower')}>{awayShort(lowerTick, poolTick)}</span>
         </span>
       )}
       {upperAt !== null && (
-        <span className="dm-flow-pv-range-mark" style={at(upperAt)}>
+        <span className="dm-flow-pv-range-mark dm-flow-pv-range-mark--hi" style={at(upperAt)}>
           <span data-side={side(upperAt, geo.lower, 'upper')}>{awayShort(upperTick, poolTick)}</span>
         </span>
       )}
@@ -197,7 +200,7 @@ export function PositionPreview({
                 <p className="dm-flow-pv-pair">
                   <SymbolText token={head.currencies[0]} /> / <SymbolText token={head.currencies[1]} />
                 </p>
-                {step === 'pool' && figures && (figures.tvl || figures.apr) && (
+                {figures && (figures.tvl || figures.apr) && (
                   <dl className="dm-flow-pv-stats">
                     {figures.tvl && (
                       <div>
@@ -228,7 +231,7 @@ export function PositionPreview({
         <div key="range" className="dm-flow-pv-live dm-arrive" data-part="range">
           <div className="dm-flow-pv-price">
             <div className="dm-flow-pv-price-head">
-              <span className="dm-flow-pv-label">{step === 'range' ? CREATE.amount.rangeHeading : CREATE.amount.now}</span>
+              <span className="dm-flow-pv-label">{step === 'amount' ? CREATE.amount.now : CREATE.amount.rangeHeading}</span>
               {/* Changed on purpose 2026-09-28 (one-sided): a range beside today's price is a choice, not an alarm, so it is
                   said calmly (no red "Out of range"): the position earns once the price enters it. */}
               {view.inRange ? (
@@ -332,6 +335,8 @@ export function PositionPreview({
         </div>
       )}
 
+      {/* Where the ember rests while no pointer moves (new.html: 70px in from the card's left, 40px over its top). */}
+      <span className="dm-np-ember-at" data-ember-rest="" aria-hidden="true" />
     </aside>
   )
 }

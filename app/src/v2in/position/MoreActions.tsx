@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { IconPlus, IconRange, IconShield, IconWallet } from '../../components/icons'
+import { IconPlus } from '../../components/icons'
+import { IconRangeArrows, IconShieldPlain, IconWithdrawTray } from '../../components/positions/actionIcons'
 import { Button } from '../../components/ui'
 import { HOOKED_COPY, ROOT_BLOCKS_CHANGE_RANGE, ROOT_CHANGE_RANGE_COPY } from './constants'
 import { COPY } from './copy'
@@ -37,7 +38,8 @@ export function positionMenuItems(action: ActionPosition, protect = false): More
   ]
 }
 
-const ACTION_ICONS = { increase: IconPlus, changeRange: IconRange, exit: IconWallet, protect: IconShield } as const
+// The approved V4 row's glyphs (components/positions/actionIcons.tsx): the double arrow, the tray, the plain shield.
+const ACTION_ICONS = { increase: IconPlus, changeRange: IconRangeArrows, exit: IconWithdrawTray, protect: IconShieldPlain } as const
 
 /** Every action is visible. The old data hooks remain on the group and its buttons. */
 export function MoreActions({ id, items, onPick, ...data }: { id: string; items: readonly MoreAction[]; onPick: (key: MoreAction['key']) => void } & Record<`data-${string}`, string>) {

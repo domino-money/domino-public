@@ -26,13 +26,14 @@ import { labelOf, type TokenBook } from './tokens'
  * some 16 minutes later. Finality is a line in Receipts' Details (../lists/words.ts); data-position-receipt-state keeps
  * saying the state itself.
  */
-export function ZapReceiptView({ chainId, view, book }: { chainId: V2ChainId; view: ReceiptView; book: TokenBook }) {
+export function ZapReceiptView({ chainId, view, book, signed = 1 }: { chainId: V2ChainId; view: ReceiptView; book: TokenBook; signed?: number }) {
   const read = view.read
   const amount = (token: Address, raw: bigint) => <Rows chainId={chainId} book={book} items={[{ token, amount: raw }]} size="sm" />
   const landed = view.state === 'finalized' || view.state === 'included'
   return (
     <div className="dm-pa-field" data-position-receipt={view.state}>
       <SheetStatus state={landed ? 'done' : 'busy'} data-position-receipt-state={view.state}>
+        {landed && <Laid count={signed} />}
         {view.state === 'finalized' ? COPY.wallet.finalized : view.state === 'included' ? COPY.wallet.included : COPY.receipt.waiting}
       </SheetStatus>
       <SheetFacts>
@@ -103,10 +104,11 @@ function Gas({ gas }: { gas: GasCost }) {
  * A direct (Uniswap) exit's receipt: what Uniswap paid, from the receipt's own logs (native ETH on v4 leaves none). It
  * leads with "Confirmed" as the zap's receipt does (2026-10-14, incident C1).
  */
-export function DirectReceiptView({ chainId, receipt, book }: { chainId: V2ChainId; receipt: DirectReceipt; book: TokenBook }) {
+export function DirectReceiptView({ chainId, receipt, book, signed = 1 }: { chainId: V2ChainId; receipt: DirectReceipt; book: TokenBook; signed?: number }) {
   return (
     <div className="dm-pa-field" data-position-receipt={receipt.state}>
       <SheetStatus state="done" data-position-receipt-state={receipt.state}>
+        <Laid count={signed} />
         {receipt.state === 'finalized' ? COPY.wallet.finalized : COPY.wallet.included}
       </SheetStatus>
       <SheetFacts>
@@ -121,5 +123,14 @@ export function DirectReceiptView({ chainId, receipt, book }: { chainId: V2Chain
         <Gas gas={receipt.gas} />
       </SheetFacts>
     </div>
+  )
+}
+
+/** One small domino laid flat per signed step, before "Confirmed" (V4's .as-rcpt): decoration only, no text. */
+function Laid({ count }: { count: number }) {
+  return (
+    <span className="dm-pa-laid" aria-hidden="true">
+      {Array.from({ length: Math.max(1, Math.min(3, count)) }, (_, index) => <i key={index} />)}
+    </span>
   )
 }

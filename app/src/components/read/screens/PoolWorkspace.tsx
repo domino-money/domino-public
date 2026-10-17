@@ -14,7 +14,7 @@ import type { ReadOutcome, ReadRequests, ReadSource } from '../../../lib/read/ty
 import { usePoolStandIns, useFallbackRow } from '../../../lib/read/useFallback'
 import { useNow } from '../../../lib/read/useNow'
 import { APR_SLIVER } from '../../../lib/format/apr'
-import { feeChipText } from '../../../lib/format/fee'
+import { FEE_VENUE, feeWords } from '../../../lib/format/fee'
 import { useLoadMilestone } from '../../../lib/useLoadMilestone'
 import { MetricCell, TurnoverCell } from '../../explore/MetricCell'
 import { PoolTokenLabel } from '../../PoolCatalogueIdentity'
@@ -161,11 +161,13 @@ function refusal(option: PoolOption): string {
  * changes) has no estimate and no typical range: what Domino can do here says
  * why, beside its chart.
  */
-export function PoolWorkspace({ source, option, onOption, actions, painted, notice }: {
+export function PoolWorkspace({ source, option, onOption, actions, painted, notice, moment = false }: {
   source: ReadSource
   option: PoolOption
   onOption: (next: PoolOption) => void
   actions?: ReactNode
+  /** The first layout drawn for this pool (a copy this browser painted at once): it plays the page's load moment (v4-pool.css). */
+  moment?: boolean
   /** What the page must say before anything else (a look-alike token, a pool off the list): under the pool's name (audit I1). */
   notice?: ReactNode
   /** This browser's copy of the last overview, when it names the pool: its figures stand until the page's own (item 44). */
@@ -351,7 +353,7 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
   // earnings estimate and the recent activity, the typical range beside what Domino can do here, then Details; where
   // Domino can't open a position, what it can do here and the recent activity beside the chart. A phone reads them in
   // the DOM's order.
-  return <div data-pool-workspace={option.key} className={usable ? 'dm-pool-layout' : 'dm-pool-layout dm-pool-layout--follow'}>
+  return <div data-pool-workspace={option.key} className={usable ? 'dm-pool-layout' : 'dm-pool-layout dm-pool-layout--follow'} data-pool-moment={moment ? '' : undefined}>
     <div className="dm-pool-head dm-pool-a-head">
       <div className="dm-pool-title">
         {/* Named as its price is written, "TOKEN/USDG" beside "1 TOKEN = X USDG" (audit E21). */}
@@ -359,8 +361,9 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
         <div className="min-w-0">
           <h1 className="dm-display dm-display-h1"><PoolTokenLabel token={base} /> <span className="dm-pool-slash">/</span> <PoolTokenLabel token={quote} /></h1>
           <div className="dm-pool-chips">
-            {/* The fee as every chip writes it (lib/format/fee.ts, audit E21). */}
-            <span className="dm-chip">{feeChipText(fee)}</span>
+            {/* The fee as every chip writes it (lib/format/fee.ts, audit E21): "Uniswap · 0.30% fee", drawn as two joined
+                segments (V4 .tag), the "·" kept in the text and unseen. */}
+            <span className="dm-chip"><span className="dm-fee-venue">{FEE_VENUE}</span><span className="dm-fee-sep"> · </span><span className="dm-fee-value">{feeWords(fee)}</span></span>
           </div>
         </div>
       </div>
@@ -405,22 +408,22 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
       <PoolEarnings apr={aprNumber} tvl={tvl} loading={loading || (metricsListed && !metricsRead && !!shown)} saved={aprNumber !== null && (savedApr || (tvl !== null && tvl > 0 && tvlMetric?.state === 'stale'))} />
     </div>}
 
-    <div className="dm-pool-a-recent dm-v3-pool-recent">
+    <div className="dm-pool-a-recent dm-v3-pool-recent dm-lit">
       <PoolActivitySummary read={activityRead} listed={activityListed} option={option} now={now} day={day} usd={usd} volume={volumeText} loading={loading} />
     </div>
 
-    {usable && <details className="dm-pool-a-range dm-v3-pool-disclosure">
+    {usable && <details className="dm-pool-a-range dm-v3-pool-disclosure dm-lit">
       <summary>Choosing a price range<span aria-hidden="true" /></summary>
       <PoolRangeGuide guide={guide} day={day} unit={unit} saved={price.state === 'usable' && price.stale} />
     </details>}
 
-    {usable ? <details className="dm-pool-a-auto dm-v3-pool-disclosure">
+    {usable ? <details className="dm-pool-a-auto dm-v3-pool-disclosure dm-lit">
       <summary>Automate your position<span aria-hidden="true" /></summary>
       <PoolAutomation usable={usable} why={refusal(option)} />
-    </details> : <div className="dm-pool-a-auto"><PoolAutomation usable={usable} why={refusal(option)} /></div>}
+    </details> : <div className="dm-pool-a-auto dm-lit"><PoolAutomation usable={usable} why={refusal(option)} /></div>}
 
     {/* Everything technical, at the end and closed until asked for, as on a position's page. */}
-    <details className="dm-card dm-pool-details dm-pool-a-details" data-pool-details="">
+    <details className="dm-card dm-pool-details dm-pool-a-details dm-lit" data-pool-details="">
       <summary className="dm-pool-details-head">
         <h2 className="dm-title">Pool details</h2>
         <span aria-hidden="true" className="dm-pool-details-chevron" />

@@ -47,12 +47,13 @@ export function PoolRangeGuide({ guide, day, unit, saved = false }: { guide: Ran
           {moved && <span className="dm-pool-guide-day" style={stretch(at(moved.low), at(moved.high))} title={`Last day: ${day?.low} to ${day?.high}`} />}
           <span className="dm-pool-guide-now" style={{ left: `${at(values.now) * 100}%` }} />
         </div>
+        {/* V4 (pool.html .rg-ends): each end's price and distance sit centred under the band's edge (v4-pool.css). */}
         <div className="dm-pool-guide-ends tnum">
-          <span>
+          <span style={{ left: `${at(values.low) * 100}%` }}>
             <b>{guide.low}</b> {guide.below}
           </span>
           <span className="dm-pool-guide-unit">{unit}</span>
-          <span>
+          <span style={{ left: `${at(values.high) * 100}%` }}>
             <b>{guide.high}</b> {guide.above}
           </span>
         </div>

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { ActivityResponse, PortfolioResponse } from 'api-contracts/read-v6/types'
 import { positionsHref } from '../../components/explore/routes'
-import { IconChevronDown, IconChevronLeft, IconClose, IconCoins, IconSearch } from '../../components/icons'
+import { IconChevronDown, IconChevronLeft, IconClose, IconSearch } from '../../components/icons'
+import { IconCollect } from '../../components/positions/actionIcons'
 import { PositionRange, chainCardPrice, preloadPriceChart } from '../../components/positions/PositionRange'
 import { activityOpenedAt } from '../../lib/chart/positionOpened'
 import { readablePrice } from '../../lib/chart/priceFacts'
@@ -10,7 +11,7 @@ import { Amount as CardAmount, PairName, PositionStatus } from '../../components
 import { PositionSkeleton } from '../../components/positions/visual/PositionSkeleton'
 import { Address } from '../../components/read/screens/Address'
 import { TokenMarkPair } from '../../components/TokenIcon'
-import { Button, Chip, Display, EmptyState, FigureDash, KeyValue, KeyValueList, PageShell, Stat, StatStrip } from '../../components/ui'
+import { Button, Chip, Display, EmptyState, FigureDash, KeyValue, KeyValueList, PageShell, Stat, StatStrip, cx } from '../../components/ui'
 import { LiveFigure, UsdText } from '../../components/figures'
 import { formatUsdFloor } from '../../lib/format/usd'
 import { useRouteTitle } from '../../lib/routeTitle'
@@ -198,6 +199,12 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
   const price = chainCardPrice(card, { sqrtPriceX96: position.sqrtPriceX96.toString(10), tick: position.tick, block: position.snapshotBlock ?? 0 })
   const priced = priceInverted(position.pool.currency0, position.pool.currency1) ? { base: position.pool.currency1, quote: position.pool.currency0 } : { base: position.pool.currency0, quote: position.pool.currency1 }
   const phone = useMediaQuery('(max-width: 767px)')
+  // The page's moment (v4-position.css, html:not(.dm-booted)) plays when this page's figures arrive, as a page load does
+  // in the approved V4 site; once it is over, later reads never run it again (the owner's silent updates, 2026-10-15).
+  useEffect(() => {
+    const timer = window.setTimeout(() => document.documentElement.classList.add('dm-booted'), 1200)
+    return () => window.clearTimeout(timer)
+  }, [])
   const [mode, setMode] = useState<PositionMode | null>(null)
   const [automationToolbar, setAutomationToolbar] = useState<HTMLSpanElement | null>(null)
   const approval = useZapApproval(gate, action, walletOnChain)
@@ -253,16 +260,16 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
     <div data-position-detail="" data-position-workspace-page="" data-position-id={position.tokenId.toString()} data-position-v2={`${chain.slug}-v${position.dex}`} data-snapshot={position.snapshotBlock ?? undefined}>
       <div className="dm-pos-title">
         <div className="dm-pos-name">
-          <TokenMarkPair base={base} quote={quote} size={phone ? 36 : 44} ring="var(--bg)" />
+          <TokenMarkPair base={base} quote={quote} size={phone ? 36 : 46} ring="var(--bg)" />
           <div className="min-w-0">
             <Display as="h1" className="dm-display-h1 dm-pos-pair">
               <PairName card={card} />
             </Display>
             <div className="dm-pos-chips">
               {/* As V1's page: the venue and the fee; the Uniswap version only as the title and under Details (the lists' rule). */}
-              <Chip title={COPY.page.version(position.dex)}>
+              <Chip title={COPY.page.version(position.dex)} className="dm-pos-tag">
                 <span>
-                  {COPY.page.uniswap} · <span data-fee="">{feeTierText(position.pool.fee)}</span> fee
+                  <span className="dm-pos-tag-seg">{COPY.page.uniswap}</span><span className="dm-pos-tag-sep"> · </span><span className="dm-pos-tag-seg"><span data-fee="">{feeTierText(position.pool.fee)}</span> fee</span>
                 </span>
               </Chip>
               <Chip>
@@ -285,7 +292,7 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
             ) : (
               <>
                 <Button type="button" variant="primary" disabled={hooked} title={hooked ? HOOKED_COPY : undefined} data-position-v2-action="collect" onClick={() => setMode('collect')}>
-                  <IconCoins size={18} /><span>{COPY.button.collect}</span>
+                  <IconCollect size={18} /><span>{COPY.button.collect}</span>
                 </Button>
                 <MoreActions id={`position-v2-more-${position.tokenId}`} items={items} onPick={(key) => { if (key !== 'protect') setMode(key) }} data-position-v2-actions={gate.mode} />
               </>
@@ -331,7 +338,7 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
         >
           {feesUsd !== null ? (
             <span data-usd="fees" title={feesTitle} data-usd-basis={row?.feesUsdBasis} data-usd-snapshot={row?.usdSavedAt !== undefined && row.usdNow?.figure !== 'fees' ? '' : undefined} data-usd-dated={feesAsOf !== undefined ? '' : undefined}>
-              <UsdText value={feesUsd} block={feesAsOf !== undefined ? undefined : position.snapshotBlock ?? undefined} floor className="dm-fig-lg dm-arrive" />
+              <UsdText value={feesUsd} block={feesAsOf !== undefined ? undefined : position.snapshotBlock ?? undefined} floor className={cx('dm-fig-lg dm-arrive', /[1-9]/.test(feesUsd) && 'dm-fees-in')} />
             </span>
           ) : (
             <span className="dm-pos-amounts" data-usd-amounts="fees"><CardAmount amount={card.unsettledFees[0]} /><CardAmount amount={card.unsettledFees[1]} /></span>
@@ -341,7 +348,7 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
         <Stat label={COPY.page.apr} info={COPY.page.aprInfo} className="dm-pos-stat" data-cell="apr" data-apr="no_qualified_source">
           <span className="dm-fig-lg"><FigureDash /></span>
         </Stat>
-        <Stat label={COPY.page.price} info={COPY.page.priceInfo} className="dm-pos-stat" data-cell="price" sub={<span className="dm-pos-span-state" data-in={String(card.inRange)}>{card.hasLiquidity ? (card.inRange ? COPY.page.inRangeEarning : COPY.page.outOfRangeIdle) : COPY.page.closed}</span>}>
+        <Stat label={COPY.page.price} info={COPY.page.priceInfo} className="dm-pos-stat dm-lit" data-cell="price" sub={<span className="dm-pos-span-state" data-in={String(card.inRange)} data-ember-rest="">{card.hasLiquidity ? (card.inRange ? COPY.page.inRangeEarning : COPY.page.outOfRangeIdle) : COPY.page.closed}</span>}>
           <span data-stat="price">
             {/* The same price presentation as KeyFigures: one figure, then its unambiguous quote unit. */}
             {price.state.phase === 'ready' && price.state.price.state === 'usable' ? (

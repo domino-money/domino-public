@@ -37,10 +37,44 @@ const NONE: ReadonlySet<string> = new Set()
 /** The first four blocks of a page rise in, 40ms apart (first load only: navigation cross-fades). */
 const rise = (step: number) => ({ '--delay': `${step * 40}ms` }) as CSSProperties
 
+/**
+ * V4: when the title drawn while the page's networks load gives way to the page's own, the page's title keeps rising
+ * where the first one stood (v4-markets.css --dm-title-shift) instead of rising a second time: the first title's
+ * clock is kept here, the page's own reads it once. Presentation only.
+ */
+let waitingTitleAt: number | null = null
+const startTitleClock = (heading: HTMLHeadingElement | null) => {
+  if (!heading) return
+  const now = document.timeline?.currentTime
+  waitingTitleAt = typeof now === 'number' ? now : null
+}
+const followTitleClock = (heading: HTMLHeadingElement | null) => {
+  if (!heading || waitingTitleAt === null) return
+  const now = document.timeline?.currentTime
+  const ran = typeof now === 'number' ? now - waitingTitleAt : 0
+  waitingTitleAt = null
+  if (ran > 0 && ran < 1500) heading.style.setProperty('--dm-title-shift', `${-Math.round(ran)}ms`)
+}
+
+/**
+ * V4: the pools card's rise plays once. A figures dialog holds it still while open (v4-markets.css); once it has risen,
+ * or its rise was cut short, the card says so (data-risen) and no later state replays it. Presentation only.
+ */
+function holdRise(card: HTMLElement | null) {
+  if (!card) return
+  const done = (event: Event) => { if (event.target === card) card.setAttribute('data-risen', '') }
+  card.addEventListener('animationend', done)
+  card.addEventListener('animationcancel', done)
+  return () => {
+    card.removeEventListener('animationend', done)
+    card.removeEventListener('animationcancel', done)
+  }
+}
+
 /** Changed on purpose 2026-10-04 (the owner: Domino covers more than one network): the title alone, no "Uniswap pools on Robinhood Chain." under it. */
-function Title() {
+function Title({ waiting = false }: { waiting?: boolean }) {
   return (
-    <Display as="h1" className="dm-display-h1">
+    <Display as="h1" className="dm-display-h1" ref={waiting ? startTitleClock : followTitleClock}>
       Markets
     </Display>
   )
@@ -98,7 +132,7 @@ function MarketsList({ onToken, others, onNetwork }: { onToken: (candidate: Toke
       <section className="dm-v3-market-featured animate-rise" style={rise(1)} aria-label="Featured pool charts">
         <MarketCarousel heading={null} />
       </section>
-      <section className="dm-mkt-pools dm-lit animate-rise" style={rise(2)} aria-labelledby="markets-pools-title">
+      <section className="dm-mkt-pools dm-lit animate-rise" style={rise(2)} aria-labelledby="markets-pools-title" ref={holdRise}>
         <div className="dm-mkt-pools-toolbar">
           <SectionHead
             id="markets-pools-title"
@@ -304,13 +338,13 @@ function ExploreBody({ others = null, checkingNetworks = false }: { others?: Oth
               Pools for <SymbolText token={candidate.token} />
             </h2>
           </div>
-          <Card className="mt-3 p-2">
+          <Card className="mt-3 p-2 dm-lit">
             <PoolPicker key={candidate.key} source={source} token={candidate.key} paired={null} pending={null} onPending={() => undefined} onOpen={(option) => open(option.key, candidate.wire)} catalogue={false} compact />
           </Card>
         </section>
       )}
 
-      {storedReads === 'legacy' && <details className="dm-details dm-mkt-catalogue" data-catalogue-browser="">
+      {storedReads === 'legacy' && <details className="dm-details dm-mkt-catalogue dm-lit" data-catalogue-browser="">
         <summary>
           <IconSearch size={16} className="dm-mkt-catalogue-icon" />
           Search the pool catalogue
@@ -329,7 +363,7 @@ function ExploreBody({ others = null, checkingNetworks = false }: { others?: Oth
 
 export function Explore() {
   if (!MarketsNetworks) return <ExploreBody />
-  return <Suspense fallback={<PageShell data-markets=""><Title /></PageShell>}>
+  return <Suspense fallback={<PageShell data-markets=""><Title waiting /></PageShell>}>
     <MarketsNetworks>{(others, checking) => <ExploreBody others={others} checkingNetworks={checking} />}</MarketsNetworks>
   </Suspense>
 }

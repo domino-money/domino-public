@@ -144,7 +144,7 @@ export function StepList({ steps, onOpen, locked = false }: { steps: readonly St
         // pointer-down and pointer-up: the gesture would end elsewhere and its click would be lost.
         if (document.activeElement !== heading) return
         const top = heading.getBoundingClientRect().top
-        const header = document.querySelector('header')?.getBoundingClientRect().height ?? 0
+        const header = Math.max(0, document.querySelector('header')?.getBoundingClientRect().bottom ?? 0)
         const air = rootScale()
         if (top < header + 8 * air || top > window.innerHeight * 0.6) {
           window.scrollTo({ top: Math.max(0, window.scrollY + top - header - 24 * air), behavior: still ? 'auto' : 'smooth' })

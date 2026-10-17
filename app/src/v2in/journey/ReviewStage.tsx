@@ -1,6 +1,5 @@
-import { useState, type ReactNode } from 'react'
-import { ModeArt, PlainArt } from '../../components/automate/ModeArt'
-import { ExitThumb } from '../../components/home/Vignettes'
+import { Fragment, useState, type ReactNode } from 'react'
+import { CreatedArt, CreatedTile, InCreatedSlot, NewPositionAgain } from '../../components/create/createdParts'
 import { IconChevronRight } from '../../components/icons'
 import { Button, cx, FigureDash, Pill, Skeleton } from '../../components/ui'
 import { askAutoExitOnArrival, expectNewPosition } from '../../lib/automate/autoExitAsk'
@@ -228,13 +227,15 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
 
   return (
     <div className="dm-flow-stack" data-stage="review" data-zap-review={gate.mode} data-zap-review-stage={view.stage} data-review-stale={stale ? '' : undefined}>
+      {/* The created view opens here, above Your position, once the position exists (Created below, createdParts.tsx). */}
+      <div data-created-slot="" />
       <section aria-labelledby="zap-choices-heading" className="dm-flow-section">
         <h3 id="zap-choices-heading" className="dm-flow-subtitle">
           {CREATE.review.choices}
         </h3>
         <div className={cx('dm-flow-headline', stale && 'opacity-60 transition-opacity')} data-review-headline="" aria-busy={quoting || undefined}>
           <p className="dm-flow-headline-pair">
-            <TokenDiscPair chainId={state.chainId} first={pool.tokens[0]} second={pool.tokens[1]} size={24} ring="var(--flow-well, var(--surface-1))" />
+            <TokenDiscPair chainId={state.chainId} first={pool.tokens[0]} second={pool.tokens[1]} size={40} ring="#1a1815" />
             <span className="min-w-0" data-review-pool="">
               <TokenName token={pool.tokens[0]} /> / <TokenName token={pool.tokens[1]} />
             </span>
@@ -242,7 +243,32 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
           <PoolChips chainId={state.chainId} dex={pool.pool.dex} fee={pool.pool.fee} />
           <p className={cx('dm-flow-headline-amounts tnum', stale && 'animate-pulse-soft')} data-review-amounts="" title={held ? heldText(exact) : undefined}>
             {held ? (
-              `${CREATE.review.about} ${heldText(amount)}`
+              // The same words as one sentence ("About 0.19 ETH + 490 USDG"), each part an inline span for the V4 well
+              // (new.html .yp-a: the figures in the serif, "About", the units and the + small).
+              <>
+                <span className="dm-rv-about">{CREATE.review.about}</span>{' '}
+                {sides.map((i, n) => {
+                  const text = amount(currencies[i], held[i])
+                  const cut = text.indexOf(' ')
+                  return (
+                    <Fragment key={i}>
+                      {n > 0 && (
+                        <>
+                          {' '}
+                          <span className="dm-rv-plus">+</span>{' '}
+                        </>
+                      )}
+                      {cut > 0 ? (
+                        <>
+                          <span className="dm-rv-num">{text.slice(0, cut)}</span> <span className="dm-rv-unit">{text.slice(cut + 1)}</span>
+                        </>
+                      ) : (
+                        <span className="dm-rv-num">{text}</span>
+                      )}
+                    </Fragment>
+                  )
+                })}
+              </>
             ) : quoting ? (
               // The figures are on their way: the page's resting bubble, never a digit (components/ui.tsx Skeleton).
               <Skeleton className="inline-block h-[1.25em] w-48 max-w-full align-middle" />
@@ -253,19 +279,36 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
           {inputs.length > 0 && (
             // What goes in, as the wallet is asked to allow it: the same figure, rounded up, every digit in the title.
             <p className="dm-flow-headline-line tnum" data-review-inputs="" title={inputs.map((input) => exact(input.token, input.amount)).join(' + ')}>
-              {JOURNEY.review.youPut} {inputs.map((input) => owed(input.token, input.amount)).join(' + ')}.
+              <span className="dm-rv-k">{JOURNEY.review.youPut}</span> <span className="dm-rv-v">{inputs.map((input) => owed(input.token, input.amount)).join(' + ')}.</span>
             </p>
           )}
           <p className="dm-flow-headline-line tnum" data-review-range="">
-            {CREATE.amount.rangeHeading}:{' '}
-            {both && priceText(both.forward.low) && priceText(both.forward.high)
-              ? `1 ${l0} = ${priceText(both.forward.low)} to ${priceText(both.forward.high)} ${l1} · 1 ${l1} = ${priceText(both.inverse.low) ?? '—'} to ${priceText(both.inverse.high) ?? '—'} ${l0}`
-              : range ? CREATE.review.summary.rangeTicks(range.lower, range.upper) : CREATE.page.notChosen}
+            <span className="dm-rv-k">
+              {CREATE.amount.rangeHeading}
+              <span className="dm-rv-c">:</span>
+            </span>{' '}
+            <span className="dm-rv-v">
+              {both && priceText(both.forward.low) && priceText(both.forward.high) ? (
+                <>
+                  {`1 ${l0} = ${priceText(both.forward.low)} to ${priceText(both.forward.high)} ${l1}`}
+                  <span className="dm-rv-c"> · </span>
+                  <span className="dm-rv-i">{`1 ${l1} = ${priceText(both.inverse.low) ?? '—'} to ${priceText(both.inverse.high) ?? '—'} ${l0}`}</span>
+                </>
+              ) : range ? CREATE.review.summary.rangeTicks(range.lower, range.upper) : CREATE.page.notChosen}
+            </span>
           </p>
           {/* A new pool's starting price, in view: the box to tick below speaks of "this price" (§2.6.5). */}
           {facts?.initialPrice && (
             <p className="dm-flow-headline-line tnum" data-fact="review-start">
-              {`${JOURNEY.newPool.price}: 1 ${l0} = ${facts.initialPrice.price0In1} ${l1} · 1 ${l1} = ${facts.initialPrice.price1In0} ${l0}`}
+              <span className="dm-rv-k">
+                {JOURNEY.newPool.price}
+                <span className="dm-rv-c">:</span>
+              </span>{' '}
+              <span className="dm-rv-v">
+                {`1 ${l0} = ${facts.initialPrice.price0In1} ${l1}`}
+                <span className="dm-rv-c"> · </span>
+                <span className="dm-rv-i">{`1 ${l1} = ${facts.initialPrice.price1In0} ${l0}`}</span>
+              </span>
             </p>
           )}
           {facts && (
@@ -273,8 +316,14 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
             <p className="dm-flow-headline-line tnum" data-review-fee={fee ? 'charged' : 'none'} data-review-fee-state={fee ? 'charged' : 'none'}>
               {fee ? (
                 <>
-                  {JOURNEY.review.fee}: <span data-review-fee-amount="" title={exact(fee.token, fee.amount)}>{owed(fee.token, fee.amount)}</span> (
-                  <span data-review-fee-base="" title={JOURNEY.review.feeBase(exact(fee.token, fee.basis))}>{JOURNEY.review.feeBase(amount(fee.token, fee.basis))}</span>)
+                  <span className="dm-rv-k">
+                    {JOURNEY.review.fee}
+                    <span className="dm-rv-c">:</span>
+                  </span>{' '}
+                  <span className="dm-rv-v">
+                    <span data-review-fee-amount="" title={exact(fee.token, fee.amount)}>{owed(fee.token, fee.amount)}</span> (
+                    <span data-review-fee-base="" title={JOURNEY.review.feeBase(exact(fee.token, fee.basis))}>{JOURNEY.review.feeBase(amount(fee.token, fee.basis))}</span>)
+                  </span>
                 </>
               ) : (
                 JOURNEY.review.noFee
@@ -294,15 +343,20 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
               data-review-network-others={network.kind === 'about' && network.othersMissing ? 'unprepared' : undefined}
               data-review-l1-fee={l1Fee && l1Fee.status === 'ok' ? l1Fee.wei.toString() : 'unavailable'}
             >
-              {JOURNEY.review.networkFee}:{' '}
-              {network.kind === 'about'
-                ? JOURNEY.review.networkAbout(ethAboutText(network.wei))
-                : network.kind === 'upTo'
-                  ? JOURNEY.review.networkUpTo(ethText(network.wei))
-                  : !stale && kept.steps.some((step) => step.status === 'preparing')
-                    ? <Skeleton className="inline-block h-[1em] w-24 align-middle" />
-                    : JOURNEY.review.networkLater}
-              {network.kind === 'about' && (network.l1Missing || network.othersMissing) && `, ${JOURNEY.review.networkMore}`}
+              <span className="dm-rv-k">
+                {JOURNEY.review.networkFee}
+                <span className="dm-rv-c">:</span>
+              </span>{' '}
+              <span className="dm-rv-v">
+                {network.kind === 'about'
+                  ? JOURNEY.review.networkAbout(ethAboutText(network.wei))
+                  : network.kind === 'upTo'
+                    ? JOURNEY.review.networkUpTo(ethText(network.wei))
+                    : !stale && kept.steps.some((step) => step.status === 'preparing')
+                      ? <Skeleton className="inline-block h-[1em] w-24 align-middle" />
+                      : JOURNEY.review.networkLater}
+                {network.kind === 'about' && (network.l1Missing || network.othersMissing) && `, ${JOURNEY.review.networkMore}`}
+              </span>
             </p>
           )}
         </div>
@@ -343,12 +397,25 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
       )}
 
       {/* The wallet's steps once a review lists them; before that, nothing here ("Getting a quote…" is said once, under Create position). */}
-      {(gate.mode === 'preview' || kept.steps.length > 0) && (
+      {/* Changed 2026-10-17 (V4, boards B1-B3/B7): the In your wallet card keeps its title before the review lists steps,
+          with three resting rows while the first quote runs; nothing in it is a step (no data-wallet-steps). */}
+      {(gate.mode === 'preview' || gate.mode === 'live' || kept.steps.length > 0) && (
         <section aria-labelledby="zap-steps-heading" className="dm-flow-section">
           <h3 id="zap-steps-heading" className="dm-flow-subtitle">
             {CREATE.review.steps}
           </h3>
-          {gate.mode === 'preview' ? (
+          {gate.mode === 'live' && kept.steps.length === 0 ? (
+            quoting && (
+              <div className="dm-np-wsk" aria-hidden="true">
+                {[0, 1, 2].map((row) => (
+                  <span key={row} className="dm-np-wsk-row">
+                    <Skeleton className="dm-np-wsk-c" />
+                    <Skeleton className="dm-np-wsk-a" />
+                  </span>
+                ))}
+              </div>
+            )
+          ) : gate.mode === 'preview' ? (
             <p role="status" className="dm-flow-position" data-tone="neutral" data-v2-locked="" data-wallet-steps="locked">
               <span>{gate.lockedCopy}</span>
             </p>
@@ -387,6 +454,8 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
               })}
             </ol>
           )}
+          {/* Where the ember rests while no pointer moves (new.html: 70px in from the card's left, 40px over its top). */}
+          <span className="dm-np-ember-at" data-ember-rest="" aria-hidden="true" />
         </section>
       )}
 
@@ -597,6 +666,7 @@ export function FinalControl({ gate, view, blockedForPrice, connected, onRun, on
         </>
       )}
       {done && view.receipt && view.reviewed && <Created view={view} />}
+      {done && view.receipt && view.reviewed && <NewPositionAgain />}
     </>
   )
 }
@@ -629,47 +699,51 @@ function Created({ view }: { view: RunView }) {
   const tokenId = read?.summary.tokenId ?? null
   const failed = receipt.state === 'reverted' || receipt.state === 'not-included'
   const state = receipt.state === 'finalized' ? JOURNEY.live.finalized : receipt.state === 'included' ? JOURNEY.live.included : receipt.state === 'reverted' ? JOURNEY.created.revertedStatus : receipt.state === 'not-included' ? JOURNEY.created.notIncludedStatus : JOURNEY.created.pending
+  // Drawn at the top of Review's body (V4: the created block opens above Your position), its tile beside the line.
   return (
-    <section className="dm-created" aria-labelledby="created-title" data-created-position={tokenId?.toString() ?? ''} data-zap-receipt={receipt.state}>
-      <p id="created-title" className="dm-created-line" role="status">
-        {receipt.state === 'reverted' ? JOURNEY.created.reverted : receipt.state === 'not-included' ? JOURNEY.created.notIncluded : tokenId !== null ? JOURNEY.created.line(`#${tokenId.toString()}`) : JOURNEY.created.pending}
-      </p>
-      <dl className="dm-flow-facts" data-receipt="">
-        <Fact label={JOURNEY.created.state} data="receipt-state" attrs={{ 'data-receipt-state': receipt.state }}>{state}</Fact>
-        {read === null ? failed ? null : (
-          <Fact label={JOURNEY.created.receipt} data="receipt-unreadable" attrs={{ 'data-error-code': receipt.unreadable ?? 'receipt_pending' }}>
-            {receipt.unreadable ? JOURNEY.created.unreadable : JOURNEY.created.pending}
-          </Fact>
-        ) : (
-          <>
-            {read.lines.map((line) => <ReceiptRow key={line.logIndex} line={line} amount={amount} />)}
-            <Fact label={JOURNEY.created.gas} data="receipt-gas" attrs={{ 'data-receipt-gas': read.gas.status }}>
-              {read.gas.status === 'available' ? ethText(read.gas.totalWei) : <FigureDash reason={JOURNEY.created.gasUnavailable} />}
+    <InCreatedSlot>
+      <section className="dm-created" aria-labelledby="created-title" data-created-position={tokenId?.toString() ?? ''} data-zap-receipt={receipt.state}>
+        <p id="created-title" className="dm-created-line" role="status">
+          {receipt.state === 'reverted' ? JOURNEY.created.reverted : receipt.state === 'not-included' ? JOURNEY.created.notIncluded : tokenId !== null ? JOURNEY.created.line(`#${tokenId.toString()}`) : JOURNEY.created.pending}
+        </p>
+        {!failed && <CreatedTile />}
+        <dl className="dm-flow-facts" data-receipt="">
+          <Fact label={JOURNEY.created.state} data="receipt-state" attrs={{ 'data-receipt-state': receipt.state }}>{state}</Fact>
+          {read === null ? failed ? null : (
+            <Fact label={JOURNEY.created.receipt} data="receipt-unreadable" attrs={{ 'data-error-code': receipt.unreadable ?? 'receipt_pending' }}>
+              {receipt.unreadable ? JOURNEY.created.unreadable : JOURNEY.created.pending}
             </Fact>
-          </>
+          ) : (
+            <>
+              {read.lines.map((line) => <ReceiptRow key={line.logIndex} line={line} amount={amount} />)}
+              <Fact label={JOURNEY.created.gas} data="receipt-gas" attrs={{ 'data-receipt-gas': read.gas.status }}>
+                {read.gas.status === 'available' ? ethText(read.gas.totalWei) : <FigureDash reason={JOURNEY.created.gasUnavailable} />}
+              </Fact>
+            </>
+          )}
+        </dl>
+        {tokenId !== null && (
+          <nav className="dm-created-choices" aria-labelledby="created-title">
+            {/* The page waits for read-v6 to list the position it opens (lib/automate/autoExitAsk.ts, 2026-10-06). */}
+            <a className="dm-created-choice" href={v2PositionHref({ chainId, dex: pool.dex, tokenId })} onClick={() => expectNewPosition(exitOrderKey(tokenId.toString(), chainId, pool.dex))} aria-label={JOURNEY.created.view} data-created-next="position">
+              <span className="dm-created-art" aria-hidden="true">
+                <CreatedArt kind="plain" />
+              </span>
+              <span className="dm-created-text">
+                <span className="dm-created-name">{JOURNEY.created.positions}</span>
+                <span className="dm-created-note">{`${labelOf(book, pool.currency0)} / ${labelOf(book, pool.currency1)} · ${v2Chain(chainId).name}`}</span>
+              </span>
+              <span className="dm-created-go">
+                <span className="dm-created-go-text">{JOURNEY.created.view}</span>
+                <IconChevronRight size={16} />
+              </span>
+            </a>
+            <CreatedCompound chainId={chainId} dex={pool.dex} tokenId={tokenId} />
+            <CreatedExit chainId={chainId} dex={pool.dex} tokenId={tokenId} offer={exitOffer(intent.tickLower, intent.tickUpper, pool.tickSpacing, facts.pool.tick ?? facts.initialPrice?.tick ?? null)} />
+          </nav>
         )}
-      </dl>
-      {tokenId !== null && (
-        <nav className="dm-created-choices" aria-labelledby="created-title">
-          {/* The page waits for read-v6 to list the position it opens (lib/automate/autoExitAsk.ts, 2026-10-06). */}
-          <a className="dm-created-choice" href={v2PositionHref({ chainId, dex: pool.dex, tokenId })} onClick={() => expectNewPosition(exitOrderKey(tokenId.toString(), chainId, pool.dex))} aria-label={JOURNEY.created.view} data-created-next="position">
-            <span className="dm-created-art" aria-hidden="true">
-              <PlainArt />
-            </span>
-            <span className="dm-created-text">
-              <span className="dm-created-name">{JOURNEY.created.positions}</span>
-              <span className="dm-created-note">{`${labelOf(book, pool.currency0)} / ${labelOf(book, pool.currency1)} · ${v2Chain(chainId).name}`}</span>
-            </span>
-            <span className="dm-created-go">
-              <span className="dm-created-go-text">{JOURNEY.created.view}</span>
-              <IconChevronRight size={16} />
-            </span>
-          </a>
-          <CreatedCompound chainId={chainId} dex={pool.dex} tokenId={tokenId} />
-          <CreatedExit chainId={chainId} dex={pool.dex} tokenId={tokenId} offer={exitOffer(intent.tickLower, intent.tickUpper, pool.tickSpacing, facts.pool.tick ?? facts.initialPrice?.tick ?? null)} />
-        </nav>
-      )}
-    </section>
+      </section>
+    </InCreatedSlot>
   )
 }
 
@@ -686,7 +760,7 @@ function CreatedCompound({ chainId, dex, tokenId }: { chainId: V2ChainId; dex: D
   const gate = useGate('vault', chainId)
   if (!gateOpen(gate)) return null
   return <>{(['compound', 'domino'] as const).map((mode) => <a key={mode} className="dm-created-choice" href={setupHref({ chainId, dex, tokenId }, mode)} data-created-next={mode}>
-    <span className="dm-created-art" aria-hidden="true"><ModeArt mode={mode} size="card" play="none" /></span>
+    <span className="dm-created-art" aria-hidden="true"><CreatedArt kind={mode} /></span>
     <span className="dm-created-text"><span className="dm-created-name">{FEATURES[mode].name}<span className="dm-created-fee"> · {FEATURES[mode].fee}</span></span><span className="dm-created-note">{FEATURES[mode].line}</span></span>
     <span className="dm-created-go"><span className="dm-created-go-text">Set up</span><IconChevronRight size={16} /></span>
   </a>)}</>
@@ -706,7 +780,7 @@ function CreatedExit({ chainId, dex, tokenId, offer }: { chainId: V2ChainId; dex
       data-created-recommended={beside ? '' : undefined}
     >
       <span className="dm-created-art" aria-hidden="true">
-        <ExitThumb />
+        <CreatedArt kind="autoexit" />
       </span>
       <span className="dm-created-text">
         <span className="dm-created-name">

@@ -15,7 +15,7 @@ import type { FeesPeriodView, FeesView } from './model'
 import { dateTicks, spacedTimeTicks } from './ticks'
 import { anyPositive, positive, valueNumber, valueFigure } from './value'
 import { positionPlotHeight, usePositionChartOptions } from '../PositionChartOptions'
-import { PAD, PAD_PHONE, HEIGHT, HEIGHT_PHONE } from './feesChartLayout'
+import { PAD, PAD_PHONE, HEIGHT, HEIGHT_PHONE, BIG, BIG_PHONE, DATES_BELOW } from './feesChartLayout'
 
 /**
  * Nothing earned yet: a timeline waiting for its first fee. The flat line along the foot of a short plot (the room
@@ -121,15 +121,18 @@ function Split({ earned, collected, baseline }: { earned: readonly Point[]; coll
   const id = useSvgId('dm-fees-area-')
   if (earned.length < 2) return null
   const band = `${linePath(earned, 'linear')} ${linePath([...collected].reverse(), 'linear').replace(/^M/, 'L')} Z`
+  // Both fills on one scale, from the line's top to the plot's foot (V4: one area under the line, no seam where the
+  // collected part ends); their inks are the page's (v4-position.css).
+  const top = Math.min(...earned.map((point) => point.y))
   return (
     <g>
       <defs>
-        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id={id} gradientUnits="userSpaceOnUse" x1="0" y1={top} x2="0" y2={baseline}>
           <stop offset="0" className="dm-stop-top" />
           <stop offset="0.55" className="dm-stop-mid" />
           <stop offset="1" className="dm-stop-bottom" />
         </linearGradient>
-        <linearGradient id={`${id}w`} x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id={`${id}w`} gradientUnits="userSpaceOnUse" x1="0" y1={top} x2="0" y2={baseline}>
           <stop offset="0" className="dm-fees-wait-top" />
           <stop offset="1" className="dm-fees-wait-bottom" />
         </linearGradient>
@@ -177,9 +180,10 @@ export function FeesChart({
 }) {
   const adds = automation?.adds ?? NONE
   const phone = useMediaQuery('(max-width: 767px)')
-  const axisFontSize = useMediaQuery('(min-width: 768px) and (pointer: fine)') ? 16 : 12
+  // V4 (2026-10-17): the axis labels are 12 design px everywhere (v4-position.css), so they are spaced for that size.
+  const axisFontSize = 12
   const { expanded, showPoints } = usePositionChartOptions()
-  const height = positionPlotHeight(phone ? HEIGHT_PHONE : HEIGHT, phone, expanded)
+  const height = positionPlotHeight(phone ? HEIGHT_PHONE : HEIGHT, phone, expanded, phone ? BIG_PHONE : BIG)
   const pad = phone ? PAD_PHONE : PAD
   const { start, end, buckets } = pv
   const baseN = pv.points[0]?.v ?? 0
@@ -270,11 +274,11 @@ export function FeesChart({
           { x: plot.left, label: edgeLabel(start) },
           { x: plot.right, label: edgeLabel(end) },
         ]
-        return <><YAxis ticks={[{ y: plot.bottom, label: axisFigure(view, 0) }]} anchor={plot.right + (phone ? -4 : 10)} side={phone ? 'left' : 'right'} /><XAxis ticks={end > start ? edges : edges.slice(0, 1)} anchor={plot.bottom + 32} left={plot.left} right={plot.right} /></>
+        return <><YAxis ticks={[{ y: plot.bottom, label: axisFigure(view, 0) }]} anchor={plot.right + (phone ? -4 : 10)} side={phone ? 'left' : 'right'} /><XAxis ticks={end > start ? edges : edges.slice(0, 1)} anchor={plot.bottom + DATES_BELOW} left={plot.left} right={plot.right} /></>
       }
       const { x } = scales(plot)
       const dates = dateTicks(start, end, dateCount(plot)).map((tick) => ({ x: x(tick.t), label: tick.label }))
-      const xAxis = <XAxis ticks={spacedTimeTicks(dates, plot.left, plot.right, axisFontSize)} anchor={plot.bottom + 32} left={plot.left} right={plot.right} />
+      const xAxis = <XAxis ticks={spacedTimeTicks(dates, plot.left, plot.right, axisFontSize)} anchor={plot.bottom + DATES_BELOW} left={plot.left} right={plot.right} />
       // A phone draws its y labels over the series (inspect layer); a desktop in the gutter.
       if (phone) return xAxis
       const { floor, levels } = yLabels(plot)

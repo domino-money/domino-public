@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactElement } from 'react'
 import { CreatedNext } from '../../components/create/CreatedNext'
+import { NewPositionAgain } from '../../components/create/createdParts'
 import type { PairBalancesState } from '../../components/create/usePairBalances'
 import { heldRaw, rawBalances } from '../../components/create/valuation'
 import { Button } from '../../components/ui'
@@ -198,7 +199,19 @@ function LiveCreate({ state, balances, pay, onBusy, onReadAgain, gate, chainId }
     return () => publishCreated(null)
   }, [home, tokenId, owner])
 
-  if (home && tokenId !== null) return <CreatedNext tokenId={tokenId.toString()} state={state} />
+  // Changed 2026-10-17 (V4, new.html .wc once created): Create position's place keeps its done face ("Position created")
+  // with New position under it; the created view itself opens at the top of Review's body (CreatedNext's slot).
+  if (home && tokenId !== null) {
+    return (
+      <>
+        <Button type="button" variant="primary" size="xl" className="w-full" disabled data-create-position="done" aria-describedby="created-title">
+          {JOURNEY.final.created}
+        </Button>
+        <CreatedNext tokenId={tokenId.toString()} state={state} />
+        <NewPositionAgain />
+      </>
+    )
+  }
   if (!made && !connected) {
     // Changed on purpose 2026-10-06 (the final check's F4): with no wallet, Create position's place asks for one, as today's
     // control does: the header's wallet dialog, as Sign in below opens it.

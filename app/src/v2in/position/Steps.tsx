@@ -62,7 +62,7 @@ export function StepsList({ chainId, view, action, book, onCancelSignature, onKe
             : step.status === 'sent' && step.slow ? COPY.wallet.stillWaiting : STATUS[step.status]
           const explorer = step.status === 'sent' && step.slow && step.hash ? v2TxUrl(chainId, step.hash) : null
           return (
-            <li key={`${step.kind}-${i}`} data-position-step={step.kind} data-status={step.status} data-step-state={state === 'done' ? 'done' : state === 'current' ? ROW[step.status] : undefined}>
+            <li key={`${step.kind}-${i}`} data-position-step={step.kind} data-status={step.status} data-step-state={state === 'done' ? 'done' : state === 'current' ? ROW[step.status] : undefined} data-step-failed={view.error && i === view.current ? '' : undefined}>
               <StepMarker index={i + 1} state={state} label={`${label}, ${state}`} />
               <div className="dm-flow-wstep-body">
                 <span className="dm-flow-wstep-title" title={whole}>{label}</span>

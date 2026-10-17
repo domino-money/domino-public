@@ -86,7 +86,7 @@ export function TokenLookup({ source, wire, initial, onFound, actions }: {
 
   if (lookup.kind === 'loading') {
     return (
-      <Card className="dm-mkt-lookup" data-token-lookup="loading">
+      <Card className="dm-mkt-lookup dm-lit" data-token-lookup="loading">
         <div className="dm-mkt-lookup-token">
           <Skeleton className="size-10 shrink-0 rounded-full" />
           <div className="grid flex-1 gap-2">
@@ -102,7 +102,7 @@ export function TokenLookup({ source, wire, initial, onFound, actions }: {
     const key = addressKey(wire)
     const unread = unreadToken(key)
     return (
-      <Card className="dm-mkt-lookup" data-token-lookup="failed" data-token-lookup-reason={failureCode(lookup.failure)} data-token-chain={unread.chainId} title={quietTitle(lookup.failure, 'token')}>
+      <Card className="dm-mkt-lookup dm-lit" data-token-lookup="failed" data-token-lookup-reason={failureCode(lookup.failure)} data-token-chain={unread.chainId} title={quietTitle(lookup.failure, 'token')}>
         <div className="dm-mkt-lookup-token">
           <TokenMark token={unread} size={40} ring="var(--surface-2)" />
           <div className="min-w-0">
@@ -128,7 +128,7 @@ export function TokenLookup({ source, wire, initial, onFound, actions }: {
   const decimals = candidate.token.decimals !== null ? `${candidate.token.decimals} decimals` : usable ? COPY.selection.decimalsUnavailable : null
   return (
     <Card
-      className="dm-mkt-lookup"
+      className="dm-mkt-lookup dm-lit"
       data-token-lookup="ok"
       data-token-card={candidate.kind}
       data-decimals={candidate.decimalsUnavailable ? 'unavailable' : undefined}

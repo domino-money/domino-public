@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { positionHref } from '../../components/explore/routes'
 import { SheetCard, SheetFact, SheetFacts, SheetMore, TokenRow, TokenRows } from '../../components/positions/ActionSheet'
 import { Button, FigureDash, LinkButton, Skeleton } from '../../components/ui'
@@ -278,9 +278,14 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
       </>
     )
   } else if (phase === 'form') {
+    // V4's rolling label (.as-cta): the waiting reason leaves upward as "Review" rises in once the form is ready. The
+    // button's name stays the label in view; the label out of view is hidden (never read, never in its text).
+    const reviewShown = ready || missing === COPY.form.review
+    const waiting = missing !== COPY.form.review ? missing : mode === 'increase' ? COPY.form.enterAmount : mode === 'changeRange' ? COPY.form.enterPrices : COPY.form.checkSlippage
     footer = (
-      <Button type="button" variant="primary" size="lg" disabled={!ready} onClick={review} data-position-continue={mode}>
-        {ready ? COPY.form.review : missing}
+      <Button type="button" variant="primary" size="lg" disabled={!ready} onClick={review} data-position-continue={mode} aria-label={ready ? COPY.form.review : missing} className="dm-pa-cta">
+        <span className="dm-pa-cta-l" data-on={reviewShown ? undefined : ''} aria-hidden="true">{waiting}</span>
+        <span className="dm-pa-cta-l dm-pa-cta-a" data-on={reviewShown ? '' : undefined} aria-hidden="true">{COPY.form.review}</span>
       </Button>
     )
   } else if (gate.mode === 'preview') {
@@ -304,7 +309,7 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
   const backTo = phase === 'review' && !done && mode !== 'collect' && mode !== 'close' ? { onClick: back, disabled: view.busy || direct.stage === 'wallet' || direct.stage === 'sent', 'data-position-review-back': '' } : null
 
   return (
-    <ActionDialog id={mode} title={COPY.title[mode]} lede={COPY.lede[mode]} back={backTo} onClose={closeDialog} footer={footer} data-position-dialog={`v2-${mode}`} data-position-gate={gate.mode}>
+    <ActionDialog id={mode} title={COPY.title[mode]} lede={COPY.lede[mode]} back={backTo} onClose={closeDialog} footer={<Fragment key={done ? 'done' : phase}>{footer}</Fragment>} data-position-dialog={`v2-${mode}`} data-position-gate={gate.mode}>
       {position.vault?.role === 'root' && position.vault.armed === true && !done && !exitLive && <Note tone="warn" data-position-root-note="">{ROOT_PAUSE_COPY}</Note>}
 
       {phase === 'form' && mode === 'increase' && <AmountsField chainId={chainId} position={position} book={book} value={amounts} onChange={setAmounts} />}
@@ -322,7 +327,7 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
 
       {phase === 'review' && !usesDirect && (
         <div className="dm-pa-field" data-position-review-stage={view.stage}>
-          {switching ? <Progress data-position-progress="switching">Switch to {v2Chain(chainId).name} in your wallet…</Progress> : view.stage === 'quoting' && <Progress data-position-quoting="">{view.requoting ? COPY.review.requoting : COPY.review.quoting}</Progress>}
+          {switching ? <Progress data-position-progress="switching">Switch to {v2Chain(chainId).name} in your wallet…</Progress> : view.stage === 'quoting' && <Progress key={view.requoting ? 'requoting' : 'quoting'} data-position-quoting="">{view.requoting ? COPY.review.requoting : COPY.review.quoting}</Progress>}
           {view.stage === 'failed' && <ErrorLine error={view.error} onRejected={run.forgetUnsettled} busy={view.busy} />}
           {view.stage === 'failed' && view.error?.recovery === 'offer-both' && (
             <Button type="button" variant="outline" size="sm" className="justify-self-start" onClick={receiveBoth} data-position-receive-both="">{COPY.review.receiveBoth}</Button>
@@ -348,7 +353,7 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
               </Review>
             </>
           )}
-          {view.receipt && <ZapReceiptView chainId={chainId} view={view.receipt} book={book} />}
+          {view.receipt && <ZapReceiptView chainId={chainId} view={view.receipt} book={book} signed={view.steps.length} />}
           {newHref && (
             <LinkButton href={newHref} variant="outline" size="sm" className="justify-self-start" data-position-new-nft={newTokenId?.toString() ?? ''}>
               {COPY.receipt.newPosition}
@@ -404,7 +409,7 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
           <ErrorLine error={direct.error} />
           {switching ? <Progress data-position-progress="switching">Switch to {v2Chain(chainId).name} in your wallet…</Progress> : direct.stage === 'wallet' && <Progress data-position-progress="wallet">{COPY.wallet.inWallet}</Progress>}
           {/* Changed on purpose 2026-10-14 (C3 review): reads failing on the wallet's network or account say to switch back. */}
-          {direct.stage === 'sent' && !direct.receipt && <Progress data-position-progress="chain">{direct.away === 'chain' ? COPY.wallet.walletAway(v2Chain(chainId).name) : direct.away === 'account' ? COPY.wallet.accountAway : direct.slow ? COPY.wallet.stillWaiting : COPY.wallet.pendingNetwork}</Progress>}
+          {direct.stage === 'sent' && !direct.receipt && <Progress key={direct.away ?? (direct.slow ? 'slow' : 'pending')} data-position-progress="chain">{direct.away === 'chain' ? COPY.wallet.walletAway(v2Chain(chainId).name) : direct.away === 'account' ? COPY.wallet.accountAway : direct.slow ? COPY.wallet.stillWaiting : COPY.wallet.pendingNetwork}</Progress>}
           {/* Added 2026-10-14 (incident C3): the exit sent 20 s ago whose block is not seen yet, read again by itself (./directRun.ts). */}
           {direct.stage === 'sent' && direct.slow && direct.hash && v2TxUrl(chainId, direct.hash) && <a className="underline" href={v2TxUrl(chainId, direct.hash) ?? undefined} target="_blank" rel="noreferrer noopener" data-step-explorer="">{COPY.wallet.explorer}</a>}
           {direct.stage === 'unknown' && <Note data-position-direct-unknown="">{COPY.wallet.sentUnknown}</Note>}

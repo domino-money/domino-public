@@ -3,18 +3,23 @@
 @layer v4 {
   /* The ember (V4 §4.2 .light): one decorative layer under the whole page, the App root's first child (EmberLight.tsx). A
      1120px Tangerine disc trails the pointer (.9s drift), a 13px dot grid shows only inside a 680px light that follows
-     it, a still grain warms the top. The root isolates its stacking so the layer paints over the body's ground and under
-     every element of the page; the layer clips itself, so the root never needs overflow:hidden (the sticky header). The
-     script writes --lx/--ly (the light, layer px) on the layer alone; at rest the light parks top right, or at the element
-     a screen marks [data-ember-rest]. */
+     it, a still grain warms the top (.07, overlay: over the layer's clear ground it lies as it is, over the light it
+     brightens it). Sizes in rem, so a dot is the prototype's 1px at its scale (.675px under the desktop root). The root
+     isolates its stacking so the layer paints over the body's ground and under every element of the page; the layer
+     clips itself, so the root never needs overflow:hidden. The script writes --lx/--ly (the light, layer px) on the layer
+     alone; at rest the light parks top right, or at the element a screen marks [data-ember-rest]. */
   #root > :has(> .dm-ember) { position: relative; isolation: isolate; }
   .dm-ember { position: absolute; inset: 0; z-index: -1; contain: strict; pointer-events: none; }
   .dm-ember > * { position: absolute; top: 0; left: 0; }
   .dm-ember-glow { width: 70rem; height: 70rem; border-radius: 50%; background: radial-gradient(closest-side, rgb(255 157 98 / 0.19), rgb(255 157 98 / 0.085) 38%, rgb(255 157 98 / 0.025) 68%, rgb(255 157 98 / 0)); transform: translate3d(calc(var(--lx, -200rem) - 35rem), calc(var(--ly, -200rem) - 35rem), 0); will-change: transform; transition: transform 0.9s var(--e-drift); }
-  .dm-ember-dots { right: 0; height: 50rem; background-image: radial-gradient(circle, rgb(255 214 186 / 0.34) 0 1px, transparent 1.5px); background-size: 0.8125rem 0.8125rem; -webkit-mask: radial-gradient(closest-side, #000, rgb(0 0 0 / 0.45) 48%, transparent) calc(var(--lx, -200rem) - 21.25rem) calc(var(--ly, -200rem) - 21.25rem) / 42.5rem 42.5rem no-repeat; mask: radial-gradient(closest-side, #000, rgb(0 0 0 / 0.45) 48%, transparent) calc(var(--lx, -200rem) - 21.25rem) calc(var(--ly, -200rem) - 21.25rem) / 42.5rem 42.5rem no-repeat; transition: -webkit-mask-position 0.9s var(--e-drift), mask-position 0.9s var(--e-drift); }
-  .dm-ember-grain { right: 0; height: 51.25rem; opacity: 0.025; background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .92 0 0 0 0 .84 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url%28%23n%29'/%3E%3C/svg%3E"); -webkit-mask-image: linear-gradient(#000 60%, transparent); mask-image: linear-gradient(#000 60%, transparent); }
-  @media (max-width: 767px) {
-    .dm-ember-glow { width: 47.5rem; height: 47.5rem; transform: translate3d(calc(var(--lx, -200rem) - 23.75rem), calc(var(--ly, -200rem) - 23.75rem), 0); }
+  .dm-ember-dots { right: 0; height: 50rem; background-image: radial-gradient(circle, rgb(255 214 186 / 0.34) 0 0.0625rem, transparent 0.09375rem); background-size: 0.8125rem 0.8125rem; -webkit-mask: radial-gradient(closest-side, #000, rgb(0 0 0 / 0.45) 48%, transparent) calc(var(--lx, -200rem) - 21.25rem) calc(var(--ly, -200rem) - 21.25rem) / 42.5rem 42.5rem no-repeat; mask: radial-gradient(closest-side, #000, rgb(0 0 0 / 0.45) 48%, transparent) calc(var(--lx, -200rem) - 21.25rem) calc(var(--ly, -200rem) - 21.25rem) / 42.5rem 42.5rem no-repeat; transition: -webkit-mask-position 0.9s var(--e-drift), mask-position 0.9s var(--e-drift); }
+  .dm-ember-grain { right: 0; height: 51.25rem; opacity: 0.07; mix-blend-mode: overlay; background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .92 0 0 0 0 .84 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url%28%23n%29'/%3E%3C/svg%3E"); -webkit-mask-image: linear-gradient(#000 60%, transparent); mask-image: linear-gradient(#000 60%, transparent); }
+  /* A placement without the glide (EmberLight: the page's first frame and first rest). */
+  .dm-ember[data-jump] > * { transition: none !important; }
+  /* A phone's disc is 760px, still placed 560px up and left of the light as every page of the prototype places it, so its
+     centre sits 180px up and left of the dots' light. */
+  @media (max-width: 859px) {
+    .dm-ember-glow { width: 47.5rem; height: 47.5rem; transform: translate3d(calc(var(--lx, -200rem) - 35rem), calc(var(--ly, -200rem) - 35rem), 0); }
   }
   @media (forced-colors: active) { .dm-ember { display: none; } }
 
@@ -31,10 +36,109 @@
   }
   @media (forced-colors: active) { .dm-lit::before, .dm-lit::after { content: none; } }
 
+  /* Buttons that must beat the v3 layer's frames. Working (V4 .is-busy): the pressed Tangerine keeps its highlight and
+     shade, not the disabled ring. The wallet sheet's foot keeps the kit's dark label (.ch-go .btn-pri), the one solid
+     Tangerine button that does not take the page's cream ink (shell.css). The header's buttons speak at the page's 16px /
+     400 (the prototype's buttons inherit its font); on a phone they are its 38px even on a touch screen, and their ::after
+     reaches 3px above and below (shell.css), a 44px target. */
+  :is(.dm-btn--primary, .dm-btn--accent)[aria-busy="true"]:disabled { box-shadow: inset 0 1px 0 rgb(255 240 228 / 0.35), inset 0 -1px 0 rgb(120 50 15 / 0.25); }
+  .dm-wd-foot > .dm-btn--primary:is(:not(:disabled):not([aria-disabled="true"]), [aria-busy="true"]) { color: var(--primary-fg); }
+  .dm-header-actions .dm-btn { font-size: 1rem; font-weight: 400; letter-spacing: normal; }
+  @media (max-width: 859px) {
+    .dm-header-actions .dm-btn { height: 2.375rem; min-height: 0; line-height: 1.25rem; }
+    .dm-header-actions .dm-wallet-addr { font-size: 0.78125rem; }
+  }
+
+  /* An empty state with the double-blank domino (V4 System 'Empty' .es): left aligned, at least 400 design px tall, the
+     domino top left and the words held at the bottom, the actions 26 below them 8 apart. A screen's own empty rules win. */
+  .dm-empty:has(> .dm-empty-mark) { align-items: flex-start; justify-content: flex-start; min-height: 25rem; padding: 2.125rem 1.875rem 1.875rem; text-align: left; }
+  .dm-empty:has(> .dm-empty-mark) > .dm-empty-mark { margin-bottom: 0; }
+  .dm-empty:has(> .dm-empty-mark) > .dm-empty-title { margin-top: auto; padding-top: 1.875rem; }
+  .dm-empty:has(> .dm-empty-mark) > .dm-empty-body { max-width: 36ch; margin-top: 0.75rem; }
+  .dm-empty:has(> .dm-empty-mark) > .dm-empty-action { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1.625rem; }
+
+  /* ---- The wallet dialog (V4 kit .ch-sheet, states/Wallet.html), over the v3 frame and the dialog's own utilities ----
+     Its frame: desktop, the title 32 design px down, the X 26 / 18, the seam at 82, the first row at 94, 14 under the
+     last; the identity row and the foot inset 14, the foot's hairline 24. Phone (a bottom sheet up to 859px, as every
+     phone block of the prototype, whatever the pointer): the grab pill 16 down, the title 42 down and 22 in, the X 36 / 14,
+     the seam at 96 inset 24, rows 108 down and inset 10. Between 640 and 859px the shared dialog frame is still the centred
+     one (shell.css, other sheets), so the wallet dialog undoes it there. */
+  .dm-wd .dm-dialog-title { line-height: 1; }
+  .dm-wd .dm-wd-head::after { margin-top: 0.875rem; }
+  /* The words stop where the prototype's head column does, beside the X and its 12 px gap (.ch-sheet-h), so a status
+     wraps where it does there; under a status the seam is its 16 px below (the head is then taller than the X). */
+  .dm-wd .dm-wd-head:has(> .dm-wd-status)::after { margin-top: 0.75rem; }
+  .dm-wd .dm-wallet-list { padding-bottom: 0.125rem; }
+  .dm-wd .dm-wd-foot { position: relative; border-top: 0; }
+  .dm-wd .dm-wd-foot::before { content: ''; position: absolute; top: 0; height: 1px; background: var(--line); }
+  @media (min-width: 860px) {
+    .dm-dialog.dm-wd { padding: 2rem 1.5rem 0.75rem; gap: 0.625rem; }
+    .dm-wd .dm-wd-head { padding-right: 2.875rem; }
+    .dm-wd .dm-wd-head::after { margin-right: -2.875rem; }
+    .dm-wd .dm-wallet-id, .dm-wd .dm-wd-foot { margin-inline: -0.625rem; }
+    .dm-wd .dm-wd-foot::before { left: 0.625rem; right: 0.625rem; }
+  }
+  @media (max-width: 859px) {
+    .dm-dialog.dm-wd { padding: 2.625rem 0.625rem max(1.125rem, env(safe-area-inset-bottom)); gap: 0.625rem; }
+    .dm-dialog.dm-wd::before { top: 1rem; }
+    .dm-wd .dm-wd-head { padding-inline: 0.75rem 3.75rem; }
+    .dm-wd .dm-wd-close { right: 0.25rem; width: 2.75rem; height: 2.75rem; }
+    .dm-wd .dm-dialog-title { font-size: 1.75rem; }
+    .dm-wd .dm-wd-head::after { margin: 1.375rem -2.875rem 0 0.125rem; }
+    .dm-wd .dm-wallet-list { margin-inline: 0; }
+    .dm-wd .dm-wallet-id, .dm-wd .dm-wd-foot { margin-inline: 0.25rem; }
+    .dm-wd .dm-wd-foot::before { left: 0.625rem; right: 0.625rem; }
+    .dm-wd :is(p.dm-wd-cap, .dm-kv) { padding-inline: 0.875rem; }
+    .dm-wd .dm-wd-foot > .dm-btn { height: 3.125rem; }
+  }
+  @media (min-width: 640px) and (max-width: 859px) {
+    .dm-dialog-backdrop:has(> .dm-wd) { align-items: flex-end; padding: 0; }
+    .dm-dialog.dm-wd { width: 100%; max-height: 88dvh; border-radius: 1.625rem 1.625rem 0 0; box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.1), inset 0 1px 0 rgb(255 236 220 / 0.08), 0 -1.875rem 5rem -1.875rem rgb(0 0 0 / 0.95); animation: dm-sheet-up 0.55s var(--ease-enter) backwards; }
+    .dm-dialog-backdrop[data-closing] > .dm-dialog.dm-wd { animation: dm-sheet-down 0.26s var(--ease-std) forwards; }
+    .dm-dialog.dm-wd::before, .dm-dialog.dm-wd.dm-lit::before { content: ''; display: block; inset: auto; top: 1rem; left: 50%; translate: -50% 0; width: 2.5rem; height: 0.375rem; padding: 0; border-radius: 0.1875rem; opacity: 1; box-shadow: inset 0 1px 0 rgb(255 236 220 / 0.12); background: linear-gradient(rgb(13 12 10 / 0.65), rgb(13 12 10 / 0.65)) 50% 50% / 1.5px calc(100% - 2px) no-repeat, linear-gradient(rgb(255 236 220 / 0.14), rgb(255 236 220 / 0.14)) calc(50% + 1.25px) 50% / 1px calc(100% - 2px) no-repeat, rgb(255 236 220 / 0.2); -webkit-mask: none; mask: none; transition: none; }
+    .dm-dialog.dm-wd.dm-lit::after { content: none; }
+  }
+  /* The seam carries the sign-in's progress (data-phase): a warm fill to a fifth, two fifths, two thirds, nine tenths, gliding
+     .7s; and while the dialog waits on what it cannot measure (data-wait), a light runs along it every 1.7s. */
+  .dm-wd .dm-wd-head::after { background: linear-gradient(90deg, rgb(255 157 98 / 0.35), rgb(255 190 146 / 0.95)) 0 100% / var(--wd-fill) 1px no-repeat, linear-gradient(rgb(0 0 0 / 0.5), rgb(0 0 0 / 0.5)) 0 0 / 100% 1px no-repeat, linear-gradient(rgb(255 236 220 / 0.075), rgb(255 236 220 / 0.075)) 0 1px / 100% 1px no-repeat; }
+  .dm-wd .dm-wd-head:is([data-phase="switching"], [data-phase="checking"], [data-phase="signing"], [data-phase="returning"])::after { transition: --wd-fill 0.7s var(--ease-enter); }
+  .dm-wd .dm-wd-head[data-phase="switching"]::after { --wd-fill: 20%; }
+  .dm-wd .dm-wd-head[data-phase="checking"]::after { --wd-fill: 42%; }
+  .dm-wd .dm-wd-head[data-phase="signing"]::after { --wd-fill: 66%; }
+  .dm-wd .dm-wd-head[data-phase="returning"]::after { --wd-fill: 90%; }
+  .dm-wd .dm-wd-head[data-wait]::before { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; pointer-events: none; background: linear-gradient(90deg, rgb(255 190 146 / 0), rgb(255 190 146 / 0.85), rgb(255 190 146 / 0)) -51.5% 0 / 34% 1px no-repeat; animation: dm-seam-run 1.7s var(--ease-std) infinite; }
+  @media (max-width: 859px) { .dm-wd .dm-wd-head[data-wait]::before { left: 0.875rem; right: 0.875rem; } }
+  /* An alert leads with the circle-! in money-out; an outcome's alert sits in its rose well. */
+  .dm-wd :is(.dm-wd-status[role="alert"], .dm-wd-alert)::before { width: 0.875rem; height: 0.875rem; margin-top: 0.1875rem; border-radius: 0; box-shadow: none; background: var(--money-out); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none' stroke='%23000'%3E%3Ccircle cx='7' cy='7' r='5.8' stroke-width='1.3'/%3E%3Cpath d='M7 4.1v3.5' stroke-width='1.5' stroke-linecap='round'/%3E%3Ccircle cx='7' cy='9.9' r='.85' fill='%23000' stroke='none'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none' stroke='%23000'%3E%3Ccircle cx='7' cy='7' r='5.8' stroke-width='1.3'/%3E%3Cpath d='M7 4.1v3.5' stroke-width='1.5' stroke-linecap='round'/%3E%3Ccircle cx='7' cy='9.9' r='.85' fill='%23000' stroke='none'/%3E%3C/svg%3E") center / contain no-repeat; }
+  .dm-wd .dm-wd-alert { gap: 0.5625rem; margin: 0.625rem 0.25rem 0.125rem; padding: 0.75rem 0.875rem; border-radius: 0.875rem; background: rgb(244 96 122 / 0.06); box-shadow: inset 0 0 0 1px rgb(244 96 122 / 0.16); font-size: 0.84375rem; line-height: 1.5; color: #f7b4c0; }
+  /* No wallet in this browser: a dotted plate with the wallet in its ring above the words (V4 .plate). */
+  .dm-wd p:has(+ .dm-wallet-get) { font-size: 0.90625rem; line-height: 1.5; color: var(--muted); }
+  .dm-wd p:has(+ .dm-wallet-get)::before { content: ''; display: block; height: 6.5rem; margin: 0.875rem 0.25rem 0.75rem; border-radius: 1.125rem; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'%3E%3Ccircle cx='30' cy='30' r='30' fill='%23161411'/%3E%3Ccircle cx='30' cy='30' r='21.5' fill='%23161411' stroke='rgb(255 236 220 / 0.16)'/%3E%3Cg transform='translate(22 22)' fill='none' stroke='%239b9289' stroke-linecap='round'%3E%3Crect x='1.75' y='3.25' width='12.5' height='9.5' rx='2.25' stroke-width='1.4'/%3E%3Cpath d='M10.5 8h1.5' stroke-width='1.6'/%3E%3C/g%3E%3C/svg%3E") center / 3.75rem no-repeat, radial-gradient(circle, rgb(255 214 186 / 0.2) 0 0.0625rem, transparent 0.09375rem) 0 0 / 0.8125rem 0.8125rem; -webkit-mask-image: radial-gradient(closest-side, #000 40%, transparent); mask-image: radial-gradient(closest-side, #000 40%, transparent); }
+  .dm-wd .dm-wallet-get { font-size: 0.84375rem; color: var(--subtle); }
+  /* The sheet catches the ember (V4 .ch-edge 640px, .ch-cwash 900px) where it is a centred sheet; a phone's bottom sheet
+     keeps its grab pill there. A closing dialog under reduced motion is simply gone. */
+  @media (hover: hover) and (pointer: fine) and (min-width: 640px) {
+    .dm-dialog.dm-lit::before { display: block; width: auto; height: auto; translate: none; box-shadow: none; background-color: transparent; background-size: 40rem 40rem; background-position: calc(var(--ex, -100rem) - 20rem) calc(var(--ey, -100rem) - 20rem); }
+    .dm-dialog.dm-lit::after { background-size: 56.25rem 56.25rem; background-position: calc(var(--ex, -100rem) - 28.125rem) calc(var(--ey, -100rem) - 28.125rem); }
+  }
+  @media (max-width: 639px) {
+    .dm-dialog.dm-lit::before { inset: auto; top: 1rem; left: 50%; width: 2.5rem; height: 0.375rem; padding: 0; border-radius: 0.1875rem; opacity: 1; background: linear-gradient(rgb(13 12 10 / 0.65), rgb(13 12 10 / 0.65)) 50% 50% / 1.5px calc(100% - 2px) no-repeat, linear-gradient(rgb(255 236 220 / 0.14), rgb(255 236 220 / 0.14)) calc(50% + 1.25px) 50% / 1px calc(100% - 2px) no-repeat, rgb(255 236 220 / 0.2); -webkit-mask: none; mask: none; transition: none; }
+    .dm-dialog.dm-lit::after { content: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { .dm-dialog-backdrop[data-closing] { opacity: 0; } .dm-wd .dm-wd-head[data-wait]::before { animation: none; background-position: 50% 0; } }
+  html.dm-still .dm-dialog-backdrop[data-closing] { opacity: 0; }
+
   /* The page title's Tangerine full stop (V4 §2.3): a period drawn by CSS after the words. Its alternative text is empty,
      so the heading's accessible name and its text stay the words alone (innerText never holds generated content). A
      screen opts out in its own v4 file with a scoped ::after { content: none }. */
-  h1:is(.dm-display-h1, .dm-display-title)::after { content: '.' / ''; color: var(--primary); }
+  h1:is(.dm-display-h1, .dm-display-title)::after { content: '.' / ''; display: inline-block; color: var(--primary); }
+  /* A title drawn as lines (.dm-ln > .dm-ln-in: Not found's two staggered lines). Each line is a mask its words rise from
+     (dm-k-l1, dm-k-l2, tokens.css), an inline-block as wide as the title, so the words stay one line of text for innerText
+     and the accessible name; the stop sits at the end of the last line. */
+  h1:is(.dm-display-h1, .dm-display-title):has(.dm-ln)::after { content: none; }
+  h1:is(.dm-display-h1, .dm-display-title) .dm-ln { display: inline-block; width: 100%; overflow: hidden; padding: 0.05em 0.1em 0.14em 0; margin-bottom: -0.14em; white-space: nowrap; vertical-align: top; }
+  h1:is(.dm-display-h1, .dm-display-title) .dm-ln-in { display: inline-block; }
+  h1:is(.dm-display-h1, .dm-display-title) .dm-ln:last-child > .dm-ln-in::after { content: '.' / ''; display: inline-block; color: var(--primary); }
   /* Its sheen (V4 §4.2 .sheen): under the ember the letters warm to #ffc69f and the stop to #ffd7ba, a 600px light
      clipped to the letters of the one text node (no copy of the words), on a fine pointer only; a title that holds
      elements of its own (a pair's tokens) keeps their inks and no sheen. The ember writes --ex/--ey on the title. */
@@ -44,16 +148,23 @@
       h1:is(.dm-display-h1, .dm-display-title):not(:has(*)) { background: radial-gradient(closest-side, var(--v4-lit), rgb(255 198 159 / 0.55) 42%, rgb(255 198 159 / 0)) calc(var(--ex, -100rem) - 18.75rem) calc(var(--ey, -100rem) - 18.75rem) / 37.5rem 37.5rem no-repeat fixed, linear-gradient(var(--v4-display), var(--v4-display));  -webkit-background-clip: text; background-clip: text; }
       h1:is(.dm-display-h1, .dm-display-title):not(:has(*))::after { background: radial-gradient(closest-side, var(--v4-lit-stop), rgb(255 215 186 / 0.55) 42%, rgb(255 215 186 / 0)) calc(var(--ex, -100rem) - 18.75rem) calc(var(--ey, -100rem) - 18.75rem) / 37.5rem 37.5rem no-repeat fixed, linear-gradient(var(--primary), var(--primary));  -webkit-background-clip: text; background-clip: text; }
       h1:is(.dm-display-h1, .dm-display-title):not(:has(*))::selection { -webkit-text-fill-color: var(--fg); }
+      /* A title drawn as lines takes the same light on each line's words and on its stop. */
+      h1:is(.dm-display-h1, .dm-display-title) .dm-ln-in, h1:is(.dm-display-h1, .dm-display-title) .dm-ln:last-child > .dm-ln-in::after { -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; transition: background-position 0.9s var(--e-drift); }
+      h1:is(.dm-display-h1, .dm-display-title) .dm-ln-in { background: radial-gradient(closest-side, var(--v4-lit), rgb(255 198 159 / 0.55) 42%, rgb(255 198 159 / 0)) calc(var(--ex, -100rem) - 18.75rem) calc(var(--ey, -100rem) - 18.75rem) / 37.5rem 37.5rem no-repeat fixed, linear-gradient(var(--v4-display), var(--v4-display));  -webkit-background-clip: text; background-clip: text; }
+      h1:is(.dm-display-h1, .dm-display-title) .dm-ln:last-child > .dm-ln-in::after { background: radial-gradient(closest-side, var(--v4-lit-stop), rgb(255 215 186 / 0.55) 42%, rgb(255 215 186 / 0)) calc(var(--ex, -100rem) - 18.75rem) calc(var(--ey, -100rem) - 18.75rem) / 37.5rem 37.5rem no-repeat fixed, linear-gradient(var(--primary), var(--primary));  -webkit-background-clip: text; background-clip: text; }
+      h1:is(.dm-display-h1, .dm-display-title) .dm-ln-in::selection { -webkit-text-fill-color: var(--fg); }
     }
   }
-  /* Its first rise (V4 §6.1 k-l1, k-s1): on the page's first load only, the words rise through their own line, which
-     stays put as a mask (a clip that moves against the rise), and the stop drops in after them. Nothing is left on the
-     title once it ends; navigation and reduced motion show it as it is. */
-  html:not(.dm-booted) h1:is(.dm-display-h1, .dm-display-title) { animation: dm-v4-title 0.7s var(--ease-enter) 0.04s backwards; }
-  html:not(.dm-booted) h1:is(.dm-display-h1, .dm-display-title)::after { position: relative; animation: dm-v4-stop-in 0.4s var(--e-pop) 0.42s backwards; }
+  /* Its rise (V4 §6.1 k-l1, k-s1), with the screen's load moment (the first load and each route change, App.tsx): the words
+     rise through their own line, which stays put as a mask (a clip that moves against the rise), and the stop drops in
+     after them from half its size with the one overshoot. A title drawn as lines rises line by line (dm-k-l1, dm-k-l2)
+     instead. Nothing is left on the title once it ends; reduced motion ends each at once (tokens.css). */
+  html:not(.dm-booted) h1:is(.dm-display-h1, .dm-display-title):not(:has(.dm-ln)) { animation: dm-v4-title 0.7s var(--ease-enter) 0.04s backwards; }
+  html:not(.dm-booted) h1:is(.dm-display-h1, .dm-display-title)::after, html:not(.dm-booted) h1:is(.dm-display-h1, .dm-display-title) .dm-ln:last-child > .dm-ln-in::after { animation: dm-v4-stop 0.4s var(--e-pop) 0.42s backwards; }
 }
 @keyframes dm-v4-title {
   from { transform: translateY(142%); clip-path: inset(-142% -0.5em 142% -0.25em); }
   to { transform: none; clip-path: inset(-0.25em -0.5em -0.25em -0.25em); }
 }
-@keyframes dm-v4-stop-in { from { visibility: hidden; opacity: 0.01; top: -0.32em; } }
+/* The wallet dialog seam's progress, registered so it glides as a length (v4-foundation.css .dm-wd-head). */
+@property --wd-fill { syntax: '<percentage>'; inherits: false; initial-value: 0%; }

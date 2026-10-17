@@ -1302,7 +1302,13 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // over 219,000 B. Raise only the initial entry to 225,000 B: the overshoot rounded up to 0.5 kB leaves 47 B, so one
     // more 0.5 kB keeps the plan's half-kilobyte headroom for platform gzip variation. No dependency, every other
     // ceiling unchanged.
-    for (const [family, files, productionBudget] of [['initial entry', first, 225_000], ['route screens', routes, 191_000], ['session/public reads', base, 167_000], ['financial', financial, 347_000], ['pool history chart', poolChart, 13_000], ['all lazy', allLazy, 389_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 657_000], ['V2 fixture data', fixtureData, 13_000]]) {
+    // Changed on purpose 2026-10-17 (V4 prototype parity, PR #429: the owner asked for the live site identical to the
+    // approved prototype, animations included): the shared light, the per-screen load moments, the travelling tile and the
+    // areas' rules land in the eager CSS and entry. Measured in CI (gzip 9): initial entry 238,651 B in dist (.wallet-test-dist
+    // 235,386 B, .wallet-test-v2-dist 235,797 B), 13,651 B over 225,000 B; .wallet-test-dist all lazy 398,072 B, 6,072 B
+    // over its 392,000 B (389,000 B + 3,000 B test-only). Raise the initial entry to 239,500 B and all lazy to 396,000 B:
+    // each overshoot rounded up to 0.5 kB plus one more 0.5 kB of headroom. No dependency, every other ceiling unchanged.
+    for (const [family, files, productionBudget] of [['initial entry', first, 239_500], ['route screens', routes, 191_000], ['session/public reads', base, 167_000], ['financial', financial, 347_000], ['pool history chart', poolChart, 13_000], ['all lazy', allLazy, 396_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 657_000], ['V2 fixture data', fixtureData, 13_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       const testOnly = dir !== DIST && (family === 'financial' || family === 'all lazy');
       const budget = productionBudget + (testOnly ? 3_000 : 0);

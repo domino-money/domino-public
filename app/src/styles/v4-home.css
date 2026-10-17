@@ -6,11 +6,12 @@
    rest or as a persisting animation fill: the Pool figures dialog renders inside #pools (map-home rule 8). */
 @layer v4 {
   /* ---- Frame and rhythm: main runs full width (the marquee bleeds), each block keeps the 77rem column -------- */
-  .dm-page.dm-home { --home-space: 10rem; max-width: none; padding: 0 0 10rem; overflow-x: clip; }
-  .dm-home > :not(.dm-home-marquee) { width: 100%; max-width: calc(var(--content) + 2 * var(--gutter)); margin-inline: auto; padding-inline: var(--gutter); }
+  .dm-page.dm-home { --home-space: 10rem; position: relative; max-width: none; padding: 0 0 4rem; overflow-x: clip; }
+  .dm-home > :not(.dm-home-marquee, .dm-trav, .dm-home-zdots) { width: 100%; max-width: calc(var(--content) + 2 * var(--gutter)); margin-inline: auto; padding-inline: var(--gutter); }
   .dm-home .dm-home-chapter { margin-top: var(--home-space); }
-  .dm-home .dm-home-funding { margin-top: 6rem; }
-  .dm-home .dm-home-pools { margin-top: var(--home-space); }
+  /* Top pools sits 36px under the strip (V4 .pools), the story 160px under it (its 64px floor plus the funding's 96px). */
+  .dm-home .dm-home-pools { margin-top: 2.25rem; }
+  .dm-home .dm-home-funding { margin-top: 10rem; }
 
   /* ---- Serif titles: two lines, the second indented, the Tangerine stop; the light's warm copy over them ---- */
   .dm-home .dm-stop { display: inline-block; color: var(--primary); }
@@ -26,6 +27,7 @@
   @media (forced-colors: active) { .dm-home :is(.dm-sx-sh, .dm-hero-sheen) { display: none; } }
 
   /* The frame-in-frame link pill (V4 §5.6): Find your funds, Explore automation, Find more pools. */
+  .dm-home .dm-mkt-table--home .dm-mkt-apr .dm-apr-est { font-size: 0.78125rem; font-weight: 400; color: var(--subtle); }
   .dm-home :is(.dm-home-more, .dm-mkt-table--home .dm-table-head .dm-btn) { position: relative; isolation: isolate; height: 2.375rem; min-height: 0; padding: 0 0.8125rem 0 1.0625rem; gap: 0.375rem; border: 0; border-radius: 0.8125rem; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); font-size: 0.84375rem; font-weight: 500; line-height: 1; transition: box-shadow 0.2s var(--e-std), color 0.18s var(--e-std), scale 0.1s var(--e-press); }
   .dm-home :is(.dm-home-more, .dm-mkt-table--home .dm-table-head .dm-btn)::before { content: ''; position: absolute; inset: 0.1875rem; z-index: -1; border-radius: 0.625rem; background: transparent; transition: background-color 0.18s var(--e-std); }
   .dm-home :is(.dm-home-more, .dm-mkt-table--home .dm-table-head .dm-btn):hover { background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--lip); color: var(--fg); }
@@ -34,7 +36,7 @@
   .dm-home :is(.dm-home-more, .dm-mkt-table--home .dm-table-head .dm-btn):hover > svg { transform: translateX(2px); }
 
   /* The round plus of a disclosure (V4 .sx-plus): drawn, turning to a cross when open. */
-  .dm-home :is(.dm-funding-details, .dm-automation-story-actions details) > summary::after { content: ''; flex: none; width: 1.375rem; height: 1.375rem; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--strong); color: var(--subtle); background: linear-gradient(currentColor, currentColor) center / 0.5625rem 1.5px no-repeat, linear-gradient(currentColor, currentColor) center / 1.5px 0.5625rem no-repeat; transition: transform 0.35s var(--e-enter), box-shadow 0.2s var(--e-std), color 0.2s var(--e-std); }
+  .dm-home :is(.dm-funding-details, .dm-automation-story-actions details) > summary::after { content: ''; flex: none; width: 1.375rem; height: 1.375rem; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--strong); color: var(--subtle); background: linear-gradient(currentColor, currentColor) center / 0.46875rem 0.078125rem no-repeat, linear-gradient(currentColor, currentColor) center / 0.078125rem 0.46875rem no-repeat; transition: transform 0.35s var(--e-enter), box-shadow 0.2s var(--e-std), color 0.2s var(--e-std); }
   .dm-home :is(.dm-funding-details, .dm-automation-story-actions details) > summary:hover::after { box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong); color: var(--primary); }
   .dm-home :is(.dm-funding-details, .dm-automation-story-actions details)[open] > summary::after { transform: rotate(45deg); box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong); color: var(--primary); }
 
@@ -44,12 +46,12 @@
   .dm-home .dm-hero-body { position: static; display: block; max-width: none; padding: 0; }
   .dm-home .dm-hero-head { position: relative; }
   .dm-home .dm-hero-title { position: relative; display: block; margin: 0; max-width: none; font-family: var(--font-display); font-weight: 400; font-size: clamp(4rem, calc(11.6vw * var(--vwk)), 10.75rem); line-height: 0.86; letter-spacing: -0.038em; color: var(--v4-display); text-wrap: initial; }
-  .dm-home .dm-hero-sheen { position: absolute; }
+  .dm-home .dm-hero-sheen { position: absolute; color: var(--v4-lit); }
   .dm-home .dm-ln { display: block; overflow: hidden; padding: 0.05em 0.1em 0.14em 0; margin-bottom: -0.14em; white-space: nowrap; }
   .dm-home .dm-ln-2 { padding-left: 0.9em; }
   .dm-home .dm-ln-in { display: inline-block; }
   .dm-home .dm-hero-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 0.625rem; width: auto; margin-top: 2.75rem; }
-  .dm-home .dm-hero-actions > .dm-btn { flex: none; min-width: 0; min-height: 0; height: 3.375rem; white-space: nowrap; }
+  .dm-home .dm-hero-actions > .dm-btn { flex: none; min-width: 0; min-height: 0; height: 3.375rem; padding: 0 1.75rem; font-size: 0.96875rem; line-height: normal; letter-spacing: -0.01em; white-space: nowrap; }
   .dm-home .dm-hero-actions > .dm-btn--ghost { gap: 0.625rem; padding: 0 1.375rem 0 1.125rem; color: var(--fg); }
   .dm-home .dm-hero-actions > .dm-btn--ghost:hover { background: var(--v4-w05); color: var(--fg); }
   .dm-home .dm-pl { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 1.625rem; height: 1.625rem; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--strong); color: var(--muted); transition: transform 0.35s var(--e-enter), box-shadow 0.2s var(--e-std), color 0.2s var(--e-std); }
@@ -58,7 +60,8 @@
   .dm-home .dm-hero-funding { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1rem; margin-top: 1.875rem; }
   .dm-home .dm-hero-funding > span { color: var(--subtle); font-size: 0.875rem; line-height: 1.4; }
   .dm-home .dm-hero-funding ul { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
-  .dm-home :is(.dm-hero-funding li, .dm-funding-networks > span) { display: inline-flex; flex: none; align-items: center; gap: 0.5rem; height: 2.25rem; padding: 0 0.875rem 0 0.5rem; border-radius: 999px; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); font-size: 0.84375rem; font-weight: 500; line-height: 1; white-space: nowrap; }
+  /* The network chips as the prototype renders them (its chips are buttons, which inherit the page's 16px/400 ink). */
+  .dm-home :is(.dm-hero-funding li, .dm-funding-networks > span, .dm-funding-ghosts > span) { display: inline-flex; flex: none; align-items: center; gap: 0.5rem; height: 2.25rem; padding: 0 0.875rem 0 0.5rem; border-radius: 999px; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); color: var(--fg); font-size: 1rem; font-weight: 400; line-height: 1; letter-spacing: normal; white-space: nowrap; }
   .dm-home .dm-hero-funding li { transition: background-color 0.18s var(--e-std), box-shadow 0.2s var(--e-std), color 0.18s var(--e-std); }
   .dm-home .dm-hero-funding li:hover { background: var(--v4-w06); color: var(--fg); }
   .dm-home .dm-hero-funding li:hover .dm-network-mark--v4 { transform: scale(1.1) rotate(-8deg); }
@@ -67,6 +70,19 @@
   .dm-home .dm-hero-funding li:has([data-network="Arbitrum One"]):hover { box-shadow: inset 0 0 0 1px var(--net-42161-ring); }
   .dm-home .dm-hero-funding li:has([data-network="OP Mainnet"]):hover { box-shadow: inset 0 0 0 1px var(--net-10-ring); }
   .dm-home .dm-hero-funding li:has([data-network="Robinhood Chain"]):hover { box-shadow: inset 0 0 0 1px var(--net-4663-ring); }
+  /* The funding scene's source chips (V4 .fs-chip): the same hover ring and icon tilt, a press, and the chosen source lit
+     (declared after the rings, so it wins while hovered too). */
+  .dm-home .dm-funding-networks > span { transition: background-color 0.18s var(--e-std), box-shadow 0.2s var(--e-std), color 0.18s var(--e-std), opacity 0.35s var(--e-std), scale 0.1s var(--e-press); }
+  .dm-home .dm-funding-networks > [role="button"] { cursor: pointer; }
+  .dm-home .dm-funding-networks > span:has([data-network="Ethereum"]) { --chip-ring: var(--net-1-ring); }
+  .dm-home .dm-funding-networks > span:has([data-network="Base"]) { --chip-ring: var(--net-8453-ring); }
+  .dm-home .dm-funding-networks > span:has([data-network="Arbitrum One"]) { --chip-ring: var(--net-42161-ring); }
+  .dm-home .dm-funding-networks > span:has([data-network="OP Mainnet"]) { --chip-ring: var(--net-10-ring); }
+  .dm-home .dm-funding-networks > span:has([data-network="Robinhood Chain"]) { --chip-ring: var(--net-4663-ring); }
+  .dm-home .dm-funding-networks > span:where([role="button"]:hover) { background: var(--v4-w06); box-shadow: inset 0 0 0 1px var(--chip-ring, var(--lip)); color: var(--fg); }
+  .dm-home .dm-funding-networks > span:where([role="button"]:hover) .dm-network-mark--v4 { transform: scale(1.1) rotate(-8deg); }
+  .dm-home .dm-funding-networks > [role="button"]:active { scale: 0.97; }
+  .dm-home .dm-funding-networks > span[aria-pressed="true"] { background: rgb(255 236 220 / 0.07); box-shadow: inset 0 0 0 1px var(--lip); color: var(--fg); }
   .dm-home .dm-network-mark--v4 { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 1.25rem; height: 1.25rem; border-radius: 50%; background: none; box-shadow: none; transition: transform 0.3s var(--e-enter); }
   .dm-home .dm-network-mark--v4 > svg { width: 100%; height: 100%; }
   .dm-home .dm-network-mark--v4[data-network="OP Mainnet"] { background: #ff0420; color: #fff; font-family: var(--font-sans); font-size: 0.475rem; font-style: italic; font-weight: 600; letter-spacing: 0; }
@@ -74,12 +90,12 @@
   /* The tile (V4 §4.7): eight slabs, the face, its groove, 2|3 pips and two glares; it turns toward the light. */
   .dm-home .dm-v3-hero .dm-hero-band { position: relative; display: flex; align-items: center; justify-content: center; width: auto; height: 30rem; min-height: 0; max-height: none; margin: 0; aspect-ratio: auto; pointer-events: none; }
   .dm-home .dm-hero-art { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; -webkit-mask-image: none; mask-image: none; }
-  .dm-home .dm-tile-shadow { position: absolute; left: 50%; bottom: 1.125rem; width: 15rem; height: 2.5rem; margin-left: -7.5rem; border-radius: 50%; background: radial-gradient(closest-side, rgb(0 0 0 / 0.8), rgb(0 0 0 / 0.35) 55%, rgb(0 0 0 / 0)); filter: blur(0.3125rem); transition: transform 1s var(--e-drift), opacity 1s var(--e-drift); }
+  .dm-home .dm-tile-shadow { position: absolute; left: 50%; bottom: 1.125rem; width: 15rem; height: 2.5rem; margin-left: -7.5rem; border-radius: 50%; background: radial-gradient(closest-side, rgb(0 0 0 / 0.8), rgb(0 0 0 / 0.35) 55%, rgb(0 0 0 / 0)); filter: blur(0.3125rem); transform: translateX(0.375rem) scaleX(1.026); transition: transform 1s var(--e-drift), opacity 1s var(--e-drift); }
   .dm-home .dm-tile-in { position: relative; }
   .dm-home .dm-sculpture-front { animation: dm-home-float 14s ease-in-out infinite; }
   .dm-home .dm-hero-art:not(.is-running) .dm-sculpture-front { animation-play-state: paused; }
   .dm-home .dm-tile-persp { position: relative; width: 11.75rem; height: 20.625rem; perspective: 62.5rem; }
-  .dm-home .dm-tile-3d { position: absolute; inset: 0; transform-style: preserve-3d; transform: rotateX(6deg) rotateY(-18deg) rotateZ(-7deg); transition: transform 1s var(--e-drift); will-change: transform; }
+  .dm-home .dm-tile-3d { position: absolute; inset: 0; transform-style: preserve-3d; transform: rotateX(9.7deg) rotateY(-19.8deg) rotateZ(-7deg); transition: transform 1s var(--e-drift); will-change: transform; }
   .dm-home .dm-tile-slab { position: absolute; inset: 0; border-radius: 1.875rem; }
   .dm-home .dm-tile-z1 { transform: translateZ(-0.1875rem); background: #ec8549; }
   .dm-home .dm-tile-z2 { transform: translateZ(-0.375rem); background: #e27d43; }
@@ -98,8 +114,8 @@
   .dm-home .dm-tile-p4 { left: 50%; top: 75%; }
   .dm-home .dm-tile-p5 { left: 72%; top: 88%; }
   .dm-home :is(.dm-tile-glare, .dm-tile-glare2) { position: absolute; inset: 0; background-repeat: no-repeat; transition: background-position 1s var(--e-drift); }
-  .dm-home .dm-tile-glare { background-image: radial-gradient(closest-side, rgb(255 247 238 / 0.7), rgb(255 247 238 / 0.18) 45%, rgb(255 247 238 / 0)); background-size: 26.25rem 26.25rem; background-position: -1.875rem -1.875rem; mix-blend-mode: soft-light; }
-  .dm-home .dm-tile-glare2 { background-image: radial-gradient(closest-side, rgb(255 247 238 / 0.32), rgb(255 247 238 / 0)); background-size: 15rem 15rem; background-position: -2.5rem -2.5rem; mix-blend-mode: screen; }
+  .dm-home .dm-tile-glare { background-image: radial-gradient(closest-side, rgb(255 247 238 / 0.7), rgb(255 247 238 / 0.18) 45%, rgb(255 247 238 / 0)); background-size: 26.25rem 26.25rem; background-position: -12.75rem -15.25rem; mix-blend-mode: soft-light; }
+  .dm-home .dm-tile-glare2 { background-image: radial-gradient(closest-side, rgb(255 247 238 / 0.32), rgb(255 247 238 / 0)); background-size: 15rem 15rem; background-position: -7.125rem -9.625rem; mix-blend-mode: screen; }
 
   /* The first load (V4 §6.1, the site's compressed moment): words through their masks and the foundation's stops,
      the tile out of a blur, its shadow and pips, the actions, the strip. First load only, backwards fills ending on
@@ -116,7 +132,8 @@
 
   /* ---- The pool strip (V4 §5.5): full width, edges faded, the list twice, -50% on a slow loop ------------- */
   .dm-home .dm-home-marquee { position: relative; min-height: 4.375rem; margin-top: 3.25rem; overflow: hidden; mask-image: linear-gradient(90deg, transparent, #000 9%, #000 91%, transparent); }
-  .dm-home .dm-mq-track { display: flex; width: max-content; animation: dm-home-mq var(--mq-dur, 56s) linear infinite; }
+  /* The pools arrive after the load moment, so the strip fades in once when they do (nothing else moves). */
+  .dm-home .dm-mq-track { display: flex; width: max-content; animation: dm-home-mq var(--mq-dur, 56s) linear infinite, dm-v4-fade 0.5s var(--e-std) backwards; }
   .dm-home .dm-home-marquee:is(:not(.is-running), :hover, :focus-within) .dm-mq-track { animation-play-state: paused; }
   .dm-home .dm-mq-set { display: flex; }
   .dm-home .dm-mq-item { display: inline-flex; align-items: baseline; gap: 0.875rem; padding: 1.125rem 1.625rem; border-radius: 0.875rem; color: var(--fg); text-decoration: none; white-space: nowrap; transition: opacity 0.25s var(--e-std); }
@@ -136,10 +153,21 @@
   .dm-home .dm-funding-copy { display: flex; flex-direction: column; align-items: flex-start; gap: 1.625rem; min-width: 0; padding: 1.875rem 0 0; }
   .dm-home .dm-funding-copy > p { max-width: 34ch; margin: 0; color: var(--muted); font-size: 1.0625rem; line-height: 1.55; text-wrap: pretty; }
   .dm-home .dm-funding-details { max-width: none; margin: 0; }
-  .dm-home .dm-funding-details > summary { display: inline-flex; align-items: center; gap: 0.625rem; width: fit-content; min-height: 2.25rem; padding-right: 0.625rem; border-radius: 0.625rem; color: var(--muted); font-size: 0.90625rem; font-weight: 500; line-height: 1.3; cursor: pointer; list-style: none; transition: color 0.18s var(--e-std); }
+  .dm-home .dm-funding-details > summary { display: inline-flex; align-items: center; gap: 0.625rem; width: fit-content; min-height: 2.25rem; padding-right: 0.625rem; border-radius: 0.625rem; color: var(--fg); font-size: 1rem; font-weight: 400; line-height: 1.3; letter-spacing: normal; cursor: pointer; list-style: none; transition: color 0.18s var(--e-std), scale 0.1s var(--e-press); }
+  .dm-home .dm-funding-details > summary:active { scale: 0.98; }
   .dm-home .dm-funding-details > summary::-webkit-details-marker { display: none; }
   .dm-home .dm-funding-details > summary:hover { color: var(--fg); }
   .dm-home .dm-funding-details > p { max-width: 36ch; margin: 0.375rem 0 0; color: var(--subtle); font-size: 0.90625rem; line-height: 1.6; }
+  /* "Networks and transfers" and the calm topics open by height (V4 .sx-dp, .4s) and their words arrive from a soft blur
+     (.sx-di > *, after .07s); folding reverses faster. The words are shown at once on opening (tests read them then). */
+  .dm-home :is(.dm-funding-details, .dm-limit) { interpolate-size: allow-keywords; }
+  /* The panel is its own block formatting context, so its words' margins stay inside it: the height it grows to is its
+     final one (no jump when the transition ends). */
+  .dm-home :is(.dm-funding-details, .dm-limit)::details-content { display: flow-root; block-size: 0; overflow: clip; transition: block-size 0.4s var(--e-enter), content-visibility 0.4s var(--e-enter) allow-discrete; }
+  .dm-home :is(.dm-funding-details, .dm-limit)[open]::details-content { block-size: auto; transition: block-size 0.4s var(--e-enter); }
+  .dm-home :is(.dm-funding-details > p, .dm-limit-body) { opacity: 0; transform: translateY(-0.25rem); filter: blur(0.1875rem); transition: opacity 0.22s var(--e-std), transform 0.3s var(--e-enter), filter 0.25s var(--e-std); }
+  .dm-home :is(.dm-funding-details[open] > p, .dm-limit[open] > .dm-limit-body) { opacity: 1; transform: none; filter: none; transition: opacity 0.3s var(--e-std) 0.07s, transform 0.45s var(--e-enter) 0.07s, filter 0.35s var(--e-std) 0.07s; }
+  @starting-style { .dm-home :is(.dm-funding-details[open] > p, .dm-limit[open] > .dm-limit-body) { opacity: 0; transform: translateY(-0.25rem); filter: blur(0.1875rem); } }
   .dm-home :is(.dm-funding-card, .dm-home-pools-frame, .dm-home-range-card) { position: relative; min-width: 0; border-radius: 1.625rem; }
   .dm-home .dm-funding-demonstration { position: relative; min-width: 0; height: 30.5rem; padding: 1.5rem 1.75rem 0; border: 0; border-radius: 1.625rem; background: var(--v4-card-lift), var(--card); box-shadow: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 var(--v4-w06), var(--v4-card-drop); }
   .dm-home .dm-funding-switch { position: relative; display: grid; grid-template-columns: 11.125rem 11.125rem; gap: 0; width: fit-content; max-width: 100%; margin: 0; padding: 0.25rem; border: 0; border-radius: 0.875rem; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); }
@@ -148,26 +176,40 @@
   .dm-home .dm-funding-switch button { position: relative; height: 2.25rem; min-height: 0; padding: 0 0.75rem; border: 0; border-radius: 0.625rem; background: transparent; box-shadow: none; color: var(--subtle); font-size: 0.84375rem; font-weight: 500; line-height: 1; white-space: nowrap; cursor: pointer; transition: color 0.2s var(--e-std); }
   .dm-home .dm-funding-switch button:is(:hover, [aria-pressed="true"]) { background: transparent; box-shadow: none; color: var(--fg); }
   .dm-home .dm-funding-scene { position: relative; width: 50rem; max-width: 100%; height: 18.75rem; margin: 1.375rem auto 0; }
-  .dm-home .dm-funding-networks { position: absolute; left: 0; top: 1.5rem; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-start; flex-wrap: nowrap; gap: 0.5rem; width: 11rem; height: 13.25rem; min-height: 0; max-width: none; margin: 0; }
+  .dm-home .dm-funding-networks { position: absolute; left: 0; top: 1.5rem; z-index: 1; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-start; flex-wrap: nowrap; gap: 0.5rem; width: 11rem; height: 13.25rem; min-height: 0; max-width: none; margin: 0; }
   .dm-home [data-funding-mode="local"] .dm-funding-networks { justify-content: flex-end; }
+  /* On this network: the four other networks keep their slots above the current one, dimmed (V4 .fs-chip.is-off). */
+  .dm-home .dm-funding-ghosts { position: absolute; left: 0; top: 1.5rem; display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem; width: 11rem; pointer-events: none; }
+  .dm-home .dm-funding-ghosts > span { opacity: 0.2; animation: dm-home-ghost-in 0.35s var(--e-std) backwards; }
+  .dm-home .dm-funding-networks > span.is-back { animation: dm-home-ghost-out 0.35s var(--e-std) backwards; }
   .dm-home [data-funding-mode="local"] .dm-funding-current { background: rgb(255 236 220 / 0.07); box-shadow: inset 0 0 0 1px var(--lip); color: var(--fg); }
   .dm-home .dm-funding-current i { display: block; flex: none; width: 1.25rem; height: 1.25rem; border-radius: 50%; box-shadow: none; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Ccircle cx='10' cy='10' r='10' fill='%23ccff00'/%3E%3Cpath d='M6.6 14.8c.9-4.2 3.1-7.4 7-8.9-.7 3.4-2.7 6.2-5.8 7.4' fill='%231b2a0e'/%3E%3C/svg%3E") center / 100% no-repeat; }
   .dm-home .dm-funding-art { position: absolute; inset: 0; display: block; width: 100%; height: 100%; max-height: none; margin: 0; overflow: visible; }
   .dm-home .dm-funding-seam { stroke: rgb(255 236 220 / 0.13); stroke-width: 1; stroke-dasharray: 2 6; transition: opacity 0.35s var(--e-std); }
-  .dm-home .dm-funding-route { fill: none; stroke: rgb(255 236 220 / 0.09); stroke-width: 1.4; stroke-dasharray: 100 101; stroke-dashoffset: 0; transition: opacity 0.35s var(--e-std); }
+  /* The held picture (what the scene shows at rest, before and after its story, and under reduced motion): the chosen
+     source's route lit, the others faint, the step drawn for the mode, both routes into the pair drawn, the range full. */
+  .dm-home .dm-funding-route { fill: none; stroke: rgb(255 236 220 / 0.09); stroke-width: 1.4; stroke-dasharray: 100 101; stroke-dashoffset: 0; transition: stroke 0.3s var(--e-std), opacity 0.35s var(--e-std); }
+  .dm-home .dm-funding-route.is-lit { stroke: rgb(255 177 127 / 0.5); }
   .dm-home .dm-funding-lane { fill: none; stroke: rgb(255 236 220 / 0.12); stroke-width: 1.4; transition: opacity 0.32s var(--e-std); }
-  .dm-home :is(.dm-funding-lit, .dm-funding-out) { fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-dasharray: 100 101; stroke-dashoffset: 100; }
-  .dm-home .dm-funding-lit { stroke: rgb(255 177 127 / 0.55); }
-  .dm-home .dm-funding-out { stroke: rgb(255 157 98 / 0.45); stroke-width: 1.4; }
-  .dm-home .dm-funding-dot { fill: none; stroke: #f6ede3; stroke-width: 11; stroke-linecap: round; stroke-dasharray: 0.01 300; stroke-dashoffset: 0; opacity: 0; }
-  .dm-home .dm-funding-dot-a { stroke: #ff9d62; }
-  .dm-home .dm-funding-dot-b { stroke: #6fa856; }
-  .dm-home [data-funding-mode="local"] :is(.dm-funding-seam, .dm-funding-route:not(.dm-funding-route-4), .dm-funding-lane-a) { opacity: 0; }
+  .dm-home :is(.dm-funding-lit, .dm-funding-out) { fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-dasharray: 100 101; }
+  .dm-home .dm-funding-lit { stroke: rgb(255 177 127 / 0.55); stroke-dashoffset: 100; transition: stroke-dashoffset 0.28s var(--e-std); }
+  .dm-home [data-funding-mode="across"] .dm-funding-lit-a, .dm-home [data-funding-mode="local"] .dm-funding-lit-l { stroke-dashoffset: 0; transition: stroke-dashoffset 0.72s var(--e-enter) 0.12s; }
+  .dm-home .dm-funding-out { stroke: rgb(255 157 98 / 0.4); stroke-width: 1.4; stroke-dashoffset: 0; }
+  /* A travelling token: one 12px dash with a 3px ring and its glow (the SVG filter), on the path it follows. */
+  .dm-home .dm-funding-dot { stroke-linecap: round; stroke-dasharray: 0.01 300; stroke-dashoffset: 0; opacity: 0; }
+  .dm-home .dm-funding-dot > path { fill: none; }
+  .dm-home .dm-funding-dot-ring { stroke: rgb(255 236 220 / 0.08); stroke-width: 18; }
+  .dm-home .dm-funding-dot-core { stroke: #f6ede3; stroke-width: 12; }
+  .dm-home :is(.dm-funding-dot-a, .dm-funding-dot-b) .dm-funding-dot-ring { stroke: none; }
+  .dm-home .dm-funding-dot-a .dm-funding-dot-core { stroke: #ff9d62; }
+  .dm-home .dm-funding-dot-b .dm-funding-dot-core { stroke: #6fa856; }
+  .dm-home [data-funding-mode="local"] :is(.dm-funding-seam, .dm-funding-route.is-dim, .dm-funding-lane-a) { opacity: 0; }
   .dm-home [data-funding-mode="across"] .dm-funding-lane-l { opacity: 0; }
   .dm-home .dm-funding-wallet { transform-box: fill-box; transform-origin: 50% 100%; }
-  .dm-home .dm-funding-node { fill: rgb(255 236 220 / 0.03); stroke: rgb(255 236 220 / 0.1); }
+  /* The pair's card fills with its own lift (a gradient in the drawing); its ring and lit top edge are strokes. */
+  .dm-home .dm-funding-node { stroke: rgb(255 236 220 / 0.1); }
+  .dm-home .dm-funding-node-lip { fill: none; stroke: rgb(255 236 220 / 0.07); stroke-width: 1; }
   .dm-home .dm-funding-disc { stroke: #1b1814; stroke-width: 6; paint-order: stroke; transform-box: fill-box; transform-origin: center; }
-  .dm-home .dm-funding-disc-a { fill: #ffa064; }
   .dm-home .dm-funding-disc-b { fill: #3f6b2b; }
   .dm-home .dm-funding-symbol { fill: var(--tan-fg); font-family: var(--font-sans); font-size: 14px; font-weight: 600; text-anchor: middle; }
   .dm-home .dm-funding-symbol-b { fill: #e9f3df; }
@@ -177,30 +219,34 @@
   .dm-home .dm-funding-small { fill: var(--subtle); font-family: var(--font-sans); font-size: 12px; text-anchor: middle; }
   .dm-home .dm-funding-label { fill: var(--subtle); font-family: var(--font-sans); font-size: 13px; font-weight: 500; text-anchor: middle; }
   .dm-home .dm-funding-mobile-stages { display: none; }
-  .dm-home .dm-funding-caption { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; margin: 1rem 0 0; color: var(--muted); font-size: 0.90625rem; line-height: 1.5; text-align: center; }
-  .dm-home .dm-funding-caption > span { display: block; margin: 0; color: var(--subtle); font-size: 0.8125rem; }
-  /* One loop of 5 s (every part repeats, paused off screen and in a hidden tab): a source's route lights and its token
-     travels to the wallet, the wallet takes it, the step (transfer + swap, or swap) lights, two tokens leave for your
-     pair, the pair takes them and its range fills. Across networks the five sources take turns, one per loop. */
-  .dm-home .dm-funding-route { animation: dm-home-src 25s linear infinite; }
-  .dm-home .dm-funding-dot-w:is(.dm-funding-dot-0, .dm-funding-dot-1, .dm-funding-dot-2, .dm-funding-dot-3, .dm-funding-dot-4) { animation: dm-home-src-dot 25s linear infinite; }
-  .dm-home .dm-funding-networks > span { animation: dm-home-src-chip 25s linear infinite; }
-  .dm-home :is(.dm-funding-route-1, .dm-funding-dot-1, .dm-funding-networks > span:nth-child(2)) { animation-delay: 5s; }
-  .dm-home :is(.dm-funding-route-2, .dm-funding-dot-2, .dm-funding-networks > span:nth-child(3)) { animation-delay: 10s; }
-  .dm-home :is(.dm-funding-route-3, .dm-funding-dot-3, .dm-funding-networks > span:nth-child(4)) { animation-delay: 15s; }
-  .dm-home :is(.dm-funding-route-4, .dm-funding-dot-4, .dm-funding-networks > span:nth-child(5)) { animation-delay: 20s; }
-  .dm-home [data-funding-mode="local"] :is(.dm-funding-route-4, .dm-funding-dot-4) { animation-duration: 5s; animation-delay: 0s; animation-name: dm-home-src-local; }
-  .dm-home [data-funding-mode="local"] .dm-funding-dot-4 { animation-name: dm-home-src-dot-local; }
-  .dm-home [data-funding-mode="local"] .dm-funding-networks > span { animation: none; }
-  .dm-home .dm-funding-wallet { animation: dm-home-wallet 5s var(--e-std) infinite; }
-  .dm-home .dm-funding-lit { animation: dm-home-step 5s linear infinite; }
-  .dm-home .dm-funding-dot-step { animation: dm-home-step-dot 5s linear infinite; }
-  .dm-home .dm-funding-out { animation: dm-home-out 5s linear infinite; }
-  .dm-home .dm-funding-dot-a { animation: dm-home-out-dot 5s linear infinite; }
-  .dm-home .dm-funding-dot-b { animation: dm-home-out-dot 5s linear 0.12s infinite; }
-  .dm-home .dm-funding-disc-a { animation: dm-home-bump-a 5s var(--e-std) infinite; }
-  .dm-home .dm-funding-disc-b { animation: dm-home-bump-b 5s var(--e-std) infinite; }
-  .dm-home .dm-funding-bar-in { animation: dm-home-fill 5s var(--e-enter) infinite; }
+  .dm-home .dm-funding-caption { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; margin: 1rem 0 0; color: var(--muted); font-size: 0.90625rem; line-height: normal; text-align: center; }
+  .dm-home .dm-funding-caption > span:last-child { display: block; margin: 0; color: var(--subtle); font-size: 0.8125rem; }
+  /* Words that change with the switch cross-fade in one place (V4 .zswap): the outgoing one blurs away in .2s, the incoming
+     one arrives after .1s. Both stay in the drawing's grid cell, so nothing jumps. */
+  .dm-home .dm-zswap { display: inline-grid; justify-items: center; }
+  .dm-home .dm-zswap > span { grid-area: 1 / 1; }
+  .dm-home :is(.dm-zswap > span, .dm-funding-label:is(.dm-zs-a, .dm-zs-b)) { transform-box: fill-box; transform-origin: center; transition: opacity 0.2s var(--e-std), filter 0.2s var(--e-std), transform 0.2s var(--e-std); }
+  .dm-home :is([data-funding-mode="across"] .dm-zs-b, [data-funding-mode="local"] .dm-zs-a) { opacity: 0; filter: blur(0.25rem); transform: translateY(0.1875rem); }
+  .dm-home :is([data-funding-mode="across"] .dm-zs-a, [data-funding-mode="local"] .dm-zs-b) { transition: opacity 0.34s var(--e-std) 0.1s, filter 0.34s var(--e-std) 0.1s, transform 0.44s var(--e-enter) 0.1s; }
+  /* The story (V4 index.html 446-475), once, while the reader is in this place ([data-live], homeStory.ts); a source pick or
+     the switch flips data-fp, and the a/b names start it again. Every part fills both ways, so it holds its last frame. */
+  .dm-home .dm-funding-demonstration[data-fp="a"] { --fs-draw: dm-fs-draw-a; --fs-go: dm-fs-go-a; --fs-bump: dm-fs-bump-a; --fs-fill: dm-fs-fill-a; }
+  .dm-home .dm-funding-demonstration[data-fp="b"] { --fs-draw: dm-fs-draw-b; --fs-go: dm-fs-go-b; --fs-bump: dm-fs-bump-b; --fs-fill: dm-fs-fill-b; }
+  .dm-home .dm-funding-demonstration[data-live] .dm-funding-route.is-lit { animation: var(--fs-draw) 1.1s var(--e-std) 0.35s both; }
+  .dm-home .dm-funding-demonstration[data-live] .dm-funding-dot-src { animation: var(--fs-go) 1.1s var(--e-std) 0.35s both; }
+  .dm-home .dm-funding-demonstration[data-live] .dm-funding-wallet { animation: var(--fs-bump) 0.5s var(--e-pop) 1.4s both; }
+  .dm-home .dm-funding-demonstration[data-live][data-funding-mode="across"] .dm-funding-lit-a,
+  .dm-home .dm-funding-demonstration[data-live][data-funding-mode="local"] .dm-funding-lit-l { animation: var(--fs-draw) 0.7s var(--e-std) 1.6s both; }
+  .dm-home .dm-funding-demonstration[data-live][data-funding-mode="across"] .dm-funding-dot-step-a,
+  .dm-home .dm-funding-demonstration[data-live][data-funding-mode="local"] .dm-funding-dot-step-l { animation: var(--fs-go) 0.7s var(--e-std) 1.6s both; }
+  .dm-home .dm-funding-demonstration[data-live] .dm-funding-out { animation: var(--fs-draw) 0.9s var(--e-std) 2.55s both; }
+  .dm-home .dm-funding-demonstration[data-live] .dm-funding-dot-a { animation: var(--fs-go) 0.9s var(--e-std) 2.55s both; }
+  .dm-home .dm-funding-demonstration[data-live] .dm-funding-dot-b { animation: var(--fs-go) 0.9s var(--e-std) 2.67s both; }
+  .dm-home .dm-funding-demonstration[data-live] .dm-funding-disc-a { animation: var(--fs-bump) 0.5s var(--e-pop) 3.38s both; }
+  .dm-home .dm-funding-demonstration[data-live] .dm-funding-disc-b { animation: var(--fs-bump) 0.5s var(--e-pop) 3.5s both; }
+  .dm-home .dm-funding-demonstration[data-live] .dm-funding-bar-in { animation: var(--fs-fill) 0.7s var(--e-enter) 3.5s both; }
+  /* The unseen keeper (HomeCapabilities.tsx): an empty box whose loop changes nothing; it pauses with the scene. */
+  .dm-home .dm-funding-hold { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; animation: dm-home-hold 1s linear infinite; }
   .dm-home .dm-funding-demonstration:not(.is-running) * { animation-play-state: paused; }
 
   /* ---- Top pools (V4 §4.4, §5.3): the card, its serif head and pill, the band, rows that fill on hover ------- */
@@ -208,11 +254,16 @@
   .dm-home .dm-mkt-table--home > .dm-table-head { gap: 0.75rem 1rem; padding: 1.375rem 1.125rem 1.125rem 1.375rem; border: 0; }
   .dm-home .dm-mkt-table--home .dm-table-head h2 { margin: 0; font-family: var(--font-display); font-size: 2.375rem; font-weight: 400; line-height: 1; letter-spacing: -0.02em; color: var(--fg); text-wrap: balance; }
   .dm-home .dm-mkt-table--home > .overflow-x-auto { border-radius: 0; }
-  .dm-home .dm-mkt-table--home .dm-table { margin: 0; table-layout: fixed; border-collapse: separate; border-spacing: 0 2px; }
+  /* The band sits 86 design px under the card's top and the first row 6px under the band (V4 .chead, .rows): the table's
+     status slot takes no room (any live region in it stays), and one 2px spacer row opens the body. */
+  .dm-home .dm-mkt-table--home > .dm-table-status { padding: 0; }
+  .dm-home .dm-mkt-table--home .dm-table tbody::before { content: ''; display: table-row; height: 0.125rem; }
+  .dm-home .dm-mkt-table--home .dm-table { margin: 0; table-layout: fixed; border-collapse: separate; border-spacing: 0 0.125rem; }
   .dm-home .dm-mkt-table--home .dm-table thead th { height: 2.75rem; padding: 0 1rem; border: 0; border-radius: 0; background: var(--v4-w045); color: var(--subtle); font-size: 0.8125rem; font-weight: 500; line-height: 1.125rem; }
   .dm-home .dm-mkt-table--home .dm-table thead th:first-child { width: auto; padding-left: 1.375rem; border-radius: 0.75rem 0 0 0.75rem; }
   .dm-home .dm-mkt-table--home .dm-table thead th:last-child { border-radius: 0 0.75rem 0.75rem 0; }
-  .dm-home .dm-mkt-table--home :is(.dm-mkt-col-tvl, .dm-mkt-col-volume, .dm-mkt-col-apr) { width: 17%; }
+  /* The prototype's columns (2.4fr 1fr 1fr 1fr 190px, gap 16): each figure column is 186 of the band's 1212 design px. */
+  .dm-home .dm-mkt-table--home :is(.dm-mkt-col-tvl, .dm-mkt-col-volume, .dm-mkt-col-apr) { width: 15.35%; }
   .dm-home .dm-mkt-table--home .dm-table :is(th, td):nth-child(2) { display: none; }
   .dm-home .dm-mkt-table--home :is(.dm-mkt-col-volume, .dm-table tbody td.dm-mkt-volume) { display: table-cell; }
   .dm-home .dm-mkt-table--home .dm-table tbody td { height: 4.375rem; padding: 0 1rem; border: 0; border-radius: 0; background: transparent; color: var(--fg); font-size: 0.9375rem; font-weight: 500; line-height: 1.4; vertical-align: middle; transition: background-color 0.18s var(--e-std); }
@@ -221,7 +272,12 @@
   .dm-home .dm-mkt-table--home .dm-table tbody tr { outline: 0; }
   .dm-home .dm-mkt-table--home .dm-table tbody tr:is(:hover, :focus-within) { --dm-mkt-ring: var(--v4-ring-hover); }
   .dm-home .dm-mkt-table--home .dm-table tbody tr:is(:hover, :focus-within) td { background: var(--v4-w045); }
-  @media (hover: hover) { .dm-home .dm-mkt-table--home .dm-table tbody tr:hover td:first-child { background: radial-gradient(circle, var(--primary) 0 0.15625rem, transparent 0.1875rem) 0.5rem 50% / 0.3125rem 0.3125rem no-repeat, var(--v4-w045); } }
+  /* The row's pip (V4 .rpip): a 5px Tangerine dot at the left edge that grows in on hover. */
+  @media (hover: hover) {
+    .dm-home .dm-mkt-table--home .dm-table tbody td:first-child { position: relative; }
+    .dm-home .dm-mkt-table--home .dm-table tbody td:first-child::before { content: ''; position: absolute; left: 0.5rem; top: 50%; width: 0.3125rem; height: 0.3125rem; margin-top: -0.15625rem; border-radius: 50%; background: var(--primary); opacity: 0; transform: scale(0.2); transition: opacity 0.2s var(--e-std), transform 0.35s var(--e-enter); pointer-events: none; }
+    .dm-home .dm-mkt-table--home .dm-table tbody tr:hover td:first-child::before { opacity: 1; transform: none; }
+  }
   .dm-home .dm-mkt-table--home .dm-mkt-pool { gap: 0.875rem; }
   .dm-home .dm-mkt-table--home .dm-mkt-marks > span > * { transition: transform 0.3s var(--e-enter), box-shadow 0.18s var(--e-std); }
   .dm-home .dm-mkt-table--home tbody tr:hover .dm-mkt-marks > span > :first-child { transform: scale(1.06); }
@@ -231,12 +287,22 @@
   .dm-home .dm-mkt-table--home .dm-mkt-name { color: var(--fg); font-size: 0.96875rem; font-weight: 500; line-height: 1.35; transition: color 0.18s var(--e-std); }
   .dm-home .dm-mkt-table--home :is(.dm-mkt-venue, [data-pool-catalogue] .dm-chip) { width: fit-content; min-height: 0; margin-top: 0.375rem; padding: 2px 0.4375rem; border-radius: 0.375rem; background: var(--v4-w055); box-shadow: none; color: var(--subtle); font-size: 0.75rem; font-weight: 400; line-height: 1rem; letter-spacing: 0; }
   .dm-home .dm-mkt-table--home .dm-mkt-venue.dm-mkt-flag { background: var(--money-out-bg); color: var(--fg); }
+  /* V4 .tag: "Uniswap" and the fee as two joined segments, the "·" kept in the text and unseen. The chip stays a block of
+     inline text (its words are read as one line). */
+  .dm-home .dm-mkt-table--home :is(.dm-mkt-venue, [data-pool-catalogue] .dm-chip):has(> .dm-fee-venue) { display: block; padding: 0; border-radius: 0; background: none; white-space: normal; }
+  .dm-home .dm-mkt-table--home :is(.dm-fee-venue, .dm-fee-value) { display: inline-block; padding: 2px 0.4375rem; background: var(--v4-w055); white-space: nowrap; vertical-align: top; }
+  .dm-home .dm-mkt-table--home .dm-fee-venue { margin-right: 2px; border-radius: 0.375rem 2px 2px 0.375rem; }
+  .dm-home .dm-mkt-table--home .dm-fee-value { border-radius: 2px 0.375rem 0.375rem 2px; }
+  .dm-home .dm-mkt-table--home .dm-fee-sep { display: inline; font-size: 0; }
   .dm-home .dm-mkt-table--home .dm-mkt-num { font-size: 0.9375rem; font-weight: 500; }
   .dm-home .dm-mkt-table--home .dm-mkt-apr > * { display: inline-block; transition: transform 0.25s var(--e-enter); }
+  .dm-home .dm-mkt-table--home .dm-mkt-apr > [data-apr-estimate="pending"] { display: inline-flex; }
   .dm-home .dm-mkt-table--home tbody tr:hover .dm-mkt-apr > :not(.dm-home-pool-label) { transform: translateY(-1px); }
   .dm-home .dm-mkt-table--home tbody tr:hover .dm-mkt-apr .text-money-in { color: var(--v4-in-hover); }
+  /* The figure's "est." quieter and smaller (V4 .apr i; FallbackApr/PoolAprEstimate write it as .dm-apr-est). */
+  .dm-home .dm-mkt-table--home .dm-mkt-apr .dm-apr-est { color: var(--subtle); font-size: 0.78125rem; font-weight: 400; }
   .dm-home .dm-mkt-table--home .dm-home-pool-label { display: none; }
-  .dm-home .dm-mkt-table--home .dm-mkt-end { width: 5.5rem; padding-inline: 0.25rem 0.75rem; }
+  .dm-home .dm-mkt-table--home .dm-mkt-end { width: 13rem; padding-inline: 0.25rem 0.375rem; }
   .dm-home .dm-mkt-table--home .dm-row-end { display: flex; justify-content: flex-end; }
   .dm-home .dm-mkt-table--home .dm-row-end > svg { display: none; }
   .dm-home .dm-mkt-table--home [data-pool-catalogue] .dm-row-end > svg { display: block; width: 2.125rem; height: 2.125rem; padding: 0.625rem; border-radius: 50%; }
@@ -252,15 +318,135 @@
   .dm-home .dm-home-chapter-heading { display: grid; grid-template-columns: minmax(0, 1fr) 21.25rem; align-items: end; gap: 2.5rem; margin: 0; }
   .dm-home .dm-home-chapter-aside { display: flex; flex-direction: column; align-items: flex-start; gap: 1.25rem; padding-bottom: 1rem; }
   .dm-home .dm-home-chapter-aside > p { max-width: 34ch; margin: 0; color: var(--muted); font-size: 1.0625rem; line-height: 1.55; text-wrap: pretty; }
-  .dm-home .dm-home-automation-grid { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 27.5rem; align-items: start; gap: 0.5rem 2.5rem; margin-top: 3.25rem; }
-  .dm-home .dm-home-fx-stage { grid-column: 1; grid-row: 1 / span 3; align-self: stretch; min-height: 36.25rem; border-radius: 1.625rem; background: var(--v4-card-lift), var(--card); box-shadow: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 var(--v4-w06), var(--v4-card-drop); }
-  .dm-home .dm-automation-story { position: static; grid-column: 2; display: block; min-width: 0; min-height: 11.5rem; padding: 1.375rem 1.625rem 1.25rem 2rem; overflow: visible; border: 0; border-radius: 1.25rem; background: transparent; transition: background-color 0.25s var(--e-std), box-shadow 0.25s var(--e-std); }
+  .dm-home .dm-home-automation-grid { --fx-s: 1; position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 27.5rem; align-items: start; gap: 0.5rem 2.5rem; margin-top: 3.25rem; }
+  /* The stage card holds one 624 × 440 scene pinned 70px from its top (opening a fee never moves it), scaled by --fx-s
+     on narrower screens; it holds what the three functions share. Each row's own parts are a layer laid exactly over it
+     (the grid is their containing block), never taking the pointer, always drawn: what is shown is the parts' own state. */
+  .dm-home .dm-home-fx-stage { grid-column: 1; grid-row: 1 / span 3; align-self: stretch; display: flex; align-items: flex-start; justify-content: center; min-width: 0; min-height: 36.25rem; padding: 4.375rem 0 0; border-radius: 1.625rem; background: var(--v4-card-lift), var(--card); box-shadow: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 var(--v4-w06), var(--v4-card-drop); }
+  .dm-home .dm-automation-story-scene { position: absolute; left: 0; top: 0; display: flex; align-items: flex-start; justify-content: center; width: calc(100% - 27.5rem - 2.5rem); height: 100%; padding: 4.375rem 0 0; overflow: hidden; border-radius: 1.625rem; isolation: auto; background: none; opacity: 1; pointer-events: none; }
+  .dm-home :is(.dm-fx-box, .dm-automation-story-scene > .dm-automation-story-art) { position: relative; flex: none; width: calc(39rem * var(--fx-s)); height: calc(27.5rem * var(--fx-s)); max-height: none; aspect-ratio: auto; }
+  .dm-home .dm-fx-scene { position: relative; width: 39rem; height: 27.5rem; transform: scale(var(--fx-s)); transform-origin: 0 0; }
+  .dm-home .dm-fx-scene > * { position: absolute; }
+  .dm-home .dm-fx-idle { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; animation: dm-home-hold 1s linear infinite; }
+  .dm-home .dm-fx-floor { left: 1.875rem; right: 1.875rem; top: 23rem; height: 1.875rem; border-radius: 50%; background: radial-gradient(closest-side, rgb(0 0 0 / 0.5), rgb(0 0 0 / 0)); filter: blur(0.25rem); }
+  /* A range as a glass slab: light between two lit edges (the same picture as the range lesson's band). */
+  .dm-home .dm-gl-depth { position: absolute; left: 0; right: 0; top: 0.4375rem; bottom: -0.4375rem; border-radius: 0.8125rem; background: linear-gradient(180deg, #2a221b, #16120e); box-shadow: 0 1.375rem 2.125rem -1.125rem rgb(0 0 0 / 0.85); }
+  .dm-home .dm-gl { position: absolute; inset: 0; overflow: hidden; border-radius: 0.8125rem; background: linear-gradient(180deg, rgb(255 236 220 / 0.075), rgb(255 236 220 / 0.025)), #1a1713; box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.12), inset 0 1px 0 rgb(255 236 220 / 0.16); }
+  .dm-home .dm-gl::before, .dm-home .dm-gl::after { content: ''; position: absolute; top: 0.375rem; bottom: 0.375rem; z-index: 1; width: 0.0625rem; background: linear-gradient(180deg, rgb(255 177 127 / 0.15), rgb(255 177 127 / 0.6)); }
+  .dm-home .dm-gl::before { left: 0.375rem; }
+  .dm-home .dm-gl::after { right: 0.375rem; }
+  .dm-home .dm-gl-fill { position: absolute; left: 0.375rem; right: 0.375rem; bottom: 0.375rem; top: 0.75rem; border-radius: 0.5rem; transform-origin: 50% 100%; background-image: radial-gradient(circle, rgb(255 226 204 / 0.35) 0 0.05rem, transparent 0.075rem), radial-gradient(120% 150% at 50% 115%, rgb(255 176 127 / 0.6), rgb(255 157 98 / 0.24) 52%, rgb(255 157 98 / 0.06)); background-size: 0.5rem 0.5rem, 100% 100%; box-shadow: inset 0 1px 0 rgb(255 214 186 / 0.25); transition: opacity 0.5s var(--e-std); }
+  .dm-home .dm-gl-edge { position: absolute; right: 0.3125rem; top: 0.1875rem; bottom: 0.1875rem; z-index: 2; width: 0.1875rem; border-radius: 2px; background: var(--primary); box-shadow: 0 0 0.625rem rgb(255 157 98 / 0.6); opacity: 0; transition: opacity 0.35s var(--e-std); }
+  /* Your position (shared): it glides left for Domino-compound and Auto-exit; Auto-exit closes it at the price's edge. */
+  .dm-home .dm-fx-ba { left: 9.5rem; top: 20.625rem; width: 20rem; height: 2.875rem; transition: transform 1s var(--e-drift); }
+  .dm-home .dm-home-automation-grid:is([data-fx-mode="domino"], [data-fx-mode="exit"]) :is(.dm-fx-ba, .dm-fx-foot) { transform: translateX(-6.5rem); }
+  .dm-home [data-fx-mode="exit"] .dm-fx-ba .dm-gl-fill { opacity: 0.12; }
+  .dm-home [data-fx-mode="exit"] .dm-fx-ba .dm-gl-edge { opacity: 1; }
+  .dm-home .dm-fx-price { position: absolute; left: 0; top: 0; z-index: 3; width: 20rem; height: 2.875rem; overflow: visible; opacity: 0; transition: opacity 0.3s var(--e-std); }
+  .dm-home [data-fx-mode="exit"] .dm-fx-price { opacity: 1; }
+  .dm-home .dm-fx-pl { fill: none; stroke: #f7f1ea; stroke-opacity: 0.85; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 0; }
+  .dm-home .dm-fx-pd { fill: #f7f1ea; transform-box: fill-box; transform-origin: center; }
+  /* Where the travelling tile stands (from 1280px): only a faint warm pool on the floor while it is away. */
+  .dm-home .dm-foot { position: absolute; width: 6.5rem; height: 11.375rem; pointer-events: none; opacity: 0; transition: opacity 0.4s var(--e-std) 0.5s; }
+  .dm-home .dm-foot.is-away { opacity: 1; transition-delay: 0s; }
+  .dm-home .dm-foot::after { content: ''; position: absolute; left: -0.875rem; right: -0.875rem; bottom: -0.875rem; height: 1.75rem; border-radius: 50%; background: radial-gradient(closest-side, rgb(255 157 98 / 0.11), rgb(255 157 98 / 0)); }
+  .dm-home :is(.dm-foot-groove, .dm-foot-pip) { display: none; }
+  .dm-home .dm-fx-foot { left: 16.25rem; top: 9.25rem; transition: opacity 0.4s var(--e-std) 0.5s, transform 1s var(--e-drift); }
+  .dm-home .dm-fx-foot.is-away { transition: opacity 0.4s var(--e-std), transform 1s var(--e-drift); }
+  .dm-home .dm-fs-foot { display: none; left: 28.25rem; top: 3.375rem; }
+  .dm-home .dm-rg-foot { display: none; left: calc(var(--k) + 0.41604 * (100% - 2 * var(--k)) - 3.25rem); top: 4.25rem; }
+  .dm-home .dm-cm-foot { left: 9.25rem; top: 4rem; }
+  /* Each function's labels, arcs and objects: the row in use shows them, the others fade theirs out (entering ones wait). */
+  .dm-home .dm-fx-lb { transform: translateX(-50%); color: var(--subtle); font-size: 0.8125rem; font-weight: 500; line-height: normal; white-space: nowrap; opacity: 0; filter: blur(0.125rem); transition: opacity 0.3s var(--e-std), filter 0.3s var(--e-std); }
+  .dm-home .dm-fx-acc { color: #ffc69f; }
+  .dm-home .dm-automation-story[data-active] .dm-fx-lb { opacity: 1; filter: none; transition-delay: 0.15s; }
+  .dm-home .dm-fx-lb-c1 { left: 19.5rem; top: 1.875rem; }
+  .dm-home .dm-fx-lb-c2 { left: 19.5rem; top: 25.25rem; }
+  .dm-home .dm-fx-lb-d1 { left: 21.875rem; top: 0.375rem; }
+  .dm-home .dm-fx-lb-d2 { left: 13rem; top: 25.25rem; }
+  .dm-home .dm-fx-lb-d3 { left: 30.75rem; top: 18rem; }
+  .dm-home .dm-fx-lb-x1 { left: 19.5rem; top: 15.5rem; line-height: 1.2; text-align: center; }
+  .dm-home .dm-fx-lb-x2 { left: 13rem; top: 25.25rem; }
+  .dm-home .dm-fx-lb-x3 { left: 31.375rem; top: 25.25rem; }
+  .dm-home .dm-fx-gd { left: 0; top: 0; width: 39rem; height: 27.5rem; overflow: visible; pointer-events: none; }
+  .dm-home .dm-fx-gd path { fill: none; stroke: rgb(255 236 220 / 0.24); stroke-width: 1.5; stroke-dasharray: 1 7; stroke-linecap: round; opacity: 0; transition: opacity 0.4s var(--e-std); }
+  .dm-home .dm-fx-gd .dm-fx-ar { stroke: rgb(255 236 220 / 0.42); stroke-dasharray: none; stroke-linejoin: round; }
+  .dm-home .dm-automation-story[data-active] .dm-fx-gd path { opacity: 1; transition-delay: 0.2s; }
+  /* Earned fees as embers: constant speed across, gravity up and down (a true parabola, twelve steps). */
+  .dm-home .dm-fx-em { width: 0.625rem; height: 0.625rem; border-radius: 50%; opacity: 0; pointer-events: none; background: radial-gradient(circle at 45% 40%, #fff1e4, #ffb07f 45%, #ff9d62 72%); box-shadow: 0 0 0.75rem rgb(255 157 98 / 0.6); }
+  .dm-home .dm-fx-c1 { left: 11.9375rem; top: 20.3125rem; --fx-dx: 6.25rem; --fx-a: -27.2875rem; --fx-b: -8.75rem; }
+  .dm-home .dm-fx-c2 { left: 26.4375rem; top: 20.3125rem; --fx-dx: -6.125rem; --fx-a: -25.75rem; --fx-b: -8.375rem; }
+  .dm-home .dm-fx-c3 { left: 14.1875rem; top: 20.3125rem; --fx-dx: 5.125rem; --fx-a: -21.4875rem; --fx-b: -8.125rem; }
+  .dm-home .dm-fx-d1 { left: 5.4375rem; top: 20.3125rem; --fx-dx: 6.75rem; --fx-a: -25.9875rem; --fx-b: -8.75rem; }
+  .dm-home .dm-fx-d2 { left: 20.3125rem; top: 20.3125rem; --fx-dx: -7.125rem; --fx-a: -24.875rem; --fx-b: -8.5rem; }
+  .dm-home .dm-fx-d3 { left: 12.59375rem; top: 8.96875rem; width: 0.8125rem; height: 0.8125rem; --fx-dx: 17.75rem; --fx-a: -15.30625rem; --fx-b: 4.75rem; }
+  .dm-home :is(.dm-fx-x1, .dm-fx-x2) { left: 21.625rem; top: 20rem; width: 0.75rem; height: 0.75rem; }
+  .dm-home .dm-fx-x1 { --fx-dx: 12.375rem; --fx-a: -13.74375rem; --fx-b: -0.5rem; background: radial-gradient(circle at 40% 35%, #ffe3cf, #ff9d62 60%, #e0783c); }
+  .dm-home .dm-fx-x2 { --fx-dx: 13.25rem; --fx-a: -14.99375rem; --fx-b: -0.5rem; background: radial-gradient(circle at 40% 35%, #d8f2c8, #6fa856 60%, #3f6b2b); box-shadow: 0 0 0.75rem rgb(111 168 86 / 0.5); }
+  /* Domino-compound: the higher range and its small tile. */
+  .dm-home .dm-fx-bb { left: 24.5rem; top: 14.5rem; width: 12.5rem; height: 2.25rem; opacity: 0; transform: translateY(0.5rem); transition: opacity 0.4s var(--e-std), transform 0.6s var(--e-enter); }
+  .dm-home [data-feature="domino"][data-active] .dm-fx-bb { opacity: 1; transform: none; }
+  .dm-home .dm-fx-tb { left: 28.75rem; top: 7.5rem; width: 4rem; height: 7rem; opacity: 0; transition: opacity 0.35s var(--e-std); }
+  .dm-home [data-feature="domino"][data-active] .dm-fx-tb { opacity: 1; }
+  .dm-home .dm-fx-tb-in { position: absolute; inset: 0; }
+  .dm-home .dm-mt-persp { position: relative; display: block; width: 4rem; height: 7rem; perspective: 37.5rem; }
+  .dm-home .dm-mt-3d { position: absolute; inset: 0; transform-style: preserve-3d; transform: rotateX(6deg) rotateY(-18deg) rotateZ(-7deg); }
+  .dm-home .dm-mt-slab { position: absolute; inset: 0; border-radius: 0.6875rem; }
+  .dm-home .dm-mt-w1 { transform: translateZ(-0.125rem); background: #e27d43; }
+  .dm-home .dm-mt-w2 { transform: translateZ(-0.25rem); background: #cd6d39; }
+  .dm-home .dm-mt-w3 { transform: translateZ(-0.375rem); background: #b05c2f; }
+  .dm-home .dm-mt-w4 { transform: translateZ(-0.5rem); background: #9c522a; }
+  .dm-home .dm-mt-w5 { transform: translateZ(-0.625rem); background: #7c4223; box-shadow: 0 0.875rem 1.625rem -0.375rem rgb(0 0 0 / 0.6); }
+  .dm-home .dm-mt-face { position: absolute; inset: 0; overflow: hidden; border-radius: 0.6875rem; transform: translateZ(1px); background: linear-gradient(158deg, #ffc39c 0%, #ffa771 30%, #ff9d62 55%, #f28a4c 100%); box-shadow: inset 0 1px 0 rgb(255 240 228 / 0.7), inset 0 0 0 1px rgb(255 220 196 / 0.35), inset 0 -0.1875rem 0.5rem rgb(130 52 14 / 0.35); }
+  .dm-home .dm-mt-groove { position: absolute; left: 0.4375rem; right: 0.4375rem; top: 50%; height: 1.5px; margin-top: -0.75px; background: rgb(84 34 8 / 0.55); box-shadow: 0 1px 0 rgb(255 226 204 / 0.5); }
+  .dm-home .dm-mt-pip { position: absolute; width: 0.6875rem; height: 0.6875rem; margin: -0.34375rem 0 0 -0.34375rem; border-radius: 50%; background: radial-gradient(circle at 50% 38%, #1a110b, #3b2416 70%, #4a2c1a); box-shadow: inset 0 1.5px 2px rgb(0 0 0 / 0.65), 0 1px 0 rgb(255 228 206 / 0.6); }
+  .dm-home .dm-mt-m1 { left: 31%; top: 15%; }
+  .dm-home .dm-mt-m2 { left: 69%; top: 35%; }
+  .dm-home .dm-mt-m3 { left: 28%; top: 62%; }
+  .dm-home .dm-mt-m4 { left: 50%; top: 75%; }
+  .dm-home .dm-mt-m5 { left: 72%; top: 88%; }
+  /* Auto-exit: your wallet, its pocket and the two tokens that come home. */
+  .dm-home .dm-fx-w { left: 26.25rem; top: 16.75rem; width: 10.25rem; height: 6.75rem; opacity: 0; transform: translateY(0.625rem); filter: blur(0.25rem); transition: opacity 0.4s var(--e-std), transform 0.6s var(--e-enter), filter 0.4s var(--e-std); }
+  .dm-home [data-feature="autoexit"][data-active] .dm-fx-w { opacity: 1; transform: none; filter: none; }
+  .dm-home .dm-fx-w > span { position: absolute; }
+  .dm-home .dm-fx-w-depth { left: 0; right: 0; top: 0.4375rem; bottom: -0.4375rem; border-radius: 1.25rem; background: #120f0c; box-shadow: 0 1.375rem 2.125rem -1.125rem rgb(0 0 0 / 0.85); }
+  .dm-home .dm-fx-w-card { left: 1.125rem; top: -0.875rem; width: 6rem; height: 1.875rem; border-radius: 0.5625rem; background: linear-gradient(180deg, #3a3029, #2a231d); box-shadow: inset 0 1px 0 rgb(255 236 220 / 0.12); }
+  .dm-home .dm-fx-w-body { inset: 0; border-radius: 1.25rem; background: linear-gradient(160deg, #2d2923, #1b1815); box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.1), inset 0 1px 0 rgb(255 236 220 / 0.12); }
+  .dm-home .dm-fx-w-pocket { right: 0; top: 2rem; width: 3.75rem; height: 2.5rem; border-radius: 0.875rem 0 0 0.875rem; background: #141210; box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.09), inset 0 0.125rem 0.375rem rgb(0 0 0 / 0.6); transition: box-shadow 0.4s var(--e-std); }
+  .dm-home .dm-fx-w-coin { position: absolute; top: 0.875rem; width: 0.75rem; height: 0.75rem; border-radius: 50%; }
+  .dm-home .dm-fx-w-ca { left: 1.25rem; background: radial-gradient(circle at 40% 35%, #ffe3cf, #ff9d62 60%, #e0783c); }
+  .dm-home .dm-fx-w-cb { left: 2.125rem; background: radial-gradient(circle at 40% 35%, #d8f2c8, #6fa856 60%, #3f6b2b); }
+  /* The stories (V4 index.html 599-630), once each while the reader is in this place ([data-fx-live]); a new function or a
+     replay flips data-fx-key, and the a/b names start it again. */
+  .dm-home .dm-home-automation-grid[data-fx-key="a"] { --fx-arc: dm-fx-arc-a; --fx-on: dm-fx-on-a; --fx-off: dm-fx-off-a; --fx-draw: dm-fx-draw-a; --fx-rise: dm-fx-rise-a; --fx-dot: dm-fx-dot-a; --fx-glow: dm-fx-glow-a; --fx-up: dm-gl-up-a; }
+  .dm-home .dm-home-automation-grid[data-fx-key="b"] { --fx-arc: dm-fx-arc-b; --fx-on: dm-fx-on-b; --fx-off: dm-fx-off-b; --fx-draw: dm-fx-draw-b; --fx-rise: dm-fx-rise-b; --fx-dot: dm-fx-dot-b; --fx-glow: dm-fx-glow-b; --fx-up: dm-gl-up-b; }
+  /* Auto-compound: three fees rise out of the range and drop back into the tile; the range's light rises. */
+  .dm-home [data-fx-live][data-fx-mode="compound"] [data-feature="compound"] .dm-fx-gd path { animation: var(--fx-on) 0.5s var(--e-std) 0.25s both; }
+  .dm-home [data-fx-live][data-fx-mode="compound"] .dm-fx-c1 { animation: var(--fx-arc) 1.3s linear 0.5s both; }
+  .dm-home [data-fx-live][data-fx-mode="compound"] .dm-fx-c2 { animation: var(--fx-arc) 1.3s linear 0.62s both; }
+  .dm-home [data-fx-live][data-fx-mode="compound"] .dm-fx-c3 { animation: var(--fx-arc) 1.2s linear 0.76s both; }
+  .dm-home [data-fx-live][data-fx-mode="compound"] .dm-fx-ba .dm-gl-fill { animation: var(--fx-up) 1.1s var(--e-enter) 1.8s both; }
+  /* Domino-compound: fees gather in the tile, one hops to a higher range, and a second tile rises there. */
+  .dm-home [data-fx-live][data-fx-mode="domino"] [data-feature="domino"] .dm-fx-gd path { animation: var(--fx-on) 0.5s var(--e-std) 1.2s both; }
+  .dm-home [data-fx-live][data-fx-mode="domino"] .dm-fx-d1 { animation: var(--fx-arc) 1.05s linear 0.4s both; }
+  .dm-home [data-fx-live][data-fx-mode="domino"] .dm-fx-d2 { animation: var(--fx-arc) 1.05s linear 0.5s both; }
+  .dm-home [data-fx-live][data-fx-mode="domino"] .dm-fx-d3 { animation: var(--fx-arc) 1s linear 1.45s both; }
+  .dm-home [data-fx-live][data-fx-mode="domino"] .dm-fx-bb .dm-gl-fill { animation: var(--fx-on) 0.5s var(--e-std) 2.35s both; }
+  .dm-home [data-fx-live][data-fx-mode="domino"] .dm-fx-tb-in { animation: var(--fx-rise) 0.8s var(--e-enter) 2.3s both; }
+  /* Auto-exit: the price reaches the edge, the edge lights, the range empties, the tokens go home to your wallet. */
+  .dm-home [data-fx-live][data-fx-mode="exit"] .dm-fx-pl { animation: var(--fx-draw) 1.2s var(--e-std) 0.4s both; }
+  .dm-home [data-fx-live][data-fx-mode="exit"] .dm-fx-pd { animation: var(--fx-dot) 0.45s var(--e-enter) 1.55s both; }
+  .dm-home [data-fx-live][data-fx-mode="exit"] .dm-fx-ba .dm-gl-edge { animation: var(--fx-on) 0.35s var(--e-std) 1.6s both; }
+  .dm-home [data-fx-live][data-fx-mode="exit"] .dm-fx-ba .dm-gl-fill { animation: var(--fx-off) 0.6s var(--e-std) 1.7s both; }
+  .dm-home [data-fx-live][data-fx-mode="exit"] [data-feature="autoexit"] .dm-fx-gd path { animation: var(--fx-on) 0.4s var(--e-std) 1.6s both; }
+  .dm-home [data-fx-live][data-fx-mode="exit"] .dm-fx-x1 { animation: var(--fx-arc) 1s linear 1.8s both; }
+  .dm-home [data-fx-live][data-fx-mode="exit"] .dm-fx-x2 { animation: var(--fx-arc) 1s linear 1.95s both; }
+  .dm-home [data-fx-live][data-fx-mode="exit"] .dm-fx-w-coin { animation: var(--fx-on) 0.3s var(--e-std) 2.72s both; }
+  .dm-home [data-fx-live][data-fx-mode="exit"] .dm-fx-w-pocket { animation: var(--fx-glow) 1s var(--e-std) 2.72s both; }
+  /* The rows: the whole row picks (it shows the pointer); its pip, name and words light when it is the one in use. */
+  .dm-home .dm-automation-story { position: static; grid-column: 2; display: block; min-width: 0; min-height: 11.5rem; padding: 1.375rem 1.625rem 1.25rem 2rem; overflow: visible; border: 0; border-radius: 1.25rem; background: transparent; cursor: pointer; transition: background-color 0.25s var(--e-std), box-shadow 0.25s var(--e-std); }
   .dm-home .dm-automation-story:hover { background: var(--v4-w03); }
   .dm-home .dm-automation-story[data-active] { background: linear-gradient(180deg, rgb(255 236 220 / 0.05), rgb(255 236 220 / 0.022)); box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.07); }
-  /* Each row's scene sits in the one stage (the grid is its containing block); the active row's is the one seen. */
-  .dm-home .dm-automation-story-scene { position: absolute; left: 0; top: 0; display: flex; align-items: center; justify-content: center; width: calc(100% - 27.5rem - 2.5rem); height: 100%; padding: 1.5rem; isolation: auto; background: none; opacity: 0; pointer-events: none; transition: opacity 0.35s var(--e-std); }
-  .dm-home .dm-automation-story[data-active] .dm-automation-story-scene { opacity: 1; }
-  .dm-home .dm-automation-story-scene > .dm-automation-story-art { width: min(100%, 39rem); height: auto; max-height: 100%; }
   .dm-home .dm-automation-story-copy { position: relative; padding: 0; }
   .dm-home .dm-automation-story-copy::before { content: ''; position: absolute; left: -1.125rem; top: 1.0625rem; width: 0.375rem; height: 0.375rem; border-radius: 50%; background: var(--primary); opacity: 0; transform: scale(0.2); transition: opacity 0.2s var(--e-std), transform 0.35s var(--e-enter); }
   .dm-home .dm-automation-story[data-active] .dm-automation-story-copy::before { opacity: 1; transform: none; }
@@ -269,79 +455,201 @@
   .dm-home .dm-automation-story[data-active] .dm-automation-story-copy h3 { transform: translateX(2px); }
   .dm-home .dm-automation-story-copy > p { min-height: 0; max-width: 44ch; margin: 0.625rem 0 0; color: var(--subtle); font-size: 0.96875rem; line-height: 1.5; transition: color 0.25s var(--e-std); }
   .dm-home .dm-automation-story:is(:hover, [data-active]) .dm-automation-story-copy > p { color: var(--muted); }
-  .dm-home .dm-automation-story-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; margin: 1rem 0 0 -0.625rem; padding: 0; border: 0; }
-  .dm-home .dm-automation-story-actions > a, .dm-home .dm-automation-story-actions summary { display: inline-flex; align-items: center; gap: 0.375rem; height: 2.125rem; min-height: 0; padding: 0 0.5rem 0 0.625rem; border-radius: 0.625rem; color: var(--muted); font-size: 0.84375rem; font-weight: 500; line-height: 1; text-decoration: none; transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std); }
-  .dm-home .dm-automation-story-actions summary { gap: 0.5rem; }
+  /* The actions: How it works and Fees on one line; the fee opens under them, aligned with the words (V4 .fx-feep:
+     its row grows, its text arrives from a soft blur). The link stays above the open panel's box. */
+  .dm-home .dm-automation-story-actions { position: relative; z-index: 2; display: grid; grid-template-columns: max-content max-content minmax(0, 1fr); align-items: start; column-gap: 0.25rem; margin: 1rem 0 0 -0.625rem; padding: 0; border: 0; }
+  .dm-home .dm-automation-story-actions > a { position: relative; z-index: 1; grid-column: 1; grid-row: 1; }
+  .dm-home .dm-automation-story-actions > a, .dm-home .dm-automation-story-actions summary { display: inline-flex; align-items: center; gap: 0.375rem; height: 2.125rem; min-height: 0; padding: 0 0.5rem 0 0.625rem; border-radius: 0.625rem; color: var(--fg); font-size: 0.84375rem; font-weight: 500; line-height: 1; text-decoration: none; transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std), scale 0.1s var(--e-press); }
+  .dm-home .dm-automation-story-actions summary { grid-column: 2; grid-row: 1; gap: 0.5rem; font-size: 1rem; font-weight: 400; line-height: normal; letter-spacing: normal; }
   .dm-home .dm-automation-story-actions > a:hover, .dm-home .dm-automation-story-actions summary:hover { background: var(--v4-w06); color: var(--fg); }
+  .dm-home :is(.dm-automation-story-actions > a, .dm-automation-story-actions summary):active { scale: 0.97; }
   .dm-home .dm-automation-story-actions > a svg { width: 0.875rem; height: 0.875rem; color: currentColor; transition: transform 0.25s var(--e-enter); }
   .dm-home .dm-automation-story-actions > a:hover svg { transform: translateX(2px); translate: none; }
-  .dm-home .dm-automation-story-actions summary::after { width: 1.125rem; height: 1.125rem; background-size: 0.5rem 1.5px, 1.5px 0.5rem; }
-  .dm-home .dm-automation-story-actions details { max-width: 100%; margin: 0; color: var(--muted); }
-  .dm-home .dm-automation-story-actions details[open] { flex: 1 1 100%; margin: 0; }
-  .dm-home .dm-automation-story-actions details p { max-width: 46ch; margin: 0.75rem 0 2px 0.625rem; padding-top: 0.8125rem; background: linear-gradient(90deg, rgb(255 236 220 / 0.16) 50%, rgb(255 236 220 / 0) 0) 0 0 / 0.375rem 1px repeat-x; color: var(--muted); font-size: 0.875rem; line-height: 1.5; }
+  .dm-home .dm-automation-story-actions summary::after { width: 1.125rem; height: 1.125rem; }
+  .dm-home .dm-automation-story-actions details { grid-column: 1 / -1; grid-row: 1; display: grid; grid-template-columns: subgrid; max-width: none; margin: 0; color: var(--muted); interpolate-size: allow-keywords; }
+  .dm-home .dm-automation-story-actions details > p { grid-column: 1 / -1; grid-row: 2; }
+  .dm-home .dm-automation-story-actions details::details-content { grid-column: 1 / -1; grid-row: 2; block-size: 0; overflow: clip; transition: block-size 0.4s var(--e-enter), content-visibility 0.4s var(--e-enter) allow-discrete; }
+  .dm-home .dm-automation-story-actions details[open]::details-content { block-size: auto; transition: block-size 0.4s var(--e-enter); }
+  .dm-home .dm-automation-story-actions details p { max-width: 46ch; margin: 0.75rem 0 2px 0.625rem; padding-top: 0.8125rem; background: linear-gradient(90deg, rgb(255 236 220 / 0.16) 50%, rgb(255 236 220 / 0) 0) 0 0 / 0.375rem 1px repeat-x; color: var(--muted); font-size: 0.875rem; line-height: 1.5; opacity: 0; transform: translateY(-0.25rem); filter: blur(0.1875rem); transition: opacity 0.22s var(--e-std), transform 0.3s var(--e-enter), filter 0.25s var(--e-std); }
+  .dm-home .dm-automation-story-actions details[open] p { opacity: 1; transform: none; filter: none; transition: opacity 0.3s var(--e-std) 0.07s, transform 0.45s var(--e-enter) 0.07s, filter 0.35s var(--e-std) 0.07s; }
   .dm-home .dm-automation-story-actions details p b { color: var(--fg); font-weight: 500; }
+  /* A panel's content had no style while it was folded away, so its arrival starts from the soft blur explicitly. */
+  @starting-style { .dm-home .dm-automation-story-actions details[open] p { opacity: 0; transform: translateY(-0.25rem); filter: blur(0.1875rem); } }
 
   /* ---- What is a price range? (V4 "rg"): the title folds the lesson; the scene is light on the price line --- */
   .dm-home .dm-home-range-guide { margin-top: var(--home-space); border: 0; }
-  .dm-home .dm-home-range-guide > summary { position: relative; display: block; min-height: 0; padding: 0; border-radius: 0.875rem; cursor: pointer; list-style: none; }
+  .dm-home .dm-home-range-guide > summary { position: relative; display: block; width: min-content; min-height: 0; padding: 0; border-radius: 0.875rem; cursor: pointer; list-style: none; }
   .dm-home .dm-home-range-guide > summary::-webkit-details-marker { display: none; }
-  .dm-home .dm-rsum .dm-sx-l { display: inline-block; width: 100%; }
-  .dm-home .dm-pl-lg { display: inline-flex; width: 0.5em; height: 0.5em; margin-left: 0.22em; vertical-align: 0.08em; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--strong); color: var(--muted); background: linear-gradient(currentColor, currentColor) center / 1.25rem 1.6px no-repeat, linear-gradient(currentColor, currentColor) center / 1.6px 1.25rem no-repeat; transition: box-shadow 0.2s var(--e-std), color 0.2s var(--e-std), transform 0.35s var(--e-enter); }
+  /* Each line is its own unbroken block (the space between them stays in the text), so the title is as wide as its
+     longest line, as the prototype's .rsum button: the hover and the press belong to the words alone. */
+  .dm-home .dm-rsum .dm-sx-l { display: inline-block; white-space: nowrap; }
+  .dm-home .dm-pl-lg { display: inline-flex; width: 0.5em; height: 0.5em; margin-left: 0.22em; vertical-align: calc(0.625rem - 0.17em); border-radius: 50%; box-shadow: inset 0 0 0 1px var(--strong); color: var(--muted); background: linear-gradient(currentColor, currentColor) center / 1.25rem 0.1rem no-repeat, linear-gradient(currentColor, currentColor) center / 0.1rem 1.25rem no-repeat; transition: box-shadow 0.2s var(--e-std), color 0.2s var(--e-std), transform 0.35s var(--e-enter); }
   .dm-home .dm-home-range-guide > summary:hover .dm-pl-lg { box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong); color: var(--primary); transform: rotate(90deg); }
   .dm-home .dm-home-range-guide[open] > summary .dm-pl-lg { box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong); color: var(--primary); transform: rotate(45deg); }
-  .dm-home .dm-home-range-card { margin-top: 3.25rem; }
+  .dm-home .dm-home-range-guide > summary:active .dm-pl-lg { transform: rotate(90deg) scale(0.94); }
+  .dm-home .dm-home-range-guide[open] > summary:active .dm-pl-lg { transform: rotate(45deg) scale(0.94); }
+  .dm-home .dm-rg-pad { padding: 3.25rem 0 2.5rem; }
+  /* The lesson and its How it works open by height (V4 .sx-dp) and their content arrives from a soft blur; the slider
+     leaves at once when the lesson folds (the card fades out over it, and a folded lesson exposes no control). */
+  .dm-home :is(.dm-home-range-guide, .dm-sim-details) { interpolate-size: allow-keywords; }
+  .dm-home :is(.dm-home-range-guide, .dm-sim-details)::details-content { display: flow-root; block-size: 0; overflow: clip; transition: block-size 0.4s var(--e-enter), content-visibility 0.4s var(--e-enter) allow-discrete; }
+  .dm-home :is(.dm-home-range-guide, .dm-sim-details)[open]::details-content { block-size: auto; transition: block-size 0.4s var(--e-enter); }
+  .dm-home :is(.dm-home-range-guide > .dm-rg-pad, .dm-sim-details > p) { opacity: 0; transform: translateY(-0.25rem); filter: blur(0.1875rem); transition: opacity 0.22s var(--e-std), transform 0.3s var(--e-enter), filter 0.25s var(--e-std); }
+  .dm-home :is(.dm-home-range-guide[open] > .dm-rg-pad, .dm-sim-details[open] > p) { opacity: 1; transform: none; filter: none; transition: opacity 0.3s var(--e-std) 0.07s, transform 0.45s var(--e-enter) 0.07s, filter 0.35s var(--e-std) 0.07s; }
+  .dm-home .dm-home-range-guide:not([open]) .dm-sim-input { visibility: hidden; }
+  @starting-style { .dm-home :is(.dm-home-range-guide[open] > .dm-rg-pad, .dm-sim-details[open] > p) { opacity: 0; transform: translateY(-0.25rem); filter: blur(0.1875rem); } }
   .dm-home .dm-home-range-guide .dm-sim[data-sim-compact] { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "head read" "stage stage" "mix mix" "how how"; align-items: start; column-gap: 1.5rem; min-width: 0; padding: 1.75rem 1.75rem 1.375rem; overflow: visible; border: 0; border-radius: 1.625rem; background: var(--v4-card-lift), var(--card); box-shadow: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 var(--v4-w06), var(--v4-card-drop); }
+  .dm-home .dm-home-range-guide .dm-sim[data-sim-compact] { min-height: 35rem; grid-template-rows: auto auto 1fr auto; }
   .dm-home .dm-sim[data-sim-compact] :is(.dm-sim-grid, .dm-sim-explore) { display: contents; }
   .dm-home .dm-sim[data-sim-compact] .dm-sim-heading { grid-area: head; display: block; padding: 0; }
   .dm-home .dm-sim[data-sim-compact] .dm-sim-title { margin: 0; font-family: var(--font-display); font-size: 2.125rem; font-weight: 400; line-height: 1; letter-spacing: -0.02em; color: var(--fg); }
-  .dm-home .dm-sim[data-sim-compact] .dm-sim-heading > p { margin: 0.5rem 0 0; color: var(--subtle); font-size: 0.875rem; line-height: 1.4; }
+  .dm-home .dm-sim[data-sim-compact] .dm-sim-heading > p { margin: 0.5rem 0 0; color: var(--subtle); font-size: 0.875rem; line-height: normal; }
   .dm-home .dm-sim-readout { grid-area: read; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.5rem; min-height: 0; }
   .dm-home .dm-sim-chip, .dm-home .dm-sim-readout > .dm-pill { display: inline-flex; align-items: center; gap: 0.5rem; height: 2.125rem; padding: 0 0.875rem 0 0.5rem; border-radius: 999px; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); font-size: 0.84375rem; font-weight: 500; line-height: 1; white-space: nowrap; }
   .dm-home .dm-sim-readout > .dm-pill { padding: 0 0.875rem 0 0.75rem; transition: color 0.3s var(--e-std), background-color 0.3s var(--e-std), box-shadow 0.3s var(--e-std); }
   .dm-home .dm-sim-readout[data-sim-earning="yes"] > .dm-pill { background: rgb(95 208 154 / 0.08); box-shadow: inset 0 0 0 1px rgb(95 208 154 / 0.25); color: var(--money-in); }
-  .dm-home .dm-sim-stage { grid-area: stage; --h: 17.5rem; --axis: 3.75rem; margin-top: 0.625rem; }
-  .dm-home .dm-sim-dots { inset: 0 0 var(--axis); background-image: radial-gradient(circle, rgb(255 214 186 / 0.3) 0 1px, transparent 1.5px); background-size: 0.8125rem 0.8125rem; mask-image: radial-gradient(circle 10.625rem at calc(var(--k) + var(--x, 0.5) * (100% - 2 * var(--k))) 75%, #000, rgb(0 0 0 / 0.4) 50%, transparent); }
+  .dm-home .dm-sim-readout > .dm-pill > .dm-pill-dot { --dot-fill: var(--faint); box-shadow: none; transition: background-color 0.3s var(--e-std); }
+  .dm-home .dm-sim-readout[data-sim-earning="yes"] > .dm-pill > .dm-pill-dot { --dot-fill: var(--money-in); }
+  .dm-home .dm-sim-stage { grid-area: stage; --h: 19.375rem; --axis: 3.75rem; margin: 0.625rem 1.125rem 0; }
+  .dm-home .dm-sim-stage::before { content: ''; position: absolute; inset: 0 -1.125rem; border-radius: 1rem; pointer-events: none; }
+  .dm-home .dm-sim-stage:has(.dm-sim-input:focus-visible)::before { outline: 0.125rem solid var(--primary); outline-offset: 0.375rem; }
+  .dm-home .dm-sim-input:focus-visible ~ .dm-sim-art .dm-sim-knob { outline: none; }
+  .dm-home .dm-sim-input:active { cursor: grabbing; }
+  .dm-home .dm-sim-dots { left: var(--k); right: var(--k); top: 0; bottom: var(--axis); background-image: radial-gradient(circle, rgb(255 214 186 / 0.3) 0 0.0625rem, transparent 0.09375rem); background-size: 0.8125rem 0.8125rem; mask-image: radial-gradient(closest-side, #000, rgb(0 0 0 / 0.4) 50%, transparent); mask-size: 21.25rem 21.25rem; mask-repeat: no-repeat; mask-position: calc(var(--x) * 100% + (var(--x) - 0.5) * 21.25rem) 50%; }
+  /* While the journey plays the light moves in short even steps and glides between them; after the visitor steered it,
+     it glides home (V4 .is-play, .is-glide); while the visitor holds it, it answers at once. */
+  .dm-home [data-sim-running="yes"] .dm-sim-now { transition: left 0.16s linear; }
+  .dm-home [data-sim-running="yes"] .dm-sim-dots { transition: mask-position 0.16s linear; }
+  .dm-home [data-sim-glide] .dm-sim-now { transition: left 0.9s var(--e-drift); }
+  .dm-home [data-sim-glide] .dm-sim-dots { transition: mask-position 0.9s var(--e-drift); }
   .dm-home .dm-sim-band { top: 0; overflow: hidden; border: 0; border-radius: 0.375rem 0.375rem 0 0; background: linear-gradient(180deg, rgb(255 157 98 / 0), rgb(255 157 98 / 0.06) 55%, rgb(255 157 98 / 0.16)); box-shadow: inset 1px 0 0 rgb(255 157 98 / 0.3), inset -1px 0 0 rgb(255 157 98 / 0.3); opacity: 0.55; transition: opacity 0.5s var(--e-std); }
   .dm-home .dm-sim-band::before { content: ''; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(180deg, rgb(255 157 98 / 0.02), rgb(255 157 98 / 0.14) 50%, rgb(255 157 98 / 0.34)), radial-gradient(60% 40% at 50% 100%, rgb(255 190 146 / 0.35), rgb(255 157 98 / 0)); box-shadow: inset 1px 0 0 rgb(255 177 127 / 0.75), inset -1px 0 0 rgb(255 177 127 / 0.75); opacity: 0; transition: opacity 0.5s var(--e-std); }
   .dm-home [data-sim-stage="inside"] .dm-sim-band, .dm-home [data-sim-stage="inside"] .dm-sim-band::before { opacity: 1; }
-  .dm-home .dm-sim-band-label { top: 1rem; left: 50%; translate: -50% 0; color: var(--subtle); font-size: 0.8125rem; font-weight: 500; line-height: 1.2; transition: color 0.4s var(--e-std); }
+  .dm-home .dm-sim-band-label { top: 1rem; left: 50%; translate: -50% 0; color: var(--subtle); font-size: 0.8125rem; font-weight: 500; line-height: normal; transition: color 0.4s var(--e-std); }
   .dm-home [data-sim-stage="inside"] .dm-sim-band-label { color: var(--primary-hover); }
   .dm-home .dm-sim-glint { position: absolute; bottom: 0.375rem; width: 0.1875rem; height: 0.1875rem; border-radius: 50%; background: #ffd2b0; box-shadow: 0 0 0.375rem 1px rgb(255 157 98 / 0.6); opacity: 0; }
-  .dm-home [data-sim-running="yes"] [data-sim-stage="inside"] .dm-sim-glint { animation: dm-home-glint 3.8s var(--e-std) infinite; }
-  .dm-home .dm-sim-axis { height: 1px; background: rgb(255 236 220 / 0.16); }
-  .dm-home .dm-sim-tick { color: var(--subtle); font-size: 0.78125rem; font-weight: 500; line-height: 1.2; }
-  .dm-home .dm-sim-tick::before { content: ''; position: absolute; left: 50%; top: -0.875rem; width: 1px; height: 0.5rem; margin-left: -0.5px; background: rgb(255 236 220 / 0.3); }
+  .dm-home [data-sim-stage="inside"] .dm-sim-glint { animation: dm-home-glint 3.8s var(--e-std) infinite; }
+  .dm-home .dm-sim-axis { bottom: calc(var(--axis) - 0.0625rem); height: 0.0625rem; background: rgb(255 236 220 / 0.16); }
+  .dm-home .dm-sim-tick { top: calc(100% - var(--axis) + 1.125rem); color: var(--subtle); font-size: 0.78125rem; font-weight: 500; line-height: normal; }
+  .dm-home .dm-sim-tick::before { content: ''; position: absolute; left: 50%; top: -1.125rem; width: 0.0625rem; height: 0.5rem; margin-left: -0.03125rem; background: rgb(255 236 220 / 0.3); }
   .dm-home .dm-sim-now { top: 0; }
-  .dm-home .dm-sim-now::before { inset: 0 auto 0 -0.5px; width: 1px; background: linear-gradient(180deg, rgb(255 215 186 / 0), rgb(255 215 186 / 0.85) 40%, #ffd7ba); }
+  .dm-home .dm-sim-now::before { inset: 0 auto 0 -0.03125rem; width: 0.0625rem; background: linear-gradient(180deg, rgb(255 215 186 / 0), rgb(255 215 186 / 0.85) 40%, #ffd7ba); }
   .dm-home .dm-sim-now::after { content: ''; position: absolute; left: -2.5rem; width: 5rem; top: 20%; bottom: 0; background: radial-gradient(50% 60% at 50% 100%, rgb(255 157 98 / 0.22), rgb(255 157 98 / 0)); opacity: 0.4; transition: opacity 0.4s var(--e-std); }
   .dm-home [data-sim-stage="inside"] .dm-sim-now::after { opacity: 1; }
   /* The knob keeps its centre on the price line and the axis (the slider's thumb is under it, render.test). */
   .dm-home .dm-sim-knob, .dm-home [data-sim-stage="inside"] .dm-sim-knob { left: -1.0625rem; bottom: -0.625rem; width: 2.125rem; height: 1.25rem; border-radius: 999px; color: #24201c; background: linear-gradient(180deg, #f7f1ea, #e6dccf); box-shadow: inset 0 1px 0 rgb(255 250 244 / 0.6), 0 0 0 0.1875rem rgb(13 12 10 / 0.9); transition: transform 0.3s var(--e-enter), box-shadow 0.25s var(--e-std); }
-  .dm-home .dm-sim-knob > svg { width: 0.9375rem; height: 0.9375rem; }
+  .dm-home .dm-sim-knob > svg { width: 1rem; height: 0.75rem; }
   .dm-home .dm-sim-stage:hover .dm-sim-knob { transform: scale(1.07); box-shadow: inset 0 1px 0 rgb(255 250 244 / 0.6), 0 0 0 0.1875rem rgb(13 12 10 / 0.9), 0 0 0 0.25rem rgb(255 157 98 / 0.5); }
-  .dm-home .dm-sim-result { grid-area: mix; padding-top: 0.875rem; }
+  .dm-home .dm-sim-input:active ~ .dm-sim-art .dm-sim-knob { transform: scale(0.97); }
+  .dm-home .dm-sim-result { grid-area: mix; align-self: end; padding-top: 0.875rem; }
   .dm-home .dm-sim-mix-track { height: 0.375rem; background: rgb(255 236 220 / 0.11); }
-  .dm-home .dm-sim-mix-track > span { border-radius: 999px; background: linear-gradient(90deg, #f3ebe0, #e9dccb); }
+  .dm-home .dm-sim-mix-track > span { border-radius: 999px; background: linear-gradient(90deg, #f3ebe0, #e9dccb); transition: width 0.5s var(--e-enter); }
   .dm-home .dm-sim-split { gap: 0.75rem; margin-top: 0.75rem; }
   .dm-home .dm-sim-token { gap: 0.5rem; color: var(--muted); font-size: 0.84375rem; line-height: 1.3; white-space: nowrap; }
   .dm-home .dm-sim-pct { min-width: 0; color: var(--fg); font-size: 0.84375rem; font-weight: 500; }
   .dm-home .dm-sim-mix-label { display: block; color: var(--subtle); font-size: 0.78125rem; }
   .dm-home .dm-sim[data-sim-compact] .dm-sim-details { grid-area: how; margin: 0.875rem 0 0; padding: 0.375rem 0 0; border: 0; box-shadow: inset 0 1px 0 var(--line); }
-  .dm-home .dm-sim[data-sim-compact] .dm-sim-details > summary { justify-content: flex-start; gap: 0.625rem; width: fit-content; min-height: 2.25rem; padding: 0 0.625rem 0 0; border-radius: 0.625rem; color: var(--muted); font-size: 0.90625rem; font-weight: 500; line-height: 1.3; transition: color 0.18s var(--e-std); }
+  .dm-home .dm-sim[data-sim-compact] .dm-sim-details > summary { justify-content: flex-start; gap: 0.625rem; width: fit-content; min-height: 2.25rem; padding: 0 0.625rem 0 0; border-radius: 0.625rem; color: var(--fg); font-size: 1rem; font-weight: 400; line-height: normal; letter-spacing: normal; transition: color 0.18s var(--e-std), scale 0.1s var(--e-press); }
+  .dm-home .dm-sim[data-sim-compact] .dm-sim-details > summary:active { scale: 0.98; }
   .dm-home .dm-sim[data-sim-compact] .dm-sim-details > summary:hover { color: var(--fg); }
-  .dm-home .dm-sim-details > summary > span { width: 1.375rem; height: 1.375rem; border: 0; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--strong); color: var(--subtle); font-size: 0; background: linear-gradient(currentColor, currentColor) center / 0.5625rem 1.5px no-repeat, linear-gradient(currentColor, currentColor) center / 1.5px 0.5625rem no-repeat; rotate: none; transition: transform 0.35s var(--e-enter), box-shadow 0.2s var(--e-std), color 0.2s var(--e-std); }
+  .dm-home .dm-sim-details > summary > span { width: 1.375rem; height: 1.375rem; border: 0; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--strong); color: var(--subtle); font-size: 0; background: linear-gradient(currentColor, currentColor) center / 0.46875rem 0.078125rem no-repeat, linear-gradient(currentColor, currentColor) center / 0.078125rem 0.46875rem no-repeat; rotate: none; transition: transform 0.35s var(--e-enter), box-shadow 0.2s var(--e-std), color 0.2s var(--e-std); }
   .dm-home .dm-sim-details > summary:hover > span { box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong); color: var(--primary); }
   .dm-home .dm-sim-details[open] > summary > span { transform: rotate(45deg); box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong); color: var(--primary); }
   .dm-home .dm-sim[data-sim-compact] .dm-sim-details p { max-width: 70ch; margin: 2px 0 0.375rem; color: var(--subtle); font-size: 0.90625rem; line-height: 1.6; }
 
   /* ---- Stay informed. Stay in control. (V4 "cm"): calm topics whose line lights as you read ------------- */
-  .dm-home .dm-home-control { display: grid; grid-template-columns: 25rem minmax(0, 1fr); align-items: start; gap: 0 4.5rem; padding: 0 var(--gutter); border: 0; background: none; box-shadow: none; }
-  .dm-home .dm-home-control > .dm-sx-head { grid-column: 1 / -1; margin-bottom: 3.25rem; }
+  .dm-home .dm-home-control { display: block; padding: 0 var(--gutter); border: 0; background: none; box-shadow: none; }
+  /* V4 .cm-grid: 400px | 1fr with a 72px gap, 52px under the title, at least 420 design px tall at every width (narrower,
+     one column whose two rows share the spare height). */
+  .dm-home .dm-cm-grid { display: grid; grid-template-columns: 25rem minmax(0, 1fr); gap: 0 4.5rem; min-height: 26.25rem; margin-top: 3.25rem; }
+  .dm-home .dm-cm-grid > .dm-limits-grid { align-self: start; }
   .dm-home .dm-cm-side { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
   .dm-home .dm-home-control-intro { max-width: 34ch; margin: 0; color: var(--muted); font-size: 1.0625rem; line-height: 1.55; text-wrap: pretty; }
+  .dm-home .dm-cm-scene { position: relative; display: none; width: 25rem; height: 18.75rem; }
+  .dm-home .dm-cm-floor { position: absolute; left: 4.375rem; right: 4.375rem; top: 15.375rem; height: 0.0625rem; background: linear-gradient(90deg, rgb(255 236 220 / 0), rgb(255 236 220 / 0.14), rgb(255 236 220 / 0)); }
+
+  /* ---- The tile that travels (V4 "trav", HomeTraveller.tsx), from 1280px ---------------------------------- */
+  .dm-home > .dm-trav { position: absolute; left: 0; top: 0; z-index: 6; display: none; width: 6.5rem; height: 11.375rem; max-width: none; margin: 0; padding: 0; pointer-events: none; opacity: 0; transition: none; }
+  .dm-home > .dm-trav.is-ready { opacity: 1; transition: transform 1s var(--e-drift), opacity 0.5s var(--e-std); }
+  .dm-home .dm-tv-shadow { position: absolute; left: -0.75rem; top: 10.375rem; width: 8rem; height: 1.75rem; border-radius: 50%; background: radial-gradient(closest-side, rgb(0 0 0 / 0.78), rgb(0 0 0 / 0.32) 55%, rgb(0 0 0 / 0)); filter: blur(0.25rem); transition: transform 1s var(--e-drift), opacity 0.5s var(--e-std); }
+  .dm-home .dm-tv-hop { position: absolute; inset: 0; transform-origin: 50% 100%; }
+  .dm-home .dm-tv-act { position: absolute; inset: 0; transform-origin: 50% 100%; transition: transform 0.8s var(--e-drift); }
+  .dm-home .dm-tv-persp { position: relative; width: 6.5rem; height: 11.375rem; perspective: 45rem; }
+  .dm-home .dm-tv-3d { position: absolute; inset: 0; transform-style: preserve-3d; transform: rotateX(6deg) rotateY(-18deg) rotateZ(-7deg); transition: transform 1s var(--e-drift); }
+  .dm-home .dm-tv-slab { position: absolute; inset: 0; border-radius: 1.0625rem; }
+  .dm-home .dm-tv-y1 { transform: translateZ(-0.125rem); background: #ec8549; }
+  .dm-home .dm-tv-y2 { transform: translateZ(-0.25rem); background: #e27d43; }
+  .dm-home .dm-tv-y3 { transform: translateZ(-0.375rem); background: #d8753e; }
+  .dm-home .dm-tv-y4 { transform: translateZ(-0.5rem); background: #cd6d39; }
+  .dm-home .dm-tv-y5 { transform: translateZ(-0.625rem); background: #c06534; }
+  .dm-home .dm-tv-y6 { transform: translateZ(-0.75rem); background: #b05c2f; }
+  .dm-home .dm-tv-y7 { transform: translateZ(-0.875rem); background: #9c522a; }
+  .dm-home .dm-tv-y8 { transform: translateZ(-1rem); background: #7c4223; box-shadow: 0 1.25rem 2.5rem -0.5rem rgb(0 0 0 / 0.6); }
+  .dm-home .dm-tv-face { position: absolute; inset: 0; overflow: hidden; border-radius: 1.0625rem; transform: translateZ(1px); background: linear-gradient(158deg, #ffc39c 0%, #ffa771 30%, #ff9d62 55%, #f28a4c 100%); box-shadow: inset 0 1.5px 0 rgb(255 240 228 / 0.7), inset 0 0 0 1px rgb(255 220 196 / 0.35), inset 0 -0.25rem 0.625rem rgb(130 52 14 / 0.35); }
+  .dm-home .dm-tv-groove { position: absolute; left: 0.625rem; right: 0.625rem; top: 50%; height: 2px; margin-top: -1px; border-radius: 2px; background: rgb(84 34 8 / 0.55); box-shadow: 0 1px 0 rgb(255 226 204 / 0.55); }
+  .dm-home .dm-tv-pip { position: absolute; width: 1.125rem; height: 1.125rem; margin: -0.5625rem 0 0 -0.5625rem; border-radius: 50%; background: radial-gradient(circle at 50% 38%, #1a110b, #3b2416 70%, #4a2c1a); box-shadow: inset 0 2px 0.1875rem rgb(0 0 0 / 0.65), 0 1px 0 rgb(255 228 206 / 0.65); }
+  .dm-home .dm-tv-pip::after { content: ''; position: absolute; inset: 0.1875rem; border-radius: 50%; background: radial-gradient(circle at 50% 40%, #fff0e2, #ffb07f 55%, rgb(255 157 98 / 0.35)); box-shadow: 0 0 0.5rem rgb(255 157 98 / 0.7); opacity: 0; transition: opacity 0.6s var(--e-std); }
+  .dm-home .dm-tv-q1 { left: 31%; top: 15%; }
+  .dm-home .dm-tv-q2 { left: 69%; top: 35%; }
+  .dm-home .dm-tv-q3 { left: 28%; top: 62%; }
+  .dm-home .dm-tv-q4 { left: 50%; top: 75%; }
+  .dm-home .dm-tv-q5 { left: 72%; top: 88%; }
+  .dm-home .dm-tv-glare { position: absolute; inset: 0; background-image: radial-gradient(closest-side, rgb(255 247 238 / 0.7), rgb(255 247 238 / 0.18) 45%, rgb(255 247 238 / 0)); background-size: 14.5rem 14.5rem; background-repeat: no-repeat; background-position: -3.75rem -6rem; mix-blend-mode: soft-light; transition: background-position 1s var(--e-drift); }
+  .dm-home .dm-tv-glare2 { position: absolute; inset: 0; background-image: radial-gradient(closest-side, rgb(255 247 238 / 0.32), rgb(255 247 238 / 0)); background-size: 8.25rem 8.25rem; background-repeat: no-repeat; background-position: -2.5rem -4.375rem; mix-blend-mode: screen; transition: background-position 1s var(--e-drift); }
+  .dm-home .dm-tv-shade { position: absolute; inset: 0; background: rgb(26 12 4 / 0.5); opacity: 0; transition: opacity 0.5s var(--e-std); }
+  /* Arrival: a small carried lift while it crosses the page (hop-a/hop-b restart it). */
+  .dm-home .dm-trav.is-ready .dm-tv-hop.hop-a { animation: dm-tv-hop-a 1s var(--e-std) both; }
+  .dm-home .dm-trav.is-ready .dm-tv-hop.hop-b { animation: dm-tv-hop-b 1s var(--e-std) both; }
+  .dm-home .dm-trav.is-ready .dm-tv-shadow.hop-a { animation: dm-tv-sh-a 1s var(--e-std) both; }
+  .dm-home .dm-trav.is-ready .dm-tv-shadow.hop-b { animation: dm-tv-sh-b 1s var(--e-std) both; }
+  /* What it does in each place, while the reader is there (a/b names restart a story). */
+  .dm-home .dm-trav.at-fund.live.fp-a .dm-tv-act { animation: dm-tv-nod-a 4s linear both; }
+  .dm-home .dm-trav.at-fund.live.fp-b .dm-tv-act { animation: dm-tv-nod-b 4s linear both; }
+  .dm-home .dm-trav.at-fn.m-compound .dm-tv-pip::after { opacity: 0.55; }
+  .dm-home .dm-trav.at-fn.live.m-compound .dm-tv-act { animation: dm-tv-settle-a 3.2s linear both; }
+  .dm-home .dm-trav.at-fn.live.m-compound .dm-tv-pip::after { animation: dm-tv-glow-a 1.6s var(--e-std) both; }
+  .dm-home .dm-trav.at-fn.live.fk-b.m-compound .dm-tv-act { animation-name: dm-tv-settle-b; }
+  .dm-home .dm-trav.at-fn.live.fk-b.m-compound .dm-tv-pip::after { animation-name: dm-tv-glow-b; }
+  .dm-home .dm-trav.at-fn.live.m-compound .dm-tv-q1::after { animation-delay: 1.95s; }
+  .dm-home .dm-trav.at-fn.live.m-compound .dm-tv-q2::after { animation-delay: 2.05s; }
+  .dm-home .dm-trav.at-fn.live.m-compound .dm-tv-q3::after { animation-delay: 2.15s; }
+  .dm-home .dm-trav.at-fn.live.m-compound .dm-tv-q4::after { animation-delay: 2.25s; }
+  .dm-home .dm-trav.at-fn.live.m-compound .dm-tv-q5::after { animation-delay: 2.35s; }
+  .dm-home .dm-trav.at-fn.live.m-domino .dm-tv-act { animation: dm-tv-lean-a 3.2s linear both; }
+  .dm-home .dm-trav.at-fn.live.fk-b.m-domino .dm-tv-act { animation-name: dm-tv-lean-b; }
+  .dm-home .dm-trav.at-fn.live.m-exit .dm-tv-act { animation: dm-tv-tip-a 3.6s linear both; }
+  .dm-home .dm-trav.at-fn.live.fk-b.m-exit .dm-tv-act { animation-name: dm-tv-tip-b; }
+  /* Once Auto-exit closes the position, the tile dims like a closed position does in the range and calm scenes. */
+  .dm-home .dm-trav.at-fn.m-exit .dm-tv-shade { opacity: 0.55; }
+  .dm-home .dm-trav.at-fn.live.m-exit .dm-tv-shade { animation: dm-tv-close-a 0.6s var(--e-std) 1.7s both; }
+  .dm-home .dm-trav.at-fn.live.fk-b.m-exit .dm-tv-shade { animation-name: dm-tv-close-b; }
+  /* In your range it is your position: lit while the price is inside, dark while it is outside. */
+  .dm-home:has(.dm-sim:is([data-sim-state="above"], [data-sim-state="below"])) > .dm-trav.at-range .dm-tv-shade { opacity: 1; }
+  .dm-home:has(.dm-sim[data-sim-state="inside"]) > .dm-trav.at-range .dm-tv-pip::after { opacity: 0.32; }
+  /* The calm topics: dark for "outside", sinking for "can lose value", facing you for "permissions", lit for "compounding". */
+  .dm-home .dm-trav.at-calm.cm-0 .dm-tv-shade { opacity: 1; }
+  .dm-home .dm-trav.at-calm.cm-1 .dm-tv-act { transform: translateY(0.625rem) rotate(-6deg); }
+  .dm-home .dm-trav.at-calm.cm-1 .dm-tv-shadow { opacity: 0.55; }
+  .dm-home .dm-trav.at-calm.cm-2 .dm-tv-3d { transform: rotateX(4deg) rotateY(0deg) rotateZ(0deg); }
+  .dm-home .dm-trav.at-calm.cm-3 .dm-tv-pip::after { opacity: 0.7; }
+  @media (min-width: 1280px) {
+    .dm-home > .dm-trav { display: block; }
+    .dm-home .dm-funding-domino { display: none; }
+    .dm-home :is(.dm-fs-foot, .dm-rg-foot) { display: block; }
+    .dm-home .dm-cm-scene { display: block; }
+  }
+  /* Below the fold the hero's dotted texture continues, revealed only around the light (HomeLight.tsx moves the window
+     and shifts its dots back, so the dots stay fixed to the page). It lies under every section's content. */
+  .dm-home > .dm-home-zdots { position: absolute; left: 0; top: 0; z-index: -1; width: 40rem; height: 40rem; max-width: none; margin: 0; padding: 0; pointer-events: none; opacity: 0; background-image: radial-gradient(circle, rgb(255 214 186 / 0.24) 0 0.0625rem, transparent 0.09375rem); background-size: 0.8125rem 0.8125rem; mask-image: radial-gradient(closest-side, #000, rgb(0 0 0 / 0.4) 48%, transparent); mask-size: 100% 100%; mask-repeat: no-repeat; transition: transform 0.9s var(--e-drift), background-position 0.9s var(--e-drift), opacity 0.5s var(--e-std); }
+  @media not ((hover: hover) and (pointer: fine)) { .dm-home > .dm-home-zdots { display: none; } }
+  @media (forced-colors: active) { .dm-home > :is(.dm-home-zdots, .dm-trav) { display: none; } }
   .dm-home .dm-home-control .dm-limits-grid { display: flex; flex-direction: column; gap: 0; margin: 0; box-shadow: inset 0 1px 0 var(--line); }
   .dm-home .dm-limit { display: block; padding: 0; border: 0; border-radius: 0; background: linear-gradient(90deg, rgb(255 157 98 / 0.75), rgb(255 157 98 / 0.18)) left bottom / 0% 1px no-repeat; box-shadow: inset 0 -1px 0 var(--line); transition: background-size 0.3s var(--e-std); }
   .dm-home .dm-limit:is(:hover, [open]) { background-size: 100% 1px; transition: background-size 0.9s var(--e-enter); }
+  /* A glint on the hovered topic's line follows the light (V4 .rk-line::after; HomeLight.tsx writes --gx on the list). */
+  .dm-home .dm-limit { position: relative; }
+  .dm-home .dm-limit::after { content: ''; position: absolute; left: 0; bottom: -1px; width: 13.75rem; height: 0.1875rem; margin-left: -6.875rem; border-radius: 2px; background: radial-gradient(closest-side, rgb(255 226 204 / 0.95), rgb(255 157 98 / 0)); opacity: 0; transform: translateX(var(--gx, -25rem)); pointer-events: none; transition: opacity 0.25s var(--e-std), transform 0.5s var(--e-drift); }
+  .dm-home .dm-limit:hover::after { opacity: 1; }
   .dm-home .dm-home-control .dm-limit > summary { display: flex; align-items: center; gap: 1.125rem; min-height: 5.25rem; padding: 0 0.875rem; border-radius: 0.875rem; cursor: pointer; list-style: none; transition: background-color 0.2s var(--e-std); }
   .dm-home .dm-limit > summary::-webkit-details-marker { display: none; }
   .dm-home .dm-limit > summary:hover { background: var(--v4-w03); }
@@ -367,7 +675,7 @@
   .dm-home .dm-limit > summary:hover > .i-chev-r { background: var(--v4-w06); color: var(--fg); }
   .dm-home .dm-limit[open] > summary > .i-chev-r { rotate: 90deg; color: var(--fg); }
   .dm-home .dm-limit-body { max-width: 52ch; margin: 0 0 1.625rem 3.75rem; padding: 0; color: var(--muted); font-size: 1rem; line-height: 1.6; text-wrap: pretty; }
-  @media (hover: none) { .dm-home .dm-limit:hover:not([open]) { background-size: 0% 1px; } }
+  @media (hover: none) { .dm-home .dm-limit:hover:not([open]) { background-size: 0% 1px; } .dm-home .dm-limit::after { display: none; } }
 
   /* ---- Narrower screens --------------------------------------------------------------------------------- */
   /* A coarse pointer below 1280 has the headline's column and the stage, not the prototype's zoom: the headline steps down. */
@@ -379,32 +687,67 @@
     .dm-home .dm-home-chapter-heading { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
     .dm-home .dm-home-automation-grid { grid-template-columns: minmax(0, 1fr); }
     .dm-home .dm-automation-story { grid-column: 1; }
-    .dm-home .dm-home-fx-stage { grid-column: 1; grid-row: 4; min-height: 0; height: 27.5rem; margin-top: 1rem; }
-    .dm-home .dm-automation-story-scene { top: auto; bottom: 0; width: 100%; height: 27.5rem; }
-    .dm-home .dm-home-control { grid-template-columns: minmax(0, 1fr); row-gap: 1.5rem; }
-    .dm-home .dm-home-control > .dm-sx-head { margin-bottom: 0.25rem; }
+    .dm-home .dm-home-fx-stage { grid-column: 1; grid-row: 4; min-height: 0; margin-top: 2rem; padding: 1.5rem 0; }
+    .dm-home .dm-automation-story-scene { top: auto; bottom: 0; width: 100%; height: calc(27.5rem * var(--fx-s) + 3rem); padding-top: 1.5rem; }
+    /* The traveller rests; a still tile stands in the functions stage, where it carries the story. */
+    .dm-home .dm-fx-foot, .dm-home .dm-fx-foot.is-away { opacity: 1; border-radius: 1.0625rem; transform: rotate(-7deg); background: linear-gradient(158deg, #ffc39c 0%, #ffa771 30%, #ff9d62 55%, #f28a4c 100%); box-shadow: inset 0 1.5px 0 rgb(255 240 228 / 0.7), inset 0 -0.25rem 0.625rem rgb(130 52 14 / 0.35), 0 1.125rem 1.875rem -0.75rem rgb(0 0 0 / 0.75); }
+    .dm-home .dm-home-automation-grid:is([data-fx-mode="domino"], [data-fx-mode="exit"]) .dm-fx-foot { transform: translateX(-6.5rem) rotate(-7deg); }
+    .dm-home .dm-fx-foot::after { display: none; }
+    .dm-home .dm-fx-foot .dm-foot-groove { position: absolute; display: block; left: 0.75rem; right: 0.75rem; top: 50%; height: 2px; margin-top: -1px; border-radius: 1px; background: rgb(84 34 8 / 0.55); }
+    .dm-home .dm-fx-foot .dm-foot-pip { position: absolute; display: block; width: 1rem; height: 1rem; margin: -0.5rem 0 0 -0.5rem; border-radius: 50%; background: radial-gradient(circle at 50% 38%, #1a110b, #3b2416 70%, #4a2c1a); }
+    .dm-home .dm-foot-p1 { left: 31%; top: 15%; }
+    .dm-home .dm-foot-p2 { left: 69%; top: 35%; }
+    .dm-home .dm-foot-p3 { left: 28%; top: 62%; }
+    .dm-home .dm-foot-p4 { left: 50%; top: 75%; }
+    .dm-home .dm-foot-p5 { left: 72%; top: 88%; }
+    .dm-home .dm-cm-grid { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
   }
+  @media (max-width: 1000px) { .dm-home .dm-home-automation-grid { --fx-s: 0.9; } }
+  /* The funding scene steps down a little where it would leave its card (V4 .fs-scene zoom; the tile's place scales too). */
+  @media (min-width: 1280px) and (max-width: 1343px) { .dm-home .dm-funding-scene { zoom: 0.92; } }
+  @media (min-width: 768px) and (max-width: 1000px) and (pointer: fine) { .dm-home .dm-funding-scene { zoom: 0.84; } }
   /* The funding scene's compact form, where its 50rem would not fit: the networks wrap as a row of chips above the
      wallet-to-position half of the drawing, cropped and scaled to the card. */
   @media (max-width: 767px), (max-width: 1023px) and (pointer: coarse) {
     .dm-home .dm-funding-demonstration { padding: 1.5rem 0.875rem; overflow: hidden; }
     .dm-home .dm-funding-switch { grid-template-columns: 1fr 1fr; width: 100%; }
     .dm-home .dm-funding-thumb { width: calc(50% - 0.25rem); }
-    .dm-home .dm-funding-switch button { height: 2.75rem; font-size: 0.78125rem; }
+    .dm-home .dm-funding-switch button { height: 2.75rem; font-size: 0.78125rem; white-space: normal; line-height: 1.15; }
     .dm-home .dm-funding-scene { width: auto; height: auto; margin: 0.875rem 0 0; overflow: hidden; }
     .dm-home .dm-funding-networks { position: static; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 0.5rem 0.375rem; width: auto; height: auto; }
     .dm-home [data-funding-mode="local"] .dm-funding-networks { justify-content: flex-start; }
     .dm-home .dm-funding-art { position: relative; inset: auto; width: calc(100% * 800 / 532); height: auto; aspect-ratio: 800 / 300; margin: 0.625rem 0 0 calc(-100% * 268 / 532); }
-    .dm-home :is(.dm-funding-route, .dm-funding-dot-w:not(.dm-funding-dot-step), .dm-funding-label, .dm-funding-small) { display: none; }
-    .dm-home .dm-funding-mobile-stages { display: flex; justify-content: space-between; gap: 0.5rem; margin-top: 0.625rem; color: var(--subtle); font-size: 0.78125rem; font-weight: 500; white-space: nowrap; }
+    /* Phones draw the wallet-to-position half at a fixed .56 (.48 under 360px), centred, lifted 22px (V4 phone polish). */
+    @media (max-width: 859px) {
+      .dm-home .dm-funding-art { width: 28rem; margin: -0.5rem 0 -1.5625rem calc(50% - 18.6875rem); }
+    }
+    @media (max-width: 359px) {
+      .dm-home .dm-funding-art { width: 24rem; margin: -0.3125rem 0 -1.3125rem calc(50% - 16rem); }
+    }
+    /* The chips stay above the drawing's empty top, so they keep the pointer. */
+    .dm-home .dm-funding-networks { position: relative; inset: auto; z-index: 1; }
+    /* On this network the dimmed four lead the same wrapping row as the current one (the drawing starts its own line). */
+    .dm-home [data-funding-mode="local"] .dm-funding-scene { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.375rem; }
+    .dm-home .dm-funding-ghosts { display: contents; }
+    .dm-home [data-funding-mode="local"] :is(.dm-funding-networks, .dm-funding-art) { flex: none; }
+    .dm-home [data-funding-mode="local"] .dm-funding-art { margin-top: 0.125rem; }
+    @media (max-width: 859px) { .dm-home [data-funding-mode="local"] .dm-funding-art { margin-top: -1rem; } }
+    @media (max-width: 359px) { .dm-home [data-funding-mode="local"] .dm-funding-art { margin-top: -0.8125rem; } }
+    .dm-home :is(.dm-funding-route, .dm-funding-dot-w:not(.dm-funding-dot-step), .dm-funding-label) { display: none; }
+    .dm-home .dm-funding-mobile-stages { display: flex; justify-content: space-between; gap: 0.5rem; margin-top: 0.625rem; color: var(--subtle); font-size: 0.78125rem; font-weight: 500; line-height: normal; white-space: nowrap; }
   }
   /* Phones (the prototype's phone polish): one column, the tile above the headline, 44px controls. */
   @media (max-width: 767px), (max-width: 859px) and (pointer: coarse) {
-    .dm-page.dm-home { --home-space: 6rem; padding-bottom: 6rem; }
+    .dm-page.dm-home { --home-space: 6rem; padding-bottom: 2rem; }
+    .dm-home .dm-home-pools { margin-top: 2.25rem; }
     .dm-home .dm-home-funding { margin-top: 4.5rem; }
-    .dm-home .dm-v3-hero { grid-template-columns: minmax(0, 1fr); gap: 0; padding-top: 0.5rem; }
+    .dm-home .dm-v3-hero { grid-template-columns: minmax(0, 1fr); gap: 0; padding-top: 0; }
     .dm-home .dm-v3-hero .dm-hero-band { order: -1; height: 15.625rem; }
     .dm-home .dm-tile-persp { transform: scale(0.62); }
+    /* The phone's rest pose (the light rests just above-left of the tile; nothing turns it on a touch screen). */
+    .dm-home .dm-tile-3d { transform: rotateX(9.4deg) rotateY(-20.3deg) rotateZ(-7deg); }
+    .dm-home .dm-tile-glare { background-position: -12.5rem -16.5625rem; }
+    .dm-home .dm-tile-glare2 { background-position: -6.875rem -10.9375rem; }
     .dm-home .dm-tile-shadow { bottom: 0.6875rem; width: 9.25rem; height: 1.5625rem; margin-left: -4.625rem; }
     .dm-home .dm-hero-title { font-size: clamp(3.5rem, 17vw, 7.5rem); }
     .dm-home .dm-ln-2, .dm-home .dm-sx-l2 { padding-left: 0.5em; }
@@ -416,19 +759,22 @@
     .dm-home .dm-mq-pair { font-size: 1.625rem; }
     .dm-home .dm-funding-grid, .dm-home .dm-home-automation-grid { margin-top: 1.75rem; }
     .dm-home .dm-funding-grid { gap: 1.5rem; }
-    .dm-home .dm-home-fx-stage { height: 20rem; }
-    .dm-home .dm-automation-story-scene { height: 20rem; padding: 0.75rem; }
-    .dm-home .dm-automation-story { min-height: 0; padding: 1.125rem 1rem 1rem 1.625rem; }
-    .dm-home .dm-automation-story-copy::before { left: -0.875rem; }
+    .dm-home .dm-home-automation-grid { --fx-s: 0.56; }
+    .dm-home .dm-home-fx-stage { padding: 1.5rem 0.875rem; overflow: hidden; }
+    .dm-home .dm-fx-lb { font-size: 1.5rem; }
+    .dm-home .dm-fx-lb-x1 { top: 5.25rem; }
+    .dm-home .dm-automation-story { min-height: 11.5rem; padding: 1.125rem 1rem 1rem 1.625rem; }
+    .dm-home .dm-automation-story-copy::before { left: -0.75rem; top: 1.3125rem; }
     .dm-home .dm-automation-story-copy h3 { font-size: 2rem; }
     .dm-home .dm-automation-story-actions > a, .dm-home .dm-automation-story-actions summary { height: 2.75rem; white-space: nowrap; }
     .dm-home .dm-funding-details > summary, .dm-home .dm-sim[data-sim-compact] .dm-sim-details > summary { min-height: 2.75rem; white-space: nowrap; }
-    .dm-home .dm-home-range-card { margin-top: 1.75rem; }
-    .dm-home .dm-home-range-guide .dm-sim[data-sim-compact] { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "read" "stage" "mix" "how"; row-gap: 0.875rem; padding: 1.375rem 0.875rem 1.125rem; }
-    .dm-home .dm-sim-readout { justify-content: flex-start; }
-    .dm-home .dm-sim-stage { --h: 14rem; margin-top: 0; }
+    .dm-home .dm-rg-pad { padding: 1.75rem 0 1.5rem; }
+    .dm-home .dm-home-range-guide .dm-sim[data-sim-compact] { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "read" "stage" "mix" "how"; grid-template-rows: none; row-gap: 0; min-height: 0; padding: 1.75rem 0.875rem 1.375rem; }
+    .dm-home .dm-sim-readout { justify-content: flex-start; margin-top: 0.875rem; }
+    .dm-home .dm-sim-stage { --h: 18.125rem; --axis: 2.5rem; margin: 0.625rem 1.125rem 0; }
     .dm-home .dm-sim-band-label { font-size: 0.75rem; white-space: nowrap; }
-    .dm-home .dm-sim-result { padding-top: 0.25rem; }
+    .dm-home .dm-sim-result { align-self: auto; margin-top: 1.125rem; padding-top: 0.875rem; }
+    .dm-home .dm-sim[data-sim-compact] .dm-sim-details { margin-top: 0.875rem; }
     .dm-home .dm-sim-mix-label { display: none; }
     .dm-home .dm-home-control .dm-limit > summary { gap: 0.875rem; min-height: 4.5rem; padding: 0.875rem 0.5rem 0.875rem 0.375rem; }
     .dm-home .dm-home-control .dm-limit .dm-subtitle { font-size: 1.4375rem; text-wrap: balance; }
@@ -436,14 +782,23 @@
     .dm-home .dm-mkt-table--home > .dm-table-head { padding: 1rem 0.625rem 0.875rem 0.75rem; row-gap: 0.75rem; }
     .dm-home .dm-mkt-table--home .dm-table-head h2 { font-size: 1.75rem; }
   }
-  @media (max-width: 359px) { .dm-home .dm-sx-l { white-space: normal; } }
+  /* 768-859px with a fine pointer keeps the desktop form; the calm list still ends 96px above the footer (V4 .cm.sx). */
+  @media (min-width: 768px) and (max-width: 859px) and (pointer: fine) { .dm-page.dm-home { padding-bottom: 2rem; } }
+  @media (max-width: 359px) {
+    .dm-home .dm-sx-l { white-space: normal; }
+    .dm-home .dm-home-automation-grid { --fx-s: 0.5; }
+  }
+  /* A thumb keeps 44px on the link pills (audit E23; the prototype's phone .more is 38px plus its 3px frame). */
+  @media (max-width: 767px), (pointer: coarse) { .dm-home :is(.dm-home-more, .dm-mkt-table--home .dm-table-head .dm-btn) { height: 2.75rem; } }
 
   /* Home's phone table: each pool a tile, its figures labelled (the table's header leaves layout with its controls). */
   @media (max-width: 767px), (max-width: 1023px) and (pointer: coarse) {
     .dm-home .dm-mkt-table--home { padding: 0.25rem 0 0.375rem; }
     .dm-home .dm-mkt-table--home .dm-table thead { display: none; }
     .dm-home .dm-mkt-table--home :is(.dm-table, .dm-table tbody) { display: block; width: 100%; }
-    .dm-home .dm-mkt-table--home .dm-table tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) auto 2.75rem; grid-template-areas: "pair apr info" "tvl volume volume"; align-items: center; gap: 0.5rem; margin-top: 2px; padding: 0.75rem 0.75rem; border-radius: 0.875rem; transition: background-color 0.18s var(--e-std); }
+    .dm-home .dm-mkt-table--home .dm-table tbody::before { display: none; }
+    .dm-home .dm-mkt-table--home .dm-table tbody td:first-child::before { display: none; }
+    .dm-home .dm-mkt-table--home .dm-table tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) auto 2.75rem; grid-template-areas: "pair apr info" "tvl volume volume"; align-items: center; gap: 0.5rem; margin-top: 2px; padding: 0.625rem 0.75rem; border-radius: 0.875rem; transition: background-color 0.18s var(--e-std); }
     .dm-home .dm-mkt-table--home .dm-table tbody td, .dm-home .dm-mkt-table--home .dm-table tbody td:is(:first-child, :last-child) { display: block; width: auto; height: auto; min-width: 0; padding: 0; border-radius: 0; background: transparent; font-size: 0.875rem; line-height: 1.4; }
     .dm-home .dm-mkt-table--home .dm-table tbody td:first-child { grid-area: pair; }
     .dm-home .dm-mkt-table--home .dm-table tbody td:nth-child(3) { grid-area: tvl; }
@@ -453,12 +808,21 @@
     .dm-home .dm-mkt-table--home .dm-table tbody tr:is(:hover, :focus-within) { background: var(--v4-w045); }
     .dm-home .dm-mkt-table--home .dm-table tbody tr:is(:hover, :focus-within) td, .dm-home .dm-mkt-table--home .dm-table tbody tr:hover td:first-child { background: transparent; }
     .dm-home .dm-mkt-table--home .dm-mkt-pool { gap: 0.625rem; }
+    @media (min-width: 375px) { .dm-home .dm-mkt-table--home :is(.dm-mkt-marks, [data-pool-catalogue] .dm-mkt-pool > span:first-child) { zoom: 1; } }
     .dm-home .dm-mkt-table--home .dm-mkt-name { font-size: 0.875rem; white-space: normal; overflow-wrap: anywhere; }
     .dm-home .dm-mkt-table--home :is(.dm-mkt-venue, [data-pool-catalogue] .dm-chip) { margin-top: 0.25rem; padding: 2px 0.3125rem; font-size: 0.75rem; }
+    /* The phone keeps both segments of the tag, as the prototype does (Markets' phone drops "Uniswap · "); under 375px the
+       fee alone stays, so it is never cut. */
+    @media (max-width: 374px) { .dm-home .dm-mkt-table--home :is(.dm-fee-venue, .dm-fee-sep) { display: none; } }
+    .dm-home .dm-mkt-table--home :is(.dm-fee-venue, .dm-fee-value) { padding: 2px 0.3125rem; }
+    @media (max-width: 374px) { .dm-home .dm-mkt-table--home .dm-fee-value { border-radius: 0.375rem; } }
+    /* One line, as the prototype's phone tag (it clips rather than wraps): a pool keeps its compact tile. */
+    .dm-home .dm-mkt-table--home :is(.dm-mkt-venue, [data-pool-catalogue] .dm-chip):has(> .dm-fee-venue) { width: auto; padding: 0; overflow: hidden; white-space: nowrap; }
     .dm-home .dm-mkt-table--home .dm-home-pool-label { display: block; color: var(--subtle); font-size: 0.75rem; font-weight: 400; line-height: 1.4; }
     .dm-home .dm-mkt-table--home .dm-table tbody td:is(:nth-child(3), :nth-child(4)) { display: flex; align-items: baseline; gap: 0.375rem; font-size: 0.8125rem; font-weight: 400; }
     .dm-home .dm-mkt-table--home .dm-table tbody td:nth-child(4) { justify-content: flex-end; }
-    .dm-home .dm-mkt-table--home .dm-table tbody td:nth-child(5) .dm-home-pool-label { margin-bottom: 2px; }
+    /* The APR reads beside the pool, without its label (V4 phone rows: the pool, then its green APR). */
+    .dm-home .dm-mkt-table--home .dm-table tbody td:nth-child(5) .dm-home-pool-label { display: none; }
     .dm-home .dm-mkt-table--home .dm-mkt-end .dm-icon-btn { width: 2.75rem; height: 2.75rem; }
     .dm-home .dm-mkt-table--home .dm-table tfoot, .dm-home .dm-mkt-table--home .dm-table tfoot tr { display: block; }
     .dm-home .dm-mkt-table--home .dm-table tfoot td { display: block; padding: 1.5rem 1rem; font-size: 0.875rem; }
@@ -469,6 +833,7 @@
   @media (prefers-reduced-motion: reduce) {
     .dm-home :is(.dm-sculpture-front, .dm-mq-track, .dm-zg-line, .dm-zg-head, .dm-zg-loop) { animation: none !important; }
     .dm-home .dm-funding-demonstration * { animation: none !important; transition: none !important; }
+    .dm-home :is(.dm-zswap > span, .dm-funding-label:is(.dm-zs-a, .dm-zs-b)) { filter: none !important; transform: none !important; }
     .dm-home .dm-tile-3d { transform: rotateX(6deg) rotateY(-18deg) rotateZ(-7deg) !important; transition: none; }
     .dm-home .dm-tile-shadow { transform: none !important; transition: none; }
     .dm-home :is(.dm-hero-sheen, .dm-sx-sh, .dm-tile-glare, .dm-tile-glare2) { transition-duration: 0.01ms !important; }
@@ -476,29 +841,79 @@
     .dm-home .dm-home-marquee { overflow-x: auto; mask-image: none; }
     .dm-home :is(.dm-mq-set + .dm-mq-set, .dm-mq-copy) { display: none; }
     .dm-home :is(.dm-funding-details, .dm-automation-story-actions details) > summary::after { transition-property: color, box-shadow !important; }
+    /* Every place shows its finished picture: nothing travels, nothing flies, the tile stands in its place and pose. */
+    .dm-home :is(.dm-tv-hop, .dm-tv-shadow, .dm-tv-act, .dm-tv-shade, .dm-fx-pl, .dm-fx-pd, .dm-gl-fill, .dm-gl-edge), .dm-home .dm-tv-pip::after { animation: none !important; }
+    .dm-home [data-sim-stage="inside"] .dm-sim-glint { opacity: 0.5; transform: translateY(-3.75rem); }
+    .dm-home :is(.dm-automation-story-actions > a, .dm-automation-story-actions summary, .dm-sim-details > summary):active { scale: none; }
+    .dm-home .dm-sim-input:active ~ .dm-sim-art .dm-sim-knob { transform: none; }
+    .dm-home :is(.dm-home-range-guide, .dm-sim-details) > summary:active .dm-pl-lg { transition: none; }
+    /* Home's light rests under reduced motion (HomeLight.tsx), so the topics' glint has nothing to follow. */
+    .dm-home .dm-limit::after { display: none; }
+    /* Panels open at once (V4 .sx-dp at .01ms); nothing presses. */
+    .dm-home :is(.dm-funding-details, .dm-limit, .dm-automation-story-actions details, .dm-home-range-guide, .dm-sim-details)::details-content { transition: none !important; }
+    .dm-home .dm-funding-details > summary:active { scale: none; }
   }
   html.dm-still .dm-home :is(.dm-sculpture-front, .dm-mq-track, .dm-zg-line, .dm-zg-head, .dm-zg-loop, .dm-funding-demonstration *) { animation: none !important; }
   html.dm-still .dm-home .dm-tile-3d { transform: rotateX(6deg) rotateY(-18deg) rotateZ(-7deg) !important; }
+  html.dm-still .dm-home :is(.dm-tv-hop, .dm-tv-shadow, .dm-tv-act, .dm-tv-shade, .dm-fx-pl, .dm-fx-pd, .dm-gl-fill, .dm-gl-edge), html.dm-still .dm-home .dm-tv-pip::after { animation: none !important; }
+  html.dm-still .dm-home [data-sim-stage="inside"] .dm-sim-glint { opacity: 0.5; transform: translateY(-3.75rem); }
+  html.dm-still .dm-home :is(.dm-funding-details, .dm-limit, .dm-automation-story-actions details, .dm-home-range-guide, .dm-sim-details)::details-content { transition: none !important; }
+  html.dm-still .dm-home .dm-limit::after { display: none; }
 }
 
-@keyframes dm-home-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-1.5px); } }
+/* The hero tile has no idle motion (V4: it moves only with the light); the loop is kept, motionless, for the shared
+   motion checks (render.test: the float wrapper repeats while the hero is in view). */
+@keyframes dm-home-float { 0%, 100% { transform: none; } }
 @keyframes dm-home-tile { from { opacity: 0.01; transform: translateY(4rem) scale(0.96); filter: blur(0.625rem); } to { opacity: 1; transform: none; filter: none; } }
 @keyframes dm-home-mq { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes dm-home-ghost-in { from { opacity: 1; } }
+@keyframes dm-home-ghost-out { from { opacity: 0.2; } }
 @keyframes dm-home-glint { 0% { opacity: 0; transform: translateY(0); } 18% { opacity: 0.85; } 70% { opacity: 0.5; } 100% { opacity: 0; transform: translateY(-9.375rem); } }
-/* The funding loop: percentages of 5 s (a source's of 25 s, its own fifth). */
-@keyframes dm-home-src { 0% { stroke: rgb(255 177 127 / 0.5); stroke-dashoffset: 100; } 1.4% { stroke-dashoffset: 100; } 5.8%, 18% { stroke: rgb(255 177 127 / 0.5); stroke-dashoffset: 0; } 20%, 100% { stroke: rgb(255 236 220 / 0.09); stroke-dashoffset: 0; } }
-@keyframes dm-home-src-dot { 0%, 1.4% { opacity: 0; stroke-dashoffset: 0; } 2.4%, 5% { opacity: 1; } 5.8%, 100% { opacity: 0; stroke-dashoffset: -100; } }
-@keyframes dm-home-src-chip { 0%, 18% { background: rgb(255 236 220 / 0.07); box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.12); color: var(--fg); } 20%, 100% { background: rgb(255 236 220 / 0.035); box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.07); color: var(--fg-muted); } }
-@keyframes dm-home-src-local { 0% { stroke: rgb(255 177 127 / 0.5); stroke-dashoffset: 100; } 7% { stroke-dashoffset: 100; } 29%, 100% { stroke: rgb(255 177 127 / 0.5); stroke-dashoffset: 0; } }
-@keyframes dm-home-src-dot-local { 0%, 7% { opacity: 0; stroke-dashoffset: 0; } 12%, 25% { opacity: 1; } 29%, 100% { opacity: 0; stroke-dashoffset: -100; } }
-@keyframes dm-home-wallet { 0%, 28%, 38%, 100% { transform: none; } 33% { transform: scale(1.08); } }
-@keyframes dm-home-step { 0%, 32% { stroke-dashoffset: 100; opacity: 1; } 46%, 92% { stroke-dashoffset: 0; opacity: 1; } 100% { stroke-dashoffset: 0; opacity: 0; } }
-@keyframes dm-home-step-dot { 0%, 32% { opacity: 0; stroke-dashoffset: 0; } 35%, 43% { opacity: 1; } 46%, 100% { opacity: 0; stroke-dashoffset: -100; } }
-@keyframes dm-home-out { 0%, 51% { stroke-dashoffset: 100; opacity: 1; } 69%, 92% { stroke-dashoffset: 0; opacity: 1; } 100% { stroke-dashoffset: 0; opacity: 0; } }
-@keyframes dm-home-out-dot { 0%, 51% { opacity: 0; stroke-dashoffset: 0; } 54%, 66% { opacity: 1; } 69%, 100% { opacity: 0; stroke-dashoffset: -100; } }
-@keyframes dm-home-bump-a { 0%, 67%, 78%, 100% { transform: none; } 72% { transform: scale(1.08); } }
-@keyframes dm-home-bump-b { 0%, 70%, 80%, 100% { transform: none; } 75% { transform: scale(1.08); } }
-@keyframes dm-home-fill { 0%, 70% { transform: scaleX(0.35); } 84%, 100% { transform: none; } }
+/* An unseen keeper's loop (it changes nothing a reader can see). */
+@keyframes dm-home-hold { to { opacity: 1; } }
+/* The funding story (V4 index.html 468-475), a and b alike: only the name restarts it. */
+@keyframes dm-fs-draw-a { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+@keyframes dm-fs-draw-b { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+@keyframes dm-fs-go-a { 0% { stroke-dashoffset: 0; opacity: 0; } 12% { opacity: 1; } 86% { opacity: 1; } 100% { stroke-dashoffset: -100; opacity: 0; } }
+@keyframes dm-fs-go-b { 0% { stroke-dashoffset: 0; opacity: 0; } 12% { opacity: 1; } 86% { opacity: 1; } 100% { stroke-dashoffset: -100; opacity: 0; } }
+@keyframes dm-fs-bump-a { 0% { transform: none; } 45% { transform: scale(1.08); } 100% { transform: none; } }
+@keyframes dm-fs-bump-b { 0% { transform: none; } 45% { transform: scale(1.08); } 100% { transform: none; } }
+@keyframes dm-fs-fill-a { from { transform: scaleX(0.35); } to { transform: none; } }
+@keyframes dm-fs-fill-b { from { transform: scaleX(0.35); } to { transform: none; } }
+/* The functions' stories (V4 index.html 583-598). */
+@keyframes dm-fx-arc-a { 0% { transform: translate(calc(var(--fx-dx) * 0), calc(var(--fx-a) * 0 + var(--fx-b) * 0)) scale(0.6); opacity: 0; } 8.33% { transform: translate(calc(var(--fx-dx) * 0.0833), calc(var(--fx-a) * 0.1528 + var(--fx-b) * 0.0069)); } 16.67% { transform: translate(calc(var(--fx-dx) * 0.1667), calc(var(--fx-a) * 0.2778 + var(--fx-b) * 0.0278)); opacity: 1; } 25% { transform: translate(calc(var(--fx-dx) * 0.25), calc(var(--fx-a) * 0.375 + var(--fx-b) * 0.0625)); } 33.33% { transform: translate(calc(var(--fx-dx) * 0.3333), calc(var(--fx-a) * 0.4444 + var(--fx-b) * 0.1111)); } 41.67% { transform: translate(calc(var(--fx-dx) * 0.4167), calc(var(--fx-a) * 0.4861 + var(--fx-b) * 0.1736)); } 50% { transform: translate(calc(var(--fx-dx) * 0.5), calc(var(--fx-a) * 0.5 + var(--fx-b) * 0.25)); } 58.33% { transform: translate(calc(var(--fx-dx) * 0.5833), calc(var(--fx-a) * 0.4861 + var(--fx-b) * 0.3403)); } 66.67% { transform: translate(calc(var(--fx-dx) * 0.6667), calc(var(--fx-a) * 0.4444 + var(--fx-b) * 0.4444)); } 75% { transform: translate(calc(var(--fx-dx) * 0.75), calc(var(--fx-a) * 0.375 + var(--fx-b) * 0.5625)); } 83.33% { transform: translate(calc(var(--fx-dx) * 0.8333), calc(var(--fx-a) * 0.2778 + var(--fx-b) * 0.6944)); opacity: 1; } 91.67% { transform: translate(calc(var(--fx-dx) * 0.9167), calc(var(--fx-a) * 0.1528 + var(--fx-b) * 0.8403)); } 100% { transform: translate(calc(var(--fx-dx) * 1), calc(var(--fx-a) * 0 + var(--fx-b) * 1)); opacity: 0; } }
+@keyframes dm-fx-arc-b { 0% { transform: translate(calc(var(--fx-dx) * 0), calc(var(--fx-a) * 0 + var(--fx-b) * 0)) scale(0.6); opacity: 0; } 8.33% { transform: translate(calc(var(--fx-dx) * 0.0833), calc(var(--fx-a) * 0.1528 + var(--fx-b) * 0.0069)); } 16.67% { transform: translate(calc(var(--fx-dx) * 0.1667), calc(var(--fx-a) * 0.2778 + var(--fx-b) * 0.0278)); opacity: 1; } 25% { transform: translate(calc(var(--fx-dx) * 0.25), calc(var(--fx-a) * 0.375 + var(--fx-b) * 0.0625)); } 33.33% { transform: translate(calc(var(--fx-dx) * 0.3333), calc(var(--fx-a) * 0.4444 + var(--fx-b) * 0.1111)); } 41.67% { transform: translate(calc(var(--fx-dx) * 0.4167), calc(var(--fx-a) * 0.4861 + var(--fx-b) * 0.1736)); } 50% { transform: translate(calc(var(--fx-dx) * 0.5), calc(var(--fx-a) * 0.5 + var(--fx-b) * 0.25)); } 58.33% { transform: translate(calc(var(--fx-dx) * 0.5833), calc(var(--fx-a) * 0.4861 + var(--fx-b) * 0.3403)); } 66.67% { transform: translate(calc(var(--fx-dx) * 0.6667), calc(var(--fx-a) * 0.4444 + var(--fx-b) * 0.4444)); } 75% { transform: translate(calc(var(--fx-dx) * 0.75), calc(var(--fx-a) * 0.375 + var(--fx-b) * 0.5625)); } 83.33% { transform: translate(calc(var(--fx-dx) * 0.8333), calc(var(--fx-a) * 0.2778 + var(--fx-b) * 0.6944)); opacity: 1; } 91.67% { transform: translate(calc(var(--fx-dx) * 0.9167), calc(var(--fx-a) * 0.1528 + var(--fx-b) * 0.8403)); } 100% { transform: translate(calc(var(--fx-dx) * 1), calc(var(--fx-a) * 0 + var(--fx-b) * 1)); opacity: 0; } }
+@keyframes dm-fx-on-a { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dm-fx-on-b { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dm-fx-off-a { from { opacity: 1; } to { opacity: 0.12; } }
+@keyframes dm-fx-off-b { from { opacity: 1; } to { opacity: 0.12; } }
+@keyframes dm-fx-draw-a { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+@keyframes dm-fx-draw-b { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+@keyframes dm-fx-rise-a { from { opacity: 0; transform: translateY(1.625rem); filter: blur(0.375rem); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes dm-fx-rise-b { from { opacity: 0; transform: translateY(1.625rem); filter: blur(0.375rem); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes dm-fx-dot-a { 0% { opacity: 0; transform: scale(0.4); } 60% { opacity: 1; transform: scale(1.5); } 100% { opacity: 1; transform: none; } }
+@keyframes dm-fx-dot-b { 0% { opacity: 0; transform: scale(0.4); } 60% { opacity: 1; transform: scale(1.5); } 100% { opacity: 1; transform: none; } }
+@keyframes dm-fx-glow-a { 0% { box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.09), inset 0 0.125rem 0.375rem rgb(0 0 0 / 0.6); } 40% { box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.55), inset 0 0.125rem 0.375rem rgb(0 0 0 / 0.6), 0 0 1.125rem rgb(255 157 98 / 0.25); } 100% { box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.09), inset 0 0.125rem 0.375rem rgb(0 0 0 / 0.6); } }
+@keyframes dm-fx-glow-b { 0% { box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.09), inset 0 0.125rem 0.375rem rgb(0 0 0 / 0.6); } 40% { box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.55), inset 0 0.125rem 0.375rem rgb(0 0 0 / 0.6), 0 0 1.125rem rgb(255 157 98 / 0.25); } 100% { box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.09), inset 0 0.125rem 0.375rem rgb(0 0 0 / 0.6); } }
+@keyframes dm-gl-up-a { from { transform: scaleY(0.7); } to { transform: none; } }
+@keyframes dm-gl-up-b { from { transform: scaleY(0.7); } to { transform: none; } }
+/* The travelling tile (V4 index.html 332-369). */
+@keyframes dm-tv-hop-a { 0% { transform: none; } 42% { transform: translateY(-1.375rem) rotate(-7deg); } 100% { transform: none; } }
+@keyframes dm-tv-hop-b { 0% { transform: none; } 42% { transform: translateY(-1.375rem) rotate(-7deg); } 100% { transform: none; } }
+@keyframes dm-tv-sh-a { 0% { opacity: 1; } 42% { opacity: 0.35; } 100% { opacity: 1; } }
+@keyframes dm-tv-sh-b { 0% { opacity: 1; } 42% { opacity: 0.35; } 100% { opacity: 1; } }
+@keyframes dm-tv-nod-a { 0%, 57% { transform: none; } 63% { transform: translateY(-0.4375rem) rotate(4deg); } 72% { transform: translateY(0) rotate(-1.5deg); } 80%, 100% { transform: none; } }
+@keyframes dm-tv-nod-b { 0%, 57% { transform: none; } 63% { transform: translateY(-0.4375rem) rotate(4deg); } 72% { transform: translateY(0) rotate(-1.5deg); } 80%, 100% { transform: none; } }
+@keyframes dm-tv-settle-a { 0%, 60% { transform: none; } 66% { transform: translateY(0.1875rem); } 76% { transform: translateY(-2px); } 86%, 100% { transform: none; } }
+@keyframes dm-tv-settle-b { 0%, 60% { transform: none; } 66% { transform: translateY(0.1875rem); } 76% { transform: translateY(-2px); } 86%, 100% { transform: none; } }
+@keyframes dm-tv-glow-a { 0% { opacity: 0; } 35% { opacity: 1; } 100% { opacity: 0.55; } }
+@keyframes dm-tv-glow-b { 0% { opacity: 0; } 35% { opacity: 1; } 100% { opacity: 0.55; } }
+@keyframes dm-tv-lean-a { 0%, 40% { transform: none; } 48% { transform: rotate(4deg); } 62%, 100% { transform: none; } }
+@keyframes dm-tv-lean-b { 0%, 40% { transform: none; } 48% { transform: rotate(4deg); } 62%, 100% { transform: none; } }
+@keyframes dm-tv-tip-a { 0%, 45% { transform: none; } 54% { transform: rotate(9deg) translateX(0.1875rem); } 69% { transform: rotate(-1.5deg); } 79%, 100% { transform: none; } }
+@keyframes dm-tv-tip-b { 0%, 45% { transform: none; } 54% { transform: rotate(9deg) translateX(0.1875rem); } 69% { transform: rotate(-1.5deg); } 79%, 100% { transform: none; } }
+@keyframes dm-tv-close-a { from { opacity: 0; } to { opacity: 0.55; } }
+@keyframes dm-tv-close-b { from { opacity: 0; } to { opacity: 0.55; } }
 @keyframes dm-home-zg-draw { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
 @keyframes dm-home-zg-head { 0%, 55% { opacity: 0; transform: translate(-3px, -3px); } 100% { opacity: 1; transform: none; } }
 @keyframes dm-home-zg-turn { from { transform: rotate(-200deg); } to { transform: none; } }

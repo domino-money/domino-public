@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { useRouteTitle } from '../lib/routeTitle'
 import { SWITCH_NOTICE, switchToRobinhood } from '../wallet/port'
 import { Button, Display, EmptyState, Skeleton } from '../components/ui'
-import { IconWallet } from '../components/icons'
+import { ConnectArt } from '../components/automate-v4/SeqPlateArt'
 import type { WalletIdentityView } from '../lib/walletIdentity'
 
 export function Frame({ children, protection = false }: { children: ReactNode; protection?: boolean }) {
@@ -38,7 +38,7 @@ export function WalletPrompt({ identity }: { identity: WalletIdentityView }) {
   }
   if (identity.kind === 'unknown') return <Loading wallet />
   const elsewhere = identity.kind === 'connected'
-  return <EmptyState plate icon={<IconWallet />} className="dm-acct-block" data-sequence-release="available"
+  return <EmptyState plate icon={<ConnectArt />} className="dm-acct-block dm-lit" data-sequence-release="available"
     data-sequence-wallet={elsewhere ? 'other-network' : 'none'}
     title={elsewhere ? 'Switch to Robinhood Chain' : 'Connect your wallet'} body="Your open positions appear here to choose from."
     action={<>

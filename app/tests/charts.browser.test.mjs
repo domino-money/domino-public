@@ -182,6 +182,9 @@ async function showChart(page, name) {
   // A newly visible panel needs a ResizeObserver pass to restore its SVG geometry after having zero hidden width.
   const panel = page.getByRole('tabpanel', { name, exact: true });
   await panel.locator(name === 'Price range' ? '.dm-pvr-band' : '.dm-chart-layer, [data-pending-plot] svg').first().waitFor({ state: 'visible', timeout: 30_000 });
+  // Changed on purpose 2026-10-17 (V4 prototype parity): a shown panel arrives with a short rise; its finite motions play
+  // out before anything in it is measured or pictured.
+  await page.waitForFunction(() => !document.getAnimations().some((animation) => animation.playState === 'running' && animation.effect?.getComputedTiming().iterations !== Infinity && animation.effect?.target?.closest?.('[data-position-chart-panel]')), null, { timeout: 5000 }).catch(() => {});
 }
 async function openDetails(details) {
   if (await details.count() && await details.getAttribute('open') === null) await details.locator(':scope > summary').click();
@@ -632,6 +635,9 @@ test('a range that reaches the pool’s limits: the chart labels such an end wit
       }
       // The band runs off the plot where the range does, with no edge line there: its foot at 0, and its top too at ∞.
       // The plot's room under and over the band is 30 and 12 design px (PriceVsRange's padding), at the root's scale.
+      // Changed on purpose 2026-10-17 (V4 prototype parity): the shown panel arrives with a short rise; it is measured once
+      // its finite motions have played.
+      await page.waitForFunction(() => !document.getAnimations().some((animation) => animation.playState === 'running' && animation.effect?.getComputedTiming().iterations !== Infinity && animation.effect?.target?.closest?.('[data-position-chart-panel]')));
       const plot = await range.locator('.dm-pvr').boundingBox();
       const band = await range.locator('.dm-pvr-band').boundingBox();
       const scale = await rootScale(page);
@@ -755,7 +761,7 @@ test('position workspace: keyboard tabs preserve both charts and period, sub-cen
 
     for (const width of [1440, 1280, 1220, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
-      const expandedFeesHeight = (width < 768 ? 280 + 32 + 40 : 320 + 16 + 40) * await rootScale(page);
+      const expandedFeesHeight = (width < 768 ? 320 + 32 + 30 : 368 + 16 + 30) * await rootScale(page);
       await page.waitForFunction(expected => Math.abs(document.querySelector('.dm-fees-chart').getBoundingClientRect().height - expected) < 2, expandedFeesHeight);
       await card.locator('.dm-fees-chart').focus();
       await page.keyboard.press('End');
@@ -765,7 +771,7 @@ test('position workspace: keyboard tabs preserve both charts and period, sub-cen
       const tiles = await page.locator('[data-position-overview] > [data-cell]').evaluateAll(nodes => nodes.map(node => {
         const rect = node.getBoundingClientRect(); return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
       }));
-      assert.equal(new Set(tiles.map(tile => Math.round(tile.y))).size, width >= 1024 ? 1 : 2, `four overview tiles use ${width >= 1024 ? 'one row' : 'two rows'} at ${width}`);
+      assert.equal(new Set(tiles.map(tile => Math.round(tile.y))).size, width >= 860 ? 1 : 3, `four overview tiles use ${width >= 860 ? 'one row' : 'three rows (two half tiles, then Your APR and the price each across)'} at ${width}`);
       assert.ok(tiles.every(tile => tile.width >= 120), 'each metric retains readable space');
       const analysis = await page.locator('.dm-position-analysis').boundingBox();
       const overview = await page.locator('[data-position-overview]').boundingBox();
@@ -794,7 +800,7 @@ test('position workspace: keyboard tabs preserve both charts and period, sub-cen
       const count = Number(await priceChart.getAttribute('aria-valuemax'));
       assert.equal(await priceChart.locator('[data-measured-points="range"] circle').count(), count, 'price dots name only inspectable recorded observations');
       const visibleRange = await rangePanel.locator('.dm-pvr').boundingBox();
-      assert.ok(visibleRange.width > 200 && Math.abs(visibleRange.height - ((width < 768 ? 280 : 320) + 46) * await rootScale(page)) < 2, 'previously hidden chart keeps the expanded measured frame');
+      assert.ok(visibleRange.width > 200 && Math.abs(visibleRange.height - ((width < 768 ? 360 : 420) + 46) * await rootScale(page)) < 2, 'previously hidden chart keeps the expanded measured frame');
       await page.screenshot({ path: join(shots(), `workspace-range-${width}.png`), fullPage: true });
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `the workspace fits ${width}`);
       await page.keyboard.press('Home');
@@ -806,7 +812,10 @@ test('position workspace: keyboard tabs preserve both charts and period, sub-cen
     await display.getByRole('button', { name: 'Collapse chart', exact: true }).click();
     await pointsToggle.click();
     assert.equal(await page.locator('[data-measured-points]').count(), 0, 'turning dots off removes only their visual layer');
-    assert.ok(Math.abs((await card.locator('.dm-fees-chart').boundingBox()).height - 220) < 2, 'collapse restores the compact phone chart');
+    // Changed on purpose 2026-10-17 (V4 prototype parity, site/position.html .c-fees on a phone): the compact plot is 230px
+    // with its 32px chip room and the 30px date row (it was 148 + 32 + 40 = 220), reached after the collapse's 0.4 s motion.
+    await page.waitForFunction(() => Math.abs(document.querySelector('[data-fees-card] .dm-fees-chart').getBoundingClientRect().height - (230 + 32 + 30)) < 2, null, { timeout: 5000 }).catch(() => {});
+    assert.ok(Math.abs((await card.locator('.dm-fees-chart').boundingBox()).height - (230 + 32 + 30)) < 2, 'collapse restores the compact phone chart');
     assert.deepEqual({ edge: world.chain.edgeLog.length, past: s.reads.length, history: s.histories.length }, readsBeforeDisplay, 'chart display controls and viewport changes start no reads');
     keptToTheRules(world);
   } finally { await s.close(); }
@@ -886,6 +895,9 @@ test('an automated position fills in without a jump: its chart draws before attr
       const card = s.page.locator('[data-fees-card][data-fees-state="verified"]');
       await showBreakdown(card);
       // Opening the user-requested disclosure precedes the measured arrival of attribution.
+      // Changed on purpose 2026-10-17 (V4 prototype parity): the disclosure opens with a 0.45 s height motion; it settles
+      // before the frames are measured, so only attribution's arrival is judged.
+      await s.page.waitForFunction(() => !document.getAnimations().some((animation) => animation instanceof CSSTransition && animation.playState === 'running'));
       await s.page.evaluate(() => { window.__frames = []; });
       await s.page.waitForFunction(() => window.__frames.length >= 10);
       assert.equal(await card.locator('.dm-fees-chart').count(), 1, `${label}: the chart does not wait for attribution`);

@@ -24,7 +24,9 @@
   }
 
   /* ---- Page title row (positions.html .phead / .pacts) ----------------------------------------------------------- */
-  .dm-positions-page .dm-acct-title { align-items: flex-end; gap: 1.5rem; padding-top: 0.25rem; padding-bottom: 0; border: 0; }
+  .dm-positions-page .dm-acct-title { align-items: flex-end; gap: 1.5rem; padding-top: 0; padding-bottom: 0; border: 0; }
+  /* The approved title draws its line .05em under its top (.ln's padding), so the line sits where the approved one does. */
+  .dm-positions-page .dm-acct-title h1 { margin-top: 0.05em; }
   .dm-positions-page .dm-acct-title-main { align-items: flex-end; gap: 0.75rem 1.125rem; }
   .dm-positions-page .dm-acct-wallet-chip { height: 2rem; min-height: 0; margin: 0 0 1rem; padding: 0 0.75rem; gap: 0.5rem; border-radius: 999px; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); }
   .dm-positions-page .dm-acct-wallet-chip .dm-acct-mono { font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1rem; font-weight: 400; letter-spacing: 0; color: var(--muted); white-space: nowrap; }
@@ -48,6 +50,10 @@
   /* ---- Two columns: the list's column and a 340px rail (320 on a laptop); below 1024 one column, the rail's two cards
      side by side after it from 768 (positions.html .lay); on a phone the ordering classes' order (list, wallet,
      automation, history), as the approved phone pages. ------------------------------------------------------------- */
+  /* The page keeps its one-screen floor while it loads (shell.css E1); once the list (or the receipts) has said what it
+     shows, the footer follows the cards, 64px + 96px under the last one, as the approved pages place it. */
+  .dm-positions-page:has(.dm-own-card:is([data-owned="no-wallet"], [data-owned="other-network"], [data-owned="unavailable"], [data-owned="ready"], [data-owned="unlisted"], [data-owned="kept"])) { min-height: 0; }
+  .dm-receipts-page:has(section[aria-labelledby="receipts-title"] :is(.dm-rcpt-list, .dm-rcpt-note[role="status"], .dm-acct-quiet:not(:empty))) { min-height: 0; }
   .dm-positions-page .dm-acct-grid { gap: 1.25rem; margin-top: 3rem; padding-bottom: 4rem; }
   .dm-positions-page .dm-acct-col { gap: 1.25rem; }
   @media (min-width: 1024px) {
@@ -64,11 +70,11 @@
   }
   @media (max-width: 767px) {
     /* The block stacks here (positions.css): stretched, so the title and the actions start on the page's gutter. */
-    .dm-positions-page .dm-acct-title { align-items: stretch; gap: 1.25rem; }
+    .dm-positions-page .dm-acct-title { align-items: stretch; gap: 1.25rem; padding-top: 1rem; }
     .dm-positions-page .dm-acct-title-main { gap: 0.75rem; }
     .dm-positions-page .dm-acct-wallet-chip { margin: 0 0 0.5rem; }
     .dm-positions-page .dm-acct-title-actions { margin-bottom: 0; }
-    .dm-positions-page .dm-acct-title-actions > .dm-btn { flex: 1 1 0; min-width: 0; height: 3.125rem; padding: 0 1rem 0 0.875rem; white-space: nowrap; }
+    .dm-positions-page .dm-acct-title-actions > .dm-btn { flex: 1 1 0; min-width: 0; height: 3.125rem; padding: 0 0.875rem; white-space: nowrap; }
     .dm-positions-page .dm-acct-grid { gap: 1rem; margin-top: 1.75rem; padding-bottom: 0; }
     .dm-positions-page .dm-acct-col { gap: 1rem; }
   }
@@ -112,17 +118,20 @@
   /* ---- Your positions: the head's tools (Close positions, Open / Closed) ------------------------------------------ */
   .dm-positions-page .dm-own-tools { gap: 0.5rem; min-height: 2.375rem; margin-left: auto; }
   .dm-positions-page .dm-own-tools > :only-child { margin-left: auto; }
-  .dm-positions-page .dm-own-head [data-bulk-close-open] { height: 2.125rem; padding: 0 0.75rem; border-radius: 999px; background: transparent; box-shadow: none; font-size: 0.84375rem; line-height: 1.25rem; font-weight: 500; color: var(--muted); transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std), scale 0.1s var(--e-press); }
+  .dm-positions-page .dm-own-head [data-bulk-close-open] { height: 2.125rem; padding: 0 0.75rem; border-radius: 999px; background: transparent; box-shadow: none; font-size: 1rem; line-height: 1.25rem; font-weight: 400; letter-spacing: normal; color: var(--fg); transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std), scale 0.1s var(--e-press); }
   .dm-positions-page .dm-own-head [data-bulk-close-open]:hover { background: var(--v4-w04); color: var(--fg); }
   .dm-positions-page .dm-own-head [data-bulk-close-open]:active { scale: 0.97; }
   .dm-positions-page .dm-own-head [role="tablist"] { flex: none; }
-  .dm-positions-page .dm-own-head [role="tablist"] > .dm-seg-item { width: 5.875rem; height: 2rem; padding: 0; gap: 0.4375rem; font-size: 0.84375rem; }
-  .dm-positions-page .dm-own-head [role="tablist"] > .dm-seg-item > .dm-chip { justify-content: center; min-width: 1.25rem; font-variant-numeric: lining-nums tabular-nums; height: 1.25rem; min-height: 0; padding: 0 0.375rem; border-radius: 999px; background: var(--v4-w06); box-shadow: none; font-size: 0.75rem; line-height: 1; font-weight: 500; color: var(--subtle); transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std); }
+  .dm-positions-page .dm-own-head .dm-seg[data-thumb] > .dm-seg-thumb { transition: translate 0.3s var(--e-enter), width 0.3s var(--e-enter), opacity 0.2s var(--e-std); }
+  .dm-positions-page .dm-own-head .dm-seg[role="tablist"] { gap: 0.125rem; }
+  .dm-positions-page .dm-own-head [role="tablist"] > .dm-seg-item { width: 5.875rem; height: 2rem; padding: 0; gap: 0.4375rem; font-size: 0.84375rem; letter-spacing: normal; }
+  .dm-positions-page .dm-own-head [role="tablist"] > .dm-seg-item > .dm-chip { justify-content: center; min-width: 1.25rem; font-variant-numeric: lining-nums tabular-nums; height: 1.25rem; min-height: 0; padding: 0 0.375rem; border-radius: 999px; background: var(--v4-w06); box-shadow: none; font-size: 0.75rem; line-height: 1; font-weight: 500; letter-spacing: normal; color: var(--subtle); transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std); }
   .dm-positions-page .dm-own-head [role="tablist"] > .dm-seg-item[aria-selected="true"] > .dm-chip { background: rgb(255 236 220 / 0.1); color: var(--fg); }
   @media (max-width: 767px) {
     .dm-positions-page .dm-own-tools { flex: 1 0 100%; justify-content: space-between; row-gap: 0.625rem; }
-    /* On its own line under the title: pulled back by its padding so its word starts on the title's edge. */
-    .dm-positions-page .dm-own-head [data-bulk-close-open] { margin-inline-start: -0.5rem; padding: 0 0.5rem; font-size: 0.8125rem; white-space: nowrap; }
+    /* On its own line under the title, its box on the title's edge (positions.html .cright .tbtn at 859 and under). */
+    .dm-positions-page .dm-own-head [data-bulk-close-open] { padding: 0 0.5rem; white-space: nowrap; }
+    .dm-positions-page .dm-own-head { row-gap: 0.75rem; }
     .dm-positions-page .dm-own-head [role="tablist"] > .dm-seg-item { width: 5.25rem; }
   }
 
@@ -145,7 +154,7 @@
   .dm-positions-page .dm-own-collection .dm-own-list:not([data-owned-rows="closed"]) .dm-own-cell[data-cell="apr"] { grid-column: 4; }
   .dm-positions-page .dm-own-collection .dm-own-list:not([data-owned-rows="closed"]) .dm-own-row:not([data-row-state="closed"]) > .dm-own-chev { grid-column: 5; display: grid; }
 
-  .dm-positions-page .dm-own-collection .dm-own-item + .dm-own-item { margin-top: 2px; border-top: 0; }
+  .dm-positions-page .dm-own-collection .dm-own-item + .dm-own-item { margin-top: 0.125rem; border-top: 0; }
   .dm-positions-page .dm-own-collection .dm-own-row { position: relative; min-height: 4.375rem; padding: 0.75rem 1.125rem 0.75rem 1.375rem; border-radius: 0.875rem; align-items: center; transition: background-color 0.18s var(--e-std); }
   .dm-positions-page .dm-own-collection a.dm-own-row:hover { background: var(--v4-w045); }
   .dm-positions-page .dm-own-collection a.dm-own-row:active { scale: 0.997; }
@@ -154,17 +163,19 @@
   .dm-positions-page .dm-own-collection a.dm-own-row::before { content: ''; position: absolute; left: 0.5rem; top: 50%; width: 0.3125rem; height: 0.3125rem; margin-top: -0.15625rem; border-radius: 50%; background: var(--tan); opacity: 0; scale: 0.2; pointer-events: none; transition: opacity 0.2s var(--e-std), scale 0.35s var(--e-enter); }
   .dm-positions-page .dm-own-collection a.dm-own-row:is(:hover, :focus-visible)::before { opacity: 1; scale: 1; }
   .dm-positions-page .dm-own-collection .dm-own-pool { gap: 0.875rem; min-width: 0; }
-  .dm-positions-page .dm-own-collection .dm-own-pool > :first-child > * { transition: scale 0.3s var(--e-enter), translate 0.3s var(--e-enter); }
+  .dm-positions-page .dm-own-collection .dm-own-pool > :first-child > * { transition: scale 0.3s var(--e-enter), translate 0.3s var(--e-enter), border-color 0.18s var(--e-std); }
+  /* The discs' 2px overlap ring takes the hovered row's colour, so no dark halo shows around them (.row:hover .disc). */
+  .dm-positions-page .dm-own-collection a.dm-own-row:hover .dm-own-pool > :first-child { --card: #1d1a16; }
   .dm-positions-page .dm-own-collection a.dm-own-row:hover .dm-own-pool > :first-child > :first-child { scale: 1.06; }
   .dm-positions-page .dm-own-collection a.dm-own-row:hover .dm-own-pool > :first-child > :nth-child(2) { translate: 0.25rem 0; scale: 1.06; }
   .dm-positions-page .dm-own-collection .dm-own-name { gap: 0.375rem; min-width: 0; }
-  .dm-positions-page .dm-own-collection .dm-own-title { align-items: baseline; column-gap: 0.5rem; row-gap: 2px; }
+  .dm-positions-page .dm-own-collection .dm-own-title { align-items: baseline; column-gap: 0.5rem; row-gap: 0.125rem; }
   .dm-positions-page .dm-own-collection .dm-own-pair { font-size: 0.96875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); }
   .dm-positions-page .dm-own-collection .dm-own-fee { font-size: 0.78125rem; line-height: 1rem; font-weight: 400; color: var(--subtle); }
   .dm-positions-page .dm-own-collection .dm-collection-family { margin: 0; font-size: 0.75rem; line-height: 1rem; color: var(--subtle); }
 
   /* The tag: joined segments, 2px apart, outer corners 6px: [network] [In range] [glyph and function] [its word] */
-  .dm-positions-page .dm-own-collection .dm-own-state { display: flex; flex-wrap: wrap; align-items: stretch; gap: 2px; min-width: 0; font-size: 0.75rem; line-height: 1rem; font-weight: 400; letter-spacing: -0.01em; color: var(--subtle); }
+  .dm-positions-page .dm-own-collection .dm-own-state { display: flex; flex-wrap: wrap; align-items: stretch; gap: 0.125rem; min-width: 0; font-size: 0.75rem; line-height: normal; font-weight: 400; letter-spacing: -0.01em; color: var(--subtle); }
   .dm-positions-page .dm-own-collection .dm-own-state > :not([hidden]):not(.dm-collection-auto),
   .dm-positions-page .dm-own-collection .dm-own-state > .dm-collection-auto > :not([hidden]) { display: inline-flex; align-items: center; min-height: 0; margin: 0; padding: 0.125rem 0.4375rem; border: 0; border-radius: 2px; background: var(--v4-w055); font-size: inherit; line-height: inherit; font-weight: 400; white-space: nowrap; }
   .dm-positions-page .dm-own-collection .dm-own-state > :first-child:not([hidden]):not(.dm-collection-auto) { border-radius: 0.375rem 2px 2px 0.375rem; }
@@ -188,10 +199,10 @@
   .dm-positions-page .dm-own-collection .dm-own-state > .dm-pill--in .dm-pill-dot { box-shadow: 0 0 0 2px rgb(95 208 154 / 0.16); }
   .dm-positions-page .dm-own-collection .dm-own-state > .dm-pill--out .dm-pill-dot { box-shadow: 0 0 0 2px rgb(244 96 122 / 0.16); }
   /* The automation: its glyph and name in one segment (the glyph Tangerine at .55 while it runs, faint when not), its word in the next. */
-  .dm-positions-page .dm-own-collection .dm-collection-auto { display: inline-flex; flex-wrap: nowrap; align-items: stretch; gap: 2px; padding: 0; background: none; font-size: inherit; line-height: inherit; color: var(--muted); }
+  .dm-positions-page .dm-own-collection .dm-collection-auto { display: inline-flex; flex-wrap: wrap; align-items: stretch; gap: 0.125rem; padding: 0; background: none; font-size: inherit; line-height: inherit; color: var(--muted); }
   .dm-positions-page .dm-own-collection .dm-collection-mode, .dm-positions-page .dm-own-collection .dm-collection-mode[data-running] { color: var(--muted); }
   .dm-positions-page .dm-own-collection .dm-collection-auto .dm-own-badge-word { color: var(--subtle); }
-  .dm-positions-page .dm-own-collection .dm-collection-auto > .dm-own-ag { margin-right: -2px; padding-right: 0; border-radius: 2px 0 0 2px; color: var(--faint); }
+  .dm-positions-page .dm-own-collection .dm-collection-auto > .dm-own-ag:not([hidden]) { margin-right: -0.125rem; padding-right: 0; border-radius: 2px 0 0 2px; color: var(--faint); }
   .dm-positions-page .dm-own-collection .dm-own-state > .dm-collection-auto:first-child > .dm-own-ag { border-radius: 0.375rem 0 0 0.375rem; }
   .dm-positions-page .dm-own-collection .dm-collection-auto > .dm-own-ag + .dm-collection-mode { padding-left: 0.3125rem; border-top-left-radius: 0; border-bottom-left-radius: 0; }
   .dm-positions-page .dm-own-collection .dm-collection-auto > .dm-own-ag:has(+ [data-running]) { color: rgb(255 157 98 / 0.55); }
@@ -202,6 +213,42 @@
   .dm-positions-page .dm-own-collection a.dm-own-row:hover .dm-own-ag--cmp:has(+ [data-running])::before { rotate: -18deg; }
   .dm-positions-page .dm-own-collection a.dm-own-row:hover .dm-own-ag--dom:has(+ [data-running])::before { rotate: -14deg; translate: 0 -1px; }
   .dm-positions-page .dm-own-collection a.dm-own-row:hover .dm-own-ag--exit:has(+ [data-running])::before { translate: 2px 0; }
+
+  /* The rows come in when a tab is shown (and on first arrival): each rises out of a blur, 40ms after the one above, the
+     sixth and later together (positions.html .tabp.on .row rowin). The band is child 1; a row kept across a refresh keeps
+     its element, so a refresh never replays it; rows added by Show N more (beyond the first ten) never animate. */
+  .dm-positions-page .dm-own-collection .dm-own-list > .dm-own-item:nth-child(-n + 11) { animation: dm-v4p-rowin 0.5s var(--e-enter) backwards; }
+  .dm-positions-page .dm-own-collection .dm-own-list > .dm-own-item:nth-child(3) { animation-delay: 0.04s; }
+  .dm-positions-page .dm-own-collection .dm-own-list > .dm-own-item:nth-child(4) { animation-delay: 0.08s; }
+  .dm-positions-page .dm-own-collection .dm-own-list > .dm-own-item:nth-child(5) { animation-delay: 0.12s; }
+  .dm-positions-page .dm-own-collection .dm-own-list > .dm-own-item:nth-child(6) { animation-delay: 0.16s; }
+  .dm-positions-page .dm-own-collection .dm-own-list > .dm-own-item:nth-child(n + 7):nth-child(-n + 11) { animation-delay: 0.2s; }
+  @keyframes dm-v4p-rowin { from { opacity: 0.01; transform: translateY(0.625rem); filter: blur(0.25rem); } to { opacity: 1; transform: none; filter: none; } }
+
+  /* The automation key and the rows light each other (positions.html pkKey): hovering or focusing a function in the
+     Automation card keeps lit only the open positions that run it, the others dimmed to .38; hovering a position lights
+     its function there (the Automation section below). A position whose automation is off belongs to no function. */
+  .dm-positions-page .dm-own-collection .dm-own-list:not([data-owned-rows="closed"]) > .dm-own-item { transition: opacity 0.25s var(--e-std); }
+  @media (hover: hover) {
+    .dm-positions-page:has(.dm-acct-auto-row:is(:hover, :focus-visible) > .dm-acct-auto-ic--cmp) .dm-own-collection .dm-own-list:not([data-owned-rows="closed"]) > .dm-own-item:not(:has(.dm-own-ag--cmp + [data-running])),
+    .dm-positions-page:has(.dm-acct-auto-row:is(:hover, :focus-visible) > .dm-acct-auto-ic--dom) .dm-own-collection .dm-own-list:not([data-owned-rows="closed"]) > .dm-own-item:not(:has(.dm-own-ag--dom + [data-running])),
+    .dm-positions-page:has(.dm-acct-auto-row:is(:hover, :focus-visible) > .dm-acct-auto-ic--exit) .dm-own-collection .dm-own-list:not([data-owned-rows="closed"]) > .dm-own-item:not(:has(.dm-own-ag--exit + [data-running])) { opacity: 0.38; }
+    .dm-positions-page:has(.dm-acct-auto-row:is(:hover, :focus-visible) > .dm-acct-auto-ic--cmp) .dm-own-collection .dm-own-list:not([data-owned-rows="closed"]) > .dm-own-item:has(.dm-own-ag--cmp + [data-running]) > a.dm-own-row,
+    .dm-positions-page:has(.dm-acct-auto-row:is(:hover, :focus-visible) > .dm-acct-auto-ic--dom) .dm-own-collection .dm-own-list:not([data-owned-rows="closed"]) > .dm-own-item:has(.dm-own-ag--dom + [data-running]) > a.dm-own-row,
+    .dm-positions-page:has(.dm-acct-auto-row:is(:hover, :focus-visible) > .dm-acct-auto-ic--exit) .dm-own-collection .dm-own-list:not([data-owned-rows="closed"]) > .dm-own-item:has(.dm-own-ag--exit + [data-running]) > a.dm-own-row { background: var(--v4-w045); }
+    .dm-positions-page:has(.dm-acct-auto-row:is(:hover, :focus-visible) > .dm-acct-auto-ic--cmp) .dm-own-collection .dm-own-list:not([data-owned-rows="closed"]) > .dm-own-item:has(.dm-own-ag--cmp + [data-running]) > a.dm-own-row::before,
+    .dm-positions-page:has(.dm-acct-auto-row:is(:hover, :focus-visible) > .dm-acct-auto-ic--dom) .dm-own-collection .dm-own-list:not([data-owned-rows="closed"]) > .dm-own-item:has(.dm-own-ag--dom + [data-running]) > a.dm-own-row::before,
+    .dm-positions-page:has(.dm-acct-auto-row:is(:hover, :focus-visible) > .dm-acct-auto-ic--exit) .dm-own-collection .dm-own-list:not([data-owned-rows="closed"]) > .dm-own-item:has(.dm-own-ag--exit + [data-running]) > a.dm-own-row::before { opacity: 1; scale: 1; }
+    .dm-positions-page:has(.dm-acct-auto-row:is(:hover, :focus-visible) > .dm-acct-auto-ic--cmp) .dm-own-collection .dm-own-list:not([data-owned-rows="closed"]) > .dm-own-item:has(.dm-own-ag--cmp + [data-running]) .dm-own-pool > :first-child,
+    .dm-positions-page:has(.dm-acct-auto-row:is(:hover, :focus-visible) > .dm-acct-auto-ic--dom) .dm-own-collection .dm-own-list:not([data-owned-rows="closed"]) > .dm-own-item:has(.dm-own-ag--dom + [data-running]) .dm-own-pool > :first-child,
+    .dm-positions-page:has(.dm-acct-auto-row:is(:hover, :focus-visible) > .dm-acct-auto-ic--exit) .dm-own-collection .dm-own-list:not([data-owned-rows="closed"]) > .dm-own-item:has(.dm-own-ag--exit + [data-running]) .dm-own-pool > :first-child { --card: #1d1a16; }
+    .dm-positions-page:has(.dm-acct-auto-row:is(:hover, :focus-visible) > .dm-acct-auto-ic--cmp) .dm-own-collection .dm-own-list:not([data-owned-rows="closed"]) > .dm-own-item .dm-collection-auto > .dm-own-ag--cmp:has(+ [data-running]),
+    .dm-positions-page:has(.dm-acct-auto-row:is(:hover, :focus-visible) > .dm-acct-auto-ic--dom) .dm-own-collection .dm-own-list:not([data-owned-rows="closed"]) > .dm-own-item .dm-collection-auto > .dm-own-ag--dom:has(+ [data-running]),
+    .dm-positions-page:has(.dm-acct-auto-row:is(:hover, :focus-visible) > .dm-acct-auto-ic--exit) .dm-own-collection .dm-own-list:not([data-owned-rows="closed"]) > .dm-own-item .dm-collection-auto > .dm-own-ag--exit:has(+ [data-running]) { color: var(--tan); transition: color 0.2s var(--e-std); }
+    .dm-positions-page:has(.dm-acct-auto-row:is(:hover, :focus-visible) > .dm-acct-auto-ic--cmp) .dm-own-collection .dm-own-list:not([data-owned-rows="closed"]) > .dm-own-item .dm-own-ag--cmp:has(+ [data-running])::before { rotate: -18deg; }
+    .dm-positions-page:has(.dm-acct-auto-row:is(:hover, :focus-visible) > .dm-acct-auto-ic--dom) .dm-own-collection .dm-own-list:not([data-owned-rows="closed"]) > .dm-own-item .dm-own-ag--dom:has(+ [data-running])::before { rotate: -14deg; translate: 0 -1px; }
+    .dm-positions-page:has(.dm-acct-auto-row:is(:hover, :focus-visible) > .dm-acct-auto-ic--exit) .dm-own-collection .dm-own-list:not([data-owned-rows="closed"]) > .dm-own-item .dm-own-ag--exit:has(+ [data-running])::before { translate: 2px 0; }
+  }
 
   /* The figures: 15px numbers, stacked token amounts with their symbols quiet, fees to collect in green, APR green. */
   .dm-positions-page .dm-own-collection .dm-own-fig { font-size: 0.9375rem; line-height: 1.375rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
@@ -231,16 +278,18 @@
   .dm-positions-page .dm-own-collection .dm-own-row[data-row-state="closed"] .dm-own-closed-caption::after { content: ''; flex: none; width: 0.75rem; height: 0.75rem; margin: 0; background: var(--subtle); -webkit-mask: var(--v4p-out) center / contain no-repeat; mask: var(--v4p-out) center / contain no-repeat; transition: background-color 0.18s var(--e-std), translate 0.25s var(--e-enter); }
   .dm-positions-page .dm-own-collection .dm-own-row[data-row-state="closed"]:hover .dm-own-closed-caption { color: var(--fg); }
   .dm-positions-page .dm-own-collection .dm-own-row[data-row-state="closed"]:hover .dm-own-closed-caption::after { background: var(--tan); translate: 1px -1px; }
-  .dm-positions-page .dm-own-collection .dm-own-row[data-row-state="closed"] .dm-own-figs:not(.dm-own-empty-figure) { justify-content: flex-end; column-gap: 1.375rem; row-gap: 0.25rem; font-size: 0.78125rem; }
+  .dm-positions-page .dm-own-collection .dm-own-row[data-row-state="closed"] .dm-own-figs:not(.dm-own-empty-figure) { justify-content: flex-end; column-gap: 1.375rem; row-gap: 0.25rem; font-size: 0.78125rem; line-height: normal; }
   .dm-positions-page .dm-own-collection .dm-own-row[data-row-state="closed"] .dm-own-figs:not(.dm-own-empty-figure) .dm-own-cell { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: flex-end; gap: 0.375rem; }
-  .dm-positions-page .dm-own-collection .dm-own-row[data-row-state="closed"] .dm-own-label { margin: 0; font-size: 0.78125rem; color: var(--subtle); }
-  .dm-positions-page .dm-own-collection .dm-own-row[data-row-state="closed"] :is(.dm-own-fig, .dm-acct-amount) { font-size: 0.78125rem; line-height: 1.125rem; font-weight: 500; color: var(--muted); }
-  /* A closed row with leftovers: the pool spans both lines, View history sits on the first, its leftovers on one line
-     right under it (label, then the amounts side by side), so the row stays close to its siblings' height. */
-  .dm-positions-page .dm-own-collection .dm-own-row[data-row-state="closed"]:has(> .dm-own-figs:not(.dm-own-empty-figure)) { row-gap: 0.125rem; }
-  .dm-positions-page .dm-own-collection .dm-own-row[data-row-state="closed"]:has(> .dm-own-figs:not(.dm-own-empty-figure)) > .dm-own-pool { grid-row: 1 / span 2; align-self: center; }
-  .dm-positions-page .dm-own-collection .dm-own-row[data-row-state="closed"]:has(> .dm-own-figs:not(.dm-own-empty-figure)) > .dm-own-closed-caption { grid-column: 2; grid-row: 1; align-self: end; justify-self: end; }
-  .dm-positions-page .dm-own-collection .dm-own-row[data-row-state="closed"] > .dm-own-figs:not(.dm-own-empty-figure) { grid-column: 2; grid-row: 2; align-self: start; flex-wrap: nowrap; row-gap: 0; margin: 0; }
+  .dm-positions-page .dm-own-collection .dm-own-row[data-row-state="closed"] .dm-own-label { margin: 0; font-size: 0.78125rem; line-height: normal; color: var(--subtle); }
+  .dm-positions-page .dm-own-collection .dm-own-row[data-row-state="closed"] :is(.dm-own-fig, .dm-acct-amount) { font-size: 0.78125rem; line-height: normal; font-weight: 500; color: var(--muted); }
+  /* A closed row with leftovers (positions-closed.html .cols-cl, .lo): the pool and View history share the first line,
+     the leftovers take the whole second line, right-aligned (label, then the amounts side by side). */
+  .dm-positions-page .dm-own-collection .dm-own-row[data-row-state="closed"]:has(> .dm-own-figs:not(.dm-own-empty-figure)) { row-gap: 0.75rem; }
+  .dm-positions-page .dm-own-collection .dm-own-row[data-row-state="closed"]:has(> .dm-own-figs:not(.dm-own-empty-figure)) > .dm-own-pool { grid-row: 1; align-self: center; }
+  .dm-positions-page .dm-own-collection .dm-own-row[data-row-state="closed"]:has(> .dm-own-figs:not(.dm-own-empty-figure)) > .dm-own-closed-caption { grid-column: 2; grid-row: 1; align-self: center; justify-self: end; }
+  .dm-positions-page .dm-own-collection .dm-own-row[data-row-state="closed"] > .dm-own-figs:not(.dm-own-empty-figure) { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; justify-content: flex-end; align-self: start; flex-wrap: nowrap; row-gap: 0; margin: 0; }
+  /* A closed row's tags are its network's name and its number, no logo (positions-closed.html). */
+  .dm-positions-page .dm-own-collection .dm-own-row[data-row-state="closed"] .dm-collection-network::before { content: none; }
   .dm-positions-page .dm-own-collection .dm-own-row[data-row-state="closed"] .dm-own-figs:not(.dm-own-empty-figure) .dm-own-cell { flex-wrap: nowrap; white-space: nowrap; }
   .dm-positions-page .dm-own-collection .dm-own-row[data-row-state="closed"] .dm-own-figs:not(.dm-own-empty-figure) .dm-own-amounts { display: inline-flex; flex-wrap: nowrap; align-items: baseline; gap: 0.5rem; }
   /* A phone's card: the leftovers take the row's whole width under it, right-aligned, and wrap only if they must. */
@@ -282,7 +331,8 @@
   }
   @media (max-width: 767px) {
     .dm-positions-page .dm-own-collection :is(.dm-collection-head, .dm-own-band, .dm-own-row) { padding-inline: 0.75rem; }
-    .dm-positions-page .dm-own-collection .dm-own-pair { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* A long pair wraps to a second line (each symbol is capped at 14ch): both symbols always stay in view. */
+    .dm-positions-page .dm-own-collection .dm-own-pair { min-width: 0; overflow-wrap: anywhere; }
   }
   @media (hover: none) {
     .dm-positions-page .dm-own-collection a.dm-own-row::before { display: none; }
@@ -290,7 +340,7 @@
 
   /* ---- Empty states (positions-empty.html, positions-guest.html): the double-blank domino beside the words, its pips
      filling in as you reach for the action; unlit where there is nothing to do. The words and the action are the card's. */
-  .dm-positions-page .dm-own-card .dm-empty:has(.dm-etile) { display: grid; grid-template-columns: 7.375rem minmax(0, 1fr); grid-template-rows: 1fr auto auto auto 1fr; column-gap: 1.875rem; align-items: center; justify-items: start; min-height: 0; margin: 0; padding: 0.5rem 1.375rem 1.875rem 0.875rem; border-radius: 0; background: none; box-shadow: none; text-align: left; }
+  .dm-positions-page .dm-own-card .dm-empty:has(.dm-etile) { display: grid; grid-template-columns: 7.375rem minmax(0, 1fr); grid-template-rows: 1fr auto auto auto 1fr; column-gap: 1.875rem; row-gap: 0; align-items: center; justify-items: start; min-height: 0; margin: 0; padding: 0.5rem 1.375rem 1.875rem 0.875rem; border-radius: 0; background: none; box-shadow: none; text-align: left; }
   .dm-positions-page .dm-own-card .dm-empty:has(.dm-etile) > .dm-empty-art { grid-column: 1; grid-row: 1 / -1; display: block; width: 7.375rem; height: 9.375rem; margin: 0; }
   .dm-positions-page .dm-own-card .dm-empty:has(.dm-etile) > .dm-empty-art > .dm-empty-ring { display: none; }
   .dm-positions-page .dm-own-card .dm-empty:has(.dm-etile) > .dm-empty-art > .dm-empty-tile { display: block; width: 100%; height: 100%; border-radius: 0; background: none; box-shadow: none; }
@@ -298,6 +348,8 @@
   .dm-positions-page .dm-own-card .dm-empty:has(.dm-etile) > .dm-empty-body { grid-column: 2; grid-row: 3; max-width: 40ch; margin: 0.75rem 0 0; font-size: 0.875rem; line-height: 1.5; color: var(--muted); }
   .dm-positions-page .dm-own-card .dm-empty:has(.dm-etile) > .dm-empty-action { grid-column: 2; grid-row: 4; margin: 1.375rem 0 0; }
   .dm-positions-page .dm-own-card .dm-empty:has(.dm-etile) > .dm-empty-action > .dm-btn { height: 3.375rem; padding: 0 1.75rem; gap: 0.625rem; border-radius: 0.875rem; font-size: 0.96875rem; line-height: 1.25rem; }
+  /* No positions yet: New position carries its 12px plus before the words (positions-empty.html .empty .btn-pri). */
+  .dm-positions-page .dm-own-card [data-empty="owned-none"] > .dm-empty-action > .dm-btn::before { content: ''; flex: none; width: 0.75rem; height: 0.75rem; background: currentColor; -webkit-mask: var(--v4p-plus) center / contain no-repeat; mask: var(--v4p-plus) center / contain no-repeat; }
   .dm-positions-page .dm-own-card .dm-own-wl { color: rgb(36 32 28 / 0.7); transition: rotate 0.3s var(--e-enter), translate 0.3s var(--e-enter); }
   .dm-positions-page .dm-own-card .dm-btn:hover > .dm-own-wl { rotate: -6deg; translate: -1px 0; }
   /* The tile: the brand's 3D domino (language §4.7) at .36, never redrawn; at rest at its angle, lifting toward you on
@@ -347,7 +399,7 @@
     .dm-positions-page .dm-etile-pip { opacity: 1; scale: 1; }
   }
   @media (max-width: 767px) {
-    .dm-positions-page .dm-own-card .dm-empty:has(.dm-etile) { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; row-gap: 0.5rem; padding: 0.25rem 0.75rem 1.5rem; }
+    .dm-positions-page .dm-own-card .dm-empty:has(.dm-etile) { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; row-gap: 0.5rem; }
     .dm-positions-page .dm-own-card .dm-empty:has(.dm-etile) > :is(.dm-empty-art, .dm-empty-title, .dm-empty-body, .dm-empty-action) { grid-column: 1; grid-row: auto; }
     .dm-positions-page .dm-own-card .dm-empty:has(.dm-etile) > .dm-empty-title { font-size: 1.75rem; }
     .dm-positions-page .dm-own-card .dm-empty:has(.dm-etile) > .dm-empty-action { margin-top: 0.875rem; }
@@ -357,7 +409,7 @@
   /* ---- Quiet one-line states (PositionsMore f2-e/f): a tab with nothing in it, the list that could not load ------- */
   .dm-positions-page .dm-own-card :is([data-empty="owned-open"], [data-empty="owned-closed"]),
   .dm-positions-page .dm-own-card .dm-own-note {
-    display: grid; grid-template-columns: 2rem minmax(0, 1fr); align-items: center; justify-items: start; gap: 0.875rem; min-height: 4.5rem; margin: 0; padding: 0.625rem 0.75rem 0.625rem 1.125rem; border-radius: 0.875rem; background: none; text-align: left; font-size: 0.90625rem; line-height: 1.45; font-weight: 400; color: var(--muted);
+    display: grid; grid-template-columns: 2rem minmax(0, 1fr); align-content: center; align-items: center; justify-items: start; gap: 0.875rem; min-height: 4.5rem; margin: 0; padding: 0.625rem 0.75rem 0.625rem 1.125rem; border-radius: 0.875rem; background: none; text-align: left; font-size: 0.90625rem; line-height: 1.45; font-weight: 400; color: var(--muted);
     animation: dm-v4p-pin 0.45s var(--e-enter) backwards;
   }
   .dm-positions-page .dm-own-card :is([data-empty="owned-open"], [data-empty="owned-closed"])::before,
@@ -373,7 +425,7 @@
      filling on hover, the site chevron stepping 2px. Show N more, Show all N, See all, Explore, Show more. ----------- */
   .dm-positions-page :is(.dm-own-more .dm-btn, [data-wallet-show-all], .dm-rcpt-all, .dm-acct-auto-head > .dm-btn),
   .dm-receipts-page :is(.dm-activity-footer > .dm-btn, .dm-acct-exec > .dm-btn) {
-    display: inline-flex; align-items: center; gap: 0.375rem; height: 2.375rem; min-height: 0; margin: 0; padding: 0 0.4375rem 0 0.6875rem;
+    display: inline-flex; align-items: center; gap: 0.375rem; height: 2.375rem; min-height: 0; margin: 0; padding: 0 0.625rem 0 0.875rem;
     border: 0.1875rem solid var(--v4-w035); border-radius: 0.8125rem; background: var(--v4-w035) padding-box; box-shadow: 0 0 0 1px var(--line);
     font-size: 0.84375rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--muted); text-decoration: none;
     transition: box-shadow 0.2s var(--e-std), background-color 0.18s var(--e-std), color 0.18s var(--e-std), scale 0.1s var(--e-press);
@@ -388,6 +440,9 @@
   .dm-receipts-page :is(.dm-activity-footer > .dm-btn, .dm-acct-exec > .dm-btn):hover::after { translate: 2px 0; }
   .dm-positions-page :is(.dm-own-more .dm-btn, [data-wallet-show-all], .dm-rcpt-all, .dm-acct-auto-head > .dm-btn):active,
   .dm-receipts-page :is(.dm-activity-footer > .dm-btn, .dm-acct-exec > .dm-btn):active { scale: 0.98; }
+  /* The pills that are buttons there (Show N more, Show all, Show more) carry no tracking, as a <button> does not. */
+  .dm-positions-page :is(.dm-own-more .dm-btn, [data-wallet-show-all]),
+  .dm-receipts-page :is(.dm-activity-footer > .dm-btn, .dm-acct-exec > .dm-btn) { letter-spacing: normal; }
   /* Show N more and Show more open downward: their chevron points down; Show less points up. */
   .dm-positions-page .dm-own-more .dm-btn::after,
   .dm-receipts-page :is(.dm-activity-footer > .dm-btn, .dm-acct-exec > .dm-btn)::after { rotate: 90deg; }
@@ -395,31 +450,40 @@
   .dm-receipts-page :is(.dm-activity-footer > .dm-btn, .dm-acct-exec > .dm-btn):hover::after { translate: 0 2px; }
   .dm-positions-page [data-wallet-show-all][aria-expanded="true"]::after { rotate: -90deg; }
   .dm-positions-page [data-wallet-show-all][aria-expanded="true"]:hover::after { translate: 0 -2px; }
+  /* Explore leaves for Automate: its 12px out-arrow steps up and right on hover (positions-guest.html .more .oa). */
+  .dm-positions-page .dm-acct-auto-head > .dm-btn::after { width: 0.75rem; height: 0.75rem; -webkit-mask-image: var(--v4p-out); mask-image: var(--v4p-out); }
+  .dm-positions-page .dm-acct-auto-head > .dm-btn:hover::after { translate: 1px -1px; }
   /* See all keeps its two rules: hidden with no session to list, shown once the unified history is in (positions.css, activity.css). */
   .dm-positions-page .dm-acct-card:has([data-execution="signed_out"]) .dm-rcpt-all { display: none; }
   .dm-positions-page .dm-acct-card:has([data-unified-activity]) .dm-rcpt-all { display: inline-flex; }
   .dm-positions-page .dm-own-more { display: flex; justify-content: center; padding: 0.75rem 0 0.25rem; }
 
   /* ---- Wallet card (positions.html Wallet, positions-address.html .wtot) ------------------------------------------ */
-  .dm-positions-page .dm-acct-subject { position: relative; gap: 0.375rem; height: 2rem; padding: 0 0.25rem 0 0.75rem; border-radius: 999px; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); transition: box-shadow 0.2s var(--e-std), background-color 0.18s var(--e-std), color 0.18s var(--e-std); }
+  .dm-positions-page .dm-acct-subject { position: relative; gap: 0.375rem; height: 2rem; padding: 0 0.25rem 0 0.75rem; border-radius: 999px; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); color: var(--fg); transition: box-shadow 0.2s var(--e-std), background-color 0.18s var(--e-std), color 0.18s var(--e-std); }
   .dm-positions-page .dm-acct-subject:hover { background: var(--v4-w05); box-shadow: inset 0 0 0 1px var(--lip); color: var(--fg); }
-  .dm-positions-page .dm-acct-subject .dm-acct-mono { font-family: var(--font-mono); font-size: 0.8125rem; line-height: 1rem; letter-spacing: 0; color: inherit; }
+  /* The address is a <button> on the approved pages, so it takes the page's own 16px regular sans (.v4c button { font: inherit }). */
+  .dm-positions-page .dm-acct-subject .dm-acct-mono { font-family: var(--font-sans); font-size: 1rem; line-height: 1.25rem; font-weight: 400; letter-spacing: normal; color: inherit; }
   .dm-positions-page .dm-acct-subject > button { width: 1.5rem; height: 1.5rem; border-radius: 50%; color: var(--subtle); transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std); }
   .dm-positions-page .dm-acct-subject > button:hover, .dm-positions-page .dm-acct-subject:hover > button { background: var(--v4-w06); color: var(--fg); }
   .dm-positions-page .dm-acct-subject > button[data-copied] { color: var(--in); }
   .dm-positions-page .dm-acct-subject > button > svg { width: 0.75rem; height: 0.75rem; }
-  .dm-positions-page .dm-acct-tokens { gap: 2px; }
+  .dm-positions-page .dm-acct-tokens { gap: 0; }
+  /* With no total the rows start 2px under the head (.tks); under a total, straight under it. */
+  .dm-positions-page .dm-acct-total[data-wallet-value-unavailable] ~ .dm-acct-token-list { margin-top: 0.125rem; }
   /* The total of the priced tokens: serif 58px with dimmed cents, its note one quiet line under it inside its slot. */
   .dm-positions-page .dm-acct-total { min-height: 4.25rem; margin: 0; padding: 0 1.125rem 0.625rem 1.375rem; overflow-wrap: anywhere; }
-  .dm-positions-page .dm-acct-total .dm-fig-xl { display: inline-block; max-width: 100%; font-family: var(--font-display); font-size: 3.625rem; line-height: 1.1; font-weight: 400; letter-spacing: -0.025em; color: var(--fg); white-space: normal; font-variant-numeric: lining-nums tabular-nums; }
+  .dm-positions-page .dm-acct-total .dm-fig-xl { display: inline-block; max-width: 100%; font-family: var(--font-display); font-size: 3.625rem; line-height: 1; font-weight: 400; letter-spacing: -0.025em; color: var(--fg); white-space: normal; font-variant-numeric: lining-nums tabular-nums; }
   .dm-positions-page .dm-acct-total .dm-fig-xl .dm-amount-tail { color: var(--subtle); }
-  .dm-positions-page .dm-acct-total [data-wallet-total-note] { display: block; margin: 0.625rem 0 0; font-size: 0.78125rem; line-height: 1.125rem; letter-spacing: -0.01em; color: var(--subtle); }
+  .dm-positions-page .dm-acct-total [data-wallet-total-note] { display: block; margin: 0.625rem 0 0; font-size: 0.78125rem; line-height: normal; letter-spacing: -0.01em; color: var(--subtle); }
   .dm-positions-page .dm-acct-total-skel { width: 9.5rem; height: 3rem; margin-top: 0.25rem; border-radius: 0.5rem; }
-  /* No total to show (nothing priced, or no tokens): its slot keeps its place, so the card does not jump when a total
-     arrives and the marker stays where readers and checks find it; an empty list line goes. */
+  /* No total to show (nothing priced, or no tokens): the token rows (or the foot) start right under the head, as the
+     approved pages draw a wallet with no total. The marker stays in place, 1px tall (never a zero box: checks wait on
+     it), its pixel given back below. While the list is first read the skeleton holds the slot (the marker is absent
+     then). An empty list line goes. */
+  .dm-positions-page .dm-acct-total[data-wallet-value-unavailable] { min-height: 1px; margin-bottom: -1px; padding-bottom: 0; }
   .dm-positions-page .dm-acct-tokens-empty:empty { display: none; }
   /* Token rows: 60px, the 32px mark, the symbol over its units, the dollars at the right; no hover fill. */
-  .dm-positions-page .dm-acct-token-list { gap: 2px; }
+  .dm-positions-page .dm-acct-token-list { gap: 0.125rem; }
   .dm-positions-page .dm-acct-tokens .dm-acct-token { grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.875rem; min-height: 3.75rem; padding: 0 0.875rem 0 1rem; border-radius: 0.875rem; background: none; }
   .dm-positions-page .dm-acct-token-name { font-size: 0.9375rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); }
   .dm-positions-page .dm-acct-token-link { text-decoration: none; transition: color 0.18s var(--e-std); }
@@ -434,6 +498,17 @@
   }
   /* The card's foot: Show all as the .more pill and Load more as .btn-sm, then the address links as .tlink. */
   .dm-positions-page .dm-acct-tokens-actions { gap: 0.5rem; margin: 0; padding: 0.75rem 0.5rem 0.125rem 0.75rem; }
+  /* The foot on one line where the card has room (positions.html .cfoot): Show all on the left, View another address on
+     the right, centred on it. Where the card is narrow (the 1024-1240 rail, the narrowest phones) they stay stacked. */
+  @media (min-width: 1241px), (min-width: 768px) and (max-width: 1023px) {
+    .dm-positions-page .dm-acct-wallet:has(> .dm-acct-tokens > .dm-acct-tokens-actions:last-child > .dm-btn:only-child):has(> .dm-acct-rail-actions > .dm-btn:only-child) > .dm-acct-tokens > .dm-acct-tokens-actions { width: max-content; }
+    .dm-positions-page .dm-acct-wallet:has(> .dm-acct-tokens > .dm-acct-tokens-actions:last-child > .dm-btn:only-child):has(> .dm-acct-rail-actions > .dm-btn:only-child) > .dm-acct-rail-actions { position: relative; width: max-content; margin: -2.75rem 0 0 auto; }
+  }
+  @media (min-width: 380px) and (max-width: 767px) {
+    /* The line is as tall as the 44px link beside the pill (the pill centred on it), as the approved phone .cfoot. */
+    .dm-positions-page .dm-acct-wallet:has(> .dm-acct-tokens > .dm-acct-tokens-actions:last-child > .dm-btn:only-child):has(> .dm-acct-rail-actions > .dm-btn:only-child) > .dm-acct-tokens > .dm-acct-tokens-actions { display: flex; align-items: center; width: max-content; min-height: 3.625rem; }
+    .dm-positions-page .dm-acct-wallet:has(> .dm-acct-tokens > .dm-acct-tokens-actions:last-child > .dm-btn:only-child):has(> .dm-acct-rail-actions > .dm-btn:only-child) > .dm-acct-rail-actions { position: relative; width: max-content; margin: -3.25rem 0 0 auto; }
+  }
   .dm-positions-page .dm-acct-tokens-actions > .dm-btn:not([data-wallet-show-all]),
   .dm-positions-page :is(.dm-acct-address-form, .dm-acct-tokens-form) > .dm-btn {
     gap: 0.5rem; height: 2.375rem; min-height: 0; padding: 0 0.875rem; border-radius: 0.75rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--lip); font-size: 0.84375rem; line-height: 1.25rem; font-weight: 500; color: var(--fg);
@@ -441,20 +516,41 @@
   }
   .dm-positions-page .dm-acct-tokens-actions > .dm-btn:not([data-wallet-show-all]):hover:not(:disabled, [aria-disabled="true"]),
   .dm-positions-page :is(.dm-acct-address-form, .dm-acct-tokens-form) > .dm-btn:hover:not(:disabled, [aria-disabled="true"]) { background: var(--v4-tan-07); box-shadow: inset 0 0 0 1px var(--v4-tan-ring); color: var(--tan-hi); }
-  .dm-positions-page .dm-acct-address-form > .dm-btn::after { content: ''; flex: none; width: 0.875rem; height: 0.875rem; background: var(--subtle); -webkit-mask: var(--v4p-chev) center / contain no-repeat; mask: var(--v4p-chev) center / contain no-repeat; transition: translate 0.3s var(--e-enter), background-color 0.2s var(--e-std); }
-  .dm-positions-page .dm-acct-address-form > .dm-btn:hover::after { background: var(--tan); translate: 2px 0; }
-  .dm-positions-page .dm-acct-wallet > .dm-acct-rail-actions { gap: 2px; margin: 0; padding: 0.25rem 0.5rem 0.125rem 0.625rem; }
-  .dm-positions-page .dm-acct-wallet > .dm-acct-rail-actions > .dm-btn { gap: 0.25rem; height: 2.125rem; min-height: 0; padding: 0 0.375rem 0 0.5rem; border-radius: 999px; background: transparent; box-shadow: none; font-size: 0.84375rem; line-height: 1.25rem; font-weight: 500; color: var(--muted); transition: color 0.18s var(--e-std); }
+  .dm-positions-page .dm-acct-wallet > .dm-acct-rail-actions { gap: 0.125rem; margin: 0; padding: 0.375rem 0.5rem 0.125rem 0.75rem; }
+  .dm-positions-page .dm-acct-wallet > .dm-acct-rail-actions > .dm-btn { gap: 0.25rem; height: 2.125rem; min-height: 0; padding: 0 0.375rem 0 0.5rem; border-radius: 999px; background: transparent; box-shadow: none; font-size: 0.84375rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); transition: color 0.18s var(--e-std); }
   .dm-positions-page .dm-acct-wallet > .dm-acct-rail-actions > .dm-btn:hover { background: transparent; color: var(--fg); }
   .dm-positions-page .dm-acct-wallet > .dm-acct-rail-actions > .dm-btn::after { content: ''; flex: none; width: 0.875rem; height: 0.875rem; background: currentColor; -webkit-mask: var(--v4p-chev) center / contain no-repeat; mask: var(--v4p-chev) center / contain no-repeat; transition: translate 0.25s var(--e-enter), rotate 0.25s var(--e-enter); }
   .dm-positions-page .dm-acct-wallet > .dm-acct-rail-actions > .dm-btn:hover::after { translate: 2px 0; }
+  /* Only View another address (the disclosure, aria-controls) carries the chevron; Use the connected wallet is a plain
+     text link (positions-address.html .tlink). */
+  .dm-positions-page .dm-acct-wallet > .dm-acct-rail-actions > .dm-btn:not([aria-controls])::after { content: none; }
+  /* On another address's card View another address is a <button> (positions-address.html): the page's own 16px regular text. */
+  .dm-positions-page .dm-acct-wallet > .dm-acct-rail-actions--link > .dm-btn[aria-controls] { font-size: 1rem; font-weight: 400; letter-spacing: normal; }
   .dm-positions-page .dm-acct-wallet > .dm-acct-rail-actions > .dm-btn[aria-expanded="true"]::after { rotate: 90deg; }
   .dm-positions-page .dm-acct-wallet > .dm-acct-rail-actions > .dm-btn[aria-expanded="true"]:hover::after { translate: 0 2px; }
   /* The address forms: a sentence, the mono field (red ring when it is wrong), the error with its dot, View address. */
   .dm-positions-page .dm-acct-wallet > .dm-acct-rail-empty { gap: 0.625rem; padding: 0 1.125rem 1rem 1.375rem; }
+  /* No wallet (positions-guest.html .wp, .af): the sentence 22px in, the field and View address 10px wider on each side
+     than it, 16px under it, 18px above the card's foot (the approved phone page keeps the same insets). */
+  .dm-positions-page .dm-acct-wallet > .dm-acct-rail-empty[data-empty="portfolio"] { gap: 0; padding: 0 0 0.375rem; }
+  .dm-positions-page .dm-acct-wallet > .dm-acct-rail-empty[data-empty="portfolio"] > .dm-acct-rail-text { padding: 0 1.125rem 1rem 1.375rem; }
+  .dm-positions-page .dm-acct-wallet > .dm-acct-rail-empty[data-empty="portfolio"] > .dm-error { margin: 0 1.125rem 0.625rem 1.375rem; }
+  .dm-positions-page .dm-acct-wallet > .dm-acct-rail-empty[data-empty="portfolio"] > .dm-acct-address-form { padding: 0 0.75rem; }
   .dm-positions-page .dm-acct-rail-text { margin: 0; font-size: 0.875rem; line-height: 1.5; color: var(--muted); }
   .dm-positions-page .dm-acct-address-form { gap: 0.625rem; }
-  .dm-positions-page .dm-acct-wallet > .dm-acct-rail-form { margin: 0 0.75rem 0.375rem; padding-top: 0.625rem; border-top: 0; animation: dm-v4p-pin 0.45s var(--e-enter) backwards; }
+  /* View another address: the form grows from nothing and fades in (.45s entrance, .25s fade), and closing collapses it
+     the same way while it fades (positions-address.html .vform); PortfolioBody keeps it mounted, .is-closing, for that. The
+     clip margin keeps the field's focus halo. */
+  .dm-positions-page .dm-acct-wallet > .dm-acct-rail-form { margin: 0 0.75rem 0.375rem; padding-top: 0.625rem; border-top: 0; animation: none; interpolate-size: allow-keywords; overflow: clip; overflow-clip-margin: 0.375rem; transition: block-size 0.45s var(--e-enter), padding-top 0.45s var(--e-enter), margin-bottom 0.45s var(--e-enter), opacity 0.25s var(--e-std); }
+  @starting-style {
+    .dm-positions-page .dm-acct-wallet > .dm-acct-rail-form { block-size: 0; padding-top: 0; margin-bottom: 0; opacity: 0; }
+  }
+  .dm-positions-page .dm-acct-wallet > .dm-acct-rail-form.is-closing { block-size: 0; padding-top: 0; margin-bottom: 0; opacity: 0; pointer-events: none; }
+  /* View address and the empty list's Connect wallet are <button>s on the approved pages, in the page's own 16px regular
+     text there (.v4c button { font: inherit }); computed sizes decide. */
+  .dm-positions-page .dm-acct-address-form > .dm-btn,
+  .dm-positions-page .dm-own-card .dm-empty[data-empty="owned-connect"] > .dm-empty-action > .dm-btn { font-size: 1rem; font-weight: 400; }
+  .dm-positions-page .dm-acct-address-form > .dm-btn { letter-spacing: normal; }
   .dm-positions-page .dm-acct-address-form .dm-search-input { height: 2.875rem; padding-right: 0.875rem; border-radius: 0.8125rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--lip); font-family: var(--font-mono); font-size: 0.8125rem; font-weight: 500; letter-spacing: 0; transition: box-shadow 0.2s var(--e-std), background-color 0.2s var(--e-std); }
   .dm-positions-page .dm-acct-address-form .dm-search-input:hover { box-shadow: inset 0 0 0 1px var(--strong); }
   .dm-positions-page .dm-acct-address-form .dm-search-input:focus { background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong), 0 0 0 0.25rem var(--v4-tan-halo); outline: none; }
@@ -469,31 +565,59 @@
   .dm-positions-page .dm-acct-tokens-form { gap: 0.625rem; }
   .dm-positions-page .dm-acct-tokens-form .dm-hint { font-size: 0.78125rem; color: var(--subtle); }
   @media (max-width: 767px) {
-    .dm-positions-page .dm-acct-total { padding: 0 0.75rem 0.625rem; }
-    .dm-positions-page .dm-acct-total .dm-fig-xl { font-size: clamp(2.5rem, 13vw, 3.625rem); }
-    .dm-positions-page .dm-acct-tokens .dm-acct-token { padding: 0 0.625rem 0 0.75rem; }
-    .dm-positions-page .dm-acct-token-group { padding: 0.875rem 0.75rem 0.375rem; }
+    /* The approved phone keeps the card's insets and the 58px total (it gives way only on the narrowest phones). */
+    .dm-positions-page .dm-acct-total .dm-fig-xl { font-size: clamp(2.5rem, 15vw, 3.625rem); }
     .dm-positions-page .dm-acct-wallet > .dm-acct-rail-empty { padding: 0 0.75rem 1rem; }
     .dm-positions-page .dm-acct-address-form .dm-search-input { font-size: 1rem; }
-    .dm-positions-page .dm-acct-tokens-actions { padding-left: 0.5rem; }
-    .dm-positions-page .dm-acct-wallet > .dm-acct-rail-actions { padding-left: 0.375rem; }
     .dm-positions-page .dm-acct-wallet > .dm-acct-rail-actions > .dm-btn,
     .dm-positions-page .dm-acct-tokens-actions > .dm-btn:not([data-wallet-show-all]),
     .dm-positions-page .dm-acct-address-form > .dm-btn { height: 2.75rem; }
   }
 
-  /* ---- Automation card (positions.html "Automation"): the key to the three functions, each with its own glyph in a
-     ringed circle. The rows stay what they are today, a description (no new link or highlighting: decision D1). ---- */
-  .dm-positions-page .dm-acct-auto-list { display: flex; flex-direction: column; gap: 2px; margin: 2px 0 0; padding: 0; }
-  .dm-positions-page .dm-acct-auto-list > li { display: grid; grid-template-columns: 2.25rem minmax(0, 1fr); align-items: center; gap: 0.875rem; min-height: 4rem; padding: 0 0.5rem 0 1rem; border-radius: 0.875rem; }
-  .dm-positions-page .dm-acct-auto-ic { position: relative; display: inline-flex; width: 2.25rem; height: 2.25rem; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--strong); color: var(--muted); }
-  .dm-positions-page .dm-acct-auto-ic::before { content: ''; position: absolute; inset: 0; margin: auto; width: 1rem; height: 1rem; background: currentColor; -webkit-mask: var(--v4p-cmp) center / contain no-repeat; mask: var(--v4p-cmp) center / contain no-repeat; }
+  /* ---- Automation card (positions.html "Automation", .aus/.au): the key to the three functions, each a row that opens
+     Automate: its glyph in a ringed circle, its name and line, the round chevron. Hover or focus lights it (the pip, the
+     Tangerine ring, the glyph's turn, the chevron stepping 2px) and keeps lit only the positions that run it (above);
+     hovering a position lights its function here. ------------------------------------------------------------------ */
+  .dm-positions-page .dm-acct-auto-list { display: flex; flex-direction: column; gap: 0.125rem; margin: 0.125rem 0 0; padding: 0; }
+  .dm-positions-page .dm-acct-auto-list > li { display: block; min-height: 0; padding: 0; }
+  .dm-positions-page .dm-acct-auto-row { position: relative; display: grid; grid-template-columns: 2.25rem minmax(0, 1fr) 2.125rem; align-items: center; gap: 0.875rem; min-height: 4rem; padding: 0 0.5rem 0 1rem; border-radius: 0.875rem; color: inherit; text-decoration: none; transition: background-color 0.18s var(--e-std); }
+  .dm-positions-page .dm-acct-auto-row:active { scale: 0.997; }
+  .dm-positions-page .dm-acct-auto-row:focus-visible { outline: 2px solid var(--tan); outline-offset: -2px; }
+  .dm-positions-page .dm-acct-auto-row::before { content: ''; position: absolute; left: 0.375rem; top: 50%; width: 0.3125rem; height: 0.3125rem; margin-top: -0.15625rem; border-radius: 50%; background: var(--tan); opacity: 0; scale: 0.2; pointer-events: none; transition: opacity 0.2s var(--e-std), scale 0.35s var(--e-enter); }
+  .dm-positions-page .dm-acct-auto-ic { position: relative; display: inline-flex; width: 2.25rem; height: 2.25rem; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--strong); color: var(--muted); transition: box-shadow 0.2s var(--e-std), color 0.2s var(--e-std); }
+  .dm-positions-page .dm-acct-auto-ic::before { content: ''; position: absolute; inset: 0; margin: auto; width: 1rem; height: 1rem; background: currentColor; -webkit-mask: var(--v4p-cmp) center / contain no-repeat; mask: var(--v4p-cmp) center / contain no-repeat; transition: rotate 0.35s var(--e-enter), translate 0.35s var(--e-enter); }
   .dm-positions-page .dm-acct-auto-ic--dom::before { -webkit-mask-image: var(--v4p-dom); mask-image: var(--v4p-dom); }
   .dm-positions-page .dm-acct-auto-ic--exit::before { -webkit-mask-image: var(--v4p-exit); mask-image: var(--v4p-exit); }
   .dm-positions-page .dm-acct-auto-name { min-height: 0; margin: 0; font-size: 0.9375rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); }
   .dm-positions-page .dm-acct-auto-text { margin: 0.25rem 0 0; font-size: 0.78125rem; line-height: 1rem; letter-spacing: -0.01em; color: var(--subtle); }
-  @media (max-width: 767px) {
-    .dm-positions-page .dm-acct-auto-list > li { padding: 0 0.5rem 0 0.75rem; }
+  .dm-positions-page .dm-acct-auto-chev { display: inline-grid; place-items: center; justify-self: end; width: 2.125rem; height: 2.125rem; border-radius: 50%; color: var(--faint); transition: color 0.18s var(--e-std), background-color 0.18s var(--e-std), translate 0.25s var(--e-enter); }
+  .dm-positions-page .dm-acct-auto-chev::before { content: ''; width: 0.875rem; height: 0.875rem; background: currentColor; -webkit-mask: var(--v4p-chev) center / contain no-repeat; mask: var(--v4p-chev) center / contain no-repeat; }
+  .dm-positions-page .dm-acct-auto-row:is(:hover, :focus-visible) { background: var(--v4-w045); }
+  .dm-positions-page .dm-acct-auto-row:is(:hover, :focus-visible)::before { opacity: 1; scale: 1; }
+  .dm-positions-page .dm-acct-auto-row:is(:hover, :focus-visible) > .dm-acct-auto-ic { box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong); color: var(--tan); }
+  .dm-positions-page .dm-acct-auto-row:is(:hover, :focus-visible) > .dm-acct-auto-ic--cmp::before { rotate: -18deg; }
+  .dm-positions-page .dm-acct-auto-row:is(:hover, :focus-visible) > .dm-acct-auto-ic--dom::before { rotate: -14deg; translate: 0 -1px; }
+  .dm-positions-page .dm-acct-auto-row:is(:hover, :focus-visible) > .dm-acct-auto-ic--exit::before { translate: 2px 0; }
+  .dm-positions-page .dm-acct-auto-row:is(:hover, :focus-visible) > .dm-acct-auto-chev { color: var(--fg); background: var(--v4-w06); translate: 2px 0; }
+  @media (hover: hover) {
+    .dm-positions-page:has(.dm-own-collection a.dm-own-row:is(:hover, :focus-visible) .dm-own-ag--cmp + [data-running]) .dm-acct-auto-row:has(> .dm-acct-auto-ic--cmp),
+    .dm-positions-page:has(.dm-own-collection a.dm-own-row:is(:hover, :focus-visible) .dm-own-ag--dom + [data-running]) .dm-acct-auto-row:has(> .dm-acct-auto-ic--dom),
+    .dm-positions-page:has(.dm-own-collection a.dm-own-row:is(:hover, :focus-visible) .dm-own-ag--exit + [data-running]) .dm-acct-auto-row:has(> .dm-acct-auto-ic--exit) { background: var(--v4-w045); }
+    .dm-positions-page:has(.dm-own-collection a.dm-own-row:is(:hover, :focus-visible) .dm-own-ag--cmp + [data-running]) .dm-acct-auto-row:has(> .dm-acct-auto-ic--cmp)::before,
+    .dm-positions-page:has(.dm-own-collection a.dm-own-row:is(:hover, :focus-visible) .dm-own-ag--dom + [data-running]) .dm-acct-auto-row:has(> .dm-acct-auto-ic--dom)::before,
+    .dm-positions-page:has(.dm-own-collection a.dm-own-row:is(:hover, :focus-visible) .dm-own-ag--exit + [data-running]) .dm-acct-auto-row:has(> .dm-acct-auto-ic--exit)::before { opacity: 1; scale: 1; }
+    .dm-positions-page:has(.dm-own-collection a.dm-own-row:is(:hover, :focus-visible) .dm-own-ag--cmp + [data-running]) .dm-acct-auto-row:has(> .dm-acct-auto-ic--cmp) > .dm-acct-auto-ic,
+    .dm-positions-page:has(.dm-own-collection a.dm-own-row:is(:hover, :focus-visible) .dm-own-ag--dom + [data-running]) .dm-acct-auto-row:has(> .dm-acct-auto-ic--dom) > .dm-acct-auto-ic,
+    .dm-positions-page:has(.dm-own-collection a.dm-own-row:is(:hover, :focus-visible) .dm-own-ag--exit + [data-running]) .dm-acct-auto-row:has(> .dm-acct-auto-ic--exit) > .dm-acct-auto-ic { box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong); color: var(--tan); }
+    .dm-positions-page:has(.dm-own-collection a.dm-own-row:is(:hover, :focus-visible) .dm-own-ag--cmp + [data-running]) .dm-acct-auto-row:has(> .dm-acct-auto-ic--cmp) > .dm-acct-auto-ic::before { rotate: -18deg; }
+    .dm-positions-page:has(.dm-own-collection a.dm-own-row:is(:hover, :focus-visible) .dm-own-ag--dom + [data-running]) .dm-acct-auto-row:has(> .dm-acct-auto-ic--dom) > .dm-acct-auto-ic::before { rotate: -14deg; translate: 0 -1px; }
+    .dm-positions-page:has(.dm-own-collection a.dm-own-row:is(:hover, :focus-visible) .dm-own-ag--exit + [data-running]) .dm-acct-auto-row:has(> .dm-acct-auto-ic--exit) > .dm-acct-auto-ic::before { translate: 2px 0; }
+    .dm-positions-page:has(.dm-own-collection a.dm-own-row:is(:hover, :focus-visible) .dm-own-ag--cmp + [data-running]) .dm-acct-auto-row:has(> .dm-acct-auto-ic--cmp) > .dm-acct-auto-chev,
+    .dm-positions-page:has(.dm-own-collection a.dm-own-row:is(:hover, :focus-visible) .dm-own-ag--dom + [data-running]) .dm-acct-auto-row:has(> .dm-acct-auto-ic--dom) > .dm-acct-auto-chev,
+    .dm-positions-page:has(.dm-own-collection a.dm-own-row:is(:hover, :focus-visible) .dm-own-ag--exit + [data-running]) .dm-acct-auto-row:has(> .dm-acct-auto-ic--exit) > .dm-acct-auto-chev { color: var(--fg); background: var(--v4-w06); translate: 2px 0; }
+  }
+  @media (hover: none) {
+    .dm-positions-page .dm-acct-auto-row::before { display: none; }
   }
 
   /* ---- Receipts: the card on Positions and the full page (positions.html Receipts, receipts.html). Scoped to the
@@ -504,7 +628,7 @@
   /* A receipts card with nothing to list says so in one quiet line: a round icon, the sentence, its one button. */
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] :is(.dm-acct-plot, .dm-acct-quiet),
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-activity-history > .dm-rcpt-note[role="status"] {
-    grid-area: auto; display: grid; grid-template-columns: 2rem minmax(0, 1fr) auto; align-items: center; justify-items: start; gap: 0.875rem; min-height: 4.5rem; margin: 0; padding: 0.625rem 0.75rem 0.625rem 1.125rem; border-radius: 0.875rem; background: none; box-shadow: none; text-align: left; text-wrap: pretty; font-size: 0.90625rem; line-height: 1.45; color: var(--muted);
+    grid-area: auto; display: grid; grid-template-columns: 2rem minmax(0, 1fr) auto; align-content: center; align-items: center; justify-items: start; gap: 0.875rem; min-height: 4.5rem; margin: 0; padding: 0.625rem 0.75rem 0.625rem 1.125rem; border-radius: 0.875rem; background: none; box-shadow: none; text-align: left; text-wrap: pretty; font-size: 0.90625rem; line-height: 1.45; color: var(--muted);
     animation: dm-v4p-pin 0.45s var(--e-enter) backwards;
   }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] :is(.dm-acct-plot, .dm-acct-quiet)::after { content: none; }
@@ -519,12 +643,12 @@
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-acct-quiet > .dm-btn:hover { background: var(--v4-tan-07); box-shadow: inset 0 0 0 1px var(--v4-tan-ring); color: var(--tan-hi); }
   /* The list: rows 2px apart on the card itself (no inset panel, no hairlines). */
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-activity-history { gap: 0.5rem; }
-  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; border-radius: 0; background: transparent; box-shadow: none; }
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-list { display: flex; flex-direction: column; gap: 0.125rem; margin: 0; padding: 0; border-radius: 0; background: transparent; box-shadow: none; }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-list > li { position: relative; border-top: 0; }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row { border-radius: 0.875rem; transition: background-color 0.18s var(--e-std); }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row[open] { background: var(--v4-w03); }
   /* A row (language §8.9 .rc): what happened with its check and time, the amount, the round chevron pointing down. */
-  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row > summary { position: relative; align-items: center; column-gap: 0.875rem; row-gap: 2px; min-height: 4rem; padding: 0.625rem 0.75rem 0.625rem 1.125rem; border-radius: 0.875rem; transition: background-color 0.18s var(--e-std); }
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row > summary { position: relative; align-items: center; column-gap: 0.875rem; row-gap: 0.125rem; min-height: 4rem; padding: 0.625rem 0.75rem 0.625rem 1.125rem; border-radius: 0.875rem; transition: background-color 0.18s var(--e-std); }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-operation > summary { grid-template-columns: minmax(0, 1fr) auto 2.125rem; }
   /* The status word has one track, sized for its longest ("In progress"), so every title starts on the same edge. */
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row:not(.dm-rcpt-operation) > summary { grid-template-columns: 5.75rem minmax(0, 1fr) auto 2.125rem; }
@@ -533,20 +657,28 @@
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row > summary:focus-visible { outline: 2px solid var(--tan); outline-offset: -2px; }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row > summary::before { content: ''; position: absolute; left: 0.375rem; top: 50%; width: 0.3125rem; height: 0.3125rem; margin-top: -0.15625rem; border-radius: 50%; background: var(--tan); opacity: 0; scale: 0.2; pointer-events: none; transition: opacity 0.2s var(--e-std), scale 0.35s var(--e-enter); }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row > summary:is(:hover, :focus-visible)::before { opacity: 1; scale: 1; }
-  /* A row that leads with its status dot, or is open, does without the pip: two dots side by side read as two marks. */
-  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row[open] > summary::before,
+  /* A row that leads with its status dot does without the pip: two dots side by side read as two marks. An open
+     receipt keeps it under the pointer, as the approved rows do. */
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row > summary:has(> .dm-rcpt-chip)::before { content: none; }
   /* A receipt with no time keeps no empty time line under its title (the chevron centres on the title it belongs to). */
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-activity-time:empty { display: none; }
-  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-what { min-width: 0; font-size: 0.9375rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); }
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-what { min-width: 0; font-size: 0.9375rem; line-height: normal; font-weight: 500; letter-spacing: normal; color: var(--fg); }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-receipt-title { gap: 0.875rem; min-width: 0; }
-  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-receipt-title > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-receipt-title > span:last-child { min-width: 0; overflow-wrap: anywhere; }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-receipt-check { position: relative; z-index: 1; width: 2rem; height: 2rem; border: 0; border-radius: 50%; background: var(--v4-w06); color: var(--muted); transition: color 0.18s var(--e-std), scale 0.3s var(--e-enter), rotate 0.3s var(--e-enter); }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-receipt-check > svg { width: 0.875rem; height: 0.875rem; }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row > summary:hover .dm-receipt-check { color: var(--in); scale: 1.06; }
-  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-what:has(.dm-receipt-check) > :not(.dm-receipt-title) { margin-left: 2.875rem; }
-  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-activity-time { margin-top: 0.25rem; font-size: 0.78125rem; line-height: 1rem; font-weight: 400; color: var(--subtle); font-variant-numeric: lining-nums tabular-nums; }
-  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-amount { font-size: 0.9375rem; line-height: 1.375rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); text-align: right; }
+  /* What happened beside its check: the 32px check centred on the title and its time together, the time 4px under the
+     title (positions.html .rc, .rc-tx). The title is a grid item of its own here (its wrapper draws no box), so a long one
+     wraps in full. A row with no time centres its check on the title alone. */
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-what:has(> .dm-receipt-title > .dm-receipt-check) { display: grid; grid-template-columns: 2rem minmax(0, 1fr); column-gap: 0.875rem; row-gap: 0.25rem; align-items: center; }
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-what:has(> .dm-receipt-title > .dm-receipt-check) > .dm-receipt-title { display: contents; }
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-what:has(> .dm-receipt-title > .dm-receipt-check) > .dm-receipt-title > .dm-receipt-check { grid-column: 1; grid-row: 1 / span 2; }
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-what:has(> .dm-receipt-title > .dm-receipt-check) > .dm-receipt-title > span:last-child { grid-column: 2; grid-row: 1; }
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-what:has(> .dm-receipt-title > .dm-receipt-check) > :not(.dm-receipt-title) { grid-column: 2; grid-row: 2; margin: 0; }
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-what:has(> .dm-receipt-title > .dm-receipt-check):not(:has(> .dm-activity-time:not(:empty))) > .dm-receipt-title > .dm-receipt-check { grid-row: 1; }
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-activity-time { margin-top: 0.25rem; font-size: 0.78125rem; line-height: normal; font-weight: 400; letter-spacing: normal; color: var(--subtle); font-variant-numeric: lining-nums tabular-nums; }
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-amount { font-size: 0.9375rem; line-height: normal; font-weight: 500; letter-spacing: normal; color: var(--fg); text-align: right; }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-operation .dm-rcpt-chevron { grid-column: 3; grid-row: 1; }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row:not(.dm-rcpt-operation) .dm-rcpt-chevron { grid-column: 4; grid-row: 1; }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-chevron { box-sizing: border-box; justify-self: end; width: 2.125rem; height: 2.125rem; padding: 0.625rem; border-radius: 50%; color: var(--faint); transition: color 0.18s var(--e-std), background-color 0.18s var(--e-std), translate 0.25s var(--e-enter), rotate 0.35s var(--e-enter); }
@@ -555,30 +687,60 @@
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row[open] > summary:hover .dm-rcpt-chevron { translate: 0 -2px; }
   /* A receipt opens in place: the perforated tear line draws left to right, then its facts rise in. */
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-detail { gap: 1rem; padding: 0 0.875rem 1.125rem 4rem; }
-  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row[open] > .dm-rcpt-detail::before { content: ''; display: block; height: 0.1875rem; background-image: radial-gradient(circle, rgb(255 214 186 / 0.3) 0 1px, transparent 1.4px); background-size: 0.4375rem 0.1875rem; background-repeat: repeat-x; animation: dm-v4p-perf 0.65s var(--e-enter) 0.06s backwards; }
-  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row[open] > .dm-rcpt-detail > :not(:first-child) { animation: dm-v4p-rise 0.45s var(--e-enter) 0.12s backwards; }
+  /* Opening (.rcw.open): the tear line draws in .65s from .06s, the facts rise in from .12s, the transaction facts from
+     .2s. Closing: the line retracts (.3s), the facts fade up and blur (.2s), while the receipt folds away (below). */
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row > .dm-rcpt-detail::before { content: ''; display: block; height: 0.1875rem; background-image: radial-gradient(circle, rgb(255 214 186 / 0.3) 0 1px, transparent 1.4px); background-size: 0.4375rem 0.1875rem; background-repeat: repeat-x; clip-path: inset(0 100% 0 0); transition: clip-path 0.3s var(--e-std); }
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row[open] > .dm-rcpt-detail::before { clip-path: inset(0); animation: dm-v4p-perf 0.65s var(--e-enter) 0.06s backwards; }
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row[open] > .dm-rcpt-detail > * { animation: dm-v4ps-rise 0.45s var(--e-enter) 0.12s backwards, dm-v4ps-fade 0.35s var(--e-std) 0.12s backwards; }
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row[open] > .dm-rcpt-detail > .dm-rcpt-tech { animation-delay: 0.2s; }
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row:not([open]) > .dm-rcpt-detail > * { opacity: 0; transform: translateY(-0.25rem); filter: blur(0.1875rem); transition: opacity 0.2s var(--e-std), transform 0.2s var(--e-std), filter 0.2s var(--e-std); }
+  /* The receipt opens to its height over .45s and folds away over .3s, the rows below gliding (.rdet); so do Internal
+     automation checks on the Receipts page (.ibody). Where the browser cannot animate a height, it opens at once. */
+  @supports (interpolate-size: allow-keywords) and selector(::details-content) {
+    :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row,
+    .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal { interpolate-size: allow-keywords; }
+    :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row::details-content,
+    .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal::details-content { block-size: 0; overflow-y: clip; transition: block-size 0.3s var(--e-std), content-visibility 0.3s var(--e-std) allow-discrete; }
+    :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row[open]::details-content,
+    .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal[open]::details-content { block-size: auto; transition: block-size 0.45s var(--e-enter); } /* opening never transitions content-visibility: the content is there (and readable) at once */
+  }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] :is(.dm-rcpt-facts, .dm-rcpt-tech) { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.25rem, 1fr)); gap: 1rem 2rem; margin: 0; }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] :is(.dm-rcpt-facts, .dm-rcpt-tech) > div { display: block; min-width: 0; }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] :is(.dm-rcpt-facts, .dm-rcpt-tech) > :is([data-receipt-field="state"], [data-receipt-field="gas-shared"], [data-receipt-field="transaction-hash"]) { grid-column: 1 / -1; }
-  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] :is(.dm-rcpt-facts, .dm-rcpt-tech) dt { font-size: 0.78125rem; line-height: 1rem; font-weight: 400; color: var(--subtle); }
+  /* An operation's transaction facts flow as the approved receipt's (.facts.tech): Status spans two cells while it is a
+     sentence ("Final." takes one), the transaction hash and its copy button sit in an ordinary cell. */
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-operation > .dm-rcpt-detail > .dm-rcpt-tech > [data-receipt-field="transaction-hash"] { grid-column: auto; }
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-operation > .dm-rcpt-detail > .dm-rcpt-tech > [data-receipt-field="state"] { grid-column: span 2; }
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] li[data-v2-finality="finalized"] > .dm-rcpt-operation > .dm-rcpt-detail > .dm-rcpt-tech > [data-receipt-field="state"] { grid-column: auto; }
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] :is(.dm-rcpt-facts, .dm-rcpt-tech) dt { font-size: 0.78125rem; line-height: normal; font-weight: 400; letter-spacing: normal; color: var(--subtle); }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] :is(.dm-rcpt-facts, .dm-rcpt-tech) dd { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 0.4375rem; min-height: 1.875rem; margin: 0.25rem 0 0; font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; color: var(--fg); text-align: left; overflow-wrap: anywhere; font-variant-numeric: lining-nums tabular-nums; }
   /* A fact's value is a sentence of amounts ("1.5 TOKEN + 0.2 ETH", "#1 · #2"): it keeps one inline line that wraps
      as words, never one flex item per token; the padding holds the same 1.875rem row as the flex wells beside it. */
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-facts dd { display: block; padding-block: 0.3125rem; box-sizing: border-box; }
-  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-tech { padding-top: 1.125rem; box-shadow: inset 0 1px 0 var(--line); }
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-tech { margin-top: 0.125rem; padding-top: calc(1rem + 1px); box-shadow: inset 0 1px 0 var(--line); }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-tech dd { font-size: 0.84375rem; color: var(--muted); }
+  /* The Network fact carries the network's 16px logo before its name (.facts.tech Network). */
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] li[data-v2-receipt-chain="4663"] > .dm-rcpt-operation > .dm-rcpt-detail > .dm-rcpt-tech > [data-receipt-field="network"] > dd::before { content: ''; flex: none; width: 1rem; height: 1rem; border-radius: 50%; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Ccircle cx='10' cy='10' r='10' fill='%23ccff00'/%3E%3Cpath d='M6.6 14.8c.9-4.2 3.1-7.4 7-8.9-.7 3.4-2.7 6.2-5.8 7.4' fill='%231b2a0e'/%3E%3C/svg%3E") center / contain no-repeat; }
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] li[data-v2-receipt-chain="8453"] > .dm-rcpt-operation > .dm-rcpt-detail > .dm-rcpt-tech > [data-receipt-field="network"] > dd::before { content: ''; flex: none; width: 1rem; height: 1rem; border-radius: 50%; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Ccircle cx='10' cy='10' r='10' fill='%230052ff'/%3E%3Ccircle cx='10' cy='10' r='5.6' fill='%23fff'/%3E%3Crect x='3.6' y='9.2' width='7.4' height='1.6' fill='%230052ff'/%3E%3C/svg%3E") center / contain no-repeat; }
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] li[data-v2-receipt-chain="42161"] > .dm-rcpt-operation > .dm-rcpt-detail > .dm-rcpt-tech > [data-receipt-field="network"] > dd::before { content: ''; flex: none; width: 1rem; height: 1rem; border-radius: 50%; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Ccircle cx='10' cy='10' r='10' fill='%23213147'/%3E%3Cpath d='M6.4 14.6 10 5.4l3.6 9.2' stroke='%2328a0f0' stroke-width='1.7' fill='none' stroke-linejoin='round'/%3E%3Cpath d='M8.2 12.2h3.6' stroke='%23fff' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat; }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-tech a.dm-mono { font-family: var(--font-mono); font-size: 0.8125rem; font-weight: 400; letter-spacing: 0; color: var(--muted); text-decoration: underline; text-decoration-color: rgb(255 236 220 / 0.22); text-decoration-thickness: 1px; text-underline-offset: 0.1875rem; border-radius: 0.25rem; transition: color 0.18s var(--e-std), text-decoration-color 0.18s var(--e-std); }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-tech a.dm-mono:hover { color: var(--tan-hi); text-decoration-color: rgb(255 157 98 / 0.6); }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-tech dd > button { width: 1.875rem; height: 1.875rem; border-radius: 0.625rem; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); transition: background-color 0.18s var(--e-std), box-shadow 0.2s var(--e-std), color 0.18s var(--e-std); }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-tech dd > button:hover { background: var(--v4-tan-07); box-shadow: inset 0 0 0 1px var(--v4-tan-ring); color: var(--tan-hi); }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-tech dd > button[data-copied] { color: var(--in); }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-tech dd > button > svg { width: 0.875rem; height: 0.875rem; }
+  /* A receipt with no money facts (a change outside Domino, an automation ended): the tear line is followed straight by
+     its transaction facts, with no hairline (no .fsep without .facts). */
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-detail > [data-receipt-effect]:empty { display: none; }
+  :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-detail:has(> [data-receipt-effect]):not(:has(> [data-receipt-effect]:not(:empty))) > .dm-rcpt-tech { margin-top: 0; padding-top: 0; box-shadow: none; }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-detail [data-receipt-effect] + [data-receipt-effect] { padding-top: 0.875rem; border-top: 0; box-shadow: inset 0 1px 0 var(--line); }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-receipt-effect-title { margin: 0 0 0.75rem; font-size: 0.875rem; font-weight: 500; color: var(--fg); }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-detail .dm-rcpt-note { max-width: 60ch; margin: 0; font-size: 0.8125rem; line-height: 1.5; color: var(--subtle); }
   :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-chip { justify-self: start; }
   @keyframes dm-v4p-perf { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0); } }
-  @keyframes dm-v4p-rise { from { opacity: 0.01; transform: translateY(-0.25rem); filter: blur(0.1875rem); } to { opacity: 1; transform: none; filter: none; } }
+  /* Own names: dm-v4p-rise is the position page's keyframes (v4-position.css). */
+  @keyframes dm-v4ps-rise { from { transform: translateY(-0.25rem); } to { transform: none; } }
+  @keyframes dm-v4ps-fade { from { opacity: 0.01; filter: blur(0.1875rem); } to { opacity: 1; filter: none; } }
   /* A narrow list (a phone): the amount goes under what happened, the chevron spans both lines. */
   @container dm-rcpt (max-width: 22rem) {
     :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-operation > summary { grid-template-columns: minmax(0, 1fr) 2.125rem; }
@@ -609,13 +771,19 @@
   }
   @media (max-width: 767px) {
     :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row > summary { padding-inline: 0.75rem 0.625rem; }
-    /* A phone gives a long title two lines (the position number at its end stays in view), then the ellipsis. */
-    :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-receipt-title > span:last-child { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; overflow-wrap: anywhere; }
     :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-detail { padding: 0 0.625rem 1rem; }
     :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] :is(.dm-rcpt-facts, .dm-rcpt-tech) { grid-template-columns: repeat(auto-fill, minmax(min(8.125rem, calc(50% - 0.5rem)), 1fr)); gap: 0.875rem 1rem; }
-    :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] :is(.dm-acct-plot, .dm-acct-quiet) { grid-template-columns: 2rem minmax(0, 1fr); padding-left: 0.75rem; }
+    :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] :is(.dm-acct-plot, .dm-acct-quiet) { grid-template-columns: 2rem minmax(0, 1fr); }
     :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-acct-quiet > .dm-btn { grid-column: 2; height: 2.75rem; }
     :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-acct-desc { padding: 0 0.75rem; }
+    /* The Positions card on a phone (PhoneMore .rc): no chevron, the check at the top, the amount under the title (14px). */
+    .dm-positions-page section[aria-labelledby="receipts-title"] .dm-rcpt-operation > summary { grid-template-columns: minmax(0, 1fr); padding: 0.75rem 0.625rem 0.75rem 0.875rem; }
+    .dm-positions-page section[aria-labelledby="receipts-title"] .dm-rcpt-operation .dm-rcpt-chevron { display: none; }
+    .dm-positions-page section[aria-labelledby="receipts-title"] .dm-rcpt-operation .dm-rcpt-what { font-size: 0.90625rem; line-height: 1.35; }
+    .dm-positions-page section[aria-labelledby="receipts-title"] .dm-rcpt-operation .dm-rcpt-what:has(> .dm-receipt-title > .dm-receipt-check) { column-gap: 0.75rem; }
+    .dm-positions-page section[aria-labelledby="receipts-title"] .dm-rcpt-operation > summary > .dm-rcpt-what + .dm-rcpt-amount { grid-column: 1; grid-row: 2; margin: 0.25rem 0 0 2.75rem; font-size: 0.875rem; text-align: left; }
+    .dm-positions-page section[aria-labelledby="receipts-title"] .dm-rcpt-operation > summary > .dm-rcpt-what + .dm-rcpt-amount:empty { display: none; }
+    .dm-positions-page section[aria-labelledby="receipts-title"] .dm-rcpt-operation .dm-receipt-check { align-self: start; }
   }
   @media (hover: none) {
     :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row > summary::before { display: none; }
@@ -623,59 +791,136 @@
 
   /* ---- The Receipts page (receipts.html): the masthead beside the ledger from 1181px, above it below. ------------- */
   .dm-receipts-page .dm-rcpt-mast { min-width: 0; }
-  .dm-receipts-page .dm-pos-back { display: inline-flex; align-items: center; gap: 0.375rem; height: 2.125rem; min-height: 0; margin: 0 0 0 -0.5rem; padding: 0 0.75rem 0 0.5rem; border-radius: 999px; font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; color: var(--muted); text-decoration: none; transition: color 0.18s var(--e-std), background-color 0.18s var(--e-std); }
+  .dm-receipts-page .dm-pos-back { display: inline-flex; align-items: center; gap: 0.375rem; height: 2.125rem; min-height: 0; margin: 0; padding: 0 0.75rem 0 0.5rem; border-radius: 999px; font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; color: var(--fg); text-decoration: none; transition: color 0.18s var(--e-std), background-color 0.18s var(--e-std), scale 0.1s var(--e-press); }
   .dm-receipts-page .dm-pos-back > svg { width: 0.875rem; height: 0.875rem; transition: translate 0.25s var(--e-enter); }
   .dm-receipts-page .dm-pos-back:hover { background: var(--v4-w04); color: var(--fg); }
   .dm-receipts-page .dm-pos-back:hover > svg { translate: -2px 0; }
-  .dm-receipts-page .dm-rcpt-title { margin: 1.5rem 0 2.25rem; }
-  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-auto-frame-head { min-height: 2.75rem; margin: 0 0 0.25rem; padding: 0 1.125rem 0 1.375rem; border-radius: 0.75rem; background: var(--v4-w045); }
+  .dm-receipts-page .dm-pos-back:active { scale: 0.97; }
+  /* The title 26px under the way back, 4px into the gutter, its line .05em under its top (.ptitle, .ln); 28px above the
+     ledger when it sits under it. */
+  .dm-receipts-page .dm-rcpt-title { margin: calc(1.625rem + 0.05em) 0 1.75rem -0.25rem; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-auto-frame-head { min-height: 2.75rem; margin: 0 0 0.375rem; padding: 0 1.125rem 0 1.375rem; border-radius: 0.75rem; background: var(--v4-w045); }
   .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-auto-frame-head > .dm-title { margin: 0; font-family: var(--font-sans); font-size: 0.84375rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--muted); }
   @media (min-width: 1181px) {
     .dm-receipts-page { display: grid; grid-template-columns: minmax(0, 1fr) 47.75rem; column-gap: 3rem; align-items: start; padding-bottom: 10rem; }
-    .dm-receipts-page .dm-rcpt-mast { position: sticky; top: calc(var(--header-h) + 1.75rem); padding-top: 0.25rem; }
+    .dm-receipts-page .dm-rcpt-mast { position: sticky; top: calc(var(--header-h) + 1.75rem); }
     .dm-receipts-page .dm-rcpt-title { margin-bottom: 0; }
   }
-  /* The ledger's rows: a mini domino for each confirmed receipt, on one thread joining their centres. */
-  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-receipt-check { display: inline-grid; place-items: start center; width: 1.375rem; height: 2.125rem; padding-top: 0.1875rem; border-radius: 0.4375rem; background: #1d2a21; box-shadow: inset 0 0 0 1px rgb(95 208 154 / 0.28), 0 0 0 0.1875rem var(--card); color: var(--in); }
+  /* The ledger's rows (.rsum): 68px, the mini domino 22x34 centred on the row, the words 40px from its left edge (5px
+     between the title and its time), the amount, the chevron. */
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-row > summary { min-height: 4.25rem; padding-right: 0.875rem; padding-left: 1.625rem; column-gap: 1rem; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-what:has(> .dm-receipt-title > .dm-receipt-check) { grid-template-columns: 1.375rem minmax(0, 1fr); column-gap: 1.125rem; row-gap: 0.3125rem; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-detail { padding: 0 1.125rem 1.125rem 4.125rem; }
+  /* A mini domino for each confirmed receipt; on hover it pivots on its foot and its ring lights, the amount lifts 1px
+     and the time comes up to --muted; an open receipt's ring is quieter (.rt, .rtile, .rc-a, .rc-m). */
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-receipt-check { display: inline-grid; place-items: start center; width: 1.375rem; height: 2.125rem; padding-top: 0.1875rem; border-radius: 0.4375rem; background: #1d2a21; box-shadow: inset 0 0 0 1px rgb(95 208 154 / 0.28), 0 0 0 0.1875rem var(--card); color: var(--in); transform-origin: 50% 100%; transition: rotate 0.45s var(--e-enter), box-shadow 0.2s var(--e-std), color 0.2s var(--e-std); }
   .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-receipt-check > svg { width: 0.75rem; height: 0.75rem; }
-  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-receipt-check::after { content: ''; position: absolute; left: 0.25rem; right: 0.25rem; top: 50%; height: 1px; background: rgb(95 208 154 / 0.28); }
-  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-row > summary:hover .dm-receipt-check { color: var(--in); scale: 1; rotate: -10deg; }
-  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-what:has(.dm-receipt-check) > :not(.dm-receipt-title) { margin-left: 2.25rem; }
-  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-detail { padding-left: 3.375rem; }
-  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-list > li[data-v2-receipt]::before { content: ''; position: absolute; left: 1.8125rem; top: 0; bottom: 0; width: 1px; background: rgb(255 236 220 / 0.11); pointer-events: none; }
-  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-list > li[data-v2-receipt]:first-child::before { top: 2rem; }
-  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-list > li[data-v2-receipt]:last-child::before { bottom: auto; height: 2rem; background: linear-gradient(rgb(255 236 220 / 0.11), rgb(255 236 220 / 0)); }
-  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-list > li[data-v2-receipt]:first-child:last-child::before { content: none; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-receipt-check::after { content: ''; position: absolute; left: 0.25rem; right: 0.25rem; top: 50%; height: 1px; margin-top: -0.5px; background: rgb(95 208 154 / 0.32); }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-row[open] > summary .dm-receipt-check { box-shadow: inset 0 0 0 1px rgb(95 208 154 / 0.42), 0 0 0 0.1875rem #1a1814; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-row > summary:hover .dm-receipt-check { color: var(--in); scale: 1; rotate: -10deg; box-shadow: inset 0 0 0 1px rgb(95 208 154 / 0.5), 0 0 0 0.1875rem #1d1a16; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-amount { transition: translate 0.25s var(--e-enter); }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-row > summary:hover .dm-rcpt-amount { translate: 0 -1px; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-time { transition: color 0.18s var(--e-std); }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-row > summary:hover .dm-activity-time { color: var(--muted); }
+  /* The amount in two inks (.rc-a b, i): the figure, its symbol quieter; the network with its 12px logo (.rc-m). */
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-sym { font-size: 0.78125rem; font-weight: 400; color: var(--subtle); }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-chain::before { content: ''; display: inline-block; width: 0.75rem; height: 0.75rem; margin: 0 0.3125rem -0.125rem 0; border-radius: 50%; background: var(--v4-w08) center / contain no-repeat; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-chain[data-activity-chain="8453"]::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Ccircle cx='10' cy='10' r='10' fill='%230052ff'/%3E%3Ccircle cx='10' cy='10' r='5.6' fill='%23fff'/%3E%3Crect x='3.6' y='9.2' width='7.4' height='1.6' fill='%230052ff'/%3E%3C/svg%3E"); }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-chain[data-activity-chain="42161"]::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Ccircle cx='10' cy='10' r='10' fill='%23213147'/%3E%3Cpath d='M6.4 14.6 10 5.4l3.6 9.2' stroke='%2328a0f0' stroke-width='1.7' fill='none' stroke-linejoin='round'/%3E%3Cpath d='M8.2 12.2h3.6' stroke='%23fff' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E"); }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-chain[data-activity-chain="1"]::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Ccircle cx='10' cy='10' r='10' fill='%23627eea'/%3E%3Cpath d='M10 3.6 6.1 10.1 10 12.4l3.9-2.3z' fill='%23fff'/%3E%3Cpath d='M10 13.2 6.1 10.9 10 16.4l3.9-5.5z' fill='%23fff' fill-opacity='.75'/%3E%3C/svg%3E"); }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-chain[data-activity-chain="10"]::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Ccircle cx='10' cy='10' r='10' fill='%23ff0420'/%3E%3C/svg%3E"); }
+  /* One thread joins the tiles' centres: each receipt draws the segment down to the next one's tile, the last segment
+     fading (.rc::before, .rc:nth-last-child(2)::before). */
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-list > li:is([data-v2-receipt], [data-local-close-receipt], [data-session-activity])::before { content: none; position: absolute; left: 2.28125rem; top: 2.125rem; width: 1px; height: calc(100% + 0.125rem); background: rgb(255 236 220 / 0.11); transform-origin: 50% 0; pointer-events: none; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-list > li:is([data-v2-receipt], [data-local-close-receipt], [data-session-activity]):has(+ li:is([data-v2-receipt], [data-local-close-receipt], [data-session-activity]))::before { content: ''; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-list > li:is([data-v2-receipt], [data-local-close-receipt], [data-session-activity]):has(+ li:is([data-v2-receipt], [data-local-close-receipt], [data-session-activity]):last-child)::before { background: linear-gradient(rgb(255 236 220 / 0.11), rgb(255 236 220 / 0.05)); }
+  /* On a first load the chain stands up: each tile rises from a 30deg lean on its foot, 35ms after the one above, while
+     each segment draws down to the next (the first ten; rows added by Show more never animate). */
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-list > li:is([data-v2-receipt], [data-local-close-receipt], [data-session-activity]):nth-child(2) { --dm-rcpt-i: 1; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-list > li:is([data-v2-receipt], [data-local-close-receipt], [data-session-activity]):nth-child(3) { --dm-rcpt-i: 2; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-list > li:is([data-v2-receipt], [data-local-close-receipt], [data-session-activity]):nth-child(4) { --dm-rcpt-i: 3; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-list > li:is([data-v2-receipt], [data-local-close-receipt], [data-session-activity]):nth-child(5) { --dm-rcpt-i: 4; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-list > li:is([data-v2-receipt], [data-local-close-receipt], [data-session-activity]):nth-child(6) { --dm-rcpt-i: 5; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-list > li:is([data-v2-receipt], [data-local-close-receipt], [data-session-activity]):nth-child(7) { --dm-rcpt-i: 6; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-list > li:is([data-v2-receipt], [data-local-close-receipt], [data-session-activity]):nth-child(8) { --dm-rcpt-i: 7; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-list > li:is([data-v2-receipt], [data-local-close-receipt], [data-session-activity]):nth-child(9) { --dm-rcpt-i: 8; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-list > li:is([data-v2-receipt], [data-local-close-receipt], [data-session-activity]):nth-child(10) { --dm-rcpt-i: 9; }
+  html:not(.dm-booted) .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-list > li:is([data-v2-receipt], [data-local-close-receipt], [data-session-activity]):nth-child(-n + 10) .dm-receipt-check { animation: dm-v4p-stand 0.3s var(--e-pop) calc(0.28s + var(--dm-rcpt-i, 0) * 0.035s) backwards; }
+  html:not(.dm-booted) .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-list > li:is([data-v2-receipt], [data-local-close-receipt], [data-session-activity]):nth-child(-n + 9)::before { animation: dm-v4p-spine 0.28s var(--e-enter) calc(0.3s + var(--dm-rcpt-i, 0) * 0.035s) backwards; }
+  @keyframes dm-v4p-stand { from { opacity: 0.01; transform: translateY(-0.1875rem) rotate(-30deg); } to { opacity: 1; transform: none; } }
+  @keyframes dm-v4p-spine { from { transform: scaleY(0); } to { transform: none; } }
+  /* A change made outside Domino reads as information, not as a confirmation: the info glyph in the round icon on the
+     Positions card (.rc-ic.neutral), a neutral tile, its check muted, on the ledger (.rtile.nt). Its name for a screen reader is unchanged. */
+  .dm-positions-page section[aria-labelledby="receipts-title"] li[data-v2-receipt-tone="neutral"] .dm-receipt-check > svg { display: none; }
+  .dm-positions-page section[aria-labelledby="receipts-title"] li[data-v2-receipt-tone="neutral"] .dm-receipt-check::before { content: ''; width: 0.875rem; height: 0.875rem; background: currentColor; -webkit-mask: var(--v4p-info) center / contain no-repeat; mask: var(--v4p-info) center / contain no-repeat; }
+  .dm-positions-page section[aria-labelledby="receipts-title"] li[data-v2-receipt-tone="neutral"] .dm-receipt-check { display: inline-grid; place-items: center; }
+  .dm-positions-page section[aria-labelledby="receipts-title"] li[data-v2-receipt-tone="neutral"] .dm-rcpt-row > summary:hover .dm-receipt-check { color: var(--muted); }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] li[data-v2-receipt-tone="neutral"] .dm-receipt-check { background: #24211d; box-shadow: inset 0 0 0 1px var(--strong), 0 0 0 0.1875rem var(--card); color: var(--muted); }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] li[data-v2-receipt-tone="neutral"] .dm-receipt-check::after { background: rgb(255 236 220 / 0.14); }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] li[data-v2-receipt-tone="neutral"] .dm-rcpt-row[open] > summary .dm-receipt-check { box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.22), 0 0 0 0.1875rem #1a1814; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] li[data-v2-receipt-tone="neutral"] .dm-rcpt-row > summary:hover .dm-receipt-check { box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.26), 0 0 0 0.1875rem #1d1a16; color: var(--fg); }
   .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-divider { padding: 0.75rem 1.125rem; font-size: 0.75rem; line-height: 1rem; color: var(--subtle); }
-  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-footer { padding: 0.75rem 0 0.25rem; }
-  /* Internal automation checks and the signed-in history: a hairline, a plain text row whose chevron turns, the ids as joined segments. */
-  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal { margin: 0.375rem 0.875rem 0; padding: 0.375rem 0 0; border-top: 0; box-shadow: inset 0 1px 0 var(--line); }
+  /* The rows, the foot and the hairline follow one another with no gap of their own (.list, .foot, .hair). */
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-history { gap: 0; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-footer { padding: 1rem 0 0.25rem; }
+  /* Internal automation checks and the signed-in history: a hairline 14px under the list, then a 40px text row (12px
+     corners, a faint fill on hover, pressed to .98) whose chevron turns and nudges 2px; the ids as joined segments. */
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal { margin: 0.875rem 0.75rem 0; padding: 0.25rem 0 0; border-top: 0; box-shadow: inset 0 1px 0 var(--line); }
   .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-row .dm-activity-internal { margin: 0; }
-  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal > summary { display: inline-flex; align-items: center; gap: 0.375rem; min-height: 2.5rem; margin: 0; padding: 0 0.5rem 0 0.25rem; border-radius: 999px; list-style: none; font-size: 0.84375rem; line-height: 1.25rem; font-weight: 500; color: var(--muted); cursor: pointer; transition: color 0.18s var(--e-std); }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal > summary { display: inline-flex; align-items: center; gap: 0.375rem; min-height: 2.5rem; margin: 0.25rem 0 0 0.125rem; padding: 0 0.625rem 0 0.75rem; border-radius: 0.75rem; list-style: none; font-size: 0.84375rem; line-height: 1.25rem; font-weight: 500; color: var(--muted); cursor: pointer; transition: color 0.18s var(--e-std), background-color 0.18s var(--e-std), scale 0.1s var(--e-press); }
   .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal > summary::-webkit-details-marker { display: none; }
   .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal > summary::after { content: ''; flex: none; width: 0.875rem; height: 0.875rem; background: currentColor; -webkit-mask: var(--v4p-chev) center / contain no-repeat; mask: var(--v4p-chev) center / contain no-repeat; rotate: 90deg; transition: rotate 0.35s var(--e-enter), translate 0.25s var(--e-enter); }
   .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal[open] > summary::after { rotate: 270deg; }
-  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal > summary:hover { color: var(--fg); }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal > summary:hover { background: var(--v4-w04); color: var(--fg); }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal > summary:hover::after { translate: 0 2px; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal[open] > summary:hover::after { translate: 0 -2px; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal > summary:active { scale: 0.98; }
+  /* The approved page draws it as a <button>, in the page's own 16px regular text (.v4c button { font: inherit }). */
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal > summary { font-size: 1rem; line-height: 1.25rem; font-weight: 400; letter-spacing: normal; color: var(--fg); }
   .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal[open] > summary { margin-bottom: 0.5rem; }
   .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal > .dm-rcpt-note { margin: 0.5rem 0.25rem; font-size: 0.78125rem; line-height: 1.5; color: var(--subtle); }
   .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal > .dm-btn { margin: 0.25rem 0.25rem 0.5rem; }
-  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-ids { display: flex; flex-wrap: wrap; gap: 2px; margin: 0; padding: 0; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-ids { display: flex; flex-wrap: wrap; gap: 0.125rem; margin: 0; padding: 0; }
   .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-ids > li { padding: 0.125rem 0.4375rem; border-radius: 2px; background: var(--v4-w055); font-family: var(--font-mono); font-size: 0.78125rem; line-height: 1.125rem; letter-spacing: 0; color: var(--muted); }
   .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-ids > li:first-child { border-top-left-radius: 0.375rem; border-bottom-left-radius: 0.375rem; }
   .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-ids > li:last-child { border-top-right-radius: 0.375rem; border-bottom-right-radius: 0.375rem; }
+  /* Cancelled before sending (Internal automation checks): a neutral tile with a dash, its word quiet under the title,
+     no chip (receipts.html .rtile.nt). The word stays the row's own. */
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal [data-execution-cancelled] > .dm-rcpt-row > summary { grid-template-columns: 1.375rem minmax(0, 1fr) 2.125rem; column-gap: 1.125rem; row-gap: 0.3125rem; min-height: 4.25rem; padding-left: 1.625rem; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal [data-execution-cancelled] > .dm-rcpt-row > summary::after { content: ''; grid-column: 1; grid-row: 1 / span 2; align-self: center; width: 1.375rem; height: 2.125rem; border-radius: 0.4375rem; background: linear-gradient(currentColor, currentColor) 50% 0.46875rem / 0.5rem 1.5px no-repeat, linear-gradient(rgb(255 236 220 / 0.14), rgb(255 236 220 / 0.14)) 50% 50% / calc(100% - 0.5rem) 1px no-repeat, #24211d; box-shadow: inset 0 0 0 1px var(--strong), 0 0 0 0.1875rem var(--card); color: var(--muted); }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal [data-execution-cancelled] > .dm-rcpt-row > summary > .dm-rcpt-what { grid-column: 2; grid-row: 1; align-self: end; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal [data-execution-cancelled] > .dm-rcpt-row > summary > .dm-rcpt-chip { grid-column: 2; grid-row: 2; align-self: start; justify-self: start; min-height: 0; padding: 0; border: 0; background: none; box-shadow: none; font-size: 0.78125rem; line-height: 1rem; font-weight: 400; color: var(--subtle); }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal [data-execution-cancelled] > .dm-rcpt-row > summary > .dm-rcpt-chip .dm-pill-dot { display: none; }
+  .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal [data-execution-cancelled] > .dm-rcpt-row > summary > .dm-rcpt-chevron { grid-column: 3; grid-row: 1 / span 2; }
   @media (max-width: 767px) {
-    .dm-receipts-page .dm-rcpt-title { margin: 1.25rem 0 1.75rem; }
-    .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-detail { padding-left: 0.625rem; }
-    .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-list > li[data-v2-receipt]::before { left: 1.4375rem; }
+    .dm-receipts-page .dm-rcpt-mast { margin-top: 0.5rem; }
+    .dm-receipts-page .dm-rcpt-title { margin: calc(0.875rem + 0.05em) 0 1.25rem -0.25rem; }
+    .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-row > summary { column-gap: 0.75rem; padding: 0.75rem 0.375rem 0.75rem 1.1875rem; }
+    .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-what:has(> .dm-receipt-title > .dm-receipt-check) { column-gap: 0.75rem; }
+    .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-what:has(> .dm-receipt-title > .dm-receipt-check) > .dm-receipt-title > .dm-receipt-check { align-self: start; }
+    .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-detail { padding: 0 0.75rem 1rem 3.3125rem; }
+    /* A phone's ledger (receipts.html at 859 and under): the card 6px in, the amount under the words on their edge, the
+       chevron beside both lines. */
+    .dm-receipts-page section[aria-labelledby="receipts-title"] { padding: 0.375rem 0.375rem 0.625rem; }
+    .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-operation > summary { grid-template-columns: minmax(0, 1fr) 2.125rem; row-gap: 0.25rem; }
+    .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-operation > summary > .dm-rcpt-what + .dm-rcpt-amount { grid-column: 1; grid-row: 2; margin-left: 2.125rem; text-align: left; }
+    .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-operation > summary > .dm-rcpt-what + .dm-rcpt-amount:empty { display: none; }
+    .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-operation > summary > .dm-rcpt-chevron { grid-column: 2; grid-row: 1 / span 2; }
+    .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-list > li:is([data-v2-receipt], [data-local-close-receipt], [data-session-activity])::before { left: 1.84375rem; top: 1.8125rem; }
     .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-auto-frame-head { padding: 0 0.75rem; }
+    .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal [data-execution-cancelled] > .dm-rcpt-row > summary { padding: 0.75rem 0.375rem 0.75rem 1.1875rem; column-gap: 0.75rem; }
   }
 
   /* ---- Under Your positions (PositionsMore f5): deposits not yet in a position, fees waiting in your automation,
      the automation funds hint. The refund and withdraw buttons take the outline .btn-sm (decision D2, by look only:
      their variant, handlers, busy hold and stages are the components'). ------------------------------------------- */
-  .dm-positions-page :is(.dm-held, [data-fee-reserves="positions"]) .dm-held-list { gap: 2px; margin: 0; padding: 0; }
+  .dm-positions-page :is(.dm-held, [data-fee-reserves="positions"]) .dm-held-list { gap: 0.125rem; margin: 0; padding: 0; }
   .dm-positions-page :is(.dm-held, [data-fee-reserves="positions"]) .dm-held-row { gap: 0.375rem; align-content: center; min-height: 4.5rem; padding: 0.625rem 0.75rem 0.625rem 1.375rem; border-radius: 0.875rem; transition: background-color 0.18s var(--e-std); }
   .dm-positions-page :is(.dm-held, [data-fee-reserves="positions"]) .dm-held-row:hover { background: var(--v4-w035); }
+  .dm-positions-page :is(.dm-held, [data-fee-reserves="positions"]) .dm-held-main > :first-child > * { transition: scale 0.3s var(--e-enter), translate 0.3s var(--e-enter), border-color 0.18s var(--e-std); }
+  .dm-positions-page :is(.dm-held, [data-fee-reserves="positions"]) .dm-held-row:hover .dm-held-main > :first-child { --card: #1b1915; }
+  .dm-positions-page :is(.dm-held, [data-fee-reserves="positions"]) .dm-held-row:hover .dm-held-main > :first-child > :first-child { scale: 1.06; }
+  .dm-positions-page :is(.dm-held, [data-fee-reserves="positions"]) .dm-held-row:hover .dm-held-main > :first-child > :nth-child(2) { translate: 0.25rem 0; scale: 1.06; }
   .dm-positions-page :is(.dm-held, [data-fee-reserves="positions"]) .dm-held-main { gap: 0.75rem 0.875rem; }
   .dm-positions-page :is(.dm-held, [data-fee-reserves="positions"]) .dm-held-text { gap: 0.25rem; }
   .dm-positions-page :is(.dm-held, [data-fee-reserves="positions"]) .dm-held-pair { font-size: 0.9375rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); }
@@ -692,6 +937,16 @@
   .dm-positions-page .dm-held .dm-held-line[data-held-progress="done"] { color: var(--in); }
   .dm-positions-page .dm-held .dm-held-line[data-held-progress="done"]::before { background: var(--in); box-shadow: 0 0 0 0.1875rem rgb(95 208 154 / 0.16); }
   .dm-positions-page .dm-held .dm-held-line[role="alert"]::before { background: var(--out); box-shadow: 0 0 0 0.1875rem rgb(244 96 122 / 0.16); }
+  /* While a refund is on its way the busy button gives its place to where it stands, crossfading (PositionsMore f5 .h-end,
+     .h-st); a button that can be pressed is never covered. A phone keeps the status line under the row. */
+  @media (min-width: 480px) {
+    .dm-positions-page .dm-held .dm-held-row { position: relative; }
+    .dm-positions-page .dm-held .dm-held-refund { transition: box-shadow 0.2s var(--e-std), background-color 0.2s var(--e-std), color 0.2s var(--e-std), scale 0.1s var(--e-press), opacity 0.2s var(--e-std), transform 0.3s var(--e-enter); }
+    .dm-positions-page .dm-held .dm-held-row:not(:has(> [data-held-notice])) .dm-held-refund[aria-busy="true"]:disabled { opacity: 0; transform: translateY(-0.25rem); }
+    .dm-positions-page .dm-held .dm-held-row:not(:has(> [data-held-notice])):has(.dm-held-refund[aria-busy="true"]:disabled) > .dm-held-line[data-held-progress],
+    .dm-positions-page .dm-held .dm-held-row:not(:has(> [data-held-notice])):not(:has(.dm-held-refund)) > .dm-held-line[data-held-progress] { position: absolute; top: 50%; right: 0.75rem; translate: 0 -50%; padding-left: 0; white-space: nowrap; animation: dm-v4p-st-in 0.3s var(--e-enter) backwards; }
+  }
+  @keyframes dm-v4p-st-in { from { opacity: 0; transform: translateY(0.25rem); } to { opacity: 1; transform: none; } }
   /* Fees waiting in your automation: the lede, Position #… lit on hover, the automation's state word with its dot. */
   .dm-positions-page [data-fee-reserves="positions"] .dm-reserves-lede { margin: -0.375rem 0 0.375rem; padding: 0 1.125rem 0 1.375rem; font-size: 0.875rem; line-height: 1.5; color: var(--muted); }
   .dm-positions-page [data-fee-reserves="positions"] .dm-reserves-link { text-decoration: none; transition: color 0.18s var(--e-std); }
@@ -701,10 +956,12 @@
   .dm-positions-page [data-fee-reserves="positions"] .dm-reserves-status[data-reserve-status="on"] { color: var(--in); }
   .dm-positions-page [data-fee-reserves="positions"] .dm-reserves-status[data-reserve-status="on"]::before { box-shadow: 0 0 0 0.1875rem rgb(95 208 154 / 0.16); }
   .dm-positions-page [data-fee-reserves="positions"] .dm-reserves-more { margin: 0.25rem 0 0; padding: 0 1.125rem 0.25rem 1.375rem; font-size: 0.78125rem; line-height: 1.45; color: var(--subtle); }
-  /* The automation funds hint: one quiet line per position, its link lit on hover. */
-  /* Its lines are rows of one quiet surface (2px apart inside it, as every list), not thin cards stacked 2px apart. */
-  .dm-positions-page .dm-acct-v2-history .dm-automation-recovery { display: grid; gap: 2px; padding: 0.25rem; border: 0; border-radius: 1rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--line); }
-  .dm-positions-page .dm-acct-v2-history .dm-automation-recovery p { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.625rem; min-height: 2.75rem; margin: 0; padding: 0.5rem 0.875rem; border-radius: 0.75rem; background: none; box-shadow: none; font-size: 0.84375rem; line-height: 1.25rem; color: var(--subtle); }
+  /* The automation funds hint: one quiet 44px line per position, on the page itself (not a surface), lit faintly on
+     hover, its link lit too (PositionsMore f5 .aside-h, .ah-l). The column keeps its 20px rhythm. */
+  .dm-positions-page .dm-acct-v2-history { gap: 1.25rem; }
+  .dm-positions-page .dm-acct-v2-history .dm-automation-recovery { display: grid; gap: 0.125rem; padding: 0.125rem 0.25rem; border: 0; border-radius: 0; background: none; box-shadow: none; }
+  .dm-positions-page .dm-acct-v2-history .dm-automation-recovery p { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; min-height: 2.75rem; margin: 0; padding: 0.375rem 1.125rem; border-radius: 0.75rem; background: none; box-shadow: none; font-size: 0.84375rem; line-height: 1.25rem; color: var(--subtle); transition: background-color 0.18s var(--e-std); }
+  .dm-positions-page .dm-acct-v2-history .dm-automation-recovery p:hover { background: var(--v4-w03); }
   .dm-positions-page .dm-acct-v2-history .dm-automation-recovery a { font-size: 0.875rem; font-weight: 500; color: var(--fg); text-decoration: none; transition: color 0.18s var(--e-std); }
   .dm-positions-page .dm-acct-v2-history .dm-automation-recovery a:hover { color: var(--v4-lit); }
   @media (max-width: 767px) {
@@ -717,6 +974,52 @@
     .dm-positions-page :is(.dm-held, [data-fee-reserves="positions"]) .dm-held-line { padding-left: 0; }
   }
 
+  /* ---- Close positions (positions.html .bk-dlg, PositionsMore frame 6), with styles/bulk-close.css. Look only. -------- */
+  /* A new stage: the part that changed rises in (.bk-dlg.is-moved .bk-b pin-a); the frame stays. The progress stages
+     share one name, so a step inside a group (reading, wallet, sent, done) does not replay it; review and failed take the
+     other, so arriving at them, or leaving them, does. Selection is the sheet's own entrance. */
+  .dm-dialog.dm-pa[data-bulk-close]:is([data-bulk-close="reading"], [data-bulk-close="wallet"], [data-bulk-close="sent"], [data-bulk-close="waiting"], [data-bulk-close="unknown"], [data-bulk-close="done"]) > :is(.dm-pa-body, .dm-pa-foot) { animation: dm-v4p-stage-a 0.45s var(--e-enter) backwards; }
+  .dm-dialog.dm-pa[data-bulk-close]:is([data-bulk-close="review"], [data-bulk-close="failed"]) > :is(.dm-pa-body, .dm-pa-foot) { animation: dm-v4p-stage-b 0.45s var(--e-enter) backwards; }
+  @keyframes dm-v4p-stage-a { from { opacity: 0.01; transform: translateY(0.375rem); filter: blur(0.1875rem); } to { opacity: 1; transform: none; filter: none; } }
+  @keyframes dm-v4p-stage-b { from { opacity: 0.01; transform: translateY(0.375rem); filter: blur(0.1875rem); } to { opacity: 1; transform: none; filter: none; } }
+  /* The stage motions above replace v4-sheets.css's scroll-edge animations; keep both where scroll timelines exist. */
+  @supports (animation-timeline: scroll()) {
+    .dm-dialog.dm-pa[data-bulk-close]:is([data-bulk-close="reading"], [data-bulk-close="wallet"], [data-bulk-close="sent"], [data-bulk-close="waiting"], [data-bulk-close="unknown"], [data-bulk-close="done"]) > .dm-pa-body { animation: dm-v4p-stage-a 0.45s var(--e-enter) backwards, dm-v4s-scroll-edge linear both; animation-timeline: auto, --dm-pa-body; }
+    .dm-dialog.dm-pa[data-bulk-close]:is([data-bulk-close="reading"], [data-bulk-close="wallet"], [data-bulk-close="sent"], [data-bulk-close="waiting"], [data-bulk-close="unknown"], [data-bulk-close="done"]) > .dm-pa-foot { animation: dm-v4p-stage-a 0.45s var(--e-enter) backwards, dm-v4s-scroll-rule linear both; animation-timeline: auto, --dm-pa-body; }
+    .dm-dialog.dm-pa[data-bulk-close]:is([data-bulk-close="review"], [data-bulk-close="failed"]) > .dm-pa-body { animation: dm-v4p-stage-b 0.45s var(--e-enter) backwards, dm-v4s-scroll-edge linear both; animation-timeline: auto, --dm-pa-body; }
+    .dm-dialog.dm-pa[data-bulk-close]:is([data-bulk-close="review"], [data-bulk-close="failed"]) > .dm-pa-foot { animation: dm-v4p-stage-b 0.45s var(--e-enter) backwards, dm-v4s-scroll-rule linear both; animation-timeline: auto, --dm-pa-body; }
+  }
+  /* Progress (.prog): the dominoes on the left, beside them the status with its dot, the pairs of the group, and how many
+     are already closed. */
+  /* 18px in from the sheet's edge and 20px under its seam, the hairline 18px under it (.prog padding 20 14 12 8), on the sheet's body. */
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-prog { display: flex; align-items: center; gap: 1.25rem; min-width: 0; margin: 0 0 -0.125rem -0.375rem; padding: 0.125rem 0.875rem 0 0; }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-prog > .dm-bulk-dom { flex: none; margin: 0; }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-pst { min-width: 0; }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-pst > .dm-bulk-names { margin: 0.5rem 0 0 0.9375rem; font-size: 0.8125rem; color: var(--subtle); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-pst > .dm-pa-note:not(:first-child) { margin: 0.375rem 0 0 0.9375rem; font-size: 0.8125rem; line-height: 1.45; color: var(--muted); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-pst > .dm-pa-note:first-child { margin: 0; }
+  @media (max-width: 639px) {
+    .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-prog { gap: 0.75rem; padding-right: 0; }
+  }
+  /* Review: each amount in the serif, its symbol small in the sans and quieter, a faint + between them (.tot). */
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-total .dm-bulk-amt { white-space: nowrap; }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-total .dm-bulk-sym { margin-left: 0.125rem; font-family: var(--font-sans); font-size: 0.8125rem; letter-spacing: -0.01em; color: var(--subtle); }
+  .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-total .dm-bulk-plus { margin: 0 0.25rem; font-family: var(--font-sans); font-size: 0.9375rem; letter-spacing: 0; color: var(--faint); }
+  /* The box draws its tick when chosen (.ck path: .3s from .04s) and retracts it when cleared (.15s); the input stays
+     native, visible and focusable. */
+  .dm-dialog.dm-pa[data-bulk-close] :is(.dm-bulk-choice, .dm-pa-tick) input[type="checkbox"] { display: inline-grid; place-content: center; }
+  .dm-dialog.dm-pa[data-bulk-close] :is(.dm-bulk-choice, .dm-pa-tick) input[type="checkbox"][type]:checked { background-image: none; }
+  .dm-dialog.dm-pa[data-bulk-close] :is(.dm-bulk-choice, .dm-pa-tick) input[type="checkbox"]::before { content: ''; width: 0.75rem; height: 0.75rem; background: var(--tan-hi); -webkit-mask: var(--v4p-check-tan) center / contain no-repeat; mask: var(--v4p-check-tan) center / contain no-repeat; clip-path: inset(0 100% 0 0); transition: clip-path 0.15s var(--e-std); }
+  .dm-dialog.dm-pa[data-bulk-close] :is(.dm-bulk-choice, .dm-pa-tick) input[type="checkbox"]:checked::before { clip-path: inset(0); transition: clip-path 0.3s var(--e-enter) 0.04s; }
+  /* Details and Find your transaction open to their height (.45s) and fold away the same way, their body fading, the
+     button below gliding (.acc-b). */
+  @supports (interpolate-size: allow-keywords) and selector(::details-content) {
+    .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-details { interpolate-size: allow-keywords; }
+    .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-details::details-content { block-size: 0; overflow-y: clip; overflow-clip-margin: 0.375rem; transition: block-size 0.45s var(--e-enter), content-visibility 0.45s var(--e-enter) allow-discrete; }
+    .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-details[open]::details-content { block-size: auto; transition: block-size 0.45s var(--e-enter); } /* opening never transitions content-visibility: the content is there (and readable) at once */
+    .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-details:not([open]) > :not(summary) { opacity: 0; transition: opacity 0.25s var(--e-std); }
+  }
+
   /* ---- The load moment (positions.html, the inner pages' short timings): on the first load only, the chip and the
      actions rise out of a blur, then the cards arrive one after another (Your positions, Wallet, Receipts, Automation).
      Fills are backwards, so nothing keeps a transform; navigation inside the site never replays it (dm-booted). ----- */
@@ -724,11 +1027,11 @@
   html:not(.dm-booted) .dm-positions-page .dm-acct-wallet-chip { animation: dm-v4-up 0.5s var(--e-enter) 0.14s backwards; }
   html:not(.dm-booted) .dm-positions-page .dm-acct-title-actions { animation: dm-v4-up 0.5s var(--e-enter) 0.2s backwards; }
   html:not(.dm-booted) .dm-positions-page .dm-own-slot.animate-rise { animation: dm-v4-card 0.55s var(--e-enter) 0.24s backwards; }
-  /* The wallet card arrives by its light alone: its total and rows are measured against each other while it loads. */
-  html:not(.dm-booted) .dm-positions-page .dm-acct-o4.animate-rise { animation: dm-v4-fade 0.55s var(--e-std) 0.28s backwards; }
+  /* The wallet card rises with the others (k-c2); its total and rows move together, so their measures hold. */
+  html:not(.dm-booted) .dm-positions-page .dm-acct-o4.animate-rise { animation: dm-v4-card 0.55s var(--e-enter) 0.28s backwards; }
   html:not(.dm-booted) .dm-positions-page :is(.dm-acct-v2-history, .dm-acct-pair) { animation: dm-v4-card 0.55s var(--e-enter) 0.32s backwards; }
   html:not(.dm-booted) .dm-positions-page .dm-acct-o6 { animation: dm-v4-card 0.55s var(--e-enter) 0.36s backwards; }
-  html:not(.dm-booted) .dm-receipts-page .dm-pos-back { animation: dm-v4-up 0.5s var(--e-enter) 0.14s backwards; }
+  html:not(.dm-booted) .dm-receipts-page .dm-pos-back { animation: dm-v4-up 0.5s var(--e-enter) 0.12s backwards; }
   html:not(.dm-booted) .dm-receipts-page section[aria-labelledby="receipts-title"] { animation: dm-v4-card 0.55s var(--e-enter) 0.24s backwards; }
 
   /* ---- Reduced motion keeps the look and drops the motion: no load moment, no hover travel or turn, no press scale,
@@ -741,8 +1044,23 @@
     .dm-positions-page .dm-acct-wallet :is(.dm-error, .dm-acct-rail-form, .dm-acct-token-list),
     :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] :is(.dm-acct-plot, .dm-acct-quiet, .dm-rcpt-note) { animation: none; }
     :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row[open] > .dm-rcpt-detail::before,
-    :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row[open] > .dm-rcpt-detail > :not(:first-child) { animation: none; }
-    .dm-positions-page :is(.dm-own-row, .dm-btn, .dm-rcpt-all, .dm-acct-subject, [data-bulk-close-open]):is(:hover, :active),
+    :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row[open] > .dm-rcpt-detail > *,
+    .dm-positions-page .dm-own-collection .dm-own-list > .dm-own-item,
+    .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-list > li::before,
+    .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-rcpt-list > li .dm-receipt-check,
+    .dm-dialog.dm-pa[data-bulk-close] > :is(.dm-pa-body, .dm-pa-foot),
+    .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-details[open] > :not(summary) { animation: none; }
+    :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row::details-content,
+    .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal::details-content,
+    :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row > .dm-rcpt-detail::before,
+    :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row > .dm-rcpt-detail > *,
+    .dm-positions-page .dm-acct-wallet > .dm-acct-rail-form,
+    .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-details::details-content,
+    .dm-dialog.dm-pa[data-bulk-close] .dm-bulk-details > :not(summary),
+    .dm-dialog.dm-pa[data-bulk-close] :is(.dm-bulk-choice, .dm-pa-tick) input[type="checkbox"]::before { transition: none; }
+    :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row:not([open]) > .dm-rcpt-detail > * { transform: none; filter: none; }
+    .dm-positions-page :is(.dm-own-row, .dm-btn, .dm-rcpt-all, .dm-acct-subject, [data-bulk-close-open], .dm-acct-auto-row):is(:hover, :active),
+    .dm-receipts-page :is(.dm-pos-back, .dm-activity-internal > summary):active,
     :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row > summary:active { scale: none; }
     .dm-positions-page .dm-own-collection a.dm-own-row:hover :is(.dm-own-pool > :first-child > *, [data-cell="apr"] > .dm-own-fig, .dm-own-chev),
     .dm-positions-page .dm-own-collection a.dm-own-row:hover .dm-own-ag::before,
@@ -752,7 +1070,11 @@
     .dm-positions-page :is(.dm-own-more .dm-btn, [data-wallet-show-all], .dm-rcpt-all, .dm-acct-auto-head > .dm-btn, .dm-acct-address-form > .dm-btn, .dm-acct-rail-actions > .dm-btn):hover::after,
     .dm-receipts-page :is(.dm-activity-footer > .dm-btn, .dm-acct-exec > .dm-btn, .dm-pos-back):hover :is(svg),
     .dm-receipts-page :is(.dm-activity-footer > .dm-btn, .dm-acct-exec > .dm-btn):hover::after,
-    :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row > summary:hover :is(.dm-receipt-check, .dm-rcpt-chevron) { translate: none; rotate: none; scale: none; }
+    :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row > summary:hover :is(.dm-receipt-check, .dm-rcpt-chevron, .dm-rcpt-amount),
+    .dm-positions-page .dm-own-collection .dm-own-item .dm-own-ag::before,
+    .dm-positions-page .dm-acct-auto-row .dm-acct-auto-ic::before,
+    .dm-positions-page .dm-acct-auto-row .dm-acct-auto-chev { translate: none; rotate: none; scale: none; }
+    .dm-receipts-page section[aria-labelledby="receipts-title"] .dm-activity-internal > summary:hover::after { translate: none; }
     .dm-positions-page [data-wallet-show-all][aria-expanded="true"]:hover::after { rotate: -90deg; }
     .dm-positions-page .dm-own-more .dm-btn:hover::after,
     .dm-receipts-page :is(.dm-activity-footer > .dm-btn, .dm-acct-exec > .dm-btn):hover::after { rotate: 90deg; }
@@ -760,6 +1082,9 @@
     :is(.dm-positions-page, .dm-receipts-page) section[aria-labelledby="receipts-title"] .dm-rcpt-row[open] > summary:hover .dm-rcpt-chevron { rotate: 180deg; }
     .dm-positions-page .dm-empty:is(:hover, :focus-within) .dm-etile-3d { transform: rotateX(6deg) rotateY(-18deg) rotateZ(-7deg); }
     .dm-positions-page .dm-empty:is(:hover, :focus-within) .dm-etile-sh { scale: none; }
+    .dm-positions-page :is(.dm-held, [data-fee-reserves="positions"]) .dm-held-row:hover .dm-held-main > :first-child > *,
+    .dm-positions-page .dm-held .dm-held-refund { translate: none; scale: none; transform: none; }
+    .dm-positions-page .dm-held .dm-held-line[data-held-progress] { animation: none; }
     .dm-positions-page .dm-etile-pip, .dm-positions-page .dm-empty:is(:hover, :focus-within) .dm-etile-pip { scale: none; }
   }
   html.dm-still .dm-positions-page .dm-empty:is(:hover, :focus-within) .dm-etile-3d { transform: rotateX(6deg) rotateY(-18deg) rotateZ(-7deg); }

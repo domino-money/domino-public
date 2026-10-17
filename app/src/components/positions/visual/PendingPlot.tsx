@@ -8,11 +8,13 @@ import { feesChartBox } from './feesChartLayout'
  * says nothing over the frame unless a caller gives a `note`; every caller's line was about the data's freshness or
  * availability ("Updating price…", "Price is temporarily unavailable. Retrying automatically.", "Updating fee history…").
  */
-export function PendingPlot({ label, note, busy = false }: { label: string; note?: string; busy?: boolean }) {
+export function PendingPlot({ label, note, busy = false, box }: { label: string; note?: string; busy?: boolean; box?: number }) {
   const phone = useMediaQuery('(max-width: 767px)')
   const { expanded } = usePositionChartOptions()
+  // The drawn chart's own box (design px), compact or expanded (a caller's `box`, else the fees chart's), so the chart
+  // takes this frame's place at its size.
   return (
-    <div className="dm-pending-plot" data-pending-plot="" aria-busy={busy || undefined} style={expanded ? { height: rem(feesChartBox(phone, true)) } : undefined}>
+    <div className="dm-pending-plot" data-pending-plot="" aria-busy={busy || undefined} style={{ height: rem(box ?? feesChartBox(phone, expanded)) }}>
       <svg viewBox="0 0 640 180" preserveAspectRatio="none" role="img" aria-label={label}>
         <path d="M0 24H640M0 84H640M0 144H640" className="dm-position-chart-guide" />
         <path d="M0 164H640" className="dm-chart-baseline" />

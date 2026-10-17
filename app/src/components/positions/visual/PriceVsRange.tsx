@@ -13,10 +13,10 @@ import { logScale } from '../../../lib/chart/scale'
 import { shortDate, shortTime } from '../../../lib/format/time'
 import { useMediaQuery } from '../../../lib/useMediaQuery'
 import { rem } from '../../../lib/rootScale'
-import { PAD_BOTTOM, PAD_TOP, PLOT_HEIGHT, PLOT_HEIGHT_PHONE, RangeFactsContext, RangeHead } from './RangeStatus'
+import { PAD_BOTTOM, PAD_TOP, RangeFactsContext, RangeHead, rangePlotHeight } from './RangeStatus'
 import { dateTicks, spacedTimeTicks } from './ticks'
 import { usePoolHistory, type PoolHistoryAsk } from './usePoolHistory'
-import { positionPlotHeight, usePositionChartOptions } from '../PositionChartOptions'
+import { usePositionChartOptions } from '../PositionChartOptions'
 
 /** The labels' room at the plot's right: wide enough for the widest figure it shows, within these. */
 const GUTTER_MIN = 76
@@ -76,8 +76,8 @@ export function PriceVsRange({ history = null, openedAt = null, openedBefore = n
 function PriceChart({ facts, ask, openedAt, openedBefore, closedAt, observations, recorded }: { facts: RangeFacts; ask: PoolHistoryAsk | null; openedAt: number | null; openedBefore: number | null; closedAt: number | null; observations: PoolPriceObservations | null; recorded?: PriceHistory | null }) {
   const { base, quote, lower, upper, lowerText, upperText, now, nowText, where } = facts
   const phone = useMediaQuery('(max-width: 767px)')
-  // Match v3-position-detail.css: the desktop workspace keeps axis text readable at the denser root scale.
-  const axisFontSize = useMediaQuery('(min-width: 768px) and (pointer: fine)') ? 16 : 12
+  // V4 (2026-10-17): the axis labels are 12 design px everywhere (v4-position.css), so they are spaced for that size.
+  const axisFontSize = 12
   const { expanded, showPoints } = usePositionChartOptions()
   const knownMint = openedAt !== null && Number.isSafeInteger(openedAt) && openedAt > 0 ? openedAt : null
   const bound = knownMint === null && openedBefore !== null && Number.isSafeInteger(openedBefore) && openedBefore > 0 ? openedBefore : null
@@ -174,7 +174,7 @@ function PriceChart({ facts, ask, openedAt, openedBefore, closedAt, observations
               <rect x={wide.x} y={band.bottom} width={wide.width} height={Math.max(0, plot.bottom + 16 - band.bottom)} />
             </clipPath>
           </defs>
-          <rect x={plot.left} y={band.top} width={Math.max(0, plot.right - plot.left)} height={Math.max(1, band.bottom - band.top)} rx={4} className="dm-pvr-band" style={{ fill: `url(#${bandId})`, fillOpacity: 1 }} />
+          <rect x={plot.left} y={band.top} width={Math.max(0, plot.right - plot.left)} height={Math.max(1, band.bottom - band.top)} className="dm-pvr-band" style={{ fill: `url(#${bandId})`, fillOpacity: 1 }} />
           {line && start === knownMint && <line x1={plot.left} x2={plot.left} y1={plot.top} y2={plot.bottom} className="dm-position-chart-guide" data-pvr-mint-guide="" />}
           {hasUpper && <line x1={plot.left} x2={plot.right} y1={band.top} y2={band.top} className="dm-pvr-edge" data-edge="max" />}
           {hasLower && <line x1={plot.left} x2={plot.right} y1={band.bottom} y2={band.bottom} className="dm-pvr-edge" data-edge="min" />}
@@ -292,7 +292,7 @@ function PriceChart({ facts, ask, openedAt, openedBefore, closedAt, observations
       <RangeHead facts={facts} />
       <ChartFrame
         className="dm-pvr"
-        height={positionPlotHeight(phone ? PLOT_HEIGHT_PHONE : PLOT_HEIGHT, phone, expanded)}
+        height={rangePlotHeight(phone, expanded, recorded !== undefined)}
         padding={{ top: PAD_TOP, right: gutter, bottom: PAD_BOTTOM, left: 0 }}
         label={`Price range chart. ${words}.`}
         points={drawn ? points.length : 0}

@@ -182,7 +182,7 @@ export default function HeldDeposits({ owner, deposits, onChanged, onBusy }: Hel
   }
 
   return (
-    <section className="dm-card dm-acct-card dm-held" aria-labelledby="held-deposits-title" data-held-deposits={deposits.length}>
+    <section className="dm-card dm-lit dm-acct-card dm-held" aria-labelledby="held-deposits-title" data-held-deposits={deposits.length}>
       <div className="dm-acct-card-head">
         <h2 id="held-deposits-title" className="dm-title">
           Deposits not yet in a position

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Header } from './components/Header'
 import { Footer } from './components/Footer'
 import { EmberLight } from './components/EmberLight'
@@ -25,7 +25,20 @@ import { parseMarketsNetworkHash, parseNewNetworkHash } from './components/explo
 // and the route is not found like any unknown route. A chunk that fails to load
 // says so instead of showing a blank page, unless a release replaced it: then
 // the tab reloads once into the new release (lib/staleRelease.ts, D1).
-const couldNotLoad = () => ({ default: () => <p role="alert">This screen couldn’t load. Reload to try again.</p> })
+// V4 (System, 'the screen did not load'): the same words in the failed page's frame, the first sentence as the serif title
+// (styles/v4-system.css .dm-fail, as ScreenFailed); its text and the alert it is are unchanged.
+const couldNotLoad = () => ({
+  default: () => (
+    <main className="dm-page dm-page--narrow">
+      <p role="alert" className="dm-fail">
+        <span>
+          This screen couldn’t load<span>.</span>
+        </span>{' '}
+        Reload to try again.
+      </p>
+    </main>
+  ),
+})
 const Sequence = __DOMINO_WALLET_SESSION__ ? lazy(recovering(() => import('./screens/Sequence'), couldNotLoad)) : null
 const Setup = __DOMINO_WALLET_SESSION__ ? lazy(recovering(() => import('./screens/Setup'), couldNotLoad)) : null
 const LivePreview = __DOMINO_ONBOARDING_PREVIEW__ ? lazy(recovering(() => import('./screens/LivePreview'), couldNotLoad)) : null
@@ -149,11 +162,24 @@ function useHashLocation() {
   return location
 }
 
+/** The loading line's domino (V4, states/System.html .ld): its five pips light in turn (styles/v4-system.css). Decoration only. */
+const LoadingTile = () => (
+  <svg aria-hidden="true" width="16" height="28" viewBox="0 0 16 28" fill="none" className="dm-sys-ld">
+    <rect x=".75" y=".75" width="14.5" height="26.5" rx="3.6" stroke="rgb(255 236 220 / .3)" strokeWidth="1.2" />
+    <path d="M3.4 14h9.2" stroke="rgb(255 236 220 / .24)" strokeWidth="1.1" strokeLinecap="round" />
+    <circle className="dm-sys-lp" cx="5" cy="4.6" r="1.5" />
+    <circle className="dm-sys-lp" cx="11" cy="9.4" r="1.5" />
+    <circle className="dm-sys-lp" cx="4.6" cy="17.6" r="1.5" />
+    <circle className="dm-sys-lp" cx="8" cy="20.6" r="1.5" />
+    <circle className="dm-sys-lp" cx="11.4" cy="23.6" r="1.5" />
+  </svg>
+)
+
 /** A lazily loaded screen behind its build flag; null when the build does not carry it, so the route is not found. */
 function Flagged({ screen: Lazy, loading }: { screen: React.LazyExoticComponent<() => React.ReactNode> | null; loading: string }) {
   if (!Lazy) return <NotFound />
   return (
-    <Suspense fallback={<main className="dm-page dm-page--narrow"><p role="status" className="text-body text-fg-muted">{loading}</p></main>}>
+    <Suspense fallback={<main className="dm-page dm-page--narrow"><p role="status" className="text-body text-fg-muted"><LoadingTile />{loading}</p></main>}>
       <Lazy />
     </Suspense>
   )
@@ -206,15 +232,36 @@ export default function App() {
   // One provider for the whole app, so navigating between pool views shares one load.
   const [markets] = useState(appMarketsProvider)
 
-  // First load rises, navigation crossfades (DESIGN-V2 §5.5): at the first route change <html> gets dm-booted, which
-  // switches the page blocks' rise off (tokens.css); from then on only the 180ms page fade marks a navigation.
-  useEffect(() => {
-    const boot = () => {
-      document.documentElement.classList.add('dm-booted')
-      window.removeEventListener('hashchange', boot)
+  // Every screen plays its own load moment on every visit, as each page of the approved prototype does on its own load
+  // (V4, states/System.html 'Changing pages'): a route change takes dm-booted off <html> for 1.5 s, so the screen that
+  // mounts replays its html:not(.dm-booted) moment (tokens.css, each area's v4 file), then puts it back, so content that
+  // mounts later, a tab switch or data arriving never animate. A section link (#/docs/x#y) keeps the route, so nothing
+  // replays. dm-started stays from the first route change: the header and the ember never replay (tokens.css). Before
+  // the paint (a layout effect), so the new screen's first frame is its moment's first frame. A part that stays mounted
+  // across the change (the docs sidebar) replays too, as on the prototype's full page load: when the first load's moment
+  // is still on, it goes off for one style pass first (a forced style read), so its animation starts again.
+  const routeKey = `${page}/${param}`
+  const shownRoute = useRef(routeKey)
+  useLayoutEffect(() => {
+    if (shownRoute.current === routeKey) return
+    shownRoute.current = routeKey
+    const root = document.documentElement
+    root.classList.add('dm-started')
+    if (!root.classList.contains('dm-booted')) {
+      root.classList.add('dm-booted')
+      void root.offsetWidth
     }
-    window.addEventListener('hashchange', boot)
-    return () => window.removeEventListener('hashchange', boot)
+    root.classList.remove('dm-booted')
+    const settle = window.setTimeout(() => root.classList.add('dm-booted'), 1500)
+    return () => window.clearTimeout(settle)
+  }, [routeKey])
+  // The first load's moment ends the same way, 1.5 s in, so a part that mounts later on a page opened directly (the
+  // verified pool replacing its resting one, a card after a dialog closes) does not replay it. A route change before
+  // then owns the class (above).
+  useEffect(() => {
+    const first = shownRoute.current
+    const settle = window.setTimeout(() => { if (shownRoute.current === first) document.documentElement.classList.add('dm-booted') }, 1500)
+    return () => window.clearTimeout(settle)
   }, [])
 
   // A page opened directly on a section link starts at the top otherwise. Read
@@ -232,7 +279,7 @@ export default function App() {
       {__DOMINO_LOCAL_LIVE__ ? <LocalDevelopmentBanner /> : !__DOMINO_DEPLOYABLE__ && <BuildBanner mode={__DOMINO_READ_MODE__} />}
       <Header page={page} />
       {/* 2026-10-14 (incident X1): a screen that throws as it draws no longer blanks the page; the header and the footer stay. */}
-      <ScreenBoundary route={`${page}/${param}`}>
+      <ScreenBoundary route={routeKey}>
         <Screen page={page} param={param} />
       </ScreenBoundary>
       {/* Changed on purpose 2026-10-03 (the owner): the footer's Pause motion control is gone; reduced motion still stills the page. */}

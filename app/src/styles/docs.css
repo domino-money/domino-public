@@ -16,22 +16,28 @@
 @layer v3 {
   /* ---- Frame. The columns follow what DocsLayout rendered for the width: the sidebar from 1024px, the rail
      from 1280px (220 / 1fr / 196, gap 56; 204 / 1fr, gap 44 below 1280; one column below 1024). Only the two
-     side columns are sticky; nothing is sticky on a phone. ~160px of air above the footer. ---- */
+     side columns are sticky; nothing is sticky on a phone. 160px of air above the footer's hairline (64 here and the
+     footer's own 96; 96 on a phone, 32 + 64). ---- */
   main[data-docs] { padding-top: 1.125rem; }
-  .dm-docs { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 0 3.5rem; padding-bottom: 10rem; }
+  .dm-docs { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 0 3.5rem; padding-bottom: 4rem; }
   .dm-docs[data-docs-side] { grid-template-columns: 12.75rem minmax(0, 1fr); column-gap: 2.75rem; }
   @media (min-width: 1280px) {
     .dm-docs[data-docs-side] { grid-template-columns: 13.75rem minmax(0, 1fr); column-gap: 3.5rem; }
     .dm-docs[data-docs-side][data-docs-rail] { grid-template-columns: 13.75rem minmax(0, 1fr) 12.25rem; }
   }
   .dm-docs-main { min-width: 0; }
+  /* Sticky 16 / 28 design px under the window's top (V4 .side, .rail-t: the header scrolls away with the page). */
   .dm-docs-side,
-  .dm-docs-rail { position: sticky; top: calc(var(--header-h) + 1.5rem); max-height: calc(100dvh - var(--header-h) - 3rem); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+  .dm-docs-rail { position: sticky; top: calc(var(--header-h) + 1rem); max-height: calc(100dvh - var(--header-h) - 2rem); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+  .dm-docs-rail { top: calc(var(--header-h) + 1.75rem); max-height: calc(100dvh - var(--header-h) - 3.5rem); }
   .dm-docs-side::-webkit-scrollbar,
   .dm-docs-rail::-webkit-scrollbar { display: none; }
+  /* Where the edge fade below cannot be drawn (no scroll-driven animations: Firefox), a thin warm scrollbar is the cue
+     that a column holding more than fits scrolls. */
+  @supports not (animation-timeline: scroll()) { .dm-docs-side, .dm-docs-rail { scrollbar-width: thin; scrollbar-color: rgb(255 236 220 / 0.14) transparent; } }
   /* The sidebar: the links' pip sits in the gutter, the column ends on a hairline (a ring, never a border). */
   .dm-docs-side { margin-left: -1.125rem; padding: 0.875rem 1.125rem 2.25rem 0.375rem; box-shadow: inset -1px 0 0 var(--line); }
-  .dm-docs-rail { margin-top: 8.625rem; padding: 0.375rem 0 1rem; }
+  .dm-docs-rail { margin-top: 8.625rem; padding: 0 0 1rem; }
   .dm-docs-article { max-width: 44rem; line-height: 1.5; }
   /* A side column holding more than fits (a short window) fades at the edge where more links sit, following
      its own scroll: the bottom until it is scrolled to the end, the top once it has left the start. A column
@@ -45,12 +51,17 @@
       animation-timeline: scroll(self);
     }
   }
+  /* On a desktop pointer the sidebar is the prototype's height under its zoom (the window less 32 design px, V4 .side),
+     its edges always fading (14px at the top, 32px at the bottom); the links that do not fit scroll inside it. */
+  @media (min-width: 768px) and (pointer: fine) {
+    .dm-docs-side { max-height: calc(100dvh * var(--vwk) - 2rem); scrollbar-width: none; -webkit-mask-image: linear-gradient(transparent, #000 0.875rem, #000 calc(100% - 2rem), transparent); mask-image: linear-gradient(transparent, #000 0.875rem, #000 calc(100% - 2rem), transparent); animation: none; }
+  }
 
   /* ---- Sidebar: the menu's cousin; a Tangerine pip marks where you are (the current link is never Tangerine) ---- */
   .dm-docs-nav { display: block; }
-  .dm-docs-nav-list { display: flex; flex-direction: column; gap: 1px; margin: 0; padding: 0; list-style: none; }
-  .dm-docs-nav-label { margin: 1.375rem 0 0.375rem; padding: 0 0 0 1.5rem; font-size: 0.78125rem; line-height: 1.25; font-weight: 400; letter-spacing: -0.01em; text-transform: none; color: var(--subtle); }
-  .dm-docs-nav-link { position: relative; display: flex; align-items: center; min-height: 2rem; padding: 0.375rem 0.625rem 0.375rem 1.5rem; border-radius: 0.625rem; font-size: 0.875rem; line-height: 1.3; font-weight: 400; letter-spacing: -0.01em; color: var(--muted); text-decoration: none; box-shadow: none; background: transparent; transition: color 0.18s var(--e-std), background-color 0.18s var(--e-std), transform 0.1s var(--e-press); }
+  .dm-docs-nav-list { display: flex; flex-direction: column; gap: 0.0625rem; margin: 0; padding: 0; list-style: none; }
+  .dm-docs-nav-label { margin: 1.375rem 0 0.375rem; padding: 0 0 0 1.5rem; font-size: 0.78125rem; line-height: normal; font-weight: 400; letter-spacing: -0.01rem; text-transform: none; color: var(--subtle); }
+  .dm-docs-nav-link { position: relative; display: flex; align-items: center; min-height: 2rem; padding: 0.375rem 0.625rem 0.375rem 1.5rem; border-radius: 0.625rem; font-size: 0.875rem; line-height: 1.3; font-weight: 400; letter-spacing: -0.01rem; color: var(--muted); text-decoration: none; box-shadow: none; background: transparent; transition: color 0.18s var(--e-std), background-color 0.18s var(--e-std), transform 0.1s var(--e-press); }
   .dm-docs-nav-link::before { content: ''; position: absolute; left: 0.625rem; top: 50%; width: 0.3125rem; height: 0.3125rem; margin-top: -0.15625rem; border-radius: 50%; background: var(--tan); opacity: 0; transform: scale(0.2); transition: opacity 0.2s var(--e-std), transform 0.35s var(--e-enter); }
   .dm-docs-nav-link:hover { color: var(--fg); background: var(--v4-w035); }
   .dm-docs-nav-link:hover::before { opacity: 0.5; transform: scale(0.7); }
@@ -73,87 +84,110 @@
   .dm-docs-menu > .dm-docs-nav { padding: 0 0.625rem 0.875rem 0.25rem; }
   .dm-docs-menu .dm-docs-nav-link { min-height: 2.5rem; }
   .dm-docs-menu .dm-docs-nav-label { margin-top: 1rem; }
-  .dm-docs-menu-where { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.5rem; min-width: 0; }
+  /* The two folds open and close as the prototype's (.acc-b: the rows 0fr to 1fr and back in .45s, the content fading in
+     .25s) where a disclosure's content can be animated. A link chosen inside one closes it at once (data-instant,
+     DocsToc closeDisclosureOf), so the section is measured without the list above it. Elsewhere they open and close at
+     once, as before. */
+  :is(.dm-docs-menu, .dm-docs-toc-menu) { interpolate-size: allow-keywords; }
+  :is(.dm-docs-menu, .dm-docs-toc-menu)::details-content { block-size: 0; opacity: 0; overflow: hidden; transition: block-size 0.45s var(--e-enter), opacity 0.25s var(--e-std), content-visibility 0.45s allow-discrete; }
+  :is(.dm-docs-menu, .dm-docs-toc-menu)[open]::details-content { block-size: auto; opacity: 1; transition: block-size 0.45s var(--e-enter), opacity 0.25s var(--e-std); } /* opening never transitions content-visibility: the content is there (and readable) at once */
+  :is(.dm-docs-menu, .dm-docs-toc-menu)[data-instant]::details-content { transition: none; }
+  /* Where you are, one run of words as the prototype's .dmn-s span: the group, ' / ' and the page (the spaces drawn around
+     the slash, so the summary's text is unchanged); on a phone one line that ends in an ellipsis. */
+  .dm-docs-menu-where { display: block; min-width: 0; }
+  .dm-docs-menu-sep { white-space: pre; }
+  .dm-docs-menu-sep::before, .dm-docs-menu-sep::after { content: ' '; }
   .dm-docs-menu-group,
   .dm-docs-menu-sep { font-weight: 400; color: var(--subtle); }
   .dm-docs-menu-page { color: var(--fg); }
 
   /* ---- Breadcrumb and the page's head (the title's size is v4-docs.css) ------------------------------- */
   .dm-docs-crumbs { margin-top: 1.75rem; }
-  .dm-docs-crumbs ol { display: flex; flex-wrap: wrap; align-items: center; margin: 0; padding: 0; list-style: none; font-size: 0.84375rem; line-height: 1.75rem; letter-spacing: -0.01em; color: var(--subtle); }
+  .dm-docs-crumbs ol { display: flex; flex-wrap: wrap; align-items: center; margin: 0; padding: 0; list-style: none; font-size: 0.84375rem; line-height: 1.75rem; letter-spacing: -0.01rem; color: var(--subtle); }
   .dm-docs-crumbs li + li::before { content: '/'; margin: 0 0.5rem; color: var(--subtle); }
   .dm-docs-crumbs a { display: inline-flex; align-items: center; height: 1.75rem; margin-left: -0.5rem; padding: 0 0.5rem; border-radius: 0.5rem; color: var(--muted); text-decoration: none; transition: color 0.18s var(--e-std), background-color 0.18s var(--e-std); }
   .dm-docs-crumbs a:hover { color: var(--fg); background: var(--v4-w04); }
   .dm-docs-crumbs + .dm-docs-head { margin-top: 0.75rem; }
   .dm-docs-article > .dm-docs-head:first-child { margin-top: 1.75rem; }
   .dm-docs-title { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.875rem; }
-  .dm-docs-lead { max-width: 46ch; margin: 1.375rem 0 0; font-size: 1.1875rem; line-height: 1.5; letter-spacing: -0.01em; color: var(--muted); text-wrap: pretty; }
+  /* The title's words sit .05em under its top, as the prototype's line mask (.ln: padding .05em .1em .14em 0, margin-bottom
+     -.14em) holds them, so the lead and the page below it start where the prototype's do. */
+  .dm-docs-head .dm-display-title { padding-top: 0.05em; }
+  .dm-docs-lead { max-width: 46ch; margin: 1.375rem 0 0; font-size: 1.1875rem; line-height: 1.5; letter-spacing: -0.01rem; color: var(--muted); }
 
   /* ---- "On this page": a rail beside the article, a mini domino on the section you are reading; below 1280px
      the same list folded under the lead, its round plus turning to a cross when open ---- */
-  .dm-docs-rail-title { margin: 0 0 0.75rem 1.375rem; font-size: 0.78125rem; line-height: 1.25; font-weight: 400; letter-spacing: -0.01em; color: var(--subtle); }
+  .dm-docs-rail-title { margin: 0 0 0.75rem 1.375rem; font-size: 0.78125rem; line-height: normal; font-weight: 400; letter-spacing: -0.01rem; color: var(--subtle); }
   .dm-docs-toc { position: relative; }
   .dm-docs-toc-list { position: relative; display: block; margin: 0; padding: 0; list-style: none; box-shadow: none; }
   .dm-docs-toc-list::before { content: ''; position: absolute; left: 0.25rem; top: 0.375rem; bottom: 0.375rem; width: 1px; background: var(--line); }
-  .dm-docs-toc-link { position: relative; display: block; padding: 0.375rem 0 0.375rem 1.375rem; border-radius: 0.375rem; font-size: 0.84375rem; line-height: 1.25rem; letter-spacing: -0.01em; color: var(--subtle); text-decoration: none; text-wrap: pretty; transition: color 0.18s var(--e-std), transform 0.25s var(--e-enter); }
+  .dm-docs-toc-link { position: relative; display: block; padding: 0.375rem 0 0.375rem 1.375rem; border-radius: 0.375rem; font-size: 0.84375rem; line-height: 1.25rem; letter-spacing: -0.01rem; color: var(--subtle); text-decoration: none; transition: color 0.18s var(--e-std), transform 0.25s var(--e-enter); }
   .dm-docs-toc-link[data-depth="3"] { padding-left: 2.25rem; }
-  /* The mini domino (9 × 16, a Tangerine ring and its groove) lands on the current entry, where the rail's hairline runs. */
-  .dm-docs-toc-link::before { content: ''; position: absolute; left: 0; top: 50%; width: 0.5625rem; height: 1rem; margin-top: -0.5rem; border-radius: 0.1375rem; background: linear-gradient(rgb(255 157 98 / 0.62), rgb(255 157 98 / 0.62)) center / 0.2625rem 1px no-repeat, #13110f; box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.62); opacity: 0; transform: translateY(-0.375rem) rotate(-20deg); transition: opacity 0.2s var(--e-std), transform 0.4s var(--e-enter); }
+  /* One mini domino (9 × 16, a Tangerine ring and its groove; DocsToc.tsx) glides along the hairline to the current entry
+     in .5s, and a brighter fill runs down the hairline to it (V4 .toc-mk, .toc-fill); over the rail it tips -14deg. */
+  .dm-docs-toc-fill { position: absolute; left: 0.25rem; top: 0.375rem; z-index: 1; width: 1px; height: calc(100% - 0.75rem); background: rgb(255 236 220 / 0.2); transform-origin: top; transform: scaleY(var(--mk-f, 0)); transition: transform 0.5s var(--e-enter); pointer-events: none; }
+  .dm-docs-toc-mk { position: absolute; left: 0; top: 0; z-index: 1; width: 0.5625rem; height: 1rem; transform: translateY(var(--mk-y, 0.5rem)); transition: transform 0.5s var(--e-enter); pointer-events: none; }
+  .dm-docs-toc-mk > svg { display: block; width: 100%; height: 100%; transition: transform 0.4s var(--e-enter); }
+  .dm-docs-toc-mk rect { fill: #0d0c0a; }
+  .dm-docs-toc-menu .dm-docs-toc-mk rect { fill: #13110f; }
+  .dm-docs-toc:hover .dm-docs-toc-mk > svg { transform: rotate(-14deg); }
   .dm-docs-toc-link:hover { color: var(--fg); transform: translateX(2px); }
   .dm-docs-toc-link[aria-current="location"] { color: var(--fg); }
-  .dm-docs-toc-link[aria-current="location"]::before { opacity: 1; transform: none; }
-  .dm-docs-toc-link:hover::before { transform: translateX(-2px); }
-  .dm-docs-toc-link[aria-current="location"]:hover::before { transform: translateX(-2px) rotate(-14deg); }
   .dm-docs-toc-link:focus-visible { outline-offset: var(--focus-offset-inset); }
   .dm-docs-toc-menu { margin-top: 1.75rem; border-radius: 1.125rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--line); transition: box-shadow 0.2s var(--e-std); }
   .dm-docs-toc-menu:hover { box-shadow: inset 0 0 0 1px var(--lip); }
   .dm-docs-toc-menu > summary { min-height: 3.375rem; padding: 0 0.75rem 0 1.25rem; border-radius: 1.125rem; font-size: 0.90625rem; font-weight: 500; transition: transform 0.1s var(--e-press); }
   .dm-docs-toc-menu > summary:hover { background: transparent; }
   .dm-docs-toc-menu > summary:active { transform: scale(0.995); }
-  .dm-docs-toc-menu > .dm-docs-toc { margin: 0 1rem 0 1.125rem; padding: 2px 0 1rem; }
+  .dm-docs-toc-menu > .dm-docs-toc { margin: 0 1rem 0 1.125rem; padding: 0.125rem 0 1rem; }
 
   /* ---- Prose: serif section titles, reading text at 16.5/1.75 within 64ch ------------------------------ */
   .dm-docs-prose { margin-top: 0.375rem; }
   .dm-docs-section { margin-top: 4.5rem; }
   .dm-docs-sub { margin-top: 2.5rem; }
   .dm-docs-prose [id] { scroll-margin-top: calc(var(--header-h) + 1rem); }
-  .dm-docs-h2 { margin: 0 0 1rem; padding-bottom: 0.625rem; font-family: var(--font-display); font-weight: 400; font-size: 2.375rem; line-height: 1.05; letter-spacing: -0.02em; color: var(--fg); text-wrap: balance; }
-  .dm-docs-h3 { margin: 0 0 0.625rem; padding-bottom: 0.5rem; font-family: var(--font-display); font-weight: 400; font-size: 1.6875rem; line-height: 1.1; letter-spacing: -0.015em; color: var(--fg); text-wrap: balance; }
-  .dm-docs-p { max-width: 64ch; margin: 0 0 1.125rem; font-size: 1.03125rem; line-height: 1.75; letter-spacing: -0.01em; color: var(--muted); text-wrap: pretty; overflow-wrap: break-word; }
+  .dm-docs-h2 { position: relative; overflow: hidden; margin: 0 0 1rem; padding-bottom: 0.625rem; font-family: var(--font-display); font-weight: 400; font-size: 2.375rem; line-height: 1.05; letter-spacing: -0.02em; color: var(--fg); text-wrap: balance; }
+  .dm-docs-h3 { position: relative; overflow: hidden; margin: 0 0 0.625rem; padding-bottom: 0.5rem; font-family: var(--font-display); font-weight: 400; font-size: 1.6875rem; line-height: 1.1; letter-spacing: -0.015em; color: var(--fg); text-wrap: balance; }
+  /* Arriving at a section (lib/sectionScroll.ts sets data-arrived): its title's letters warm and fade back in 1.6s while a
+     light runs along its line once (V4 .arr). */
+  :is(.dm-docs-h2, .dm-docs-h3)::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: linear-gradient(90deg, rgb(255 190 146 / 0) 30%, rgb(255 190 146 / 0.85) 50%, rgb(255 190 146 / 0) 70%); opacity: 0; transform: translateX(-100%); pointer-events: none; }
+  :is(.dm-docs-h2, .dm-docs-h3)[data-arrived] { animation: dm-docs-lit 1.6s var(--e-std) 0.2s both; }
+  :is(.dm-docs-h2, .dm-docs-h3)[data-arrived]::after { animation: dm-docs-sweep 1.2s var(--e-enter) 0.2s both; }
+  .dm-docs-p { max-width: 64ch; margin: 0 0 1.125rem; font-size: 1.03125rem; line-height: 1.75; letter-spacing: -0.01rem; color: var(--muted); overflow-wrap: break-word; }
   .dm-docs-article strong { font-weight: 500; color: var(--fg); }
-  .dm-docs-mono { padding: 2px 0.4375rem; border-radius: 0.4375rem; background: var(--v4-w06); box-shadow: inset 0 0 0 1px var(--line); font-family: var(--font-mono); font-size: 0.84375rem; letter-spacing: 0; color: var(--fg); overflow-wrap: anywhere; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+  .dm-docs-mono { padding: 0.125rem 0.4375rem; border-radius: 0.4375rem; background: var(--v4-w06); box-shadow: inset 0 0 0 1px var(--line); font-family: var(--font-mono); font-size: 0.84375rem; letter-spacing: 0; color: var(--fg); overflow-wrap: anywhere; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
   .dm-docs-link { border-radius: 2px; color: var(--fg); text-decoration-line: underline; text-decoration-color: rgb(255 236 220 / 0.28); text-decoration-thickness: 1px; text-underline-offset: 0.24em; transition: text-decoration-color 0.18s var(--e-std); }
   .dm-docs-link:hover { text-decoration-color: rgb(255 157 98 / 0.85); }
 
   /* Bullets are tiny domino tiles laid on their side. */
   .dm-docs-list { display: block; max-width: 64ch; margin: 0 0 1.25rem; padding: 0; list-style: none; }
-  .dm-docs-list > li { position: relative; margin: 0 0 0.625rem; padding-left: 1.625rem; font-size: 1.03125rem; line-height: 1.7; letter-spacing: -0.01em; color: var(--muted); text-wrap: pretty; overflow-wrap: break-word; }
+  .dm-docs-list > li { position: relative; margin: 0 0 0.625rem; padding-left: 1.625rem; font-size: 1.03125rem; line-height: 1.7; letter-spacing: -0.01rem; color: var(--muted); overflow-wrap: break-word; }
   .dm-docs-list > li::before { content: ''; position: absolute; left: 0.1875rem; top: 0.66em; width: 0.625rem; height: 0.375rem; border-radius: 2px; background: none; box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.34); }
 
   /* Numbered steps: New position's rail at reading size, in a card; a line joins the round markers. */
-  .dm-docs-steps { position: relative; margin: 1.5rem 0; padding: 0.75rem 0.5rem; list-style: none; }
-  .dm-docs-steps::before { content: ''; position: absolute; left: 2.6875rem; top: 2.75rem; bottom: 2.75rem; width: 1px; background: var(--line); }
+  /* The line is part of the card's background, so the card's ::before and ::after stay free for the lit edge (.dm-lit). */
+  .dm-docs-steps { position: relative; margin: 1.5rem 0; padding: 0.75rem 0.5rem; list-style: none; background: linear-gradient(var(--line), var(--line)) 2.6875rem 2.75rem / 1px calc(100% - 5.5rem) no-repeat, var(--v4-card-lift), var(--card); }
   .dm-docs-step { display: grid; grid-template-columns: 2.75rem minmax(0, 1fr); align-items: start; gap: 0.875rem; padding: 1rem 1.125rem 1rem 0.875rem; border-radius: 1rem; }
   .dm-docs-step + .dm-docs-step { border-top: 0; }
-  .dm-docs-step-n { position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; width: 2.125rem; height: 2.125rem; margin-left: 0.25rem; border-radius: 50%; background: var(--card); box-shadow: inset 0 0 0 1px var(--strong); font-size: 0.78125rem; line-height: 1; font-weight: 500; letter-spacing: -0.01em; color: var(--subtle); }
-  .dm-docs-step-title { margin-top: 0.4375rem; padding: 0; font-size: 0.96875rem; line-height: 1.4; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); }
-  .dm-docs-step-body { margin-top: 0.375rem; font-size: 0.9375rem; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+  .dm-docs-step-n { position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; width: 2.125rem; height: 2.125rem; margin-left: 0.25rem; border-radius: 50%; background: var(--card); box-shadow: inset 0 0 0 1px var(--strong); font-size: 0.78125rem; line-height: 1; font-weight: 500; letter-spacing: -0.01rem; color: var(--subtle); }
+  .dm-docs-step-title { margin-top: 0.4375rem; padding: 0; font-size: 0.96875rem; line-height: 1.4; font-weight: 500; letter-spacing: -0.01rem; color: var(--fg); }
+  .dm-docs-step-body { margin-top: 0.375rem; font-size: 0.9375rem; line-height: 1.6; color: var(--muted); }
 
   /* A note: a quiet inset, no stripe; its mark in a round tint. */
   .dm-docs-note { display: grid; grid-template-columns: 1.75rem minmax(0, 1fr); align-items: start; gap: 0.875rem; max-width: 64ch; margin: 1.5rem 0; padding: 1rem 1.25rem 1rem 1rem; border: 0; border-radius: 1.125rem; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); font-size: 0.9375rem; line-height: 1.65; color: var(--muted); }
-  .dm-docs-note > p { min-width: 0; padding-top: 0.1875rem; text-wrap: pretty; }
+  .dm-docs-note > p { min-width: 0; padding-top: 0.1875rem; }
   .dm-docs-note-icon { flex-shrink: 0; width: 1.75rem; height: 1.75rem; margin: 0; padding: 0.375rem; border-radius: 50%; background: var(--v4-w06); color: var(--muted); }
-  .dm-docs-note-title { display: block; margin-bottom: 2px; }
+  .dm-docs-note-title { display: block; margin-bottom: 0.125rem; }
 
   /* Facts: a ledger; the label beside the value and its note from 860px, stacked below. */
   .dm-docs-facts { margin: 1.5rem 0; padding: 0.375rem; }
   .dm-docs-fact { display: grid; gap: 0.375rem; padding: 0.875rem 0.75rem; border-radius: 0.875rem; transition: background-color 0.18s var(--e-std); }
   .dm-docs-fact + .dm-docs-fact { border-top: 0; box-shadow: inset 0 1px 0 var(--line); }
   .dm-docs-fact:hover { background: rgb(255 236 220 / 0.02); }
-  .dm-docs-fact dt { padding-top: 1px; font-size: 0.875rem; line-height: 1.4; font-weight: 500; color: var(--subtle); }
+  .dm-docs-fact dt { padding-top: 0.0625rem; font-size: 0.875rem; line-height: 1.4; font-weight: 500; color: var(--subtle); }
   .dm-docs-fact dd { display: flex; flex-direction: column; gap: 0.3125rem; min-width: 0; margin: 0; }
-  .dm-docs-fact-value { display: block; font-size: 0.9375rem; line-height: 1.4; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); overflow-wrap: anywhere; }
-  .dm-docs-fact-note { display: block; margin: 0; font-size: 0.84375rem; line-height: 1.55; letter-spacing: -0.01em; color: var(--subtle); text-wrap: pretty; }
+  .dm-docs-fact-value { display: block; font-size: 0.9375rem; line-height: 1.4; font-weight: 500; letter-spacing: -0.01rem; color: var(--fg); overflow-wrap: anywhere; }
+  .dm-docs-fact-note { display: block; margin: 0; font-size: 0.84375rem; line-height: 1.55; letter-spacing: -0.01rem; color: var(--subtle); }
   @media (min-width: 860px) { .dm-docs-fact { grid-template-columns: 11.5rem minmax(0, 1fr); gap: 1.25rem; padding: 0.9375rem 1rem; } }
 
   /* Addresses: name and role, the address in full, its copy button shown when the row is hovered or focused
@@ -168,7 +202,7 @@
   .dm-docs-addresses .dm-kv > div:hover { background: var(--v4-w03); }
   .dm-docs-addresses dt { display: grid; gap: 0.25rem; flex-shrink: 0; max-width: none; }
   .dm-docs-addr-name { font-size: 0.90625rem; line-height: 1.3; font-weight: 500; color: var(--fg); }
-  .dm-docs-addr-role { font-size: 0.78125rem; line-height: 1.4; letter-spacing: -0.01em; color: var(--subtle); }
+  .dm-docs-addr-role { font-size: 0.78125rem; line-height: 1.4; letter-spacing: -0.01rem; color: var(--subtle); }
   .dm-docs-addresses .dm-kv .dm-kv-mono { display: flex; align-items: center; justify-content: flex-end; gap: 0.875rem; font-size: 0.75rem; line-height: 1.4; color: var(--muted); transition: color 0.18s var(--e-std); }
   .dm-docs-addresses .dm-kv > div:hover .dm-kv-mono { color: var(--fg); }
   .dm-docs-addresses .dm-kv-action { margin-left: 0; }
@@ -202,8 +236,8 @@
   .dm-docs-term { display: grid; gap: 0.375rem; padding: 0.875rem 0.75rem; border-radius: 0.75rem; transition: background-color 0.18s var(--e-std); }
   .dm-docs-term + .dm-docs-term { border-top: 0; box-shadow: inset 0 1px 0 var(--line); }
   .dm-docs-term:hover { background: rgb(255 236 220 / 0.02); }
-  .dm-docs-term dt { font-size: 0.9375rem; line-height: 1.5; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); }
-  .dm-docs-term dd { max-width: 64ch; margin: 0; font-size: 0.9375rem; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+  .dm-docs-term dt { font-size: 0.9375rem; line-height: 1.5; font-weight: 500; letter-spacing: -0.01rem; color: var(--fg); }
+  .dm-docs-term dd { max-width: 64ch; margin: 0; font-size: 0.9375rem; line-height: 1.6; color: var(--muted); }
   @media (min-width: 860px) { .dm-docs-term { grid-template-columns: 11.875rem minmax(0, 1fr); gap: 1.25rem; } }
 
   /* ---- Pictures and drawings. A screen shot from the app's test view sits in a deep frame at the column's
@@ -217,8 +251,8 @@
   .dm-docs-shot img { display: block; width: 100%; height: auto; }
   /* A phone gets the phone shot (the <source> under 640 px), at most half its pixels wide too. */
   @media (max-width: 639px) { .dm-docs-shot { max-width: var(--dm-shot-phone-w, var(--dm-shot-w)); border-radius: 1.125rem; } }
-  .dm-docs-figure > figcaption { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; max-width: 64ch; margin-top: 0.875rem; padding-left: 0.25rem; font-size: 0.84375rem; line-height: 1.5; letter-spacing: -0.01em; color: var(--subtle); text-wrap: pretty; }
-  .dm-docs-figure-tag { display: inline-flex; align-items: center; height: 1.375rem; padding: 0 0.5rem; border-radius: 0.375rem; background: var(--v4-w055); font-size: 0.75rem; line-height: 1; font-weight: 500; letter-spacing: -0.01em; color: var(--muted); white-space: nowrap; }
+  .dm-docs-figure > figcaption { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; max-width: 64ch; margin-top: 0.875rem; padding-left: 0.25rem; font-size: 0.84375rem; line-height: 1.5; letter-spacing: -0.01rem; color: var(--subtle); }
+  .dm-docs-figure-tag { display: inline-flex; align-items: center; height: 1.375rem; padding: 0 0.5rem; border-radius: 0.375rem; background: var(--v4-w055); font-size: 0.75rem; line-height: 1; font-weight: 500; letter-spacing: -0.01rem; color: var(--muted); white-space: nowrap; }
   .dm-docs-diagram { position: relative; padding: 1.625rem 1.625rem 1.125rem; border-radius: 1.375rem; background: linear-gradient(180deg, rgb(255 236 220 / 0.03), rgb(255 236 220 / 0) 6.25rem), var(--card); box-shadow: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 var(--v4-w06); }
   /* Earning: the band, its dashed edges, the price grey outside and Tangerine inside, a green dot per fee. Each
      legend entry lights its part of the drawing while the pointer is on it (CSS only: no state). */
@@ -228,7 +262,7 @@
   .dm-docs-dg-out { fill: none; stroke: var(--faint); stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; transition: stroke 0.2s var(--e-std), opacity 0.2s var(--e-std); }
   .dm-docs-dg-in { fill: none; stroke: var(--tan); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: opacity 0.2s var(--e-std), stroke-width 0.2s var(--e-std); }
   .dm-docs-dg-fee { fill: var(--in); transform-box: fill-box; transform-origin: center; transition: transform 0.3s var(--e-enter), opacity 0.2s var(--e-std); }
-  .dm-docs-dg-legend { display: flex; flex-wrap: wrap; gap: 0.25rem 0.875rem; margin: 1rem 0 0; padding: 0; list-style: none; font-size: 0.8125rem; line-height: 1; letter-spacing: -0.01em; color: var(--subtle); }
+  .dm-docs-dg-legend { display: flex; flex-wrap: wrap; gap: 0.25rem 0.875rem; margin: 1rem 0 0; padding: 0; list-style: none; font-size: 0.8125rem; line-height: 1; letter-spacing: -0.01rem; color: var(--subtle); }
   .dm-docs-dg-legend > li { display: inline-flex; align-items: center; gap: 0.5625rem; height: 1.875rem; padding: 0 0.625rem 0 0.375rem; border-radius: 0.5625rem; white-space: nowrap; transition: color 0.18s var(--e-std), background-color 0.18s var(--e-std); }
   .dm-docs-dg-legend > li:hover { color: var(--fg); background: var(--v4-w04); }
   .dm-docs-dg-key { flex-shrink: 0; width: 1rem; height: 2px; border-radius: 1px; background: var(--tan); }
@@ -250,15 +284,29 @@
   .dm-docs-dg-waycard { position: relative; display: flex; flex-direction: column; min-width: 0; padding: 1rem 0.875rem 1.125rem; border-radius: 1.25rem; background: none; box-shadow: none; transition: background-color 0.18s var(--e-std); }
   .dm-docs-dg-waycard:hover { background: var(--v4-w035); }
   .dm-docs-dg-waycard + .dm-docs-dg-waycard::before { content: ''; position: absolute; left: 0.875rem; right: 0.875rem; top: -1px; height: 2px; background: linear-gradient(180deg, rgb(0 0 0 / 0.5) 0 1px, rgb(255 236 220 / 0.075) 1px 2px); }
-  .dm-docs-dg-way { display: block; width: 100%; max-width: 11.25rem; height: auto; margin: 0.125rem auto 1rem; overflow: visible; }
-  .dm-docs-dg-pos { fill: var(--s2); stroke: rgb(255 236 220 / 0.1); stroke-width: 1; }
-  .dm-docs-dg-pos[data-next] { fill: rgb(33 30 25 / 0); stroke: rgb(255 236 220 / 0.3); stroke-width: 1.2; stroke-dasharray: 3 3; transition: fill 0.2s var(--e-std), stroke 0.2s var(--e-std); }
-  .dm-docs-dg-waycard:hover .dm-docs-dg-pos[data-next] { fill: var(--s2); stroke: rgb(255 236 220 / 0.24); transition: fill 0.35s var(--e-std) 0.5s, stroke 0.35s var(--e-std) 0.5s; }
-  .dm-docs-dg-arrow { fill: none; stroke: rgb(255 236 220 / 0.4); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+  /* Each way's scene (V4 .tws, 180 × 100 design px; DocsDiagram.tsx Way): thin plates holding the liquidity, the fees, and
+     what plays while the card is hovered: the dropping fee, the growing share, the riding fee, the next range filling. */
+  .dm-docs-dg-scene { display: block; width: 11.25rem; max-width: 100%; height: 6.25rem; margin: 0.125rem auto 1rem; overflow: visible; }
+  .dm-sc-plate { fill: var(--s2); stroke: rgb(255 236 220 / 0.1); stroke-width: 1; }
+  .dm-sc-liq { fill: #3a342c; }
+  .dm-sc-fee { fill: var(--in); }
+  .dm-sc-arc { fill: none; stroke: rgb(255 236 220 / 0.28); stroke-width: 1.5; stroke-linecap: round; stroke-dasharray: 0 6; }
+  .dm-sc-head { fill: none; stroke: rgb(255 236 220 / 0.45); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+  .dm-sc-next { fill: rgb(33 30 25 / 0); stroke: rgb(255 236 220 / 0.3); stroke-width: 1.2; stroke-dasharray: 3 3; transition: fill 0.2s var(--e-std), stroke 0.2s var(--e-std); }
+  .dm-docs-dg-waycard:hover .dm-sc-next { fill: var(--s2); stroke: rgb(255 236 220 / 0.24); transition: fill 0.35s var(--e-std) 0.5s, stroke 0.35s var(--e-std) 0.5s; }
+  .dm-sc-grow { transform-box: fill-box; transform-origin: 0 50%; transform: scaleX(0.45); transition: transform 0.2s var(--e-std); }
+  .dm-docs-dg-waycard:hover .dm-sc-grow { transform: none; transition: transform 0.7s var(--e-enter) 0.35s; }
+  .dm-sc-drop { opacity: 0; transform-box: fill-box; transform: translateY(-14px); transition: opacity 0.2s var(--e-std), transform 0.5s var(--e-enter); }
+  .dm-docs-dg-waycard:hover .dm-sc-drop { opacity: 1; transform: none; }
+  .dm-sc-tdot { display: none; fill: var(--in); offset-rotate: 0deg; offset-distance: 0%; transition: none; }
+  @supports (offset-path: path('M0 0 L1 1')) { .dm-sc-tdot { display: inline; } .dm-sc-st { display: none; } }
+  .dm-sc-td-c { offset-path: path('M132 52 C132 14 74 14 74 50'); }
+  .dm-sc-td-d { offset-path: path('M80 58 C82 34 92 30 102 36'); }
+  .dm-docs-dg-waycard:hover .dm-sc-tdot { offset-distance: 100%; transition: offset-distance 0.9s var(--e-enter); }
   .dm-docs-dg-name { font-family: var(--font-display); font-size: 1.625rem; line-height: 1.05; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); text-wrap: balance; transition: color 0.3s var(--e-std); }
   .dm-docs-dg-waycard:hover .dm-docs-dg-name { color: var(--v4-lit); }
-  .dm-docs-dg-line { margin-top: 0.5rem; font-size: 0.90625rem; line-height: 1.5; color: var(--muted); text-wrap: pretty; }
-  .dm-docs-dg-fee-line { margin-top: auto; padding-top: 0.625rem; font-size: 0.8125rem; line-height: 1.4; letter-spacing: -0.01em; color: var(--subtle); }
+  .dm-docs-dg-line { margin-top: 0.5rem; font-size: 0.90625rem; line-height: 1.5; color: var(--muted); }
+  .dm-docs-dg-fee-line { margin-top: auto; padding-top: 0.625rem; font-size: 0.8125rem; line-height: normal; letter-spacing: -0.01rem; color: var(--subtle); }
   .dm-docs-dg-fee-line b { font-weight: 500; color: var(--fg); }
   @media (min-width: 860px) {
     .dm-docs-dg-ways { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -273,7 +321,7 @@
   .dm-docs-pager-link:active { scale: 0.99; }
   .dm-docs-pager-link[data-dir="next"] { grid-template-columns: minmax(0, 1fr) auto; justify-content: stretch; padding: 1.125rem 0.875rem 1.25rem 1.375rem; text-align: right; }
   .dm-docs-pager-text { display: block; min-width: 0; }
-  .dm-docs-pager-caption { display: block; font-size: 0.8125rem; line-height: 1.3; letter-spacing: -0.01em; color: var(--subtle); }
+  .dm-docs-pager-caption { display: block; font-size: 0.8125rem; line-height: 1.3; letter-spacing: -0.01rem; color: var(--subtle); }
   .dm-docs-pager-title { display: block; margin-top: 0.5rem; font-family: var(--font-display); font-size: 1.75rem; line-height: 1.05; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); overflow-wrap: anywhere; text-wrap: balance; transition: color 0.25s var(--e-std); }
   .dm-docs-pager-link:hover .dm-docs-pager-title { color: var(--v4-lit); }
   .dm-docs-pager-chev { flex-shrink: 0; box-sizing: border-box; width: 2.125rem; height: 2.125rem; padding: 0.625rem; border-radius: 50%; color: var(--faint); transition: color 0.18s var(--e-std), background-color 0.18s var(--e-std), translate 0.25s var(--e-enter); }
@@ -285,27 +333,28 @@
     .dm-docs-pager-link[data-dir="next"] { grid-column: 2; }
   }
 
-  /* ---- Phone: the prototype's 390 values (on a touch screen from 860px down; a desktop pointer keeps the desktop
-     sizes down to 768px, where the root scale changes), 44px rows in the folded lists ---- */
-  @media (max-width: 767px), (max-width: 859px) and (pointer: coarse) {
-    .dm-docs { padding-bottom: 6rem; }
+  /* ---- Phone: the prototype's 390 values, from 859px down whatever the pointer (V4: every phone block of the prototype
+     is max-width 859px; a desktop pointer at 768-859px sees them at the desktop root scale), 44px rows in the folded
+     lists. The docs menu sits 12 design px under the header. ---- */
+  @media (max-width: 859px) {
+    main[data-docs] { padding-top: 0; }
+    .dm-docs { padding-bottom: 2rem; }
+    .dm-docs-toc-menu .dm-docs-toc-mk { margin-top: 0.375rem; }
     .dm-docs-menu { margin-top: 0.75rem; border-radius: 0.875rem; }
     .dm-docs-menu > summary { min-height: 3rem; padding: 0 0.375rem 0 0.875rem; border-radius: 0.875rem; font-size: 0.875rem; }
+    .dm-docs-menu-where { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .dm-docs-menu > .dm-docs-nav { padding: 0 0.5rem 0.75rem 0.25rem; }
     .dm-docs-menu .dm-docs-nav-link { min-height: 2.75rem; }
-    .dm-docs-article > .dm-docs-head:first-child { margin-top: 1.625rem; }
     .dm-docs-lead { margin-top: 1rem; font-size: 1rem; }
     .dm-docs-toc-menu { margin-top: 1.375rem; }
     .dm-docs-toc-menu .dm-docs-toc-link { padding-top: 0.75rem; padding-bottom: 0.75rem; }
     .dm-docs-section { margin-top: 2.75rem; }
     .dm-docs-h2 { margin-bottom: 0.75rem; font-size: 1.875rem; }
-    .dm-docs-steps { padding: 0.5rem 0.25rem; }
-    .dm-docs-steps::before { left: 2.25rem; }
+    .dm-docs-steps { padding: 0.5rem 0.25rem; background-position: 2.25rem 2.75rem, 0 0; }
     .dm-docs-step { grid-template-columns: 2.5rem minmax(0, 1fr); gap: 0.75rem; padding: 0.875rem 0.75rem 0.875rem 0.625rem; }
     .dm-docs-step-n { margin-left: 0.125rem; }
     .dm-docs-diagram { padding: 1.125rem 0.875rem 0.875rem; }
     .dm-docs-dg-legend { gap: 0.25rem 0.375rem; }
-    .dm-docs-pager { margin-top: 3.5rem; }
     .dm-docs-pager-link { min-height: 5.5rem; }
   }
 
@@ -314,6 +363,11 @@
     :is(.dm-docs-nav-link, .dm-docs-toc-link, .dm-docs-pager-chev, .dm-docs-dg-fee, .dm-docs-menu > summary, .dm-docs-toc-menu > summary),
     :is(.dm-docs-nav-link, .dm-docs-toc-link, .dm-docs-menu > summary)::before { transition-property: opacity, color, background-color, box-shadow, fill, stroke !important; }
     :is(.dm-docs, .dm-docs *):active { transform: none !important; scale: none !important; }
+    :is(.dm-docs-menu, .dm-docs-toc-menu)::details-content { transition: none !important; }
+    .dm-docs .dm-sc-tdot { display: none !important; }
+    .dm-docs .dm-sc-st { display: inline !important; }
+    .dm-sc-grow, .dm-docs-dg-waycard:hover .dm-sc-grow { transform: none; }
+    :is(.dm-sc-drop, .dm-docs-dg-fee) { transition-property: opacity, fill !important; }
   }
 }
 
@@ -328,16 +382,23 @@
   100% { --dm-docs-fade-top: 2rem; --dm-docs-fade-bottom: 0px; }
 }
 
+@keyframes dm-docs-lit { from { color: var(--v4-lit); } to { color: var(--fg); } }
+@keyframes dm-docs-sweep { 0% { opacity: 1; transform: translateX(-100%); } 75% { opacity: 1; } 100% { opacity: 0; transform: translateX(100%); } }
+@keyframes dm-docs-mk { from { opacity: 0; transform: translateY(-0.625rem) rotate(-30deg); } to { opacity: 1; transform: none; } }
+
 /* The load moment (V4 §6.1, the inner pages' short timings: site/docs*.html "fast"): the crumb or the Docs menu fades,
    the sidebar rises, the lead and the folded list rise from a blur, the sections arrive like a card, the rail fades in
-   last; all done by about 0.85 s, on the first load only (dm-booted stops it, and an in-app page change does not replay
-   it). The title's own rise and stop are the foundation's. The shared dm-k-* classes carry the lead, the fold and the
-   sections (JSX); the side columns are reached by selector, because their own animation is the scroll fade above. Fills
-   are backwards only, so nothing keeps a transform once it ends; reduced motion and dm-still: none. */
+   last; all done by about 0.85 s, with the screen's load moment (the first load and each route change, App.tsx). The
+   title's own rise and stop are the foundation's. The shared dm-k-* classes carry the lead, the fold and the sections
+   (JSX); the article's sections arrive as the prototype's .prose (a card's rise in .5s after .2s); the side columns are
+   reached by selector, because their own animation is the scroll fade above. Fills are backwards only, so nothing keeps
+   a transform once it ends; reduced motion and dm-still: none. */
 @layer utilities {
   html:not(.dm-booted) :is(.dm-docs-crumbs, .dm-docs-menu) { animation: dm-v4-fade 0.4s var(--ease-std) 0.06s backwards; }
   html:not(.dm-booted) .dm-docs-side > .dm-docs-nav { animation: dm-v4-card 0.5s var(--ease-enter) 0.14s backwards; }
+  html:not(.dm-booted) .dm-docs-prose.dm-k-card { animation-duration: 0.5s; animation-delay: 0.2s; }
   html:not(.dm-booted) .dm-docs-rail > * { animation: dm-v4-fade 0.45s var(--ease-std) 0.3s backwards; }
-  @media (prefers-reduced-motion: reduce) { :is(.dm-docs-crumbs, .dm-docs-menu, .dm-docs-side > .dm-docs-nav, .dm-docs-rail > *) { animation: none !important; } }
-  html.dm-still :is(.dm-docs-crumbs, .dm-docs-menu, .dm-docs-side > .dm-docs-nav, .dm-docs-rail > *) { animation: none !important; }
+  html:not(.dm-booted) .dm-docs-toc-mk > svg { animation: dm-docs-mk 0.4s var(--e-pop) 0.46s backwards; }
+  @media (prefers-reduced-motion: reduce) { :is(.dm-docs-crumbs, .dm-docs-menu, .dm-docs-side > .dm-docs-nav, .dm-docs-rail > *, .dm-docs-toc-mk > svg, .dm-docs-h2, .dm-docs-h3, .dm-docs-h2::after, .dm-docs-h3::after) { animation: none !important; } }
+  html.dm-still :is(.dm-docs-crumbs, .dm-docs-menu, .dm-docs-side > .dm-docs-nav, .dm-docs-rail > *, .dm-docs-toc-mk > svg, .dm-docs-h2, .dm-docs-h3, .dm-docs-h2::after, .dm-docs-h3::after) { animation: none !important; }
 }

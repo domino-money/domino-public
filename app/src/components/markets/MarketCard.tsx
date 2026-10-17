@@ -23,15 +23,17 @@ import { rem } from '../../lib/rootScale'
 /**
  * Plot dimensions in the shared 16px design scale. V3 puts its metadata outside the plot,
  * leaving the whole chart area to the data instead of reserving a caption band inside it.
+ * V4 (markets.html .p-plot): 104px, the line edge to edge between 8px insets.
  */
-const LINE_HEIGHT = 108
+const LINE_HEIGHT = 104
 /** Bars carry no price, so they take the price row's room as well. */
 const BARS_HEIGHT = 164
 /**
- * Small vertical insets keep peaks clear of the price and footer. The last point leaves room for its live rings.
+ * Small vertical insets keep peaks clear of the price and footer. The line runs to the plate's right content edge and
+ * its end dot overhangs into the padding (the svg draws overflow), as the prototype's does.
  * This changes the plot's frame only; every candle and the window's direction are preserved.
  */
-const LINE_PAD = { left: 0, right: 16, top: 10, bottom: 10 }
+const LINE_PAD = { left: 0, right: 0, top: 8, bottom: 8 }
 
 /** Bundled artwork by address where the catalogue has it; a read-token mark for other bound addresses; a plain disc otherwise. */
 function CatalogueMarks({ entry }: { entry: PoolCatalogueEntry }) {
@@ -96,7 +98,8 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
   const shownBar = bars && bar && bars.candles.some((candle) => candle.startTimestamp === bar.startTimestamp) ? bar : null
   const shownPoint = line && point && line.history.candles.some((candle) => candle.startTimestamp === point.startTimestamp) ? point : null
   // The plot's ground is set in markets.css, so hovering can change it with the plate.
-  const style = { '--delay': `${Math.min(index, 3) * 40}ms` } as CSSProperties
+  // Five plates step in 40ms apart (.v4c.fast .plate:nth-child(1..5)).
+  const style = { '--delay': `${Math.min(index, 4) * 40}ms` } as CSSProperties
 
   let caption = null
   if (line && shownPoint) {

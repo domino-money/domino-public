@@ -22,7 +22,8 @@ export function FeeJourney({ mode }: { mode: 'compound' | 'domino' }) {
   return (
     <div className="dm-auto-journey" role="group" aria-label={mode === 'compound' ? 'How Auto-compound works' : 'How Domino-compound works'}>
       <span><i aria-hidden="true" />Earned fees</span>
-      <span className="dm-auto-journey-arrow" aria-hidden="true">→</span>
+      {/* V4 (2026-10-17): the approved .fj arrow, drawn (30 x 10) instead of a font glyph. */}
+      <span className="dm-auto-journey-arrow" aria-hidden="true"><svg width="30" height="10" viewBox="0 0 30 10" fill="none" focusable="false"><path d="M1 5h26M23 1.5 27 5l-4 3.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg></span>
       <span><i aria-hidden="true" />{mode === 'compound' ? 'Same position' : 'Next price range'}</span>
     </div>
   )

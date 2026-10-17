@@ -11,6 +11,7 @@ import { areaUnder, curveFor, linePath } from '../../../lib/chart/paths'
 import { timeTicks } from '../../../lib/chart/scale'
 import { percentChange } from '../../../lib/format/change'
 import { axisLabel } from '../../../lib/format/time'
+import { rootScale } from '../../../lib/rootScale'
 import { Segmented, Skeleton } from '../../ui'
 import { PoolTokenLabel } from '../../PoolCatalogueIdentity'
 import { daySpan, type DaySpan } from '../../pool/plain'
@@ -68,6 +69,16 @@ function interiorTicks(start: number, end: number, count: number) {
 /** Where a plot point sits in the HTML layers, as percentages of the plot box. */
 const place = (x: number, y: number): CSSProperties => ({ left: `${(x / PLOT.width) * 100}%`, top: `${(y / PLOT.height) * 100}%` })
 
+/** The plot's three faint lines (V4 pool.html .p-grid): the top of the line's band, its middle and its bottom. */
+const GRID = [PLOT.pad.top, PLOT.height / 2, PLOT.height - PLOT.pad.bottom]
+/**
+ * Where the ember lights the line (V4 pool.html .lit), in design px around the plot: the pointer within 40px of its
+ * sides, 60px above it or 40px below it; at rest the light parks 40px left of and 30px above the line's last point.
+ */
+const LIT_ZONE = { side: 40, above: 60, below: 40 }
+const LIT_REST = { x: -40, y: -30 }
+const cssPx = (value: number) => `${Math.round(value * 10) / 10}px`
+
 /**
  * The pool's price over time, from its own swaps on Robinhood Chain (read-v3 history): one token's price in the other,
  * over 24 hours, 7 or 30 days. It opens on the page's direction (`quote`: USDG where the pool holds it), and a person
@@ -83,6 +94,12 @@ export function PoolHistoryChart({ source, option, market, loading, quote: quote
   const [window, setWindow] = useState<keyof typeof WINDOWS>('day')
   const [answer, setAnswer] = useState<Answer | null>(null)
   const [inspected, setInspected] = useState<{ key: string; index: number } | null>(null)
+  // V4 motion (v4-pool.css): the first window drawn wipes in; a later one (another window, or the other token priced)
+  // swaps in, and in the dialog a side switch ticks the figure. Fixed per key, so a mounted plot never flips.
+  const [firstDrawn, setFirstDrawn] = useState<string | null>(null)
+  const [flips, setFlips] = useState(0)
+  // The chart's card, for the ember on its line (below); state set by a callback ref, read only in an effect.
+  const [card, setCard] = useState<HTMLElement | null>(null)
   const titleId = `pool-history-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
   const fillId = `${titleId}-fill`
   const currency = option.currencies[side === 'zero' ? 0 : 1]
@@ -135,6 +152,72 @@ export function PoolHistoryChart({ source, option, market, loading, quote: quote
   const aged = data?.snapshot && now.wall / 1000 - data.snapshot.timestamp > 120
   const stale = data?.status === 'stale' || aged || recentFailure
   useLoadMilestone('pool', 'chart', !disabled && !reading && plot && point ? stale ? 'cached' : data?.status === 'partial' ? 'partial' : 'current' : null)
+  if (plot && point && firstDrawn === null) setFirstDrawn(key)
+  const swapped = firstDrawn !== null && firstDrawn !== key
+  // The ember on the line (page size, a fine pointer): the lit copy's light follows the pointer while it is near the
+  // plot, and rests on the line's last stretch while the pointer has not moved in the window, or has left it. Decoration
+  // only: one passive listener, one frame at a time, custom properties through the CSSOM; a plot drawn again (another
+  // window or token) is placed again without a pointer move.
+  useEffect(() => {
+    // `window` is this chart's time window here: the page's own is globalThis's.
+    const view = globalThis.window
+    if (compact || !card || typeof view?.matchMedia !== 'function' || typeof requestAnimationFrame !== 'function') return
+    if (!view.matchMedia('(hover: hover) and (pointer: fine)').matches) return
+    let on = false
+    let x = 0
+    let y = 0
+    let frame = 0
+    const draw = () => {
+      frame = 0
+      const lit = card.querySelector<SVGSVGElement>('.dm-pool-lit')
+      if (!lit) return
+      const area = lit.getBoundingClientRect()
+      const scale = rootScale()
+      let lx = x - area.left
+      let ly = y - area.top
+      let shown = x > area.left - LIT_ZONE.side * scale && x < area.right + LIT_ZONE.side * scale && y > area.top - LIT_ZONE.above * scale && y < area.bottom + LIT_ZONE.below * scale
+      if (!on) {
+        const end = card.querySelector('.dm-pool-end')?.getBoundingClientRect()
+        if (!end) return
+        lx = end.left + end.width / 2 - area.left + LIT_REST.x * scale
+        ly = end.top + end.height / 2 - area.top + LIT_REST.y * scale
+        shown = true
+      }
+      lit.style.setProperty('--elx', cssPx(lx))
+      lit.style.setProperty('--ely', cssPx(ly))
+      lit.style.setProperty('--lit-on', shown ? '1' : '0')
+    }
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(draw)
+    }
+    const move = (event: globalThis.PointerEvent) => {
+      if (event.pointerType === 'touch') return
+      on = true
+      x = event.clientX
+      y = event.clientY
+      schedule()
+    }
+    const out = (event: globalThis.PointerEvent) => {
+      if (event.relatedTarget !== null) return
+      on = false
+      schedule()
+    }
+    const redrawn = typeof MutationObserver === 'undefined' ? null : new MutationObserver(schedule)
+    redrawn?.observe(card, { childList: true, subtree: true })
+    view.addEventListener('pointermove', move, { passive: true })
+    document.addEventListener('pointerout', out, { passive: true })
+    view.addEventListener('scroll', schedule, { passive: true })
+    view.addEventListener('resize', schedule, { passive: true })
+    schedule()
+    return () => {
+      cancelAnimationFrame(frame)
+      redrawn?.disconnect()
+      view.removeEventListener('pointermove', move)
+      document.removeEventListener('pointerout', out)
+      view.removeEventListener('scroll', schedule)
+      view.removeEventListener('resize', schedule)
+    }
+  }, [compact, card])
   if (disabled) return <div data-history-mode="provider">{provider()}</div>
   // Said only when something is missing, and in plain words; a whole window says nothing.
   // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): only the shading is explained ("Some hours are
@@ -160,6 +243,8 @@ export function PoolHistoryChart({ source, option, market, loading, quote: quote
   const lone = plot ? plot.points.filter(p => plot.paths.includes(`M${p.x.toFixed(2)} ${p.y.toFixed(2)}`) && !(openJoin && p === last)) : []
   // Each run of two points or more, as a line: monotone from 20 points, straight below (the open-hour join stays straight).
   const lines = plot ? runsOf(plot.paths, plot.points).filter(run => run.length > 1).map(run => linePath(run, curveFor(run.length))) : []
+  // Reading an hour on the page dims the line past it (V4 pool.html); the dialog keeps the whole line (MarketsMore D).
+  const past = inspecting && !compact && !!point
 
   const inspectAt = (event: PointerEvent<SVGSVGElement>) => {
     if (!plot) return
@@ -182,13 +267,13 @@ export function PoolHistoryChart({ source, option, market, loading, quote: quote
   // this is not a current price.". `data-ratio-stale` keeps the state, as data.
 
   return <div data-history-mode="chain" data-history-reason={data?.reason ?? undefined}>
-    <section className={`dm-card dm-pool-chart${compact ? ' dm-pool-chart--compact' : ''}`} aria-labelledby={titleId} data-pool-ratio-chart="" data-ratio-status={data?.status ?? current?.state ?? 'reading'} data-ratio-stale={stale ? '' : undefined}>
+    <section ref={setCard} className={`dm-card dm-pool-chart${compact ? ' dm-pool-chart--compact' : ''}`} aria-labelledby={titleId} data-pool-ratio-chart="" data-ratio-status={data?.status ?? current?.state ?? 'reading'} data-ratio-stale={stale ? '' : undefined}>
       <div className="dm-pool-chart-head">
         <h2 id={titleId} className="dm-title">Price history</h2>
         <Segmented size="sm" label="History window" value={window} onChange={setWindow}
           items={[{ key: 'day', label: '24h' }, { key: 'week', label: '7d' }, { key: 'month', label: '30d' }]} />
       </div>
-      {point && <div className="dm-pool-chart-figure" aria-live="off">
+      {point && <div className="dm-pool-chart-figure" aria-live="off" data-tick={flips ? '' : undefined}>
         <div className="dm-pool-chart-price">
           <p className="dm-fig-xl dm-pool-chart-close" title={`${point.candle.close}. Prices from swaps on Robinhood Chain.${verified}`}>{grouped(ratioText(point.candle.close))}</p>
           <span className="dm-pool-chart-unit"><PoolTokenLabel token={quote} /> for 1 <PoolTokenLabel token={currency} /></span>
@@ -218,7 +303,7 @@ export function PoolHistoryChart({ source, option, market, loading, quote: quote
           </> :
           !data ? <div className="dm-pool-plot dm-pool-plot-empty"><span className="text-fg-subtle">—</span></div> :
           !plot || !point || !last ? <div className="dm-pool-plot dm-pool-plot-empty"><p className="text-body text-fg-muted">{data.status === 'available' ? 'No swaps in this window.' : coverage || 'No prices to draw for this window.'}</p></div> : <>
-            <div className="dm-pool-canvas">
+            <div className="dm-pool-canvas" data-swap={swapped ? '' : undefined}>
               <svg width="100%" height="15rem" viewBox={`0 0 ${plot.width} ${plot.height}`} preserveAspectRatio="none" role="slider"
                 aria-label="Inspect the pool’s price by hour" aria-valuemin={1} aria-valuemax={plot.points.length} aria-valuenow={index + 1}
                 aria-valuetext={ratioCandleText(point.candle)} tabIndex={0} className="dm-pool-chart-svg"
@@ -231,20 +316,37 @@ export function PoolHistoryChart({ source, option, market, loading, quote: quote
                     <stop offset="0.4" className="dm-stop-mid" />
                     <stop offset="1" className="dm-stop-bottom" />
                   </linearGradient>
+                  {/* V4 (pool.html pclip): while an hour is read on the page, the line and its area stop at it. */}
+                  {past && <clipPath id={`${fillId}-past`}><rect x={-10} y={-20} width={point.x + 10} height={plot.height + 40} /></clipPath>}
                 </defs>
                 {plot.gaps.map((gap, index) => <rect key={index} x={gap.x} width={gap.width} y={0} height={plot.height} className="dm-pool-gap" />)}
-                {lines.map((path, index) => <path key={`a${index}`} d={areaUnder(path, plot.height)} fill={`url(#${fillId})`} />)}
-                {openJoin && <path d={areaUnder(openJoin, plot.height)} fill={`url(#${fillId})`} opacity="0.55" />}
-                {lines.map((path, index) => <path key={`g${index}`} d={path} className="dm-series-glow" />)}
-                {lines.map((path, index) => <path key={`l${index}`} d={path} className="dm-series-line" />)}
-                {openJoin && <path d={openJoin} className="dm-series-line" data-open="" />}
+                {GRID.map((y) => <line key={`grid${y}`} x1={0} x2={plot.width} y1={y} y2={y} className="dm-pool-grid" />)}
+                {/* Past the hour read, a dim copy of the line (pool.html .p-dim). */}
+                {past && lines.map((path, index) => <path key={`d${index}`} d={path} className="dm-pool-dim" />)}
+                {past && openJoin && <path d={openJoin} className="dm-pool-dim" />}
+                <g clipPath={past ? `url(#${fillId}-past)` : undefined}>
+                  {lines.map((path, index) => <path key={`a${index}`} d={areaUnder(path, plot.height)} fill={`url(#${fillId})`} />)}
+                  {openJoin && <path d={areaUnder(openJoin, plot.height)} fill={`url(#${fillId})`} opacity="0.55" />}
+                  {lines.map((path, index) => <path key={`g${index}`} d={path} className="dm-series-glow" />)}
+                  {lines.map((path, index) => <path key={`l${index}`} d={path} className="dm-series-line" />)}
+                  {openJoin && <path d={openJoin} className="dm-series-line" data-open="" />}
+                </g>
                 <line x1={last.x} x2={plot.width} y1={last.y} y2={last.y} className="dm-last-line" />
                 {inspecting && <line x1={point.x} x2={point.x} y1={0} y2={plot.height} className="dm-crosshair" />}
                 {inspecting && <line x1={0} x2={plot.width} y1={point.y} y2={point.y} className="dm-crosshair" data-axis="y" />}
               </svg>
+              {/* V4 (pool.html .lit): the ember lights a copy of the line where it passes, page size only; decoration. */}
+              {!compact && <svg aria-hidden="true" focusable="false" className="dm-pool-lit" viewBox={`0 0 ${plot.width} ${plot.height}`} preserveAspectRatio="none">
+                <g clipPath={past ? `url(#${fillId}-past)` : undefined}>
+                  {lines.map((path, index) => <path key={`lg${index}`} d={path} className="dm-pool-lit-glow" />)}
+                  {openJoin && <path d={openJoin} className="dm-pool-lit-glow" />}
+                  {lines.map((path, index) => <path key={`ll${index}`} d={path} className="dm-pool-lit-line" />)}
+                  {openJoin && <path d={openJoin} className="dm-pool-lit-line" />}
+                </g>
+              </svg>}
               <div className="dm-pool-overlay" aria-hidden="true">
                 {lone.map(p => <span key={p.candle.startTimestamp} className="dm-pool-lone" style={place(p.x, p.y)} />)}
-                <span className="dm-pool-end" style={place(last.x, last.y)} />
+                <span className="dm-pool-end" style={place(last.x, last.y)} data-ember-rest={compact ? undefined : `${LIT_REST.x},${LIT_REST.y}`} />
                 {inspecting && <span className="dm-pool-hover" style={place(point.x, point.y)} />}
               </div>
               <div className="dm-pool-yaxis" aria-hidden="true">
@@ -268,7 +370,7 @@ export function PoolHistoryChart({ source, option, market, loading, quote: quote
         {/* Which token is priced: the page's direction first; a flip is one press. With nothing drawn in the page's own
             direction there is nothing to flip, so no switch sits under an empty chart (round 6); once flipped, it stays,
             so the way back is always there. */}
-        {(reading || (plot && point) || side !== opening) && <Segmented size="sm" label="Price of" value={side} onChange={setSide}
+        {(reading || (plot && point) || side !== opening) && <Segmented size="sm" label="Price of" value={side} onChange={(next: 'zero' | 'one') => { if (next !== side) setFlips((count) => count + 1); setSide(next) }}
           items={[{ key: 'zero', label: <PoolTokenLabel token={option.currencies[0]} /> }, { key: 'one', label: <PoolTokenLabel token={option.currencies[1]} /> }]} />}
         {data && plot && point && coverage && <p className="dm-pool-coverage">{coverage}</p>}
       </div>

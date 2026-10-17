@@ -156,7 +156,7 @@ export function StageToken({
     requestAnimationFrame(() => {
       const panel = document.querySelector('[data-chosen-pool]')
       if (!panel) return
-      const header = document.querySelector('header')?.getBoundingClientRect().height ?? 0
+      const header = Math.max(0, document.querySelector('header')?.getBoundingClientRect().bottom ?? 0)
       const top = panel.getBoundingClientRect().top
       const air = rootScale()
       if (top < header + 8 * air) window.scrollTo({ top: Math.max(0, window.scrollY + top - header - 24 * air), behavior: stilled() ? 'auto' : 'smooth' })

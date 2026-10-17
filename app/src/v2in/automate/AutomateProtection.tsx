@@ -1,4 +1,4 @@
-import { IconChevronRight } from '../../components/icons'
+import { ActChevron } from '../../components/automate-v4/RowIcons'
 import { Button, LinkButton } from '../../components/ui'
 import { gateOpen, useGate } from './gate'
 
@@ -24,7 +24,7 @@ export default function AutomateProtection() {
     <>
       {anywhere ? <LinkButton href="#/sequence/protection" variant="outline" data-v2in-protection="">
         Choose a position
-        <IconChevronRight />
+        <ActChevron />
       </LinkButton> : <Button disabled>{pending ? 'Checking availability…' : 'Unavailable right now'}</Button>}
       {/* Kept on purpose 2026-10-15 (pack 7): a gate that says why an action can't be taken stays (the coordinator's rule);
           this disabled button's own words are that gate, on Automate, as its setup gates. */}

@@ -12,13 +12,18 @@
   :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-seg { min-height: 0; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); }
   :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-seg button { min-height: 0; }
   :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart-figure { min-height: 0; }
-  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart-price { align-items: baseline; gap: 0.375rem 0.75rem; }
+  /* The close, its unit and its change on one foot (.cfig-row): the words 7px up (5px in the dialog), 14px apart (12px). */
+  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart-price { align-items: flex-end; gap: 0.375rem 0.875rem; }
+  [data-pool-figures-dialog] .dm-pool-chart-price { gap: 0.375rem 0.75rem; }
   :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart-close { font-family: var(--font-display); font-weight: 400; line-height: 0.9; letter-spacing: -0.03em; color: var(--v4-display); cursor: help; transition: color 0.2s var(--e-std); }
-  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart:has(.dm-crosshair) .dm-pool-chart-close { color: var(--v4-lit); }
-  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart-unit { font-size: 0.84375rem; line-height: 1.25rem; letter-spacing: 0; color: var(--subtle); }
-  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart-price .dm-delta { font-size: 0.875rem; font-weight: 500; }
+  /* Reading an hour warms the close in the dialog (.fg-ch.is-insp .fg-cv); the page's close keeps its ink (.cfig-v). */
+  [data-pool-figures-dialog] .dm-pool-chart:has(.dm-crosshair) .dm-pool-chart-close { color: var(--v4-lit); }
+  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart-unit { padding-bottom: 0.4375rem; font-size: 0.84375rem; line-height: normal; letter-spacing: 0; color: var(--subtle); }
+  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart-price .dm-delta { gap: 0.375rem; padding-bottom: 0.4375rem; font-size: 0.875rem; line-height: normal; font-weight: 500; }
+  [data-pool-figures-dialog] .dm-pool-chart-unit { padding-bottom: 0.3125rem; font-size: 0.8125rem; }
+  [data-pool-figures-dialog] .dm-pool-chart-price .dm-delta { padding-bottom: 0.3125rem; font-size: 0.84375rem; }
   :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart-price .dm-delta-arrow { width: 0.5rem; height: 0.4375rem; }
-  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart-date { margin-top: 0.75rem; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: 0; color: var(--subtle); }
+  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart-date { margin-top: 0.75rem; font-size: 0.8125rem; line-height: normal; letter-spacing: 0; color: var(--subtle); }
   :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-stop-top { stop-color: #ff9d62; stop-opacity: 0.17; }
   :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-stop-mid { stop-color: #ff9d62; stop-opacity: 0.05; }
   :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-stop-bottom { stop-color: #ff9d62; stop-opacity: 0; }
@@ -26,48 +31,111 @@
   :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-series-line { stroke: var(--tan); stroke-width: 1.75; }
   :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-last-line { stroke: rgb(255 157 98 / 0.45); stroke-opacity: 1; stroke-dasharray: 2 4; }
   :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-pool-gap { fill: rgb(255 236 220); opacity: 0.05; }
-  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-crosshair { stroke: var(--strong); opacity: 1; }
-  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-crosshair[data-axis="y"] { stroke: var(--line); }
+  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-crosshair { stroke: var(--strong); opacity: 1; animation: dm-v4-fade 0.18s var(--e-std) backwards; }
+  /* Reading an hour draws only the vertical line (.p-x); past the hour the line steps back to a dim copy (.p-dim). */
+  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-crosshair[data-axis="y"] { display: none; }
+  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-pool-dim { fill: none; stroke: rgb(255 157 98 / 0.3); stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  /* Three faint lines (.p-grid): the top of the line's band, its middle and its bottom. */
+  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-pool-grid { stroke: rgb(255 236 220 / 0.06); stroke-width: 1; vector-effect: non-scaling-stroke; shape-rendering: crispEdges; }
   :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-pool-lone { background: var(--tan); }
   :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-pool-end { width: 0.5625rem; height: 0.5625rem; background: var(--tan); box-shadow: 0 0 0 0.25rem rgb(255 157 98 / 0.16); }
   :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-pool-hover { width: 0.6875rem; height: 0.6875rem; background: var(--v4-lit-stop); box-shadow: 0 0 0 0.3125rem rgb(255 157 98 / 0.22); animation: dm-v4-pip 0.25s var(--e-enter) backwards; }
   :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-pool-ylabel { left: 1rem; font-size: 0.75rem; line-height: 1rem; letter-spacing: 0; color: var(--subtle); }
-  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-last-chip.dm-pool-chip { gap: 0.3125rem; height: 1.375rem; padding: 0 0.4375rem 0 0.375rem; border-radius: 0.4375rem; background: var(--v4-w06); box-shadow: inset 0 0 0 1px var(--lip); font-size: 0.75rem; font-weight: 500; letter-spacing: 0; color: var(--fg); }
+  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-last-chip.dm-pool-chip { max-width: calc(var(--axis-w) + 0.625rem); gap: 0.3125rem; height: 1.375rem; padding: 0 0.4375rem 0 0.375rem; border-radius: 0.4375rem; background: var(--v4-w06); box-shadow: inset 0 0 0 1px var(--lip); font-size: 0.75rem; font-weight: 500; letter-spacing: 0; color: var(--fg); }
   :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-last-chip.dm-pool-chip::before { content: ''; flex: none; width: 0.3125rem; height: 0.3125rem; border-radius: 50%; background: var(--tan); }
   :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-pool-xaxis { font-size: 0.75rem; line-height: 1rem; letter-spacing: 0; color: var(--subtle); }
+  /* The time axis (.xax): 10px under the plot, 30px tall, its labels 6px down; the dialog's 8px under, 26px tall. */
+  [data-pool-page] .dm-pool-chart .dm-pool-xaxis { height: 1.875rem; margin-top: 0.625rem; padding-top: 0.375rem; line-height: normal; }
+  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-pool-xaxis > .dm-pool-xtick { top: 0.375rem; }
+  [data-pool-figures-dialog] .dm-pool-chart .dm-pool-xaxis { height: 1.625rem; margin-top: 0.5rem; padding-top: 0.375rem; line-height: normal; }
+  /* The window and side switches (.seg, .fg-seg): a 38px track, 32px buttons, the pressed one lifted where it stands
+     (a wash and a ring fading in 0.18s, no sliding thumb); 13.5px words at the button's own letter spacing. */
+  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-seg { gap: 0.125rem; height: 2.375rem; padding: 0.1875rem; border-radius: 0.8125rem; }
+  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-seg > .dm-seg-thumb { display: none; }
+  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-seg > .dm-seg-item { height: 2rem; padding: 0 0.875rem; border-radius: 0.625rem; font-size: 0.84375rem; line-height: normal; letter-spacing: normal; transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std), box-shadow 0.18s var(--e-std), scale 0.1s var(--e-press); }
+  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-seg > .dm-seg-item:is([aria-pressed="true"], [aria-checked="true"], [aria-selected="true"]) { background: var(--v4-w08); box-shadow: inset 0 0 0 1px var(--lip); color: var(--fg); }
+  @media (pointer: coarse) {
+    :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-seg > .dm-seg-item::before { content: ''; position: absolute; left: 0; right: 0; top: -0.375rem; bottom: -0.375rem; }
+  }
   :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart-foot { gap: 0.5rem 1rem; }
   :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-coverage { font-size: 0.78125rem; line-height: 1.125rem; letter-spacing: 0; color: var(--subtle); }
   :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-plot-empty > :is(p, span) { font-size: 0.84375rem; line-height: 1.5; color: var(--muted); }
   :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-plot-empty > span.text-fg-subtle { color: var(--subtle); }
+  /* The chart while it reads (.wave): a faint line with a Tangerine glint travelling along it, no area; its 9px glow
+     is a layer of its own beside it (a mask on the line would cut it to the line's width). Both stretch across the plot
+     (the grid's centring and the empty plot's 32ch line for words would shrink them). Desktop draws the prototype's design px at the 67.5% root, so
+     its strokes are 0.675 of a phone's. */
+  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-plot-empty { --dm-wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 720 240' preserveAspectRatio='none'%3E%3Cpath d='M0 150 C 70 110, 130 96, 200 128 S 330 196, 420 150 S 560 70, 640 96 S 690 116, 720 116' stroke='black' stroke-width='2' stroke-linecap='round' fill='none' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E"); --dm-wave-glow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 720 240' preserveAspectRatio='none'%3E%3Cpath d='M0 150 C 70 110, 130 96, 200 128 S 330 196, 420 150 S 560 70, 640 96 S 690 116, 720 116' stroke='black' stroke-width='9' stroke-linecap='round' fill='none' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E"); }
+  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-plot-empty > .dm-pool-plot-baseline { justify-self: stretch; align-self: stretch; max-width: none; background: linear-gradient(90deg, transparent 47.3%, rgb(255 190 146 / 0.62) 50%, transparent 52.7%) 79% 0 / 300% 100% no-repeat, rgb(255 236 220 / 0.09); -webkit-mask: var(--dm-wave) center / 100% 100% no-repeat, linear-gradient(90deg, #000 calc(100% - 2rem), transparent); -webkit-mask-composite: source-in; mask: var(--dm-wave) center / 100% 100% no-repeat, linear-gradient(90deg, #000 calc(100% - 2rem), transparent); mask-composite: intersect; animation: dm-v4-pool-glint 2.8s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-plot-empty:has(> .dm-pool-plot-baseline)::before { content: ''; position: absolute; inset: 1.5rem 0 0; justify-self: stretch; align-self: stretch; pointer-events: none; background: linear-gradient(90deg, transparent 47.3%, rgb(255 176 127 / 0.13) 50%, transparent 52.7%) 79% 0 / 300% 100% no-repeat; -webkit-mask: var(--dm-wave-glow) center / 100% 100% no-repeat, linear-gradient(90deg, #000 calc(100% - 2rem), transparent); -webkit-mask-composite: source-in; mask: var(--dm-wave-glow) center / 100% 100% no-repeat, linear-gradient(90deg, #000 calc(100% - 2rem), transparent); mask-composite: intersect; animation: dm-v4-pool-glint 2.8s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+  @media (min-width: 768px) and (pointer: fine) {
+    :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-plot-empty { --dm-wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 720 240' preserveAspectRatio='none'%3E%3Cpath d='M0 150 C 70 110, 130 96, 200 128 S 330 196, 420 150 S 560 70, 640 96 S 690 116, 720 116' stroke='black' stroke-width='1.35' stroke-linecap='round' fill='none' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E"); --dm-wave-glow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 720 240' preserveAspectRatio='none'%3E%3Cpath d='M0 150 C 70 110, 130 96, 200 128 S 330 196, 420 150 S 560 70, 640 96 S 690 116, 720 116' stroke='black' stroke-width='6' stroke-linecap='round' fill='none' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E"); }
+  }
 
   /* The dialog's own size of it: on the sheet, no card of its own. */
   [data-pool-figures-dialog] .dm-pool-chart { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
   [data-pool-figures-dialog] .dm-pool-chart-head { padding: 1.125rem 0.25rem 0.25rem 0.875rem; }
-  [data-pool-figures-dialog] :is(.dm-pool-chart-head > .dm-title, .dm-pool-heading) { font-family: var(--font-display); font-size: 1.625rem; line-height: 1.1; font-weight: 400; letter-spacing: -0.02em; }
-  [data-pool-figures-dialog] .dm-pool-chart-figure { margin-top: 0.875rem; padding: 0 0.875rem; }
+  [data-pool-figures-dialog] :is(.dm-pool-chart-head > .dm-title, .dm-pool-heading) { font-family: var(--font-display); font-size: 1.625rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; }
+  [data-pool-figures-dialog] .dm-pool-chart-figure { margin-top: 0.75rem; padding: 0 0.875rem; }
+  [data-pool-figures-dialog] .dm-pool-chart-date { margin-top: 0.625rem; line-height: normal; }
   [data-pool-figures-dialog] .dm-pool-chart-close { font-size: 3rem; }
-  [data-pool-figures-dialog] .dm-pool-chart-body { --axis-w: 5.25rem; margin: 1rem 0.875rem 0; }
+  [data-pool-figures-dialog] .dm-pool-chart-body { --axis-w: 5.25rem; margin: 1.125rem 0.25rem 0 0.875rem; }
   [data-pool-figures-dialog] .dm-pool-chart .dm-pool-canvas { height: 10rem; min-height: 0; }
   [data-pool-figures-dialog] .dm-pool-chart .dm-pool-plot-empty { height: auto; min-height: 10rem; }
   [data-pool-figures-dialog] .dm-pool-chart .dm-pool-plot-empty:not(:has(> .dm-skel)) { border-radius: 0.875rem; background: rgb(255 236 220 / 0.025); box-shadow: inset 0 0 0 1px var(--line); }
-  [data-pool-figures-dialog] .dm-pool-chart-foot { margin-top: 0.75rem; padding: 0 0.875rem 0.5rem; }
+  [data-pool-figures-dialog] .dm-pool-chart-foot { margin-top: 0.75rem; padding: 0 0.25rem 0.875rem 0.875rem; }
   [data-pool-figures-dialog] .dm-pool-chart[data-pool-chart-awaiting-source] { padding: 1.125rem 0.875rem 0.5rem; }
+  /* The dialog's axis labels 14px into their 84px column (.fg-ylab). */
+  [data-pool-figures-dialog] .dm-pool-chart .dm-pool-ylabel { left: 0.875rem; }
   @media (max-width: 639px) {
     [data-pool-figures-dialog] .dm-pool-chart-close { font-size: 2.5rem; }
-    [data-pool-figures-dialog] .dm-pool-chart-head { padding: 1rem 0 0.25rem 0.5rem; }
-    [data-pool-figures-dialog] :is(.dm-pool-chart-figure, .dm-pool-chart-foot) { padding-inline: 0.5rem; }
-    [data-pool-figures-dialog] .dm-pool-chart-body { margin-inline: 0.5rem; }
   }
+  /* Phones keep the axis column beside the plot, 76px (.cbody, .fg-cb), the dialog's plot 10px in (.fg-cb). */
   @media (max-width: 767px) {
-    [data-pool-figures-dialog] .dm-pool-chart-body { --axis-w: 0px; }
-    /* Phones keep pool.css's axis labels pinned inside the chart's right edge: the desktop left inset above would push
-       them past a zero-width axis and out of the dialog. */
-    :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-pool-ylabel { left: auto; right: 0; font-size: 0.6875rem; line-height: 0.875rem; }
+    [data-pool-figures-dialog] .dm-pool-chart-body { --axis-w: 4.75rem; margin-left: 0.625rem; }
+    /* ...with the desktop's labels in it (16px in on the page, 14px in the dialog, 12px type) and the last value's chip
+       and dashed line, the label beside the chip stepping aside as on desktop (pool.css's phone plot hid them). */
+    :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-pool-ylabel { right: auto; translate: 0 -50%; font-size: 0.75rem; line-height: normal; letter-spacing: 0; }
+    [data-pool-page] .dm-pool-chart .dm-pool-ylabel { left: 1rem; }
+    :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-pool-ylabel[data-by-chip] { visibility: hidden; }
+    :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart :is(.dm-last-chip.dm-pool-chip, .dm-pool-chart-svg .dm-last-line) { visibility: visible; }
+  }
+  /* The plot's first draw (.k-plot, reveal-a): the line, the lit copy and the dots wipe in together from the left, the
+     clip 24px wide of the plot so no dot pops after it; the dialog's draws in 0.75s on every open. A window or side
+     switch (data-swap) swaps it in on the page (.pv-a) and silently in the dialog, where a side switch ticks the figure. */
+  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-canvas > :is(.dm-pool-chart-svg, .dm-pool-overlay, .dm-pool-lit) { animation: dm-v4-pool-reveal 0.6s var(--e-enter) backwards; }
+  [data-pool-figures-dialog] .dm-pool-canvas > :is(.dm-pool-chart-svg, .dm-pool-overlay, .dm-pool-lit) { animation-duration: 0.75s; }
+  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart :is(.dm-pool-end, .dm-last-chip.dm-pool-chip) { animation: none; }
+  [data-pool-page] .dm-pool-canvas[data-swap] > :is(.dm-pool-chart-svg, .dm-pool-overlay, .dm-pool-lit) { animation: dm-v4-pool-swap 0.35s var(--e-enter) backwards; }
+  [data-pool-figures-dialog] .dm-pool-canvas[data-swap] > * { animation: none; }
+  [data-pool-figures-dialog] .dm-pool-chart-figure[data-tick] { animation: dm-v4-mkt-tick 0.35s var(--e-enter) backwards; }
+  /* The ember on the line (.lit): a glow and a light copy of the line, seen through a 340px light at the pointer while
+     it is near the plot, and parked on the line's last stretch while it rests (PoolHistoryChart writes --elx/--ely and
+     --lit-on). A fine pointer only. */
+  [data-pool-page] .dm-pool-canvas > .dm-pool-lit { position: absolute; z-index: 1; top: 0; left: 0; width: calc(100% - var(--axis-w)); height: 100%; overflow: visible; pointer-events: none; }
+  [data-pool-page] .dm-pool-lit-glow { fill: none; stroke: rgb(255 176 127 / 0.3); stroke-width: 8; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  [data-pool-page] .dm-pool-lit-line { fill: none; stroke: var(--v4-lit-stop, #ffd7ba); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  @media (hover: hover) and (pointer: fine) {
+    [data-pool-page] .dm-pool-canvas > .dm-pool-lit { -webkit-mask: radial-gradient(closest-side, #000, rgb(0 0 0 / 0.5) 46%, transparent) calc(var(--elx, -999px) - 10.625rem) calc(var(--ely, -999px) - 10.625rem) / 21.25rem 21.25rem no-repeat; mask: radial-gradient(closest-side, #000, rgb(0 0 0 / 0.5) 46%, transparent) calc(var(--elx, -999px) - 10.625rem) calc(var(--ely, -999px) - 10.625rem) / 21.25rem 21.25rem no-repeat; opacity: var(--lit-on, 0); transition: -webkit-mask-position 0.45s var(--e-drift), mask-position 0.45s var(--e-drift), opacity 0.35s var(--e-std); }
+  }
+  @media (hover: none) {
+    [data-pool-page] .dm-pool-canvas > .dm-pool-lit { display: none; }
+  }
+  @media (forced-colors: active) {
+    [data-pool-page] .dm-pool-canvas > .dm-pool-lit { display: none; }
   }
   @media (prefers-reduced-motion: reduce) {
     :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-pool-hover { animation: none; }
+    :is([data-pool-page], [data-pool-figures-dialog]) :is(.dm-pool-canvas > *, .dm-pool-chart-figure, .dm-pool-chart .dm-crosshair, .dm-pool-plot-empty > .dm-pool-plot-baseline) { animation: none; }
+    :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-plot-empty:has(> .dm-pool-plot-baseline)::before { animation: none; }
   }
+  html.dm-still :is([data-pool-page], [data-pool-figures-dialog]) :is(.dm-pool-canvas > *, .dm-pool-chart-figure, .dm-pool-chart .dm-crosshair, .dm-pool-plot-empty > .dm-pool-plot-baseline) { animation: none; }
+  html.dm-still :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-plot-empty:has(> .dm-pool-plot-baseline)::before { animation: none; }
 }
+
+@keyframes dm-v4-pool-reveal { from { clip-path: inset(-1.5rem 100% -1.5rem -1.5rem); } to { clip-path: inset(-1.5rem); } }
+@keyframes dm-v4-pool-swap { from { opacity: 0.01; transform: translateY(0.25rem); } to { opacity: 1; transform: none; } }
+@keyframes dm-v4-pool-glint { from { background-position: 79% 0, 0 0; } to { background-position: 21% 0, 0 0; } }
 
 @layer v4 {
   /* ---- The pool page (§1.10): the back pill, the pair as the page title with the slash in subtle ink, one strip of
@@ -79,8 +147,9 @@
     --dm-pool-rim: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 rgb(255 236 220 / 0.06);
     --dm-pool-rim-top: inset 1px 0 0 var(--v4-card-ring), inset -1px 0 0 var(--v4-card-ring), inset 0 1px 0 var(--v4-card-ring), inset 0 2px 0 rgb(255 236 220 / 0.03);
   }
-  [data-pool-page] .dm-pool-breadcrumb { min-height: 2.125rem; }
-  [data-pool-page] .dm-pool-back { gap: 0.375rem; height: 2.125rem; margin-left: -0.5rem; padding: 0 0.75rem 0 0.5rem; border-radius: 999px; font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--muted); transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std), scale 0.1s var(--e-press); }
+  /* The back pill 28px under the header (.ptop), the title's letters 23.3px under it (.phead's 18px plus .ln's .05em). */
+  [data-pool-page] .dm-pool-breadcrumb { min-height: 2.125rem; margin-top: -0.5rem; padding-bottom: 0.125rem; }
+  [data-pool-page] .dm-pool-back { gap: 0.375rem; height: 2.125rem; margin-left: -0.5rem; padding: 0 0.75rem 0 0.5rem; border-radius: 999px; font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std), scale 0.1s var(--e-press); }
   [data-pool-page] .dm-pool-back:hover { background: var(--v4-w04); color: var(--fg); }
   [data-pool-page] .dm-pool-layout { --skeleton: rgb(255 236 220 / 0.055); --skeleton-shine: rgb(255 190 146 / 0.08); gap: 0.75rem; }
   [data-pool-page] .dm-pool-layout > .dm-pool-a-head { margin-bottom: 0; }
@@ -89,13 +158,19 @@
   /* The head: the discs bottom-aligned beside the title, the fee tag, Create a position on the title's baseline. */
   [data-pool-page] .dm-pool-head { align-items: flex-end; gap: 1.25rem 1.5rem; padding: 0; border: 0; }
   [data-pool-page] .dm-pool-title { align-items: flex-end; gap: 1.5rem; }
-  [data-pool-page] .dm-pool-marks { zoom: 1.0909; align-self: flex-end; margin-bottom: 3.25rem; }
+  [data-pool-page] .dm-pool-marks { zoom: 1.0909; align-self: flex-end; margin-bottom: 3.3229rem; }
   [data-pool-page] .dm-pool-marks > [aria-hidden="true"] > * { transition: scale 0.3s var(--e-enter), translate 0.3s var(--e-enter); }
-  [data-pool-page] .dm-pool-title h1 { overflow-wrap: anywhere; }
+  [data-pool-page] .dm-pool-title h1 { padding-top: 0.05em; overflow-wrap: anywhere; }
   [data-pool-page] .dm-pool-slash { color: var(--subtle); }
-  [data-pool-page] .dm-pool-chips { gap: 2px; margin-top: 1rem; }
-  [data-pool-page] .dm-pool-chips > .dm-chip { min-height: 0; padding: 0.125rem 0.4375rem; border-radius: 0.375rem; background: var(--v4-w055); box-shadow: none; font-size: 0.78125rem; line-height: 1.125rem; font-weight: 400; color: var(--subtle); }
-  [data-pool-page] .dm-pool-actions { margin-bottom: 3.25rem; }
+  [data-pool-page] .dm-pool-chips { gap: 0.125rem; margin-top: 1rem; }
+  [data-pool-page] .dm-pool-chips > .dm-chip { min-height: 0; padding: 0.125rem 0.4375rem; border-radius: 0.375rem; background: var(--v4-w055); box-shadow: none; font-size: 0.78125rem; line-height: normal; font-weight: 400; color: var(--subtle); }
+  /* The verified pool's tag (.tag): "Uniswap" and "0.30% fee" as two joined segments, the "·" kept in the text, unseen. */
+  [data-pool-page] .dm-pool-chips > .dm-chip:has(> .dm-fee-venue) { display: block; padding: 0; border-radius: 0; background: none; white-space: normal; }
+  [data-pool-page] .dm-pool-chips :is(.dm-fee-venue, .dm-fee-value) { display: inline-block; padding: 0.125rem 0.4375rem; background: var(--v4-w055); line-height: normal; white-space: nowrap; vertical-align: top; }
+  [data-pool-page] .dm-pool-chips .dm-fee-venue { margin-right: 0.125rem; border-radius: 0.375rem 0.125rem 0.125rem 0.375rem; }
+  [data-pool-page] .dm-pool-chips .dm-fee-value { border-radius: 0.125rem 0.375rem 0.375rem 0.125rem; }
+  [data-pool-page] .dm-pool-chips .dm-fee-sep { display: inline; font-size: 0; }
+  [data-pool-page] .dm-pool-actions { margin-bottom: 3.5rem; }
   [data-pool-page] .dm-pool-new { height: 3.375rem; padding-inline: 1.75rem; font-size: 0.96875rem; }
   [data-pool-page] .dm-pool-skel-action { width: 13.125rem; height: 3.375rem; }
   /* The notice under the name: a red line with its dot, never a box; the off-list line quiet. */
@@ -117,9 +192,12 @@
   [data-pool-page] .dm-pool-stat > dt > span { margin: 0; }
   [data-pool-page] .dm-pool-stat .dm-info-tip-trigger { display: inline-flex; align-items: center; justify-content: center; width: 1.375rem; height: 1.375rem; border-radius: 50%; color: var(--faint); transition: color 0.18s var(--e-std), background-color 0.18s var(--e-std); }
   [data-pool-page] .dm-pool-stat .dm-info-tip-trigger:is(:hover, :focus-visible) { color: var(--fg); background: var(--v4-w06); }
+  [data-pool-page] .dm-pool-stat .dm-info-tip-trigger svg { width: 0.875rem; height: 0.875rem; transition: scale 0.3s var(--e-enter); }
   [data-pool-page] .dm-pool-stat > .dm-stat-value { margin-top: 0; font-family: var(--font-display); font-size: 2.75rem; line-height: 0.9; font-weight: 400; letter-spacing: -0.025em; color: var(--fg); }
-  [data-pool-page] .dm-pool-stat > .dm-stat-value :not(.sr-only, .dm-skel, .dm-pool-price-side, .dm-pool-price-side *) { font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; }
+  [data-pool-page] .dm-pool-stat > .dm-stat-value :not(.sr-only, .dm-skel, .dm-pool-price-side, .dm-pool-price-side *, .dm-apr-est) { font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; }
   [data-pool-page] .dm-pool-stat > .dm-stat-value .text-money-in { color: var(--in); }
+  /* The estimate's "est." after the figure (.stat-q): 12.5px, subtle, 4px over the figure's foot. */
+  [data-pool-page] .dm-pool-stat > .dm-stat-value .dm-apr-est { margin-left: 0.225rem; font-family: var(--font-sans); font-size: 0.78125rem; line-height: normal; font-weight: 400; letter-spacing: -0.01em; vertical-align: 0.12em; color: var(--subtle); }
   [data-pool-page] .dm-pool-stat > .dm-stat-sub { margin-top: 0.375rem; font-size: 0.78125rem; line-height: 1rem; letter-spacing: 0; color: var(--subtle); }
   [data-pool-page] .dm-pool-price-side { font-family: var(--font-sans); font-size: 0.78125rem; line-height: 1rem; font-weight: 500; letter-spacing: 0; color: var(--muted); }
   [data-pool-page] .dm-pool-fig-skel { width: 60%; height: 2.75rem; margin: 0; border-radius: 0.5rem; }
@@ -138,37 +216,54 @@
   [data-pool-page] .dm-pool-chart .dm-pool-plot-empty { min-height: 17.5rem; }
   [data-pool-page] .dm-pool-chart > .dm-pool-plot { margin: 1.625rem 1.375rem 0; }
   [data-pool-page] .dm-pool-chart :is(.dm-pool-skel-axis, .dm-pool-skel-quiet) { margin-inline: 1.375rem; }
+  /* The resting chart keeps the drawn one's heights (head, close and date, plot, axis, switch), so nothing below moves
+     when the figures arrive. */
+  [data-pool-page] .dm-pool-chart > .dm-pool-skel-head { min-height: 5.475rem; align-content: start; }
+  [data-pool-page] .dm-pool-chart-head > .dm-pool-skel-seg { width: 9.96875rem; height: 2.375rem; border-radius: 0.8125rem; }
+  [data-pool-page] .dm-pool-chart > .dm-pool-skel-axis { align-items: flex-start; height: 1.875rem; margin-top: 0.625rem; padding-top: 0.375rem; }
+  [data-pool-page] .dm-pool-chart > .dm-pool-skel-quiet { height: auto; min-height: 3.875rem; padding: 0.875rem 0 0.625rem; }
+  [data-pool-page] .dm-pool-chart > .dm-pool-skel-quiet > .dm-pool-skel-seg { width: 8.6875rem; height: 2.375rem; border-radius: 0.8125rem; }
+  /* The resting strip: one bubble per figure, no line under it, so the tiles keep the drawn strip's 142px. */
+  [data-pool-page] [data-pool-pending] .dm-pool-stat > .dm-stat-sub { display: none; }
   [data-pool-page] .dm-pool-chart-foot { padding: 0.875rem 1.375rem 0.625rem; }
   /* The estimate: the serif dollar field, three presets in one track, the result in green under a hairline. */
   [data-pool-page] .dm-pool-earn { display: flex; flex-direction: column; height: 100%; }
   [data-pool-page] .dm-pool-earn > .dm-title, [data-pool-page] .dm-pool-a-earn.dm-card > .dm-title { margin: 0; padding: 1.375rem 0.875rem 0; font-family: var(--font-display); font-size: 2rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; }
   [data-pool-page] .dm-pool-earn > .dm-pool-lead { margin: 0.875rem 0.875rem 0; font-size: 0.875rem; color: var(--muted); }
-  [data-pool-page] .dm-pool-earn-ask { margin: 1.5rem 0.875rem 0.625rem; font-size: 0.8125rem; font-weight: 500; letter-spacing: 0; color: var(--subtle); }
+  [data-pool-page] .dm-pool-earn-ask { margin: 1.5rem 0.875rem 0.625rem; font-size: 0.8125rem; line-height: normal; font-weight: 500; letter-spacing: 0; color: var(--subtle); }
   [data-pool-page] .dm-pool-earn-field { gap: 0.375rem; height: 4.875rem; margin: 0 0.25rem; padding: 0 1.125rem; border-radius: 1.125rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--lip); font-family: var(--font-display); font-size: 2.5rem; line-height: 1; color: var(--subtle); transition: box-shadow 0.2s var(--e-std), background-color 0.2s var(--e-std); }
   [data-pool-page] .dm-pool-earn-field:hover { box-shadow: inset 0 0 0 1px var(--strong); }
   [data-pool-page] .dm-pool-earn-field:focus-within { outline: none; background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong), 0 0 0 0.25rem var(--v4-tan-halo); }
   [data-pool-page] .dm-pool-earn-input { font-family: var(--font-display); font-size: 2.875rem; line-height: 1; letter-spacing: -0.02em; color: var(--fg); }
   [data-pool-page] .dm-pool-earn-input[aria-invalid="true"] { color: var(--muted); }
-  [data-pool-page] .dm-pool-earn-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; margin: 0.625rem 0.25rem 0; padding: 0.1875rem; border-radius: 0.8125rem; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); }
+  [data-pool-page] .dm-pool-earn-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.125rem; margin: 0.625rem 0.25rem 0; padding: 0.1875rem; border-radius: 0.8125rem; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); }
   [data-pool-page] .dm-pool-earn-preset { min-height: 2.25rem; padding: 0 0.5rem; border-radius: 0.625rem; background: transparent; box-shadow: none; font-size: 0.84375rem; font-weight: 500; letter-spacing: 0; color: var(--muted); transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std), box-shadow 0.18s var(--e-std), scale 0.1s var(--e-press); }
   [data-pool-page] .dm-pool-earn-preset:hover { background: var(--v4-w04); color: var(--fg); }
   [data-pool-page] .dm-pool-earn-preset[aria-pressed="true"] { background: var(--v4-w08); box-shadow: inset 0 0 0 1px var(--lip); color: var(--fg); }
   [data-pool-page] .dm-pool-earn-preset:focus-visible { outline-offset: var(--focus-offset-inset); }
-  [data-pool-page] .dm-pool-earn-result { min-height: 7rem; margin: 1.625rem 0.875rem 0; padding: 1.375rem 0 0; border-radius: 0; background: none; box-shadow: inset 0 1px 0 var(--line); }
-  [data-pool-page] .dm-pool-earn-lead { font-size: 0.84375rem; letter-spacing: 0; color: var(--muted); }
+  [data-pool-page] .dm-pool-earn-result { min-height: 6.7125rem; align-content: start; gap: 0; margin: 1.625rem 0.875rem 0; padding: 1.375rem 0 0; border-radius: 0; background: none; box-shadow: inset 0 1px 0 var(--line); }
+  [data-pool-page] .dm-pool-earn-lead { font-size: 0.84375rem; line-height: normal; letter-spacing: 0; color: var(--muted); }
   [data-pool-page] .dm-pool-earn-month { gap: 0.25rem 0.625rem; margin-top: 0.625rem; font-size: 0.875rem; color: var(--subtle); }
+  [data-pool-page] .dm-pool-earn-month[data-tick] { animation: dm-v4-mkt-tick 0.35s var(--e-enter) backwards; }
   [data-pool-page] .dm-pool-earn-month > .dm-fig-lg { font-family: var(--font-display); font-size: 4rem; line-height: 0.9; font-weight: 400; letter-spacing: -0.03em; color: var(--in); }
   [data-pool-page] .dm-pool-earn-quiet { font-size: 0.875rem; color: var(--muted); }
   [data-pool-page] .dm-pool-earn-skel-fig { width: 9rem; height: 3.5rem; margin-top: 0.625rem; border-radius: 0.5rem; }
-  [data-pool-page] .dm-pool-earn-note { margin: 1.125rem 0.875rem 0; font-size: 0.78125rem; line-height: 1.125rem; letter-spacing: 0; color: var(--subtle); }
-  [data-pool-page] .dm-pool-earn > .dm-pool-disclosure { margin: auto 0.25rem 0; padding: 1rem 0 0; border: 0; }
-  [data-pool-page] .dm-pool-disclosure > summary { min-height: 2.75rem; padding: 0 0.625rem; border-radius: 0.75rem; font-size: 0.84375rem; font-weight: 500; color: var(--muted); transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std); }
+  [data-pool-page] .dm-pool-earn-note { margin: 1.125rem 0.875rem 0; font-size: 0.78125rem; line-height: 1.5; letter-spacing: 0; color: var(--subtle); }
+  [data-pool-page] .dm-pool-earn > .dm-pool-disclosure { margin: auto 0.25rem 0; padding: 0.75rem 0 0; border: 0; }
+  /* The small disclosures (.how-h): a 44px row in the button's own type, 16px regular in the page's ink. */
+  [data-pool-page] .dm-pool-disclosure > summary { min-height: 2.75rem; padding: 0 0.375rem 0 0.625rem; border-radius: 0.75rem; font-size: 1rem; line-height: normal; font-weight: 400; letter-spacing: normal; color: var(--fg); transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std); }
   [data-pool-page] .dm-pool-disclosure > summary:hover { background: var(--v4-w045); color: var(--fg); }
   [data-pool-page] .dm-pool-disclosure[open] > summary { color: var(--fg); }
-  [data-pool-page] .dm-pool-disclosure-body { margin: 0.625rem 0.625rem 0.25rem; font-size: 0.8125rem; line-height: 1.5; }
+  /* Their words (.how-in): 6px under the row, 13px at 1.55, 8px between, the figures line in the page's ink. */
+  [data-pool-page] .dm-pool-disclosure-body { gap: 0.5rem; margin: 0.375rem 0.625rem 0.75rem; font-size: 0.8125rem; line-height: 1.55; }
+  [data-pool-page] .dm-pool-disclosure-body > p.tnum { font-weight: 500; color: var(--fg); }
+  [data-pool-page] .dm-pool-guide > .dm-pool-disclosure > .dm-pool-disclosure-body { margin: 0.25rem 0 0.5rem; }
+  /* The prototype's 14px chevron (.how-h svg), turned down; open, it turns up (rotate 90deg to -90deg, 0.35s). */
+  [data-pool-page] .dm-pool-disclosure .dm-pool-details-chevron { width: 0.875rem; height: 0.875rem; margin: 0 0 0 auto; border: 0; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 4 4 4-4 4'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 4 4 4-4 4'/%3E%3C/svg%3E") center / contain no-repeat; rotate: 90deg; translate: none; transition: rotate 0.35s var(--e-enter); }
+  [data-pool-page] .dm-pool-disclosure[open] > summary .dm-pool-details-chevron { rotate: -90deg; translate: none; }
   /* The resting estimate: bubbles the size of the field, the track and the result. */
   [data-pool-page] .dm-pool-a-earn.dm-pool-skel-card { gap: 0; align-content: start; }
-  [data-pool-page] .dm-pool-skel-card > .dm-pool-skel-field { width: auto; height: 4.875rem; margin: 2.75rem 0.25rem 0; border-radius: 1.125rem; }
+  [data-pool-page] .dm-pool-skel-card > .dm-pool-skel-field { width: auto; height: 4.875rem; margin: 3.25rem 0.25rem 0; border-radius: 1.125rem; }
   [data-pool-page] .dm-pool-skel-card > .dm-pool-skel-seg { width: auto; height: 2.625rem; margin: 0.625rem 0.25rem 0; border-radius: 0.8125rem; }
   [data-pool-page] .dm-pool-skel-card > .dm-pool-skel-result { width: auto; height: 7rem; margin: 1.625rem 0.875rem 0; border-radius: 0.875rem; }
   [data-pool-page] .dm-pool-skel-card > .dm-pool-skel-summary { margin: 1.125rem 0.875rem 0; }
@@ -177,53 +272,62 @@
   /* One card of four rows: Recent activity, Choosing a price range, Automate your position, Pool details. Each row is
      a grid cell drawn as a segment of the one card; the first and the last round its corners. */
   [data-pool-page] :is(.dm-pool-a-recent, details.dm-pool-a-range, details.dm-pool-a-auto, .dm-pool-a-details) { position: relative; padding: 0 0.375rem; border: 0; border-radius: 0; background: var(--card); box-shadow: inset 1px 0 0 var(--v4-card-ring), inset -1px 0 0 var(--v4-card-ring); overflow: visible; }
-  [data-pool-page] .dm-pool-a-recent { padding-top: 0.375rem; border-radius: 1.625rem 1.625rem 0 0; background: var(--dm-pool-card); box-shadow: var(--dm-pool-rim-top); }
-  [data-pool-page] .dm-pool-a-details { padding-bottom: 0.375rem; border-radius: 0 0 1.625rem 1.625rem; box-shadow: inset 1px 0 0 var(--v4-card-ring), inset -1px 0 0 var(--v4-card-ring), inset 0 -1px 0 var(--v4-card-ring), var(--v4-card-drop); }
+  [data-pool-page] div.dm-pool-a-recent { padding-top: 0.375rem; border-radius: 1.625rem 1.625rem 0 0; background: var(--dm-pool-card); box-shadow: var(--dm-pool-rim-top); }
+  [data-pool-page] details.dm-pool-a-details { padding-bottom: 0.375rem; border-radius: 0 0 1.625rem 1.625rem; box-shadow: inset 1px 0 0 var(--v4-card-ring), inset -1px 0 0 var(--v4-card-ring), inset 0 -1px 0 var(--v4-card-ring), var(--v4-card-drop); }
   [data-pool-page] .dm-pool-a-recent:last-child { padding-bottom: 0.375rem; border-radius: 1.625rem; box-shadow: var(--dm-pool-rim), var(--v4-card-drop); }
-  [data-pool-page] .dm-pool-layout > :is(.dm-pool-a-recent + details.dm-pool-a-range, details.dm-pool-a-range + details.dm-pool-a-auto, details.dm-pool-a-auto + .dm-pool-a-details) { margin-top: -0.75rem; }
+  [data-pool-page] .dm-pool-layout > :is(.dm-pool-a-recent + details.dm-pool-a-range, details.dm-pool-a-range + details.dm-pool-a-auto, details.dm-pool-a-auto + .dm-pool-a-details) { margin-top: -0.75rem; padding-top: 0.125rem; }
   [data-pool-page] .dm-v3-pool-recent > .dm-card, [data-pool-page] :is(details.dm-pool-a-range, details.dm-pool-a-auto) > .dm-card { border: 0; background: transparent; box-shadow: none; }
   [data-pool-page] .dm-v3-pool-recent > .dm-card { padding: 0; border-radius: 0; }
   /* The row heads: a 62px row, the pip and the plus. */
-  [data-pool-page] :is(.dm-v3-pool-disclosure > summary, .dm-pool-recent-disclosure > summary, .dm-pool-details-head) { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 3.875rem; padding: 0 0.875rem 0 1.5rem; border-radius: 1.125rem; font-size: 0.96875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); cursor: pointer; transition: background-color 0.18s var(--e-std), scale 0.1s var(--e-press); }
+  [data-pool-page] :is(.dm-v3-pool-disclosure > summary, .dm-pool-recent-disclosure > summary, .dm-pool-details-head) { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 3.875rem; padding: 0 0.875rem 0 1.5rem; border-radius: 1.125rem; font-size: 1rem; line-height: normal; font-weight: 400; letter-spacing: normal; color: var(--fg); cursor: pointer; transition: background-color 0.18s var(--e-std), scale 0.1s var(--e-press); }
   [data-pool-page] :is(.dm-v3-pool-disclosure > summary, .dm-pool-recent-disclosure > summary, .dm-pool-details-head):hover { background: var(--v4-w045); color: var(--fg); }
   [data-pool-page] :is(.dm-v3-pool-disclosure > summary, .dm-pool-recent-disclosure > summary, .dm-pool-details-head)::before { content: ''; position: absolute; left: 0.5rem; top: 50%; width: 0.3125rem; height: 0.3125rem; margin-top: -0.15625rem; border-radius: 50%; background: var(--tan); opacity: 0; scale: 0.2; pointer-events: none; transition: opacity 0.2s var(--e-std), scale 0.35s var(--e-enter); }
   [data-pool-page] :is(.dm-v3-pool-disclosure > summary, .dm-pool-recent-disclosure > summary, .dm-pool-details-head):hover::before { opacity: 1; scale: 1; }
   [data-pool-page] :is(.dm-v3-pool-disclosure > summary, .dm-pool-recent-disclosure > summary, .dm-pool-details-head):focus-visible { outline: 2px solid var(--ring); outline-offset: var(--focus-offset-inset); }
-  [data-pool-page] :is(.dm-pool-recent-disclosure > summary, .dm-pool-details-head) > h2, [data-pool-page] .dm-pool-a-recent.dm-card > h2 { margin: 0; font-family: var(--font-sans); font-size: 0.96875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); }
+  [data-pool-page] :is(.dm-pool-recent-disclosure > summary, .dm-pool-details-head) > h2, [data-pool-page] .dm-pool-a-recent.dm-card > h2 { margin: 0; font-family: var(--font-sans); font-size: 1rem; line-height: normal; font-weight: 400; letter-spacing: normal; color: var(--fg); }
   [data-pool-page] .dm-pool-a-recent.dm-card > h2 { display: flex; align-items: center; min-height: 3.875rem; padding: 0 0.875rem 0 1.5rem; }
   [data-pool-page] :is(.dm-v3-pool-disclosure > summary > span[aria-hidden="true"], .dm-pool-recent-disclosure > summary > .dm-pool-details-chevron, .dm-pool-details-head > .dm-pool-details-chevron) { flex: none; width: 1.625rem; height: 1.625rem; margin: 0 0 0 auto; border: 0; border-radius: 50%; rotate: none; translate: none; color: var(--muted); background: linear-gradient(currentColor, currentColor) center / 0.625rem 1.5px no-repeat, linear-gradient(currentColor, currentColor) center / 1.5px 0.625rem no-repeat; box-shadow: inset 0 0 0 1px var(--strong); transition: rotate 0.35s var(--e-enter), box-shadow 0.2s var(--e-std), color 0.2s var(--e-std); }
   [data-pool-page] :is(.dm-v3-pool-disclosure > summary, .dm-pool-recent-disclosure > summary, .dm-pool-details-head):hover > :is(span[aria-hidden="true"], .dm-pool-details-chevron) { color: var(--tan); box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong); }
   [data-pool-page] :is(.dm-v3-pool-disclosure[open] > summary > span[aria-hidden="true"], .dm-pool-recent-disclosure[open] > summary > .dm-pool-details-chevron, .dm-pool-details[open] > .dm-pool-details-head > .dm-pool-details-chevron) { rotate: 45deg; translate: none; }
   /* Recent activity: lines with a small Tangerine domino before each, tilting under the pointer. */
-  [data-pool-page] .dm-pool-recent-list { gap: 0.75rem; margin: 0; padding: 0.375rem 1.5rem 1.625rem; }
-  [data-pool-page] .dm-pool-recent-list > li { display: flex; align-items: center; gap: 0.875rem; padding-left: 0; font-size: 0.9375rem; line-height: 1.5; letter-spacing: 0; color: var(--muted); }
-  [data-pool-page] .dm-pool-recent-list > li::before { position: static; flex: none; width: 0.5625rem; height: 1rem; border-radius: 0; background: rgb(255 157 98 / 0.55); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 16' fill='none' stroke='%23000'%3E%3Crect x='.6' y='.6' width='7.8' height='14.8' rx='2.2' stroke-width='1.2'/%3E%3Cpath d='M2.4 8h4.2' stroke-width='1.1' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 16' fill='none' stroke='%23000'%3E%3Crect x='.6' y='.6' width='7.8' height='14.8' rx='2.2' stroke-width='1.2'/%3E%3Cpath d='M2.4 8h4.2' stroke-width='1.1' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat; transition: rotate 0.4s var(--e-enter); }
+  [data-pool-page] .dm-pool-recent-list { gap: 0.75rem; margin: 0.125rem 0 0; padding: 0.375rem 1.5rem 1.625rem; }
+  /* Each line a sentence (one run of text, its figure inline), the domino 14px before it, centred on it (.lines li). */
+  [data-pool-page] .dm-pool-recent-list > li { position: relative; display: block; padding-left: 1.4375rem; font-size: 0.9375rem; line-height: 1.5; letter-spacing: 0; color: var(--muted); }
+  [data-pool-page] .dm-pool-recent-list > li::before { position: absolute; left: 0; top: 50%; margin-top: -0.5rem; flex: none; width: 0.5625rem; height: 1rem; border-radius: 0; background: rgb(255 157 98 / 0.55); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 16' fill='none' stroke='%23000'%3E%3Crect x='.6' y='.6' width='7.8' height='14.8' rx='2.2' stroke-width='1.2'/%3E%3Cpath d='M2.4 8h4.2' stroke-width='1.1' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 16' fill='none' stroke='%23000'%3E%3Crect x='.6' y='.6' width='7.8' height='14.8' rx='2.2' stroke-width='1.2'/%3E%3Cpath d='M2.4 8h4.2' stroke-width='1.1' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat; transition: rotate 0.4s var(--e-enter); }
   [data-pool-page] .dm-pool-recent-list b { font-weight: 500; color: var(--fg); }
   [data-pool-page] .dm-pool-recent-disclosure > :not(summary) { margin-inline: 0; }
   [data-pool-page] .dm-pool-recent-disclosure > :is(.dm-pool-quiet-line, .dm-pool-recent-skel) { margin: 0.375rem 1.5rem 1.625rem; }
   /* Choosing a price range: the h2 shown again, the bar with its band in green, the day pill, the now line. */
   [data-pool-page] :is(details.dm-pool-a-range, details.dm-pool-a-auto) > .dm-card { height: auto; margin: 0; padding: 0.375rem 1.5rem 1.625rem; border-radius: 0; }
-  [data-pool-page] :is(details.dm-pool-a-range, details.dm-pool-a-auto, div.dm-pool-a-auto) .dm-card > h2 { display: block; margin: 0; font-family: var(--font-display); font-size: 1.75rem; line-height: 1.05; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
-  [data-pool-page] :is(.dm-pool-guide, .dm-pool-auto) .dm-pool-lead { max-width: 60ch; margin-top: 0.625rem; font-size: 0.875rem; line-height: 1.5; letter-spacing: 0; color: var(--muted); }
+  [data-pool-page] :is(details.dm-pool-a-range, details.dm-pool-a-auto, div.dm-pool-a-auto) .dm-card > h2 { display: block; margin: 0; font-family: var(--font-display); font-size: 1.75rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
+  [data-pool-page] :is(.dm-pool-guide, .dm-pool-auto) .dm-pool-lead { max-width: none; margin-top: 0.625rem; font-size: 0.875rem; line-height: 1.5; letter-spacing: 0; color: var(--muted); }
   [data-pool-page] .dm-pool-guide-plot { margin-top: 1.625rem; }
   [data-pool-page] .dm-pool-guide-bar { height: 3.5rem; border-radius: 0; background: none; box-shadow: none; }
   [data-pool-page] .dm-pool-guide-bar::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 2px; margin-top: -1px; background: rgb(255 236 220 / 0.07); }
   [data-pool-page] .dm-pool-guide-band { top: 0; bottom: 0; border-radius: 0.625rem; background: rgb(95 208 154 / 0.08); box-shadow: inset 1px 0 0 rgb(95 208 154 / 0.5), inset -1px 0 0 rgb(95 208 154 / 0.5); transition: background-color 0.2s var(--e-std), box-shadow 0.2s var(--e-std); }
   [data-pool-page] :is(.dm-pool-guide-bar:hover, .dm-pool-guide:has([data-key="band"]:hover)) .dm-pool-guide-band { background: rgb(95 208 154 / 0.13); box-shadow: inset 1px 0 0 rgb(95 208 154 / 0.85), inset -1px 0 0 rgb(95 208 154 / 0.85); }
-  [data-pool-page] .dm-pool-guide-day { top: 50%; bottom: auto; height: 0.5rem; margin-top: -0.25rem; background: rgb(255 236 220 / 0.2); transition: background-color 0.2s var(--e-std); }
-  [data-pool-page] .dm-pool-guide:has([data-key="day"]:hover) .dm-pool-guide-day { background: rgb(255 236 220 / 0.38); }
-  [data-pool-page] .dm-pool-guide-now { top: -0.375rem; bottom: -0.375rem; width: 1px; margin-left: -0.5px; border-radius: 0; background: var(--fg); box-shadow: none; }
-  [data-pool-page] .dm-pool-guide-ends { margin-top: 0.875rem; font-size: 0.78125rem; letter-spacing: 0; color: var(--subtle); }
-  [data-pool-page] .dm-pool-guide-ends b { font-size: 0.875rem; font-weight: 500; letter-spacing: 0; color: var(--fg); }
-  [data-pool-page] .dm-pool-guide-key { gap: 0.25rem 1.125rem; margin-top: 1rem; font-size: 0.78125rem; letter-spacing: 0; color: var(--subtle); }
-  [data-pool-page] .dm-pool-guide-key > li { transition: color 0.18s var(--e-std); }
-  [data-pool-page] .dm-pool-guide-key > li:hover { color: var(--muted); }
-  [data-pool-page] .dm-pool-guide-key > [data-key="band"]::before { border-radius: 0.1875rem; background: rgb(95 208 154 / 0.13); box-shadow: inset 1px 0 0 rgb(95 208 154 / 0.85), inset -1px 0 0 rgb(95 208 154 / 0.85); }
-  [data-pool-page] .dm-pool-guide-key > [data-key="now"]::before { width: 1px; }
-  [data-pool-page] .dm-pool-guide-key > [data-key="day"]::before { height: 0.375rem; background: rgb(255 236 220 / 0.38); }
+  [data-pool-page] .dm-pool-guide-day { top: 50%; bottom: auto; height: 0.5rem; margin-top: -0.25rem; background: rgb(255 236 220 / 0.2); transition: background-color 0.2s var(--e-std), scale 0.3s var(--e-enter); }
+  [data-pool-page] :is(.dm-pool-guide-bar:hover, .dm-pool-guide:has([data-key="day"]:hover)) .dm-pool-guide-day { background: rgb(255 236 220 / 0.38); }
+  [data-pool-page] .dm-pool-guide-now { top: -0.375rem; bottom: -0.375rem; width: 1px; margin-left: -0.5px; border-radius: 0; background: var(--fg); box-shadow: none; transition: scale 0.3s var(--e-enter); }
+  /* The picture keeps to 760px (.rg); each end's price and distance sit centred under the band's edge (PoolRangeGuide
+     places them), the price on its own line; the unit closes the key's line at the right. */
+  [data-pool-page] .dm-pool-guide > * { max-width: 47.5rem; }
+  [data-pool-page] .dm-pool-guide-ends { position: relative; display: block; height: 2.625rem; margin-top: 0.625rem; font-size: 0.78125rem; line-height: normal; letter-spacing: 0; color: var(--subtle); }
+  [data-pool-page] .dm-pool-guide-ends > span:not(.dm-pool-guide-unit) { position: absolute; top: 0; translate: -50% 0; white-space: nowrap; text-align: left; }
+  [data-pool-page] .dm-pool-guide-ends b { display: block; margin-bottom: 0.125rem; font-size: 0.875rem; line-height: normal; font-weight: 500; letter-spacing: 0; color: var(--fg); }
+  [data-pool-page] .dm-pool-guide-unit { position: absolute; right: 0; top: calc(100% + 1rem); line-height: normal; text-align: right; white-space: nowrap; }
+  [data-pool-page] .dm-pool-guide-key { gap: 0.25rem 1.25rem; margin-top: 1rem; padding-right: 9rem; font-size: 0.78125rem; line-height: normal; letter-spacing: 0; color: var(--subtle); }
+  [data-pool-page] .dm-pool-guide-key > li { gap: 0.5rem; cursor: default; transition: color 0.18s var(--e-std); }
+  [data-pool-page] .dm-pool-guide-key > li:hover { color: var(--fg); }
+  [data-pool-page] .dm-pool-guide-key > [data-key="band"]::before { width: 0.875rem; height: 0.625rem; border-radius: 0.1875rem; background: rgb(95 208 154 / 0.14); box-shadow: inset 0 0 0 1px rgb(95 208 154 / 0.55); }
+  [data-pool-page] .dm-pool-guide-key > [data-key="now"]::before { width: 2px; height: 0.75rem; border-radius: 1px; }
+  [data-pool-page] .dm-pool-guide-key > [data-key="day"]::before { width: 0.875rem; height: 0.375rem; border-radius: 999px; background: rgb(255 236 220 / 0.3); }
   [data-pool-page] .dm-pool-guide > .dm-pool-disclosure { margin-top: 1rem; padding-top: 0; border: 0; }
+  /* "About this range" hugs its words, the chevron 10px after them (.subd .how-h). */
+  [data-pool-page] .dm-pool-guide > .dm-pool-disclosure > summary { width: fit-content; gap: 0.625rem; margin-left: -0.625rem; padding: 0 0.625rem; }
+  [data-pool-page] .dm-pool-guide > .dm-pool-disclosure > summary > .dm-pool-details-chevron { margin: 0; }
   /* Automate your position: four rows with the pip, a green check, the name link over the whole row, the chevron. */
-  [data-pool-page] .dm-pool-auto-list { margin-top: 1rem; gap: 2px; }
+  [data-pool-page] .dm-pool-auto-list { margin-top: 1.125rem; gap: 0.125rem; }
   [data-pool-page] .dm-pool-auto-list > li { position: relative; display: grid; grid-template-columns: 0.875rem minmax(0, 1fr) 2.125rem; align-items: center; gap: 0.875rem; min-height: 3.75rem; padding: 0.375rem 0.5rem 0.375rem 1.5rem; border: 0; border-radius: 0.875rem; transition: background-color 0.18s var(--e-std); }
   [data-pool-page] .dm-pool-auto-list > li + li { border: 0; }
   [data-pool-page] .dm-pool-auto-list > li:hover { background: var(--v4-w045); }
@@ -245,8 +349,8 @@
   [data-pool-page] div.dm-pool-a-auto > .dm-card { height: 100%; padding: 1.375rem 1.5rem 1.5rem; border: 0; border-radius: 1.625rem; background: var(--dm-pool-card); box-shadow: var(--dm-pool-rim), var(--v4-card-drop); }
   /* Pool details: two columns of rows with inset hairlines, mono ids, the copy button; then how the APR is worked out. */
   [data-pool-page] .dm-pool-details > :not(summary) { margin: 0; padding-inline: 1.5rem; }
-  [data-pool-page] .dm-pool-details > .dm-kv { padding: 0.375rem 1.5rem 0.5rem; }
-  [data-pool-page] .dm-pool-kv { column-gap: 2.5rem; }
+  [data-pool-page] .dm-pool-details > .dm-kv { padding: 0.375rem 1.5rem 0; }
+  [data-pool-page] .dm-pool-kv { row-gap: 0; column-gap: 2.5rem; }
   [data-pool-page] .dm-pool-kv > div { min-height: 3rem; padding: 0.6875rem 0.25rem; border: 0; box-shadow: inset 0 -1px 0 var(--line); }
   [data-pool-page] .dm-pool-kv > div:last-child { grid-column: 1 / -1; box-shadow: none; }
   [data-pool-page] .dm-pool-kv > div:last-child dd { font-weight: 400; color: var(--muted); }
@@ -257,6 +361,12 @@
   [data-pool-page] .dm-pool-embedded-title { margin-bottom: 0.875rem; font-family: var(--font-display); font-size: 1.375rem; line-height: 1.1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
   [data-pool-page] [data-apr-inputs] { font-size: 0.78125rem; }
   [data-pool-page] .dm-pool-details .dm-pool-facts > * { border-radius: 0.875rem; background: var(--v4-w03); box-shadow: none; }
+  /* The copy button (.cpy): 32px, quiet until hovered; copied, its check pops in the money-in green (no stroke draw). */
+  [data-pool-page] .dm-pool-kv-id > button { width: 2rem; height: 2rem; margin: -0.375rem -0.375rem -0.375rem 0; border-radius: 0.625rem; color: var(--subtle); transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std), scale 0.1s var(--e-press); }
+  [data-pool-page] .dm-pool-kv-id > button:hover { background: var(--v4-w06); color: var(--fg); }
+  [data-pool-page] .dm-pool-kv-id > button[data-copied] { color: var(--in); }
+  [data-pool-page] .dm-pool-kv-id > button[data-copied] > svg { animation: dm-v4-pip 0.3s var(--e-enter) backwards; }
+  [data-pool-page] .dm-pool-kv-id > button[data-copied] .dm-check-draw path { animation: none; }
 
   /* Links that name no pool: the double-blank domino over serif words, left-aligned, quiet outline buttons. */
   [data-pool-page] .dm-card:has(> .dm-empty) { border: 0; border-radius: 1.625rem; background: var(--dm-pool-card); box-shadow: var(--dm-pool-rim), var(--v4-card-drop); }
@@ -265,6 +375,33 @@
   [data-pool-page] .dm-card > .dm-empty .dm-empty-body { font-size: 0.875rem; line-height: 1.55; color: var(--muted); }
   [data-pool-page] .dm-card > .dm-empty .dm-empty-body .font-mono { font-size: 0.78125rem; color: var(--fg); cursor: help; }
 
+  @media (hover: hover) and (pointer: fine) {
+    [data-pool-page] .dm-pool-a-recent.dm-lit::before { padding: 1px 1px 0; }
+    [data-pool-page] details.dm-pool-a-range.dm-lit::before, [data-pool-page] details.dm-pool-a-auto.dm-lit::before { padding: 0 1px; }
+    [data-pool-page] .dm-pool-a-details.dm-lit::before { padding: 0 1px 1px; }
+    [data-pool-page] .dm-pool-a-recent.dm-lit:last-child::before, [data-pool-page] div.dm-pool-a-auto.dm-lit::before { padding: 1px; }
+    [data-pool-page] div.dm-pool-a-auto.dm-lit { border-radius: 1.625rem; }
+  }
+  @media (hover: hover) and (pointer: fine) and (max-width: 895px) {
+    [data-pool-page] .dm-pool-layout--follow > :is(.dm-pool-a-recent, .dm-pool-a-details).dm-lit::before { padding: 1px; }
+  }
+  /* The pool price tile (.stat-vr, .stat-u): the unit as a two-line stack 20px right of the figure (the empty .stat-q between keeps its gap too), bottom-aligned, on
+     the prototype's four-tile strip (the five-tile strip keeps the unit under the figure). A long figure wraps before
+     the stack loses its room. A phone's half-strip has no room beside the figure: the stack wraps under it, 4px down
+     (.stat-vr wrapping), the figure's words unchanged. */
+  @media (max-width: 479px) {
+    [data-pool-page] .dm-stats--4 [data-pool-price-now] { position: relative; display: inline-block; max-width: 100%; margin-bottom: 1.265625rem; }
+    [data-pool-page] .dm-stats--4 [data-pool-price-now] > .dm-pool-price-side { position: absolute; left: 0; top: calc(100% + 0.25rem); line-height: 1.015625rem; white-space: nowrap; color: var(--muted); font-weight: 500; }
+    [data-pool-page] .dm-stats--4 > .dm-pool-stat:has([data-pool-price-now]) > .dm-stat-sub { margin-top: 0; padding-bottom: 0.125rem; font-size: 0.78125rem; line-height: 1.3; color: var(--subtle); }
+  }
+  @media (min-width: 480px) {
+    [data-pool-page] .dm-pool-stats.dm-stats--tiles.dm-stats--4 > .dm-pool-stat:has([data-pool-price-now]) { display: grid; grid-template-columns: fit-content(calc(100% - 5.875rem)) minmax(0, max-content); grid-template-rows: 1fr auto; column-gap: 1.25rem; }
+    [data-pool-page] .dm-stats--4 > .dm-pool-stat:has([data-pool-price-now]) > dt { grid-column: 1 / -1; align-self: start; }
+    [data-pool-page] .dm-stats--4 > .dm-pool-stat:has([data-pool-price-now]) > .dm-stat-value { grid-column: 1; grid-row: 2; align-self: end; overflow-wrap: anywhere; }
+    [data-pool-page] .dm-stats--4 > .dm-pool-stat:has([data-pool-price-now]) > .dm-stat-sub { grid-column: 2; grid-row: 2; align-self: end; margin: 0; padding-bottom: 0.125rem; font-size: 0.78125rem; line-height: 1.3; color: var(--subtle); overflow-wrap: anywhere; }
+    [data-pool-page] .dm-stats--4 [data-pool-price-now] { position: relative; display: inline-block; max-width: 100%; }
+    [data-pool-page] .dm-stats--4 [data-pool-price-now] > .dm-pool-price-side { position: absolute; left: calc(100% + 1.25rem); bottom: calc(1.3em + 0.125rem); line-height: 1.3; white-space: nowrap; color: var(--muted); font-weight: 500; }
+  }
   @media (min-width: 896px) {
     [data-pool-page] .dm-pool-layout { display: grid; align-items: start; grid-template-columns: minmax(0, 1fr) 22.5rem; grid-template-rows: none; gap: 0.75rem; grid-template-areas: "head head" "figs figs" "chart earn" "recent recent" "range range" "automation automation" "details details"; }
     [data-pool-page] .dm-pool-layout:not([data-pool-pending]):has(> .dm-pool-a-lead) { grid-template-areas: "head head" "lead lead" "figs figs" "chart earn" "recent recent" "range range" "automation automation" "details details"; }
@@ -297,33 +434,50 @@
     [data-pool-page] .dm-pool-layout--follow > .dm-pool-a-details { border-radius: 1.625rem; padding-top: 0.375rem; box-shadow: var(--dm-pool-rim), var(--v4-card-drop); }
   }
   @media (max-width: 767px) {
+    /* The back pill a 44px target 12px under the header; the discs over the title, 12px apart (.ttl column). */
+    [data-pool-page] .dm-pool-breadcrumb { margin: 0 0 -0.25rem; padding-bottom: 0; }
+    [data-pool-page] .dm-pool-back { height: 2.75rem; }
     [data-pool-page] .dm-pool-head { gap: 1.25rem; }
-    [data-pool-page] .dm-pool-title { gap: 1rem; }
-    [data-pool-page] .dm-pool-marks { zoom: 0.8182; margin-bottom: 2.75rem; }
+    [data-pool-page] .dm-pool-title { flex-direction: column; align-items: flex-start; gap: 0.75rem; max-width: 100%; }
+    [data-pool-page] .dm-pool-title > .min-w-0 { max-width: 100%; }
+    [data-pool-page] .dm-pool-marks { zoom: 0.8182; align-self: flex-start; margin-bottom: 0; }
     [data-pool-page] .dm-pool-actions { margin-bottom: 0; }
     [data-pool-page] .dm-pool-new { height: 3.125rem; }
     [data-pool-page] .dm-pool-skel-action { width: 100%; height: 3.125rem; }
-    [data-pool-page] .dm-pool-stats.dm-stats--tiles > .dm-pool-stat { min-height: 7rem; padding: 1rem 0.875rem 1.125rem; }
-    [data-pool-page] .dm-pool-stat > .dm-stat-value, [data-pool-page] .dm-stats--5 > .dm-pool-stat > .dm-stat-value { font-size: 2.125rem; }
+    [data-pool-page] .dm-pool-stats.dm-stats--tiles > .dm-pool-stat { min-height: 7.375rem; padding: 1rem 1rem 1.125rem; }
+    [data-pool-page] .dm-pool-stat > dt { padding-bottom: 1.125rem; }
+    [data-pool-page] .dm-pool-stat > .dm-stat-value, [data-pool-page] .dm-stats--5 > .dm-pool-stat > .dm-stat-value { font-size: clamp(1.75rem, 8.6vw, 2.125rem); }
+    /* The window and side switches keep 12px sides; the chart's foot follows the axis at once. */
+    :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart .dm-seg > .dm-seg-item { padding: 0 0.75rem; }
+    [data-pool-page] .dm-pool-chart-foot { margin-top: 0; }
+    [data-pool-page] .dm-pool-earn > .dm-title, [data-pool-page] .dm-pool-a-earn.dm-card > .dm-title { font-size: 1.75rem; }
+    [data-pool-page] .dm-pool-earn-result { min-height: 5.825rem; }
     [data-pool-page] .dm-pool-chart-head { padding: 1rem 0.625rem 0.875rem 0.75rem; }
     [data-pool-page] :is(.dm-pool-chart-head > .dm-title, .dm-pool-chart > .dm-pool-heading) { font-size: 1.75rem; }
     [data-pool-page] :is(.dm-pool-chart-figure, .dm-pool-skel-figure, .dm-pool-skel-head) { padding: 0 0.75rem; }
     [data-pool-page] .dm-pool-chart-close { font-size: 3rem; }
-    [data-pool-page] .dm-pool-chart-body { --axis-w: 0px; margin: 1.25rem 0.75rem 0; }
+    [data-pool-page] .dm-pool-chart-body { --axis-w: 4.75rem; margin: 1.125rem 0.75rem 0; }
     [data-pool-page] .dm-pool-chart .dm-pool-canvas { height: 12.5rem; }
     [data-pool-page] .dm-pool-chart .dm-pool-plot-empty { min-height: 12.5rem; }
     [data-pool-page] .dm-pool-chart > .dm-pool-plot { margin: 1.25rem 0.75rem 0; }
     [data-pool-page] .dm-pool-chart :is(.dm-pool-skel-axis, .dm-pool-skel-quiet) { margin-inline: 0.75rem; }
     [data-pool-page] .dm-pool-chart-foot { padding: 0.75rem 0.75rem 0.5rem; }
     [data-pool-page] .dm-pool-earn-month > .dm-fig-lg { font-size: 3rem; }
-    [data-pool-page] :is(.dm-v3-pool-disclosure > summary, .dm-pool-recent-disclosure > summary, .dm-pool-details-head) { padding: 0 0.5rem 0 1rem; }
-    [data-pool-page] .dm-pool-recent-list, [data-pool-page] :is(details.dm-pool-a-range, details.dm-pool-a-auto) > .dm-card { padding-inline: 1rem; }
+    /* The four rows keep their 24px and 14px sides; their insides take 14px sides, 4px over and 22px under (.acc-in). */
+    [data-pool-page] :is(.dm-v3-pool-disclosure > summary, .dm-pool-recent-disclosure > summary, .dm-pool-details-head) { gap: 0.75rem; }
+    [data-pool-page] .dm-pool-recent-list, [data-pool-page] :is(details.dm-pool-a-range, details.dm-pool-a-auto) > .dm-card { padding: 0.25rem 0.875rem 1.375rem; }
+    [data-pool-page] .dm-pool-recent-disclosure > :is(.dm-pool-quiet-line, .dm-pool-recent-skel) { margin: 0.25rem 0.875rem 1.375rem; }
     [data-pool-page] .dm-pool-auto-body { flex-direction: column; gap: 0.125rem; }
     [data-pool-page] .dm-pool-auto-name { flex-wrap: wrap; gap: 0.125rem 0.75rem; }
     [data-pool-page] .dm-pool-auto-name > a { min-width: 0; }
-    [data-pool-page] .dm-pool-details > .dm-kv, [data-pool-page] .dm-pool-details > .dm-pool-details-parts { padding-inline: 1rem; }
+    [data-pool-page] .dm-pool-details > .dm-kv { padding: 0.25rem 0.875rem 0; }
+    [data-pool-page] .dm-pool-details > .dm-pool-details-parts { padding-inline: 0.875rem; padding-bottom: 1.375rem; }
+    [data-pool-page] .dm-pool-kv-id > button { width: 2.75rem; height: 2.75rem; margin: -0.5625rem -0.625rem -0.5625rem 0; }
     [data-pool-page] .dm-pool-details > .dm-pool-details-parts { grid-template-columns: minmax(0, 1fr); }
     [data-pool-page] .dm-pool-kv dd { overflow-wrap: anywhere; }
+    [data-pool-page] .dm-pool-guide-ends { height: auto; padding-top: 2.625rem; }
+    [data-pool-page] .dm-pool-guide-unit { position: static; display: block; margin-top: 0.25rem; text-align: left; white-space: normal; }
+    [data-pool-page] .dm-pool-guide-key { padding-right: 0; }
   }
   @media (hover: none) {
     [data-pool-page] :is(.dm-v3-pool-disclosure > summary, .dm-pool-recent-disclosure > summary, .dm-pool-details-head, .dm-pool-auto-list > li)::before { display: none; }
@@ -339,21 +493,52 @@
     [data-pool-page] .dm-pool-recent-list > li:hover::before { rotate: -18deg; }
     [data-pool-page] .dm-pool-auto-list > li:hover .dm-pool-auto-mark { scale: 1.12; }
     [data-pool-page] .dm-pool-auto-list > li:hover::after { translate: 0.125rem 0; }
+    [data-pool-page] :is(.dm-pool-guide-bar:hover, .dm-pool-guide:has([data-key="day"]:hover)) .dm-pool-guide-day { scale: 1 1.25; }
+    [data-pool-page] .dm-pool-guide:has([data-key="now"]:hover) .dm-pool-guide-now { scale: 1 1.12; }
+    [data-pool-page] .dm-pool-stat .dm-info-tip-trigger:hover svg { scale: 1.08; }
+    [data-pool-page] .dm-pool-kv-id > button:active { scale: 0.94; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-pool-page] :is(.dm-pool-earn-month[data-tick], .dm-pool-kv-id > button[data-copied] > svg) { animation: none; }
+    [data-pool-page] .dm-pool-disclosure .dm-pool-details-chevron { transition: none; }
+  }
+  html.dm-still [data-pool-page] :is(.dm-pool-earn-month[data-tick], .dm-pool-kv-id > button[data-copied] > svg) { animation: none; }
+  /* Opening and closing glide (.acc-b: rows 0fr to 1fr in 0.45s), the four rows and the two small disclosures. */
+  @supports selector(::details-content) {
+    [data-pool-page] :is(.dm-v3-pool-disclosure, .dm-pool-recent-disclosure, .dm-pool-details, .dm-pool-disclosure) { interpolate-size: allow-keywords; }
+    [data-pool-page] :is(.dm-v3-pool-disclosure, .dm-pool-recent-disclosure, .dm-pool-details, .dm-pool-disclosure)::details-content { height: 0; overflow: clip; transition: height 0.45s var(--e-enter), content-visibility 0.45s allow-discrete; }
+    [data-pool-page] :is(.dm-v3-pool-disclosure, .dm-pool-recent-disclosure, .dm-pool-details, .dm-pool-disclosure)[open]::details-content { height: auto; transition: height 0.45s var(--e-enter); } /* opening never transitions content-visibility: the content is there (and readable) at once */
+    @media (prefers-reduced-motion: reduce) {
+      [data-pool-page] :is(.dm-v3-pool-disclosure, .dm-pool-recent-disclosure, .dm-pool-details, .dm-pool-disclosure)::details-content { transition: none; }
+    }
+    html.dm-still [data-pool-page] :is(.dm-v3-pool-disclosure, .dm-pool-recent-disclosure, .dm-pool-details, .dm-pool-disclosure)::details-content { transition: none; }
   }
 }
 
 @layer v4 {
-  /* ---- The pool page's load moment: the page while it is verified already rises (animate-rise); on the first load it
-     takes V4's motions in the prototype's order (head, figures, chart, estimate, the rows card), done by about 0.9s.
-     The verified page, which replaces it, does not rise again (data never animates); its plot keeps its wipe. ---- */
-  html:not(.dm-booted) [data-pool-page] [data-pool-pending] > .dm-pool-a-head.animate-rise { animation: dm-v4-up 0.5s var(--e-enter) 0.14s backwards; }
-  html:not(.dm-booted) [data-pool-page] [data-pool-pending] > .dm-pool-a-figs.animate-rise { animation: dm-v4-card 0.55s var(--e-enter) 0.2s backwards; }
-  html:not(.dm-booted) [data-pool-page] [data-pool-pending] > .dm-pool-a-chart.animate-rise { animation: dm-v4-card 0.55s var(--e-enter) 0.28s backwards; }
-  html:not(.dm-booted) [data-pool-page] [data-pool-pending] > .dm-pool-a-earn.animate-rise { animation: dm-v4-card 0.55s var(--e-enter) 0.32s backwards; }
-  html:not(.dm-booted) [data-pool-page] [data-pool-pending] > .dm-pool-a-recent.animate-rise { animation: dm-v4-fade 0.4s var(--e-std) 0.36s backwards; }
+  /* ---- The pool page's load moment (pool.html, the short inner-page timings): the back link, the discs and the tag, the
+     Create button, then the figures, the chart, the estimate and the one card of four rows, the plot wiping in at 0.3s
+     and its axes fading after it; done by about 0.9s. It plays on whichever layout is drawn first for a pool: the page
+     while it is verified ([data-pool-pending]), or the verified page when this browser painted it at once
+     ([data-pool-moment], PoolDetail). The verified page that replaces a resting one takes the moment over where it stands
+     (PoolDetail writes --dm-moment-shift, minus the time the moment has run): nothing rises twice, nothing pops in. ---- */
+  html:not(.dm-booted) [data-pool-page] > .dm-pool-breadcrumb { animation: dm-v4-up 0.45s var(--e-enter) 0.02s backwards; }
+  html:not(.dm-booted) [data-pool-page] :is([data-pool-pending], [data-pool-moment]) > .dm-pool-a-head { animation: none; }
+  html:not(.dm-booted) [data-pool-page] :is([data-pool-pending], [data-pool-moment]) > .dm-pool-a-head :is(.dm-pool-marks, .dm-pool-chips) { animation: dm-v4-up 0.5s var(--e-enter) calc(0.14s + var(--dm-moment-shift, 0s)) backwards; }
+  html:not(.dm-booted) [data-pool-page] :is([data-pool-pending], [data-pool-moment]) > .dm-pool-a-head .dm-pool-actions { animation: dm-v4-up 0.5s var(--e-enter) calc(0.2s + var(--dm-moment-shift, 0s)) backwards; }
+  html:not(.dm-booted) [data-pool-page] :is([data-pool-pending], [data-pool-moment]) > .dm-pool-a-lead:not([aria-hidden]) { animation: dm-v4-up 0.5s var(--e-enter) calc(0.14s + var(--dm-moment-shift, 0s)) backwards; }
+  html:not(.dm-booted) [data-pool-page] :is([data-pool-pending], [data-pool-moment]) > .dm-pool-a-figs { animation: dm-v4-card 0.55s var(--e-enter) calc(0.2s + var(--dm-moment-shift, 0s)) backwards; }
+  html:not(.dm-booted) [data-pool-page] :is([data-pool-pending], [data-pool-moment]) > .dm-pool-a-chart { animation: dm-v4-card 0.55s var(--e-enter) calc(0.28s + var(--dm-moment-shift, 0s)) backwards; }
+  html:not(.dm-booted) [data-pool-page] :is([data-pool-pending], [data-pool-moment]) > .dm-pool-a-earn { animation: dm-v4-card 0.55s var(--e-enter) calc(0.32s + var(--dm-moment-shift, 0s)) backwards; }
+  html:not(.dm-booted) [data-pool-page] :is([data-pool-pending], [data-pool-moment]) > :is(.dm-pool-a-recent, .dm-pool-a-range, .dm-pool-a-auto, .dm-pool-a-details) { animation: dm-v4-card 0.55s var(--e-enter) calc(0.36s + var(--dm-moment-shift, 0s)) backwards; }
+  html:not(.dm-booted) [data-pool-page] :is([data-pool-pending], [data-pool-moment]) .dm-pool-canvas > :is(.dm-pool-chart-svg, .dm-pool-overlay, .dm-pool-lit) { animation-delay: max(0s, calc(0.3s + var(--dm-moment-shift, 0s))); }
+  html:not(.dm-booted) [data-pool-page] :is([data-pool-pending], [data-pool-moment]) :is(.dm-pool-yaxis, .dm-pool-xaxis) { animation: dm-v4-fade 0.3s var(--e-std) max(0s, calc(0.56s + var(--dm-moment-shift, 0s))) backwards; }
+  /* The title's rise and its stop (v4-foundation.css) keep the same clock on the verified page that takes over. */
+  html:not(.dm-booted) [data-pool-page] [data-pool-moment] h1.dm-display-h1 { animation-delay: calc(0.04s + var(--dm-moment-shift, 0s)); }
+  html:not(.dm-booted) [data-pool-page] [data-pool-moment] h1.dm-display-h1::after { animation-delay: calc(0.42s + var(--dm-moment-shift, 0s)); }
   html:not(.dm-booted) [data-pool-page] > .mt-4 > .dm-card.animate-rise { animation: dm-v4-card 0.55s var(--e-enter) 0.2s backwards; }
   @media (prefers-reduced-motion: reduce) {
-    html:not(.dm-booted) [data-pool-page] .animate-rise { animation: none; }
+    html:not(.dm-booted) [data-pool-page] :is(.animate-rise, .dm-pool-breadcrumb, .dm-pool-layout > *, .dm-pool-a-head *, .dm-pool-yaxis, .dm-pool-xaxis) { animation: none; }
   }
-  html.dm-still [data-pool-page] .animate-rise { animation: none; }
+  html.dm-still [data-pool-page] :is(.animate-rise, .dm-pool-breadcrumb, .dm-pool-layout > *, .dm-pool-a-head *, .dm-pool-yaxis, .dm-pool-xaxis) { animation: none; }
 }

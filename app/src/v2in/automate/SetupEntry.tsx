@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { PortfolioResponse } from 'api-contracts/read-v6/types'
-import { IconAutomate } from '../../components/icons'
+import { NoPositionsArt } from '../../components/automate-v4/SeqPlateArt'
 import { Button, EmptyState, LinkButton, Skeleton } from '../../components/ui'
 import { useCreatedPositions, useKeyedLatest } from '../lists/hooks'
 import { OWN_PORTFOLIO } from '../lists/source'
@@ -66,7 +66,7 @@ export default function SetupEntry({ owner, intent }: {
   const wanted = own.position ? setupKey(own.position) : null
   const missing = wanted !== null && !positions.some((position) => position.key === wanted)
   if (!positions.length) return (
-    <EmptyState plate icon={<IconAutomate />} className="dm-acct-block" data-sequence-positions="empty"
+    <EmptyState plate icon={<NoPositionsArt />} className="dm-acct-block dm-lit" data-sequence-positions="empty"
       title="No positions available for setup"
       body={missing ? 'This position isn’t available for a new automation. Check its status in Positions.' : 'Check your positions to see their current status and automation.'}
       action={<><LinkButton href="#/positions" variant="primary" size="lg">View positions</LinkButton>{missing && retry}</>} />

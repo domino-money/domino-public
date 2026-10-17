@@ -12,6 +12,18 @@ export const RECEIPT_LIST =
   'm-0 grid min-w-0 list-none overflow-hidden rounded-[var(--radius-lg)] bg-[var(--surface-1)] p-0 shadow-[inset_0_0_0_1px_var(--border)] @container/dm-rcpt [&>li]:min-w-0 [&>li+li]:border-t [&>li+li]:border-[var(--border)]'
 const timeWords = (seconds: number) => `${shortDate(seconds)} ${shortTime(seconds)}`
 
+/** V4 (decoration only, receipts.html .rc-a): each amount's symbol in its own quieter ink; the text is the same string. */
+function AmountInks({ text }: { text: string }) {
+  return <>{text.split(' + ').map((part, index) => {
+    const cut = part.lastIndexOf(' ')
+    return <span key={index}>{index > 0 && ' + '}{cut > 0 ? <>{part.slice(0, cut)} <span className="dm-rcpt-sym">{part.slice(cut + 1)}</span></> : part}</span>
+  })}</>
+}
+
+/** V4 (decoration only, the approved positions.html .rc-ic.neutral and receipts.html .rtile.nt): a change made outside Domino reads as information, not as a confirmation. */
+const OUTSIDE = new Set(['This position was changed outside Domino.', 'This position changed outside Domino.'])
+const outside = (effects: readonly ShownReceipt[]) => effects.some((effect) => effect.kind === 'vault_event' && (OUTSIDE.has(effect.what) || effect.lines.some((line) => OUTSIDE.has(line.value))))
+
 function Hash({ value, href }: { value: string; href: string | null }) {
   const short = `${value.slice(0, 6)}…${value.slice(-4)}`
   return <div data-receipt-field="transaction-hash"><dt>Transaction</dt><dd>
@@ -52,7 +64,7 @@ export function ReceiptRow({ view, effects = [view], showGas = true, children, p
     ? positionItem.successor ? `Position #${positionItem.successor.tokenId} opened automatically` : `Fees added back · #${positionItem.compounded.tokenId}`
     : view.what.includes('raw units') ? view.what.split(':')[0] : view.what
   const raw = view.amount?.includes('raw units') === true
-  return <li data-v2-receipt={view.id} data-v2-receipt-kind={view.kind} data-v2-receipt-chain={view.chainId} data-v2-finality={finalized ? 'finalized' : confirmed ? 'included' : 'sent'}
+  return <li data-v2-receipt={view.id} data-v2-receipt-kind={view.kind} data-v2-receipt-chain={view.chainId} data-v2-finality={finalized ? 'finalized' : confirmed ? 'included' : 'sent'} data-v2-receipt-tone={outside(effects) ? 'neutral' : undefined}
     data-position-activity-item={positionItem?.id} data-position-activity-action={positionItem?.kind === 's1_action' ? positionItem.action : undefined} data-receipt-effects={effects.length}>
     <details className="dm-rcpt-row dm-rcpt-operation">
       <summary>
@@ -60,9 +72,9 @@ export function ReceiptRow({ view, effects = [view], showGas = true, children, p
           <span className="dm-receipt-title">{confirmed && !claim && <span className="dm-receipt-check" role="img" aria-label={RECEIPT_WORDS.confirmed}><IconCheck size={14} /></span>}<span>{what}</span></span>
           {(!confirmed || claim) && <Pill tone={claim ? 'wait' : 'neutral'} dot className="dm-receipt-exception">{claim ? 'Delivery deferred' : RECEIPT_WORDS.confirming}</Pill>}
           {/* (2026-10-15, pack 8): a session receipt whose block time the money client's read did not name draws no time (never this page's clock); the network as the setup's session row says it. */}
-          <span className="dm-activity-time">{view.at === null ? view.chainId !== 4663 && view.chain : <><time dateTime={new Date(view.at * 1000).toISOString()}>{timeWords(view.at)}</time>{view.chainId !== 4663 && <> · {view.chain}</>}</>}</span>
+          <span className="dm-activity-time">{view.at === null ? view.chainId !== 4663 && <span className="dm-activity-chain" data-activity-chain={view.chainId}>{view.chain}</span> : <><time dateTime={new Date(view.at * 1000).toISOString()}>{timeWords(view.at)}</time>{view.chainId !== 4663 && <> · <span className="dm-activity-chain" data-activity-chain={view.chainId}>{view.chain}</span></>}</>}</span>
         </span>
-        <span className="dm-rcpt-amount tnum" data-v2-receipt-amount="" title={raw ? 'Token details are unavailable. Exact raw amounts are in the receipt.' : undefined}>{raw ? '—' : view.amount ?? ''}</span>
+        <span className="dm-rcpt-amount tnum" data-v2-receipt-amount="" title={raw ? 'Token details are unavailable. Exact raw amounts are in the receipt.' : undefined}>{raw ? '—' : view.amount ? <AmountInks text={view.amount} /> : ''}</span>
         <IconChevronDown size={16} className="dm-rcpt-chevron" />
       </summary>
       <div className="dm-rcpt-detail" data-position-activity-fee={positionItem?.kind === 's1_action' ? positionItem.tariffs.filter((fee) => fee.kind === 'assisted_swap').map((fee) => fee.amount).join(',') || 'none' : undefined}>

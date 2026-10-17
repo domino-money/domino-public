@@ -8,6 +8,7 @@ import { useFallbackRows } from '../../lib/read/useFallback'
 import { shownResult, useMarkets } from '../../lib/read/useMarkets'
 import { useNow } from '../../lib/read/useNow'
 import type { Market } from '../../lib/markets'
+import { rootScale } from '../../lib/rootScale'
 import { IconChevronLeft, IconChevronRight } from '../icons'
 import { IconButton } from '../ui'
 import { MarketCard } from './MarketCard'
@@ -16,6 +17,48 @@ const NO_ASKS: readonly CardAsk[] = []
 const NO_MARKETS: readonly Market[] = []
 
 type Rail = { start: boolean; end: boolean; perView: number; page: number }
+
+/**
+ * The page turn's curve, the prototype's e-enter (cubic-bezier(.16, 1, .3, 1)): x(t) solved by Newton's method, with
+ * bisection where the slope is too flat, then y(t).
+ */
+function bezier(x1: number, y1: number, x2: number, y2: number) {
+  const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx
+  const cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by
+  const x = (t: number) => ((ax * t + bx) * t + cx) * t
+  const y = (t: number) => ((ay * t + by) * t + cy) * t
+  const slope = (t: number) => (3 * ax * t + 2 * bx) * t + cx
+  return (progress: number) => {
+    if (progress <= 0) return 0
+    if (progress >= 1) return 1
+    let t = progress
+    for (let i = 0; i < 8; i++) {
+      const error = x(t) - progress
+      if (Math.abs(error) < 1e-6) return y(t)
+      const d = slope(t)
+      if (Math.abs(d) < 1e-6) break
+      t -= error / d
+    }
+    let low = 0, high = 1
+    t = progress
+    for (let i = 0; i < 24; i++) {
+      const value = x(t)
+      if (Math.abs(value - progress) < 1e-6) break
+      if (value < progress) low = t
+      else high = t
+      t = (low + high) / 2
+    }
+    return y(t)
+  }
+}
+const ENTER = bezier(0.16, 1, 0.3, 1)
+/** One press moves a view of cards in a long, soft, decelerating slide (.track: transform .7s e-enter). */
+const TURN_MS = 700
+/** A plate's rim catches the ember only while the pointer is this close to it, in design px (markets.html measure()). */
+const NEAR = 40
+
+const stilled = () => (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) || document.documentElement.classList.contains('dm-still')
+const px = (value: number) => `${Math.round(value * 10) / 10}px`
 
 /** How far one card steps, and how many whole cards a view holds (the rail's side padding is not a card's). */
 function railPitch(node: HTMLElement) {
@@ -82,6 +125,7 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
   const [edges, setEdges] = useState<Rail>({ start: true, end: true, perView: 0, page: 0 })
   const running = useRef(new Map<string, AbortController>())
   const frame = useRef(0)
+  const turn = useRef(0)
 
   const ids = listings.map((listing) => listing.poolId).join(',')
   const rows = listings.some((listing) => listing.market !== undefined)
@@ -103,10 +147,62 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
     return () => {
       cancelAnimationFrame(frame.current)
       frame.current = 0
+      cancelAnimationFrame(turn.current)
+      turn.current = 0
       for (const controller of flights.values()) controller.abort()
       flights.clear()
     }
   }, [])
+
+  // The ember near a plate lights its rim (.p-edge): on a fine pointer, each plate gets the pointer in its own px
+  // (--elx/--ely) and --ember-near, 1 only while the pointer is within 40px of it. Decoration only: one passive listener,
+  // one frame at a time, custom properties through the CSSOM.
+  useEffect(() => {
+    const node = rail.current
+    if (!node || typeof window.matchMedia !== 'function' || typeof requestAnimationFrame !== 'function') return
+    if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return
+    let on = false
+    let x = 0
+    let y = 0
+    let drawing = 0
+    const draw = () => {
+      drawing = 0
+      const near = NEAR * rootScale()
+      node.querySelectorAll<HTMLElement>('[data-market-card]').forEach((card) => {
+        const box = card.getBoundingClientRect()
+        const inside = on && x > box.left - near && x < box.right + near && y > box.top - near && y < box.bottom + near
+        if (inside || card.style.getPropertyValue('--ember-near') === '1') {
+          card.style.setProperty('--elx', px(x - box.left))
+          card.style.setProperty('--ely', px(y - box.top))
+        }
+        card.style.setProperty('--ember-near', inside ? '1' : '0')
+      })
+    }
+    const schedule = () => {
+      if (!drawing) drawing = requestAnimationFrame(draw)
+    }
+    const move = (event: PointerEvent) => {
+      if (event.pointerType === 'touch') return
+      on = true
+      x = event.clientX
+      y = event.clientY
+      schedule()
+    }
+    const out = (event: PointerEvent) => {
+      if (event.relatedTarget !== null) return
+      on = false
+      schedule()
+    }
+    window.addEventListener('pointermove', move, { passive: true })
+    document.addEventListener('pointerout', out, { passive: true })
+    node.addEventListener('scroll', schedule, { passive: true })
+    return () => {
+      cancelAnimationFrame(drawing)
+      window.removeEventListener('pointermove', move)
+      document.removeEventListener('pointerout', out)
+      node.removeEventListener('scroll', schedule)
+    }
+  }, [ids])
 
   // Which cards are at least 60% inside the rail, for the arrows and to ask for those first.
   useEffect(() => {
@@ -178,7 +274,35 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
     if (!node) return
     // Whole cards per view: three on a laptop, two on a tablet, one on a phone.
     const pitch = railPitch(node)
-    if (pitch) node.scrollBy({ left: direction * pitch.perView * pitch.step })
+    if (!pitch) return
+    // The rail's own scroll, turned by hand on the prototype's curve (0.7s e-enter) rather than the browser's smooth
+    // scroll; snapping waits until the turn ends. The arrows, the dots and the observer read the scroll as before.
+    if (turn.current) {
+      cancelAnimationFrame(turn.current)
+      turn.current = 0
+    }
+    const from = node.scrollLeft
+    const target = Math.max(0, Math.min(node.scrollWidth - node.clientWidth, from + direction * pitch.perView * pitch.step))
+    if (target === from) return
+    if (stilled() || typeof requestAnimationFrame !== 'function') {
+      node.scrollTo({ left: target, behavior: 'auto' })
+      return
+    }
+    node.style.scrollSnapType = 'none'
+    node.style.scrollBehavior = 'auto'
+    const started = performance.now()
+    const step = (time: number) => {
+      const progress = Math.min(1, (time - started) / TURN_MS)
+      node.scrollLeft = from + (target - from) * ENTER(progress)
+      if (progress < 1) {
+        turn.current = requestAnimationFrame(step)
+        return
+      }
+      turn.current = 0
+      node.style.scrollSnapType = ''
+      node.style.scrollBehavior = ''
+    }
+    turn.current = requestAnimationFrame(step)
   }
 
   const railed = listings.length > 0

@@ -29,7 +29,7 @@ function go(hash: string) {
   if (window.location.hash !== hash) window.history.pushState(null, '', hash)
 }
 
-function AddressForm({ id, onView, className }: { id: string; onView: (wire: string) => void; className?: string }) {
+function AddressForm({ id, onView, className, inert }: { id: string; onView: (wire: string) => void; className?: string; inert?: boolean }) {
   const [text, setText] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
   const inputId = `${id}-input`
@@ -44,7 +44,7 @@ function AddressForm({ id, onView, className }: { id: string; onView: (wire: str
     onView(parsed.wire)
   }
   return (
-    <form id={id} onSubmit={submit} noValidate className={cx('dm-acct-address-form', className)}>
+    <form id={id} onSubmit={submit} noValidate className={cx('dm-acct-address-form', className)} inert={inert || undefined}>
       <label htmlFor={inputId} className="sr-only">
         Public address
       </label>
@@ -89,7 +89,16 @@ function AddressForm({ id, onView, className }: { id: string; onView: (wire: str
  */
 export default function PortfolioBody({ identity, onLinked }: { identity: WalletIdentityView; onLinked?: (address: string | null) => void }) {
   const [route, setRoute] = useState(() => portfolioRoute(window.location.hash))
-  const [showForm, setShowForm] = useState(false)
+  // V4 (presentational, the approved positions-address.html .vform): the other-address form folds away over 450ms when
+  // it closes, so it stays drawn (inert, `is-closing`) for that long; whether it is open is `showForm`, as before.
+  const [form, setForm] = useState<'shut' | 'open' | 'folding'>('shut')
+  const showForm = form === 'open'
+  const setShowForm = (open: boolean) => setForm((before) => (open ? 'open' : before === 'open' ? 'folding' : before))
+  useEffect(() => {
+    if (form !== 'folding') return
+    const timer = window.setTimeout(() => setForm((before) => (before === 'folding' ? 'shut' : before)), 450)
+    return () => window.clearTimeout(timer)
+  }, [form])
 
   useEffect(() => {
     const onChange = () => setRoute(portfolioRoute(window.location.hash))
@@ -156,17 +165,19 @@ export default function PortfolioBody({ identity, onLinked }: { identity: Wallet
       ) : subject ? (
         <>
           <PortfolioTokens key={subject.key} address={subject.wire} />
-          <div className="dm-acct-rail-actions">
-            <Button type="button" variant="ghost" size="sm" aria-expanded={showForm} aria-controls={formId} onClick={() => setShowForm(!showForm)}>
-              View another address
-            </Button>
+          {/* V4 (look only, positions-address.html .cfoot .grp): another address's card offers the way back to the
+              connected wallet first, then View another address, which is a button there (16px regular, `--link`). */}
+          <div className={subject.source === 'link' ? 'dm-acct-rail-actions dm-acct-rail-actions--link' : 'dm-acct-rail-actions'}>
             {subject.source === 'link' && walletConnected && (
               <Button type="button" variant="ghost" size="sm" onClick={useWallet}>
                 Use the connected wallet
               </Button>
             )}
+            <Button type="button" variant="ghost" size="sm" aria-expanded={showForm} aria-controls={formId} onClick={() => setShowForm(!showForm)}>
+              View another address
+            </Button>
           </div>
-          {showForm && <AddressForm id={formId} className="dm-acct-rail-form" onView={view} />}
+          {form !== 'shut' && <AddressForm id={formId} className={form === 'folding' ? 'dm-acct-rail-form is-closing' : 'dm-acct-rail-form'} inert={form === 'folding'} onView={view} />}
         </>
       ) : (
         <div className="dm-acct-rail-empty" data-empty="portfolio">

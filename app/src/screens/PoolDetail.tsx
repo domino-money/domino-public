@@ -317,6 +317,42 @@ export function PoolDetail({ poolId }: { poolId: string }) {
   // The tab names the pool as its heading does, base first (lib/routeTitle.ts, audit E11): from the list at once, else
   // from the verified pool.
   useRouteTitle(entry ? `${entry.labels[0]} / ${entry.labels[1]}` : resolution?.kind === 'verified' ? pairTitle(resolution.option) : 'Pool')
+  // V4: the first layout drawn for a pool's route plays the page's load moment (v4-pool.css). The resting page always
+  // carries its own hook ([data-pool-pending]); the verified page claims it only when it is drawn first, from a copy this
+  // browser painted at once, so the verified page that replaces a resting one never rises a second time.
+  const layout: 'pending' | 'workspace' | 'other' = !id ? 'other'
+    : waitingForList ? 'pending'
+      : nothingToVerify || resolution?.kind === 'needs_token' ? 'other'
+        : !source || !resolution || resolution.kind === 'verifying' || resolution.kind === 'failed' ? 'pending'
+          : resolution.kind === 'not_returned' ? 'other' : 'workspace'
+  const [claimed, setClaimed] = useState<{ key: string; layout: 'pending' | 'workspace' | 'other' } | null>(null)
+  if (claimed?.key !== poolId) setClaimed({ key: poolId, layout })
+  const moment = layout === 'workspace' && (claimed?.key === poolId ? claimed.layout : layout) === 'workspace'
+  // V4: the verified page that replaces this pool's resting page takes its load moment over where it stands, before it is
+  // painted (a mutation observer's answer comes before the frame): the time the moment has run (the back link's rise is
+  // its clock) goes to --dm-moment-shift, so nothing rises twice and nothing pops in; once the moment is over, its
+  // animations are simply done (v4-pool.css). Presentation only: nothing here touches what the page reads or shows.
+  const followMoment = useCallback((host: HTMLDivElement | null) => {
+    if (!host || typeof MutationObserver === 'undefined') return
+    let shown = host.firstElementChild
+    const watch = new MutationObserver(() => {
+      const layout = host.firstElementChild
+      const before = shown
+      if (layout === before) return
+      shown = layout
+      if (!(layout instanceof HTMLElement) || !(before instanceof HTMLElement)) return
+      const pool = layout.getAttribute('data-pool-workspace')?.toLowerCase()
+      if (!pool || layout.hasAttribute('data-pool-moment') || before.getAttribute('data-pool-pending')?.toLowerCase() !== pool) return
+      if (document.documentElement.classList.contains('dm-booted')) return
+      const clock = host.parentElement?.querySelector('.dm-pool-breadcrumb')?.getAnimations?.().find((item) => item instanceof CSSAnimation && item.animationName === 'dm-v4-up')
+      const now = document.timeline?.currentTime
+      const ran = !clock ? 60000 : typeof clock.startTime === 'number' && typeof now === 'number' ? Math.max(0, now - clock.startTime) : 0
+      layout.style.setProperty('--dm-moment-shift', `${-Math.round(ran)}ms`)
+      layout.setAttribute('data-pool-moment', '')
+    })
+    watch.observe(host, { childList: true })
+    return () => watch.disconnect()
+  }, [])
 
   let body: React.ReactNode
   if (!id) {
@@ -390,6 +426,7 @@ export function PoolDetail({ poolId }: { poolId: string }) {
         onOption={onOption}
         notice={notice}
         actions={optionUsableForDomino(option) && !warning && !withdrawn ? <LinkButton href={newPositionHref(option.key, linked.token)} size="lg" className="dm-pool-new" data-new-position="">Create a position</LinkButton> : undefined}
+        moment={moment}
       />
     )
   }
@@ -402,7 +439,7 @@ export function PoolDetail({ poolId }: { poolId: string }) {
           Markets
         </a>
       </nav>
-      <div className="mt-4">{body}</div>
+      <div className="mt-4" ref={followMoment}>{body}</div>
     </main>
   )
 }

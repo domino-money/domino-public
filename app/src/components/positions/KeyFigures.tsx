@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from 'react'
+import { useEffect, useMemo, type ReactNode } from 'react'
 import { LiveFigure, StackedBar, UsdText } from '../figures'
 import { RangeBar, Skeleton, Stat, StatStrip, cx } from '../ui'
 import { TokenLabel } from '../read/TokenLabel'
@@ -150,9 +150,12 @@ function RangeLine({ price, card, cached = false }: { price: CardPrice; card: Li
   const at = share === null ? null : share < 0 ? 0.015 : share > 1 ? 0.985 : 0.05 + 0.9 * share
   const live = !cached && card.hasLiquidity ? card.inRange : null
   return (
-    <div className="dm-pos-span" data-stat="range" data-full-range={fullRange ? '' : undefined} data-ember-rest="">
+    <div className="dm-pos-span" data-stat="range" data-full-range={fullRange ? '' : undefined} data-ember-rest={at !== null && live !== null ? undefined : ''}>
       {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a kept read is drawn as it is, never "Last known range". */}
       <RangeBar lower={0.05} upper={0.95} current={at} inRange={live} label={rangeWords(card, price)} />
+      {/* Where the light rests (EmberLight reads [data-ember-rest], here its centre): on the price now, as the approved page
+          puts it, the bar being drawn wider than the tile's text by its 5% margins (v4-position.css). Decoration only. */}
+      {at !== null && live !== null && <span aria-hidden="true" className="dm-pos-span-rest" data-ember-rest="0,0" style={{ left: `${(at * 100 - 5) / 0.9}%` }} />}
       <span className="dm-pos-span-ends" data-range-kept={cached ? '' : undefined}>
         <span>{endText(low.end, low.tick)}</span>
         <span className="dm-pos-span-word">{card.hasLiquidity ? 'Your range' : 'Closed range'}</span>
@@ -216,6 +219,13 @@ export function KeyFigures({ card, state, price, block, cached = false, workspac
   const shares = basis && raw ? valueShares(basis, raw) : null
   const valueQuality = principal ? 'current' : visibleAmountQuality(card.principal)
   useLoadMilestone('position', 'value', valueQuality && cached ? 'cached' : valueQuality)
+  // The page's moment (v4-position.css, html:not(.dm-booted)) plays when the position page's figures arrive, as a page
+  // load does in the approved V4 site; once it is over, later reads never run it again (the owner's silent updates).
+  useEffect(() => {
+    if (!workspace) return
+    const timer = window.setTimeout(() => document.documentElement.classList.add('dm-booted'), 1200)
+    return () => window.clearTimeout(timer)
+  }, [workspace])
   // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no time under a figure that is not current ("as of
   // 13:05 UTC") and no reason under amounts with no dollar figure; data-usd-snapshot still marks a kept figure.
   return (
@@ -276,7 +286,7 @@ export function KeyFigures({ card, state, price, block, cached = false, workspac
         // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): never "Last known price".
         label="Current price"
         info="The position earns fees while this price is inside its range."
-        className="dm-pos-stat"
+        className={cx('dm-pos-stat', workspace && 'dm-lit')}
         data-cell="price"
         sub={<RangeLine price={price} card={card} cached={cached} />}
       >

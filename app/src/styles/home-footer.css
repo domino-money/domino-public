@@ -4,24 +4,27 @@
    (EmberLight.tsx) writes --ex/--ey (the pointer, viewport px) and --ember-on on .dm-footer; until it does, nothing is lit.
    The lights are fixed-attachment backgrounds on a fine pointer only, so they need no geometry from script and add no text. */
 @layer v3 {
-  .dm-footer { position: relative; margin-top: 6rem; }
+  /* Clipped at its own bottom, as the prototype's root clips its last child: the wordmark's glyph boxes reach below its
+     .78em line and would otherwise add empty scroll under every page. */
+  .dm-footer { position: relative; margin-top: 6rem; overflow: hidden; overflow: clip; }
   .dm-footer::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: var(--border); pointer-events: none; }
-  .dm-footer-inner { width: 100%; max-width: calc(var(--content) + 2 * var(--gutter)); margin-inline: auto; padding: 5.5rem var(--gutter) 0; }
+  /* The hairline is a 1px row of its own in the prototype (.ft-rule), so the row starts 88 + 1 design px down. */
+  .dm-footer-inner { width: 100%; max-width: calc(var(--content) + 2 * var(--gutter)); margin-inline: auto; padding: 5.5625rem var(--gutter) 0; }
   .dm-footer-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 2.5rem; min-height: 10.625rem; }
   .dm-footer-cols { display: flex; gap: 7rem; }
 
   /* The X link (.ft-x): a quiet tinted pill whose mark tips on hover. */
-  .dm-footer-social { display: inline-flex; flex: none; align-items: center; gap: 0.625rem; height: 2.375rem; padding: 0 0.875rem 0 0.75rem; border-radius: 0.75rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border); font-size: 0.875rem; font-weight: 500; color: var(--fg-muted); text-decoration: none; transition: color 0.18s var(--ease-std), box-shadow 0.2s var(--ease-std), background-color 0.18s var(--ease-std), scale 0.1s var(--ease-fast); }
+  .dm-footer-social { display: inline-flex; flex: none; align-items: center; gap: 0.625rem; height: 2.375rem; padding: 0 0.875rem 0 0.75rem; border-radius: 0.75rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border); font-size: 0.875rem; font-weight: 500; color: var(--fg); text-decoration: none; transition: color 0.18s var(--ease-std), box-shadow 0.2s var(--ease-std), background-color 0.18s var(--ease-std), scale 0.1s var(--ease-fast); }
   .dm-footer-social-mark { flex: none; transition: transform 0.35s var(--ease-enter); }
   .dm-footer-social:hover { color: var(--fg); background: var(--v4-w05); box-shadow: inset 0 0 0 1px var(--border-lip); }
   .dm-footer-social:hover .dm-footer-social-mark { transform: rotate(-8deg) scale(1.08); }
   .dm-footer-social:active { scale: 0.98; }
 
-  /* The columns (.ft-h, .ft-a): quiet headings; links in the muted ink, full ink on hover with a 4px Tangerine dot sliding
-     in from the left. */
-  .dm-footer-heading { margin: 0 0 0.75rem; font-size: 0.8125rem; line-height: 1.25rem; font-weight: 500; color: var(--fg-subtle); }
-  .dm-footer-links { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin: 0; padding: 0; list-style: none; }
-  .dm-footer-link { position: relative; display: inline-flex; align-items: center; height: 2rem; border-radius: 0.25rem; font-size: 0.9375rem; color: var(--fg-muted); text-decoration: none; transition: color 0.18s var(--ease-std); }
+  /* The columns (.ft-h, .ft-a): quiet headings; links in full ink (the prototype's links inherit the page's ink), a 4px
+     Tangerine dot sliding in from the left on hover. */
+  .dm-footer-heading { margin: 0 0 0.75rem; font-size: 0.8125rem; line-height: normal; font-weight: 500; color: var(--fg-subtle); }
+  .dm-footer-links { display: flex; flex-direction: column; align-items: flex-start; gap: 0.125rem; margin: 0; padding: 0; list-style: none; }
+  .dm-footer-link { position: relative; display: inline-flex; align-items: center; height: 2rem; border-radius: 0.25rem; font-size: 0.9375rem; color: var(--fg); text-decoration: none; transition: color 0.18s var(--ease-std); }
   .dm-footer-link::before { content: ''; position: absolute; left: -0.8125rem; top: 50%; width: 0.25rem; height: 0.25rem; margin-top: -0.125rem; border-radius: var(--radius-pill); background: var(--primary); opacity: 0; transform: translateX(-0.25rem) scale(0.3); transition: opacity 0.2s var(--ease-std), transform 0.3s var(--ease-enter); }
   .dm-footer-link:is(:hover, :focus-visible) { color: var(--fg); }
   .dm-footer-link:is(:hover, :focus-visible)::before { opacity: 1; transform: none; }
@@ -30,10 +33,11 @@
   .dm-footer-wordmark { display: block; margin-top: 4.5rem; padding-bottom: 2.5rem; font-size: min(22.5rem, calc(31vw * var(--vwk))); line-height: 0.78em; letter-spacing: -0.05em; color: #221e1a; white-space: nowrap; user-select: none; }
   .dm-footer-dot { color: var(--primary); }
 
-  /* Under the light: a 600px segment of the hairline brightens near the pointer, and the wordmark's letters warm and its
-     stop brightens (a background clipped to the letters). */
+  /* Under the light: a 600px segment of the hairline brightens under the pointer, fully while the pointer is within 260
+     design px of it (--ember-near, EmberLight.tsx), and the wordmark's letters warm and its stop brightens (a background
+     clipped to the letters). */
   @media (hover: hover) and (pointer: fine) and (forced-colors: none) {
-    .dm-footer::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; pointer-events: none; background: radial-gradient(closest-side, rgb(255 190 146 / 0.95), rgb(255 157 98 / 0.35) 45%, rgb(255 157 98 / 0)) calc(var(--ex, -100rem) - 18.75rem) calc(var(--ey, -100rem) - 16.25rem) / 37.5rem 32.5rem no-repeat fixed; opacity: var(--ember-on, 0); transition: opacity 0.45s var(--ease-std), background-position 0.5s var(--e-drift); }
+    .dm-footer::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; pointer-events: none; background: radial-gradient(closest-side, rgb(255 190 146 / 0.95), rgb(255 157 98 / 0.35) 45%, rgb(255 157 98 / 0)) calc(var(--ex, -100rem) - 18.75rem) 0 / 37.5rem 100% no-repeat; opacity: var(--ember-near, 0); transition: opacity 0.45s var(--ease-std), background-position 0.5s var(--e-drift); }
     @supports ((background-clip: text) or (-webkit-background-clip: text)) {
       .dm-footer-wordmark, .dm-footer-dot { -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; transition: background-position 0.9s var(--e-drift); }
       .dm-footer-wordmark { background: radial-gradient(closest-side, rgb(255 198 159 / 0.55), rgb(255 198 159 / 0.275) 45%, rgb(255 198 159 / 0)) calc(var(--ex, -100rem) - 23.75rem) calc(var(--ey, -100rem) - 23.75rem) / 47.5rem 47.5rem no-repeat fixed, linear-gradient(#221e1a, #221e1a);  -webkit-background-clip: text; background-clip: text; }
@@ -41,12 +45,15 @@
     }
   }
 
-  @media (max-width: 767px) {
+  @media (max-width: 859px) {
     .dm-footer { margin-top: 4rem; }
-    .dm-footer-inner { padding-top: 3.5rem; }
+    .dm-footer-inner { padding-top: 3.5625rem; }
     .dm-footer-row { flex-direction: column; gap: 2.25rem; min-height: 0; }
     .dm-footer-cols { gap: 4rem; }
-    .dm-footer-wordmark { margin-top: 3rem; padding-bottom: 1.5rem; font-size: 31vw; line-height: 0.8; }
+    .dm-footer-wordmark { margin-top: 3rem; padding-bottom: 1.5rem; font-size: calc(31vw * var(--vwk)); line-height: 0.8; }
+    /* The prototype's phone polish: every footer link and the X pill 44px tall, the links touching, nothing wraps. */
+    .dm-footer-links { gap: 0; }
+    .dm-footer-link, .dm-footer-social { height: 2.75rem; white-space: nowrap; }
   }
   /* A thumb gets 44px on every footer link (audit E23). */
   @media (pointer: coarse) {

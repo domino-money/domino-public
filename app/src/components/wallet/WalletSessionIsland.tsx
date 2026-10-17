@@ -8,7 +8,7 @@ import { privateQueryClient } from '../../session/privateQuery'
 import { walletConfig } from '../../wallet/config'
 import { useSession } from '../../wallet/session'
 import { Button } from '../ui'
-import { IconChevronDown, IconWalletLine } from '../icons'
+import { IconChevronDown, IconChevronRight, IconWalletLine } from '../icons'
 import { announcement, shortAddress } from './copy'
 import { PrivateReadProbe } from './PrivateReadProbe'
 import { WalletSessionDialog } from './WalletSessionDialog'
@@ -80,8 +80,9 @@ function WalletControl() {
         <IconWalletLine className="dm-wallet-glyph" />
         {/* Changed on purpose 2026-10-06: a session held on another network (session.away) is signed in there too. */}
         <span className="sr-only">{view.status === 'signed_in' || session.away ? 'Signed in as ' : 'Connected wallet '}</span>
-        <span className="tnum font-mono text-[0.8125rem] tracking-normal">{shortAddress(identity.address)}</span>
-        <IconChevronDown size={14} className="text-fg-subtle" />
+        <span className="dm-wallet-addr tnum font-mono tracking-normal">{shortAddress(identity.address)}</span>
+        {/* V4 (site/_kit.md .wdn): the site's chevron turned down, 12px, stepping down Tangerine on hover (shell.css). */}
+        <IconChevronRight size={12} className="dm-wallet-chev" />
       </>
     )
   }

@@ -1,6 +1,7 @@
 import { useMemo, useState, useSyncExternalStore, type KeyboardEvent } from 'react'
 import { AddressMark } from '../../components/automate/marks'
-import { IconAutomate } from '../../components/icons'
+import { ExitPicture } from '../../components/automate-v4/AsidePictures'
+import { NoPositionsArt } from '../../components/automate-v4/SeqPlateArt'
 import { Button, Card, EmptyState, LinkButton, RangeBar, Skeleton } from '../../components/ui'
 import { feeText, rangeView } from '../../lib/automate/picker'
 import { feeWords } from '../../lib/format/fee'
@@ -75,21 +76,24 @@ export default function ProtectionSetup({ owner, route }: { owner: string; route
   </div> : !Object.values(gates).some(Boolean) ? <div className="dm-acct-block"><p className="text-body text-fg-muted">Auto-exit isn’t available right now.</p>{back}</div>
     : !list || (list.incomplete && !positions.length) ? <div className="dm-acct-block" data-sequence-positions="failed">
       <p className="text-body text-fg-muted">Your positions couldn’t be checked right now.</p>{retry} {back}
-    </div> : !positions.length ? <EmptyState plate icon={<IconAutomate />} className="dm-acct-block" data-sequence-positions="empty"
+    </div> : !positions.length ? <EmptyState plate icon={<NoPositionsArt />} className="dm-acct-block dm-lit" data-sequence-positions="empty"
       title="No positions available for Auto-exit" body="Check your positions to see their current status and automation."
       action={<><LinkButton href="#/positions" variant="primary">View positions</LinkButton>{back}</>} /> : <>
       {missing && <p className="dm-acct-note" role="status" data-sequence-position-missing="">This position isn’t available for a new Auto-exit. Choose another position below.</p>}
       {list.incomplete && <p className="dm-acct-note" role="status">Some positions couldn’t be checked. {retry}</p>}
       <Card className="dm-acct-block dm-acct-panel dm-seq-create" data-v2in-protection-setup="">
         <div className="dm-seq-grid">
-          <div className="dm-seq-steps"><fieldset className="dm-acct-fieldset">
+          <div className="dm-seq-steps dm-lit"><fieldset className="dm-acct-fieldset">
             <legend className="dm-acct-subtitle"><span className="dm-seq-step" data-state={chosen ? 'done' : 'current'}>1</span><span className="sr-only"> · </span>Your position</legend>
             <Picker positions={positions} selected={chosen?.key ?? null} onSelect={setSelected} />
           </fieldset></div>
-          <aside className="dm-seq-aside" aria-label="Your Auto-exit">
+          <aside className="dm-seq-aside dm-lit" aria-label="Your Auto-exit" data-ember="">
             <div className="dm-auto-aside-heading"><h2>Auto-exit</h2></div>
+            {/* V4 (the owner's approved site/sequence.html, Set up Auto-exit): Auto-exit's picture, playing once. */}
+            <div className="dm-seq-pic" data-mode="protection"><div className="dm-seq-asc" data-scene="protection"><ExitPicture /></div></div>
             <p className="dm-seq-hint">Closes your position at the end of its range and sends the tokens to your wallet.</p>
             <p className="dm-seq-hint">0.2% only if it closes. No fee reinvestment.</p>
+            <span className="dm-seq-seam" aria-hidden="true"><span className="dm-seam-lit" /></span>
             <Button type="button" variant="primary" size="xl" className="w-full" data-sequence-action="protection" disabled={!chosen}
               onClick={() => { if (chosen && gates[chosen.target.chainId]) setDialog({ target: chosen.target, gate: gates[chosen.target.chainId]! }) }}>Continue</Button>
             {!chosen && <p className="dm-flow-reason" data-align="start">Choose one of your positions.</p>}

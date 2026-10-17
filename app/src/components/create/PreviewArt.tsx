@@ -1,140 +1,88 @@
-import type { CSSProperties } from 'react'
 import { useSvgId } from '../charts/series'
-import { ArtTile, useInView } from '../home/Vignettes'
+import { useInView } from '../home/Vignettes'
 import { cx } from '../ui'
 
 /*
  * New position's picture before a pool is chosen (owner, 2026-09-24): what a
- * position is, drawn rather than said. A price wanders across a price band;
- * inside the band its line is Tangerine and fee pips rise from it, and where
- * it leaves the band the line goes quiet and nothing rises. A domino tile,
- * the position, stands on the band. The line ends in the price's dot with a
- * dotted line on to the edge: the price now.
+ * position is, drawn rather than said. Redrawn 2026-10-17 as the approved V4
+ * picture (site/new.html .il, 360 x 150): a price range as a green band with
+ * its two edges, one price curve across it, quiet where it leaves the band and
+ * Tangerine inside it, fee pips where it earns, and the brand's domino resting
+ * on the band.
  *
- * Only shapes: no text, no digits, no figure, no axis, no colour literal
- * (every colour is a token in flow.css), so nothing here can be read as data.
- * The static frame (and the stilled one: reduced motion, Pause motion) is the
- * whole composition: the line drawn, the fee pips risen over the stretch in
- * the band, the tip at the line's end, so every part the legend names is in
- * it. The loop is one 10 s timeline shared by every moving part and plays
- * only while the picture is in view: the picture holds, fades, the line is
- * drawn again from the left with the tip riding its head (grey outside the
- * band), each pip rises again where the tip passes it inside the band and
- * settles, and the picture holds again. The tile follows DESIGN-V2 §0.4:
- * 1:1.75, a divider, unequal pip counts, never the mark's.
+ * Only shapes: no text, no digits, no figure, no axis, so nothing here can be
+ * read as data; the colours are set in the stylesheet (styles/v4-newposition.css).
+ * It plays once, as the page's inner load moment does: the curve draws from
+ * the left (a clip that opens, .6 s at .2 s), the pips pop (.3 s from .48 s),
+ * the domino fades in (.35 s at .5 s). The resting frame (and the stilled one:
+ * reduced motion, Pause motion) is the whole composition. The lines keep a
+ * still, endless hold while the picture is in view (.is-running), the shared
+ * decorative motion's mark.
  */
 
-/** The price's path through the view box (400 × 216), a monotone cubic through 20 hand-set points (lib/chart/paths linePath). */
-const PRICE =
-  'M0 120 C7.33 118.67 14.67 118.33 22 116 C29.33 113.67 36.67 110.6 44 106 C50.67 101.82 57.33 96 64 90 C70 84.6 76 76.67 82 72 C88 67.33 94 62 100 62 C106 62 112 62.67 118 66 C124 69.33 130 76 136 82 C142 88 148 96.67 154 102 C160 107.33 166 114 172 114 C178.67 114 185.33 113 192 112 C198.67 111 205.33 108 212 108 C218.67 108 225.33 113.37 232 118 C238 122.17 244 128.33 250 134 C255.33 139.04 260.67 146.33 266 150 C271.33 153.67 276.67 156 282 156 C287.33 156 292.67 150.67 298 146 C303.33 141.33 308.67 133.33 314 128 C319.33 122.67 324.67 117.33 330 114 C335.33 110.67 340.67 110 346 108'
+/** The price's path through the view box (360 × 150), as the approved picture draws it. */
+const PRICE = 'M0 132C36 130 58 116 84 96S128 62 158 68S206 88 234 74S276 56 298 46S338 24 360 18'
 
-/** The band: the price range, 84 to 140. The path leaves it above (x 70–138) and below (x 256–304). */
-const BAND = { top: 84, bottom: 140 }
-const END = { x: 346, y: 108 }
-/** The tile (16 × 28) stands on the band's top edge, over the part of the path that stays inside. */
-const TILE = { x: 192, w: 16 }
+/** The band: the price range, 52 to 98. The path enters it at about x 84 and leaves it at about x 280. */
+const BAND = { top: 52, bottom: 98 }
 
-/** A path of absolute M and C commands only (its numbers alternate x, y), moved by dx, dy. */
-function moved(d: string, dx: number, dy: number): string {
-  let index = 0
-  return d.replace(/-?\d+(?:\.\d+)?/g, (n) => String(Math.round((Number(n) + (index++ % 2 ? dy : dx)) * 100) / 100))
-}
-
-/**
- * The tip's route: PRICE moved so that it ends at 0,0. The tip's group stands at END, so at rest (offset-distance
- * 100%) the route moves it by nothing: the resting dot never depends on offset-path on an SVG element (the home
- * vignettes' rule), and only the loop uses the route.
- */
-const ROUTE = moved(PRICE, -END.x, -END.y)
-
-/**
- * The fee pips, on the path inside the band. They are drawn risen and settled (flow.css .pip-1 to .pip-4: how far
- * each has risen, how strongly it rests, and its own keyframes). In the loop the tip passes each at 15.5% + 66.5% ×
- * its share of the path's length (the draw runs from 15.5% to 82% of the loop), so at 46.6%, 50.1%, 58.1% and 77.7%,
- * where its keyframes make it rise again. The shares (0.4682, 0.5208, 0.6408, 0.935) and the band crossings that
- * flow.css times the tip's ink by (0.1925, 0.3915, 0.73, 0.871) were measured on PRICE with getPointAtLength; a
- * changed PRICE needs both measured again.
- */
+/** The fee pips where the path runs inside the band (the legend names them; the fourth sits on the dip at x 218). */
 const PIPS: ReadonlyArray<{ x: number; y: number }> = [
-  { x: 160, y: 107.5 },
-  { x: 180, y: 113.6 },
-  { x: 228, y: 115.2 },
-  { x: 322, y: 120.2 },
+  { x: 120, y: 60.8 },
+  { x: 176, y: 64.8 },
+  { x: 218, y: 79.4 },
+  { x: 262, y: 60.8 },
 ]
-
-const vars = (values: Record<string, string>) => values as CSSProperties
 
 export function PreviewArt({ className }: { className?: string }) {
   const [ref, seen] = useInView<SVGSVGElement>(0.3)
   const inside = useSvgId('dm-flow-pv-art-inside')
-  const across = useSvgId('dm-flow-pv-art-across')
-  const edge = useSvgId('dm-flow-pv-art-edge')
-  const width = TILE.w * 1.75
+  const reveal = useSvgId('dm-flow-pv-art-reveal')
   return (
     <svg
       ref={ref}
       className={cx('dm-art dm-flow-pv-art', seen && 'is-running', className)}
-      viewBox="0 0 400 216"
-      // A narrow card crops the picture's sides from the left, where the line only fades in, so the tip and the
-      // price now stay clear of the right-hand fade down to a 320 px screen. A wide card crops no side.
-      preserveAspectRatio="xMaxYMid slice"
+      viewBox="0 0 360 150"
+      fill="none"
       aria-hidden="true"
       focusable="false"
     >
       <defs>
-        {/* The band fades in and out at the picture's two ends. */}
-        <linearGradient id={across} x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" className="band-0" />
-          <stop offset="18%" className="band-1" />
-          <stop offset="82%" className="band-1" />
-          <stop offset="100%" className="band-0" />
-        </linearGradient>
-        {/* In view-box units: a horizontal line's own box has no height, and a gradient on that box draws nothing. */}
-        <linearGradient id={edge} gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="400" y2="0">
-          <stop offset="0%" className="edge-0" />
-          <stop offset="14%" className="edge-1" />
-          <stop offset="86%" className="edge-1" />
-          <stop offset="100%" className="edge-0" />
-        </linearGradient>
         <clipPath id={inside}>
-          <rect x={0} y={BAND.top} width={400} height={BAND.bottom - BAND.top} />
+          <rect x={0} y={BAND.top} width={360} height={BAND.bottom - BAND.top} />
+        </clipPath>
+        {/* The curve is drawn by this clip opening from the left (its width), once. */}
+        <clipPath id={reveal}>
+          <rect className="reveal dm-art-enter" x={0} y={0} width={360} height={150} />
         </clipPath>
       </defs>
 
-      <rect className="band" x={0} y={BAND.top} width={400} height={BAND.bottom - BAND.top} fill={`url(#${across})`} />
-      <line className="edge" x1={0} y1={BAND.top} x2={400} y2={BAND.top} stroke={`url(#${edge})`} />
-      <line className="edge" x1={0} y1={BAND.bottom} x2={400} y2={BAND.bottom} stroke={`url(#${edge})`} />
+      <rect className="band" x={0} y={BAND.top} width={360} height={BAND.bottom - BAND.top} />
+      <path className="edge" d={`M0 ${BAND.top + 0.5}h360M0 ${BAND.bottom - 0.5}h360`} />
 
-      {/* The price: quiet everywhere, Tangerine (with its glow) where the band clips it. */}
-      <g className="price">
-        <path className="line line-out" d={PRICE} pathLength={100} />
-        <g clipPath={`url(#${inside})`}>
-          <path className="line line-glow" d={PRICE} pathLength={100} />
-          <path className="line line-in" d={PRICE} pathLength={100} />
-        </g>
+      {/* The price: quiet everywhere, Tangerine where the band clips it. */}
+      <g clipPath={`url(#${reveal})`}>
+        <path className="line line-out" d={PRICE} />
+        <path className="line line-in" d={PRICE} clipPath={`url(#${inside})`} />
       </g>
-      <line className="now" x1={END.x + 8} y1={END.y} x2={400} y2={END.y} />
 
       {PIPS.map((pip, index) => (
-        <g key={index} transform={`translate(${pip.x} ${pip.y})`}>
-          <circle className={`pip pip-${index + 1}`} r={2.75} />
+        <g key={index} className={`pip pip-${index + 1} dm-art-enter`}>
+          <circle className="pip-halo" cx={pip.x} cy={pip.y} r={4.4} />
+          <circle className="pip-light" cx={pip.x} cy={pip.y + 0.8} r={2.2} />
+          <circle className="pip-core" cx={pip.x} cy={pip.y} r={2.2} />
         </g>
       ))}
 
-      {/* The position: a tile standing on the band, its shadow on the band's edge. */}
-      <ellipse className="shadow" cx={TILE.x + TILE.w / 2} cy={BAND.top} rx={9} ry={1.6} />
-      <g transform={`translate(${TILE.x} ${BAND.top - width})`}>
-        <g className="tile tile-solid">
-          <ArtTile w={TILE.w} layout={[1, 3]} />
-        </g>
-      </g>
-
-      {/* The tip stands at the line's end; in the loop it travels the route (offset-path, in its group's space). */}
-      <g transform={`translate(${END.x} ${END.y})`}>
-        <g className="tip" style={vars({ offsetPath: `path('${ROUTE}')` })}>
-          <circle className="tip-ring" r={4.5} />
-          <circle className="tip-core" r={4.5} />
-        </g>
+      {/* The position: the brand's domino (a 2|3 face), resting on the band. */}
+      <g className="dom dm-art-enter" transform="translate(203 62) scale(.62)">
+        <rect className="dom-face" x={0.5} y={0.5} width={16} height={28} rx={4} />
+        <path className="dom-groove" d="M3.5 14.5h10" />
+        <circle className="dom-pip" cx={5.6} cy={5.4} r={1.55} />
+        <circle className="dom-pip" cx={11.4} cy={9.6} r={1.55} />
+        <circle className="dom-pip" cx={5.2} cy={18.6} r={1.55} />
+        <circle className="dom-pip" cx={8.5} cy={21.6} r={1.55} />
+        <circle className="dom-pip" cx={11.8} cy={24.6} r={1.55} />
       </g>
     </svg>
   )

@@ -257,13 +257,30 @@ export function BulkClosePositions({ owner, rows }: { owner: string; rows: reado
   const prepared = state.prepared
   const tokens = new Map<string, TokenName>(current.flatMap((row) => (row.tokens ?? []).map((token) => [token.address, token] as const)))
   const fallback = tokenNamer([])
-  const totals = (values: readonly (readonly [bigint, bigint])[]) => {
+  const totalWords = (values: readonly (readonly [bigint, bigint])[]) => {
     const amounts = new Map<string, bigint>()
     prepared?.positions.forEach((position, index) => [position.pool.currency0, position.pool.currency1].forEach((token, side) => amounts.set(token, (amounts.get(token) ?? 0n) + values[index][side])))
-    return [...amounts].map(([address, amount]) => amountWords(amount, tokens.get(address) ?? fallback(prepared!.chainId, address))).join(' + ')
+    return [...amounts].map(([address, amount]) => amountWords(amount, tokens.get(address) ?? fallback(prepared!.chainId, address)))
   }
+  const totals = (values: readonly (readonly [bigint, bigint])[]) => totalWords(values).join(' + ')
+  /** V4 (look only, positions.html .tot): the same words as `totals`, each amount's symbol in its own quieter ink. */
+  const totalInks = (values: readonly (readonly [bigint, bigint])[]) => totalWords(values).map((words, index) => {
+    const cut = words.lastIndexOf(' ')
+    return <span key={index}>{index > 0 && <span className="dm-bulk-plus"> + </span>}{cut > 0 ? <span className="dm-bulk-amt">{words.slice(0, cut)}<span className="dm-bulk-sym"> {words.slice(cut + 1)}</span></span> : <span className="dm-bulk-amt">{words}</span>}</span>
+  })
   if (eligible.length < 2 && state.stage === 'selection') return null
   const close = () => { setOpen(false); setPause(false) }
+  // Where the stage stands, and how many are already closed: the same lines in the same words, drawn beside the dominoes
+  // while a group is under way (V4, positions.html .prog), in the body's flow otherwise.
+  const stageLine = state.stage === 'reading' ? <SheetStatus>Checking your positions…</SheetStatus>
+    : state.stage === 'wallet' ? <SheetStatus>Confirm in your wallet.</SheetStatus>
+    : state.stage === 'sent' ? <SheetStatus>Confirming on {current[0].chain}…</SheetStatus>
+    : state.stage === 'waiting' ? <Note>Your transaction is still being checked. Nothing will be sent again.</Note>
+    : state.stage === 'unknown' ? <Note>Your wallet may have sent this transaction. Check its activity before continuing. Nothing will be sent again here.</Note>
+    : state.stage === 'done' ? <SheetStatus state="done">Withdrawal confirmed.</SheetStatus>
+    : null
+  const completedLine = state.completed > 0 && <Note>{state.completed} {state.completed === 1 ? 'position already closed' : 'positions already closed'}.</Note>
+  const progress = ['reading', 'wallet', 'sent', 'waiting', 'unknown', 'done'].includes(state.stage) && current.length > 0
   let footer
   if (state.stage === 'selection') footer = <Button disabled={chosen.length < 2} onClick={() => run.start(chosen)}>Review {chosen.length || ''} positions</Button>
   else if (state.stage === 'review') footer = <Button disabled={!!prepared?.pausesAutomation.length && !pause} onClick={() => void run.send(pause)}>Close {current.length} {current.length === 1 ? 'position' : 'positions'}</Button>
@@ -286,25 +303,30 @@ export function BulkClosePositions({ owner, rows }: { owner: string; rows: reado
         <Note>Positions are grouped to use fewer wallet confirmations. Network fees apply to each group.</Note>
       </> : <>
         {/* V4: the group stands as dominoes, one tile a position, its two tokens its halves; they lean as it is signed and
-            sent, and fall once it is closed (decoration only, from the stage and the group shown). */}
-        {['reading', 'wallet', 'sent', 'waiting', 'unknown', 'done'].includes(state.stage) && current.length > 0 && <div className="dm-bulk-dom" data-st={state.stage} aria-hidden="true">
-          {current.slice(0, 2).map((row) => <span key={row.key} className="dm-bulk-dt">{row.tokens && <><TokenHalf token={row.tokens[0]} size={14} /><TokenHalf token={row.tokens[1]} size={14} /></>}</span>)}
-        </div>}
-        {state.completed > 0 && <Note>{state.completed} {state.completed === 1 ? 'position already closed' : 'positions already closed'}.</Note>}
-        {state.stage === 'reading' && <SheetStatus>Checking your positions…</SheetStatus>}
+            sent, and fall once it is closed (decoration only, from the stage and the group shown). Beside them (positions.html
+            .prog): where it stands, the group's pairs, and how many are already closed. */}
+        {progress ? <div className="dm-bulk-prog">
+          <div className="dm-bulk-dom" data-st={state.stage} aria-hidden="true">
+            {current.slice(0, 2).map((row) => <span key={row.key} className="dm-bulk-dt">{row.tokens && <><TokenHalf token={row.tokens[0]} size={14} /><TokenHalf token={row.tokens[1]} size={14} /></>}</span>)}
+          </div>
+          <div className="dm-bulk-pst">
+            {stageLine}
+            <p className="dm-bulk-names">{current.map((row) => pairName(row)).join(' · ')}</p>
+            {completedLine}
+          </div>
+        </div> : <>
+          {completedLine}
+          {state.stage === 'reading' && stageLine}
+        </>}
         {prepared && state.stage === 'review' && <>
-          <SheetCard caption="Estimated to your wallet"><p className="dm-bulk-total tnum">{totals(prepared.receive)}</p><p className="dm-bulk-names">{current.map((row) => pairName(row)).join(' · ')}</p></SheetCard>
+          <SheetCard caption="Estimated to your wallet"><p className="dm-bulk-total tnum">{totalInks(prepared.receive)}</p><p className="dm-bulk-names">{current.map((row) => pairName(row)).join(' · ')}</p></SheetCard>
           <SheetFacts><SheetFact label="Network fee, at most">{weiWords(prepared.step.networkFeeWei)}</SheetFact><SheetFact label="Domino fee">None</SheetFact></SheetFacts>
           <details className="dm-bulk-details"><summary>Details</summary><SheetFacts><SheetFact label="Minimum returned">{totals(prepared.minimums)}</SheetFact><SheetFact label="Slippage tolerance">0.5%</SheetFact></SheetFacts><p>Closes #{current.map((row) => row.tokenId).join(', #')}. The empty position NFTs stay in your wallet.</p></details>
           {prepared.vaultRoots.length > 0 && <Note>Any funds or other positions held by your automation stay there. You can manage them inside the position.</Note>}
           {prepared.pausesAutomation.length > 0 && <Tick checked={pause} onChange={setPause}>I understand that closing these positions stops their automation.</Tick>}
         </>}
-        {state.stage === 'wallet' && <SheetStatus>Confirm in your wallet.</SheetStatus>}
-        {state.stage === 'sent' && <SheetStatus>Confirming on {current[0].chain}…</SheetStatus>}
-        {state.stage === 'waiting' && <Note>Your transaction is still being checked. Nothing will be sent again.</Note>}
-        {state.stage === 'unknown' && <Note>Your wallet may have sent this transaction. Check its activity before continuing. Nothing will be sent again here.</Note>}
+        {!progress && state.stage !== 'reading' && stageLine}
         {['unknown', 'waiting'].includes(state.stage) && current.length > 0 && <details className="dm-bulk-details" open={recoveryHash.length > 0}><summary>{state.hash ? 'Updated transaction in your wallet?' : 'Find your transaction'}</summary><label htmlFor="close-recovery-hash">Transaction hash from your wallet</label><input id="close-recovery-hash" value={recoveryHash} onChange={(event) => setRecoveryHash(event.currentTarget.value.trim())} placeholder="0x…" autoComplete="off" /></details>}
-        {state.stage === 'done' && <SheetStatus state="done">Withdrawal confirmed.</SheetStatus>}
         <ErrorLine error={state.error} />
       </>}
     </ActionDialog>}

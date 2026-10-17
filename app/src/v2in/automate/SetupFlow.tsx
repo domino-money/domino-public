@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { PortfolioResponse } from 'api-contracts/read-v6/types'
 import { CompoundPreview } from '../../components/automate/CompoundPreview'
-import { ModeArt } from '../../components/automate/ModeArt'
 import { ModeSummary } from '../../components/automate/ModeSummary'
-import { ExitThumb } from '../../components/home/Vignettes'
 import { PositionPicker } from '../../components/automate/PositionPicker'
 import { SuccessorAxis } from '../../components/automate/SuccessorAxis'
+import { AutomateStage } from '../../components/automate-v4/AutomateStage'
+import { EmptyPlatePicture, ExitPicture } from '../../components/automate-v4/AsidePictures'
+import { ModeThumb } from '../../components/automate-v4/ModeThumb'
+import { useAutomateLight, useEmberRest } from '../../components/automate-v4/useAutomateLight'
+import { IconChevronRight } from '../../components/icons'
 import { Button, Card, LinkButton } from '../../components/ui'
 import { automationFeeText, VAULT_TEXT, type VaultCreateBatch, type VaultCreateReview } from '../../finance/v2/vault'
 import { useWalletIdentity } from '../../lib/walletIdentity'
@@ -249,12 +252,19 @@ function PositionSetup({ positions, portfolio, intent, position, onSelect, gate,
     if (next !== 'protection') setSettings((old) => ({ ...old, mode: next === 'domino' ? 2 : 1 }))
   }
 
+  // V4: the set up card's tile answers the light (decoration only).
+  useAutomateLight('.dm-seq-done', created !== null)
+  useEmberRest(created !== null)
+
   if (created) {
     const title = created.mode === 2 ? 'Domino-compound' : 'Auto-compound'
+    const scene = created.mode === 2 ? 'domino' : 'compound'
     return (
-      <section className="dm-card dm-acct-block dm-seq-done" aria-label="Automation set up" data-sequence-create="done" data-v2in-created={created.vault}>
-        <div className="dm-plate dm-dots-plate dm-seq-stage" data-mode={created.mode === 2 ? 'domino' : 'compound'}>
-          <ModeArt mode={created.mode === 2 ? 'domino' : 'compound'} size="card" play="once" />
+      <section className="dm-card dm-acct-block dm-seq-done dm-lit" aria-label="Automation set up" data-sequence-create="done" data-v2in-created={created.vault}>
+        {/* V4 (the owner's approved site/sequence.html .dn-art): Automate's scene for the mode, the tile settling, the fees
+            travelling once. */}
+        <div className="dm-plate dm-dots-plate dm-seq-stage" data-mode={scene}>
+          <AutomateStage chosen={scene} scenes={[scene]} labels={false} run="a" dd={0.35} enter />
         </div>
         <h2 className="dm-display dm-display-card">
           {title} is set up for position #{created.tokenId}
@@ -264,6 +274,7 @@ function PositionSetup({ positions, portfolio, intent, position, onSelect, gate,
         <div className="dm-seq-done-links">
           <LinkButton href={setupPositionHref({ chainId, dex, tokenId: idOf(created.tokenId) })} size="lg" className="dm-seq-done-link">
             View position
+            <IconChevronRight />
           </LinkButton>
         </div>
       </section>
@@ -323,7 +334,7 @@ function PositionSetup({ positions, portfolio, intent, position, onSelect, gate,
   return (
     <Card className="dm-acct-block dm-acct-panel dm-seq-create" data-sequence-create={phaseName} data-sequence-create-mode={mode ?? undefined} data-v2in-setup={gate.mode} aria-busy={busy || undefined}>
       <div className="dm-seq-grid">
-        <div className="dm-seq-steps">
+        <div className="dm-seq-steps dm-lit">
           <fieldset disabled={busy} className="dm-acct-fieldset" data-state={usable ? 'done' : 'current'}>
             {legend(1, !!usable, 'Your position')}
             <PositionPicker positions={positions} selected={position?.key ?? null} onSelect={onSelect} disabled={busy} />
@@ -340,13 +351,20 @@ function PositionSetup({ positions, portfolio, intent, position, onSelect, gate,
               <div className="dm-acct-choices dm-seq-modes" role="radiogroup" aria-label="Automation">
                 {MODES.map((entry) => (
                   <Button key={entry.key} type="button" role="radio" aria-checked={mode === entry.key} variant="outline" className="dm-seq-mode" disabled={busy} onClick={() => chooseMode(entry.key)} data-sequence-mode={entry.key}>
-                    {entry.key === 'protection' ? <ExitThumb className="dm-mode-art" /> : <ModeArt mode={entry.key} size="card" play={mode === entry.key ? 'once' : 'none'} />}
+                    <ModeThumb mode={entry.key} />
                     <ModeSummary mode={entry.key} title={entry.title} fee={entry.fee} />
                   </Button>
                 ))}
               </div>
               {chosen && <p className="dm-seq-hint">{mode === 'protection' ? "Earned fees stay in your position. Domino doesn't reinvest them." : 'The service fee applies once to earned fees used. Your original deposit is not charged.'}</p>}
             </fieldset>
+          )}
+          {/* V4 (the approved sequence.html .st.ghost.g3): step 3's number waits under step 2 until a mode is chosen. Drawn by
+              CSS from data-n, so the flow's words are unchanged. */}
+          {usable && !chosen && (
+            <div className="dm-seq-ghosts" aria-hidden="true">
+              <span data-n="3" />
+            </div>
           )}
           {usable && mode === 'protection' && (
             <fieldset className="dm-acct-fieldset" data-state="current">
@@ -368,11 +386,21 @@ function PositionSetup({ positions, portfolio, intent, position, onSelect, gate,
             </fieldset>
           )}
         </div>
-        <aside className="dm-seq-aside" aria-label="Wallet steps">
+        <aside className="dm-seq-aside dm-lit" aria-label="Wallet steps" data-ember="">
           <div className="dm-auto-aside-heading"><h2>Your automation</h2></div>
-          {usable && mode === 'domino' && pool && !exitHeld && <SuccessorAxis root={{ tokenId: usable.tokenId, lower: usable.tickLower, upper: usable.tickUpper, spacing: usable.tickSpacing }} inverse={quoteIsCurrency0(chainId, pool)} form={axisForm(settings)} />}
-          {usable && mode === 'compound' && !exitHeld && <CompoundPreview />}
-          {usable && compounding && !exitHeld && (live ? steps.length > 0 && <WalletSteps steps={steps} phases={run.phases} name="setup" /> : <WalletSteps steps={previewSteps} name="setup-preview" />)}
+          {/* V4 (the owner's approved site/sequence.html .pic): one plate, its pictures stacked; the chosen one shows (an
+              empty plate before a position and a choice) and the change cross-fades. The pictures not shown are hidden
+              (visibility), so only the shown one is read. */}
+          <div className="dm-seq-pic" data-mode={usable && mode && !exitHeld ? mode : 'none'}>
+            <div className="dm-seq-asc" data-scene="none"><EmptyPlatePicture /></div>
+            <div className="dm-seq-asc" data-scene="compound">{usable && !exitHeld && <CompoundPreview />}</div>
+            <div className="dm-seq-asc" data-scene="domino">{usable && pool && !exitHeld && <SuccessorAxis root={{ tokenId: usable.tokenId, lower: usable.tickLower, upper: usable.tickUpper, spacing: usable.tickSpacing }} inverse={quoteIsCurrency0(chainId, pool)} form={axisForm(settings)} />}</div>
+            <div className="dm-seq-asc" data-scene="protection"><ExitPicture /></div>
+          </div>
+          <span className="dm-seq-seam" aria-hidden="true"><span className="dm-seam-lit" /></span>
+          {live
+            ? usable && compounding && !exitHeld && steps.length > 0 && <WalletSteps steps={steps} phases={run.phases} name="setup" />
+            : mode !== 'protection' && !exitHeld && <WalletSteps steps={previewSteps} name="setup-preview" />}
           {mode === 'protection' ? (
             <Button type="button" variant="primary" size="xl" className="w-full" disabled={!target || !protectionGate || exitHeld || !!operationalIssue} onClick={() => { onHold(portfolio); setOrderOpen(true) }} data-sequence-action="protection">
               Turn on Auto-exit

@@ -178,7 +178,9 @@ test('the route table: every page App draws, the older spellings, and Markets ta
   assert.equal(MARKETS_TOKEN.test(`0x${'aB'.repeat(20)}`), true);
   for (const second of ['0xab', 'receipts', `0x${'1'.repeat(41)}`, `0x${'g'.repeat(40)}`]) assert.equal(MARKETS_TOKEN.test(second), false, second);
   const page = source('screens/NotFound.tsx');
-  assert.match(page, /title="This page doesn’t exist"/);
+  // Changed on purpose 2026-10-17 (V4 parity, CSP-29): the title is two staggered lines that rise one by one, the same words
+  // (render.test.mjs still reads the h1's innerText as 'This page doesn’t exist').
+  assert.match(page, /<span className="dm-ln-in dm-k-l1">This page<\/span>[\s\S]*<span className="dm-ln-in dm-k-l2">doesn’t exist<\/span>/);
   assert.match(page, /<LinkButton href="#\/">Go to Home<\/LinkButton>/);
   assert.doesNotMatch(page, /\bimport\(|fetch|localStorage/, 'it reads and loads nothing');
 });

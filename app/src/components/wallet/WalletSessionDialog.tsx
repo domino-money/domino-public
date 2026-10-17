@@ -53,11 +53,14 @@ interface Notice {
   status: string
 }
 
-/** One wallet to connect: its logo, its name, and a second line when it has one. */
-function WalletRow({ connector, hint, onPick }: { connector: Connector; hint?: string; onPick: () => void }) {
+/**
+ * One wallet to connect: its logo, its name, and a second line when it has one. A wallet waiting for its approval wears
+ * the row's hover, its pip and its brand ring, a turning arc in place of the chevron (V4 .is-wait; data-waiting, shell.css).
+ */
+function WalletRow({ connector, hint, waiting = false, onPick }: { connector: Connector; hint?: string; waiting?: boolean; onPick: () => void }) {
   return (
     <li>
-      <button type="button" className="dm-wallet-row" onClick={onPick}>
+      <button type="button" className="dm-wallet-row" data-waiting={waiting || undefined} onClick={onPick}>
         <span className="dm-wallet-logo">
           <WalletLogo id={connector.id} />
         </span>
@@ -153,6 +156,20 @@ export function WalletSessionDialog({
   const [phone] = useState(onPhone)
   const progress = useSignInProgress()
   const signing = ['switching', 'checking', 'signing', 'returning'].includes(progress.phase)
+  // V4 (site/_kit.md .ch-dlg): a closed dialog stays drawn while its scrim fades and its sheet sinks away, a quarter of a
+  // second, as nothing more than a picture: no dialog role, no name, hidden from assistive technology, inert and taking
+  // no pointer, so nothing reaches it and the page behind is released at once (useDialog goes by its open flag).
+  const [wasOpen, setWasOpen] = useState(open)
+  const [closing, setClosing] = useState(false)
+  if (open !== wasOpen) {
+    setWasOpen(open)
+    setClosing(!open)
+  }
+  useEffect(() => {
+    if (!closing) return
+    const settle = window.setTimeout(() => setClosing(false), 260)
+    return () => window.clearTimeout(settle)
+  }, [closing])
 
   // Each step swaps the footer buttons, and a wallet action disables them
   // while it runs. When the button that had focus goes away or is disabled,
@@ -167,7 +184,7 @@ export function WalletSessionDialog({
     }
   }, [open, session.view, pending, waiting, dialog])
 
-  if (!open) return null
+  if (!open && !closing) return null
 
   const { view, identity, busy } = session
   const shown = notice && notice.epoch === session.epoch && notice.status === view.status ? notice.text : null
@@ -291,18 +308,27 @@ export function WalletSessionDialog({
     <div
       role="presentation"
       className="dm-dialog-backdrop"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+      data-closing={open ? undefined : ''}
+      aria-hidden={open ? undefined : true}
+      inert={!open}
+      onMouseDown={(e) => open && e.target === e.currentTarget && onClose()}
     >
       <Card
         level={2}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="wallet-dialog-title"
-        aria-describedby={status ? 'wallet-dialog-status' : undefined}
+        role={open ? 'dialog' : undefined}
+        aria-modal={open ? 'true' : undefined}
+        aria-labelledby={open ? 'wallet-dialog-title' : undefined}
+        aria-describedby={open && status ? 'wallet-dialog-status' : undefined}
         ref={dialog}
-        className="dm-dialog dm-wd"
+        className="dm-dialog dm-wd dm-lit"
       >
-        <div className="dm-wd-head relative grid gap-y-1 pr-10">
+        {/* The seam under the head carries the sign-in's progress (data-phase) and a running light while the dialog waits
+            on something it cannot measure (data-wait): V4 states/Wallet.html .seam-fill, .seam-run (shell.css). */}
+        <div
+          className="dm-wd-head relative grid gap-y-1 pr-10"
+          data-phase={signing ? progress.phase : undefined}
+          data-wait={(waiting !== null && !pairing) || (view.status === 'signing_in' && (view.step === 'recovering' || view.step === 'closing')) || busy ? '' : undefined}
+        >
           <h2 id="wallet-dialog-title" tabIndex={-1} className="dm-dialog-title outline-none">
             {choosing ? 'Connect' : 'Wallet'}
           </h2>
@@ -310,7 +336,8 @@ export function WalletSessionDialog({
             <IconClose />
           </button>
           {status && <p id="wallet-dialog-status" role={progress.phase === 'error' ? 'alert' : 'status'} className="dm-wd-status text-[0.8125rem] leading-[1.125rem] text-fg-muted" data-status={waiting ? 'connecting' : view.status}>
-            {status}
+            {/* A changed sentence settles in (V4 .sw); the line itself stays, so it is announced as before. */}
+            <span key={status} className="dm-wd-sw">{status}</span>
           </p>}
         </div>
 
@@ -340,6 +367,7 @@ export function WalletSessionDialog({
                   key={connector.uid}
                   connector={connector}
                   hint={waiting?.uid === connector.uid ? 'Waiting for your approval…' : undefined}
+                  waiting={waiting?.uid === connector.uid}
                   onPick={() => void connect(connector)}
                 />
               ))}
@@ -379,14 +407,15 @@ export function WalletSessionDialog({
           )}
 
           {shown && (
-            <p role="alert" className="dm-wd-alert text-[0.8125rem] leading-[1.125rem]" style={{ color: 'var(--money-out)' }}>
+            <p role="alert" className="dm-wd-alert text-[0.8125rem] leading-[1.125rem]">
               {shown}
             </p>
           )}
 
         </div>
 
-        {actions && <div className="dm-wd-foot flex flex-wrap items-center justify-end gap-2 border-t border-line pt-3">
+        {/* Keyed by the state it answers, so a new set of buttons rises in (V4 .foot-in). */}
+        {actions && <div key={`${view.status}:${waiting ? 'w' : ''}:${signing}`} className="dm-wd-foot flex flex-wrap items-center justify-end gap-2 border-t border-line pt-3">
           {actions}
         </div>}
       </Card>

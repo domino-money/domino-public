@@ -17,17 +17,32 @@
   /* ---- 1. The page: steps beside the position they make (new.html .desk) ------------------------------------------- */
   .dm-np { row-gap: 1rem; padding-bottom: 6rem; }
   .dm-np-head { margin-bottom: 0.5rem; }
+  /* The title stands in its line mask (new.html .ln: .05em over the words), so the cards start where the prototype's do. */
+  .dm-np > .dm-np-head h1 { padding-top: 0.05em; }
   @media (min-width: 900px) {
     .dm-np { row-gap: 2.75rem; padding-bottom: 10rem; }
     .dm-np-head { margin-bottom: 0; }
     .dm-np:not([data-create-step="review"]) { grid-template-columns: minmax(0, 1fr) 25.25rem; column-gap: 1.5rem; }
-    /* .dm-lit positions its card; the preview keeps standing beside the steps. */
-    .dm-np .dm-flow-preview { position: sticky; top: calc(var(--header-h) + 1.5rem); }
+    /* The preview stands beside the steps, top-aligned, and scrolls with the page (new.html .desk: align-items start, no
+       sticky). .dm-lit positions its card. */
+    .dm-np .dm-flow-preview { position: relative; top: auto; }
   }
+
+  /* The load moment (kit inner page, new.html .fast): the title keeps its own line rise and stop (v4-foundation), the
+     description rises as .k-up1, the steps card as .k-card at .24s, the preview as .k-c2 at .28s. Only on a load (the
+     utilities layer stops .dm-flow-rise once booted, and this layer would beat it, hence the scope). */
+  html:not(.dm-booted) .dm-np > .dm-np-head.dm-flow-rise { animation: none; }
+  html:not(.dm-booted) .dm-np > .dm-np-head .dm-page-sub { animation: dm-v4-up 0.5s var(--ease-enter) 0.14s backwards; }
+  html:not(.dm-booted) .dm-np > .dm-flow-card.dm-flow-rise { animation: dm-v4-card 0.55s var(--e-enter) 0.24s backwards; }
+  html:not(.dm-booted) .dm-np > .dm-flow-preview.dm-flow-rise { animation: dm-v4-card 0.55s var(--e-enter) 0.28s backwards; }
 
   /* The two cards (V4 .card): the card material is the foundation's .dm-card; the v3 skins' 1px border and flat fill go. */
   .dm-np :is(.dm-flow-card, .dm-flow-preview) { border: 0; border-radius: 1.625rem; background: var(--v4-card-lift), var(--card); box-shadow: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 var(--v4-w06), var(--v4-card-drop); }
   .dm-np .dm-flow-card { padding: 0.75rem 0.875rem 0.875rem 0.75rem; }
+
+  /* The tags (new.html .tag span: 12px, 2px 7px, the line's own height; 2px 6px on a phone). */
+  .dm-np .dm-chip { min-height: 0; padding: 0.125rem 0.4375rem; line-height: normal; }
+  @media (max-width: 767px) { .dm-np .dm-chip { padding-inline: 0.375rem; } }
 
   /* ---- The four steps: rows, the rail, the markers (new.html .st, .st-h, .conn, .step-n) ------------------------------ */
   .dm-np .dm-flow-row { gap: 1rem; min-height: 3.75rem; padding: 0 0.625rem; border-radius: 0.875rem; color: var(--subtle); opacity: 1; transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std); }
@@ -35,7 +50,7 @@
   .dm-np button.dm-flow-row .dm-flow-row-title { color: var(--fg); }
   .dm-np .dm-flow-row-summary { font-size: 0.875rem; line-height: 1.25rem; letter-spacing: -0.01em; color: var(--muted); transition: color 0.18s var(--e-std); }
   /* Edit (new.html .edit): a small pill; the whole done row is already the button. */
-  .dm-np .dm-flow-edit { display: inline-flex; align-items: center; height: 1.875rem; padding: 0 0.75rem; border-radius: 0.625rem; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); font-size: 0.8125rem; line-height: 1rem; font-weight: 500; letter-spacing: -0.01em; color: var(--muted); text-decoration: none; transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std), box-shadow 0.18s var(--e-std), opacity 0.2s var(--e-std); }
+  .dm-np .dm-flow-edit { display: inline-flex; align-items: center; height: 1.875rem; padding: 0 0.75rem; border-radius: 0.625rem; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); font-size: 1rem; line-height: 1.25rem; font-weight: 400; letter-spacing: normal; color: var(--muted); text-decoration: none; transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std), box-shadow 0.18s var(--e-std), opacity 0.2s var(--e-std); }
   .dm-np button.dm-flow-row:hover:not(:disabled) { background: var(--v4-w04); }
   .dm-np button.dm-flow-row:hover:not(:disabled) .dm-flow-row-summary { color: var(--fg); }
   .dm-np button.dm-flow-row:is(:hover, :focus-visible):not(:disabled) .dm-flow-edit { background: rgb(255 236 220 / 0.07); box-shadow: inset 0 0 0 1px var(--lip); color: var(--fg); text-decoration: none; }
@@ -57,15 +72,34 @@
   .dm-np .dm-flow-step[data-state="current"] .dm-flow-body,
   .dm-np .dm-flow-body { padding: 0 0.625rem 1.625rem 3.5rem; }
   .dm-np .dm-flow-head { align-items: flex-start; gap: 1rem; margin-left: -2.875rem; padding-block: 0.6875rem; }
-  .dm-np .dm-flow-head > .dm-step-marker { margin-top: 0.25rem; }
+  /* The marker sits in the row's middle (15px down), the title 11px down (new.html .st-h). */
+  .dm-np .dm-flow-head > :first-child { margin-top: 0.25rem; }
   .dm-np .dm-flow-title { font-family: var(--font-display); font-size: 2.375rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
   /* StepList focuses the title on every step change; from the keyboard it keeps the site's ring (tokens.css, flow.css),
      here with the rounded corners of the V4 controls instead of a square box tight on the serif. */
   .dm-np .dm-flow-title:focus-visible { border-radius: var(--radius-sm); }
-  .dm-np .dm-flow-lead { max-width: 62ch; margin: 0.625rem 0 0.5rem; font-size: 0.9375rem; line-height: 1.5; letter-spacing: -0.01em; color: var(--muted); }
+  .dm-np .dm-flow-lead { max-width: 62ch; margin: 1.0625rem 0 0.5625rem; font-size: 0.9375rem; line-height: 1.5; letter-spacing: -0.01em; color: var(--muted); }
   .dm-np .dm-flow-content { margin-top: 0.25rem; }
-  /* A step's content arrives with a short rise from blur (V4 §8.6 panel-in), inside the fold. */
-  .dm-np .dm-flow-collapse[data-open] .dm-flow-body { animation: dm-np-panel 0.45s var(--e-enter) backwards; }
+  /* A step change (new.html .st-b): no accordion. The rows switch at once (the old body goes, its done row appears, the
+     new marker turns current and its title takes the serif); only the new body (lead, content, buttons) rises out of
+     blur (panel-in .5s). On Review the parts animate, never the content box or the footer themselves: a transform there
+     would hold the absolutely placed wallet card and Back (section 8) for the length of it. */
+  .dm-np .dm-flow-collapse,
+  .dm-np .dm-flow-collapse[data-open] { transition: none; }
+  .dm-np .dm-flow-collapse[data-open] > .dm-flow-collapse-inner,
+  .dm-np .dm-flow-collapse[data-open] .dm-flow-body { animation: none; }
+  .dm-np .dm-flow-collapse[data-open] .dm-flow-body:not([data-stage-card="review"]) > :is(.dm-flow-content, .dm-flow-foot),
+  .dm-np .dm-flow-collapse[data-open] .dm-flow-head .dm-flow-lead,
+  .dm-np .dm-flow-collapse[data-open] [data-stage-card="review"] [data-stage="review"] > *,
+  .dm-np .dm-flow-collapse[data-open] [data-stage-card="review"] > .dm-flow-foot > * { animation: dm-np-panel 0.5s var(--e-enter) backwards; }
+  /* The first load: the open step's body waits for its card (new.html data-first, .fast: .45s at .3s), as do the
+     chosen pool's check and the done checks (.4s at .42s). Journey sets data-first-load for the first 0.9 s. */
+  html:not(.dm-booted) .dm-np[data-first-load] .dm-flow-collapse[data-open] .dm-flow-body > :is(.dm-flow-content, .dm-flow-foot),
+  html:not(.dm-booted) .dm-np[data-first-load] .dm-flow-collapse[data-open] .dm-flow-head .dm-flow-lead { animation-duration: 0.45s; animation-delay: 0.3s; }
+  html:not(.dm-booted) .dm-np[data-first-load] .dm-flow-collapse[data-open] [data-stage-card="review"] [data-stage="review"] > *,
+  html:not(.dm-booted) .dm-np[data-first-load] .dm-flow-collapse[data-open] [data-stage-card="review"] > .dm-flow-foot > * { animation-duration: 0.45s; animation-delay: 0.3s; }
+  html:not(.dm-booted) .dm-np[data-first-load] .dm-flow-step .dm-step-marker[data-state="done"] > svg { animation-duration: 0.4s; animation-delay: 0.42s; }
+  html:not(.dm-booted) .dm-np[data-first-load] .dm-flow-chosen-check { animation-delay: 0.42s; }
 
   /* The rail (new.html .conn): a 1px line through the markers' centres, and a Tangerine one that fills down a done step. */
   @media (min-width: 768px) {
@@ -77,7 +111,10 @@
   /* ---- Back, Continue and the reason (new.html .acts2, .btn-back, .btn-pri.cta, .btn-off, .why) ---------------------- */
   .dm-np .dm-flow-foot:not([data-waiting]) { margin-top: 1.375rem; padding-top: 1.375rem; border-top: 0; box-shadow: inset 0 1px 0 var(--line); }
   .dm-np .dm-flow-foot { column-gap: 0.625rem; }
-  .dm-np .dm-flow-foot:not([data-final]) > .dm-btn:not(.dm-btn--sm) { height: 3.375rem; min-height: 3.375rem; border-radius: 0.875rem; font-size: 0.96875rem; }
+  .dm-np .dm-flow-foot:not([data-final]) > .dm-btn:not(.dm-btn--sm) { height: 3.375rem; min-height: 3.375rem; border-radius: 0.875rem; }
+  /* The prototype's buttons take the page's own type (its "button { font: inherit }" outranks .btn's 15.5/500): every
+     button word in the steps reads 16px regular, as approved. */
+  .dm-np .dm-flow-foot > .dm-btn:not(.dm-btn--sm) { font-size: 1rem; font-weight: 400; letter-spacing: -0.01em; }
   .dm-np .dm-flow-foot > .dm-btn--primary { padding-inline: 1.75rem; }
   .dm-np .dm-flow-foot > .dm-btn--primary:disabled:not([data-create-position]) { background: var(--v4-w06); color: var(--subtle); box-shadow: inset 0 0 0 1px var(--line); cursor: not-allowed; }
   /* Back: the outline button with the site chevron turned back; its hover stays neutral (V4 .btn-back). */
@@ -91,28 +128,37 @@
   .dm-np .dm-flow-reason { font-size: 0.8125rem; line-height: 1.25rem; letter-spacing: -0.01em; color: var(--subtle); }
   /* Check balance again: its own width, so its word lines up on the right with the reason above it. */
   .dm-np .dm-flow-foot > .dm-btn--ghost.dm-btn--sm { grid-column: 1 / -1; justify-self: end; width: auto; }
-  /* Step 1 once a pool is chosen: no reason left to say, so no line held open for one (the step's content changes
-     wholesale as the reason goes, so nothing visibly jumps). */
-  .dm-np .dm-flow-foot[data-first] > .dm-flow-reason:empty { min-height: 0; margin-top: 0; }
+  /* Nothing to say, no line held open for it (new.html .why:empty): the step ends 26px under its buttons. The paragraph
+     stays mounted (its live region exists before a reason lands in it); a reason that appears adds its one line. */
+  .dm-np .dm-flow-foot:not([data-final]) > .dm-flow-reason:empty { min-height: 0; margin-top: 0; }
+  /* Step 1: Continue and its reason arrive with the step's content, with no entrance of their own (new.html .pf-on). */
+  .dm-np .dm-flow-foot[data-first] > :is(.dm-btn, .dm-flow-reason) { animation: none; }
 
-  /* ---- Phone (states/PhoneMore.html, New position at 390): no rail, the content under its title ---------------------- */
+  /* ---- Phone (new.html at 390, its phone polish): the steps use the card's width (.steps 8 8 10 6; .st-h 60px, 10px in,
+     12px to the title; .st-b 4 4 22 8). A done row is its marker, its name and Edit on one line: the summary leaves the
+     picture on a phone (new.html .st-sum) and stays in the text, for the reading order and assistive technology. ------- */
   @media (max-width: 767px) {
-    .dm-np .dm-flow-card { padding: 0.375rem 0.375rem 0.5rem; }
-    .dm-np .dm-flow-row { gap: 0.875rem; min-height: 3.625rem; padding: 0.5rem; }
-    .dm-np button.dm-flow-row { column-gap: 0.875rem; min-height: 3.625rem; padding: 0.5rem; }
-    .dm-np button.dm-flow-row > .dm-flow-row-summary { font-size: 0.8125rem; line-height: 1.4; -webkit-line-clamp: 3; }
-    /* A long symbol cuts itself inside the line it is on (never wider than the summary), so the pool's fee still
-       follows it instead of a second ellipsis. */
-    .dm-np button.dm-flow-row > .dm-flow-row-summary bdi { max-width: min(24ch, 100%); }
+    .dm-np .dm-flow-card { padding: 0.5rem 0.5rem 0.625rem 0.375rem; }
+    .dm-np .dm-flow-row { gap: 0.75rem; min-height: 3.75rem; padding: 0 0.625rem; }
+    .dm-np button.dm-flow-row { grid-template-rows: auto; grid-template-areas: "marker title edit"; column-gap: 0.75rem; row-gap: 0; min-height: 3.75rem; padding: 0 0.625rem; }
+    .dm-np button.dm-flow-row > .dm-flow-row-summary { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .dm-np .dm-flow-step[data-state="current"] .dm-flow-body,
-    .dm-np .dm-flow-body { padding: 0 0.375rem 1.125rem; }
-    .dm-np .dm-flow-head { gap: 0.875rem; margin-left: 0; padding: 0.875rem 0.125rem 0.75rem; }
-    .dm-np .dm-flow-head > .dm-step-marker { margin-top: 0; }
-    .dm-np .dm-flow-title { font-size: 1.75rem; padding-top: 0; }
-    .dm-np .dm-flow-foot { grid-template-columns: 6rem minmax(0, 1fr); column-gap: 0.5rem; }
+    .dm-np .dm-flow-body { padding: 0 0.25rem 1.375rem 0.5rem; }
+    /* The open step's head is a 60px row like the others (marker 15px down, the 28px title 16px down); its lead runs the
+       card's width under it, 66px under the row's top (new.html .lede in .st-b), the content 24px further. */
+    .dm-np .dm-flow-head { gap: 0.75rem; margin-left: 0; padding: 0.9375rem 0.125rem 1rem; }
+    .dm-np .dm-flow-head > :first-child { margin-top: 0; }
+    .dm-np .dm-flow-title { font-size: 1.75rem; margin-top: 0.0625rem; padding-top: 0; }
+    .dm-np .dm-flow-head .dm-flow-lead { margin: 1.375rem 0 0.25rem -2.75rem; }
+    .dm-np .dm-flow-foot { grid-template-columns: auto minmax(0, 1fr); column-gap: 0.625rem; }
     .dm-np .dm-flow-foot[data-first] { grid-template-columns: minmax(0, 1fr); }
     .dm-np .dm-flow-foot:not([data-final]) > .dm-btn:not(.dm-btn--sm) { height: 3.125rem; min-height: 3.125rem; }
-    .dm-np .dm-flow-foot > .dm-btn--outline:first-child { padding: 0 0.625rem; }
+    /* The rail on a phone (new.html phone polish, .conn on every row but the open step's): from under a marker to above
+       the next one, Tangerine-filled down a done step. */
+    .dm-np .dm-flow-step:not(:last-child):not([data-state="current"])::before,
+    .dm-np .dm-flow-step:not(:last-child):not([data-state="current"])::after { content: ''; position: absolute; top: 3rem; bottom: -0.75rem; left: calc(1.5625rem - 0.5px); width: 1px; border-radius: 0; background: var(--line); pointer-events: none; }
+    .dm-np .dm-flow-step:not(:last-child):not([data-state="current"])::after { background: var(--v4-tan-ring); transform: scaleY(0); transform-origin: top; transition: transform 0.45s var(--e-enter); }
+    .dm-np .dm-flow-step[data-state="done"]:not(:last-child)::after { transform: none; }
   }
 
   /* ---- 2. The preview "Your position" (new.html .pv): the position taking shape as you choose ------------------------- */
@@ -123,25 +169,37 @@
   .dm-np .dm-flow-preview-kicker { display: block; font-family: var(--font-display); font-size: 2.375rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
   /* The pool: 40px marks, its pair, In this pool and the yearly estimate as two lines, the fee as a tag. */
   .dm-np .dm-flow-pv-pool { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 0.875rem; margin: 0 0.375rem; padding: 0.875rem 0.625rem 1rem; border-bottom: 0; border-radius: 1rem; }
-  .dm-np .dm-flow-pv-pair { font-size: 1.0625rem; line-height: 1.5rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); }
+  .dm-np .dm-flow-pv-pair { font-size: 1.0625rem; line-height: normal; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); }
   /* The pair stays one line of text (it reads "ETH / TOKEN"): the first symbol keeps room for the slash and a few
      letters, the second runs inline so the line's own ellipsis cuts it; a long symbol is never hidden whole. */
   .dm-np .dm-flow-pv-pair { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dm-np .dm-flow-pv-pair > :first-child { max-width: min(24ch, calc(100% - 4em)); }
   .dm-np .dm-flow-pv-pair > :last-child { display: inline; }
-  .dm-np .dm-flow-pv-stats { display: grid; gap: 0.375rem; margin-top: 0.125rem; font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.01em; }
+  .dm-np .dm-flow-pv-stats { display: grid; gap: 0.375rem; margin-top: 0.125rem; font-size: 0.8125rem; line-height: normal; letter-spacing: -0.01em; }
   .dm-np .dm-flow-pv-stats > div { flex-wrap: nowrap; gap: 0.375rem; }
   .dm-np .dm-flow-pv-stats dt { color: var(--subtle); }
   .dm-np .dm-flow-pv-stats dd { font-weight: 500; color: var(--fg); }
   .dm-np .dm-flow-pv-stats .dm-flow-pv-apr { color: var(--in); }
-  .dm-np .dm-flow-pv-fee { margin-top: 0.125rem; border-radius: 0.375rem; background: var(--v4-w055); color: var(--subtle); }
+  .dm-np .dm-flow-pv-fee { margin-top: 0; border-radius: 0.375rem; background: var(--v4-w055); color: var(--subtle); }
+  /* The full preview (price and window) and the picture show with panel-in (new.html .pv-full, .pv-il); the pair row
+     appears as it is. On the card's hover the pair's discs part (d0 scale 1.04, d1 4px over). */
+  .dm-np .dm-flow-pv-live.dm-arrive,
+  .dm-np .dm-flow-pv-start.dm-arrive { animation: dm-np-panel 0.5s var(--e-enter) backwards; }
+  .dm-np .dm-flow-pv-pool.dm-arrive { animation: none; }
+  html:not(.dm-booted) .dm-np[data-first-load] .dm-flow-pv-live.dm-arrive { animation: dm-np-panel 0.45s var(--e-enter) 0.34s backwards; }
+  .dm-np .dm-flow-pv-pool > :first-child > * { transition: translate 0.3s var(--e-enter), scale 0.3s var(--e-enter); }
+  .dm-np .dm-flow-preview:hover .dm-flow-pv-pool > :first-child > :first-child { scale: 1.04; }
+  .dm-np .dm-flow-preview:hover .dm-flow-pv-pool > :first-child > :last-child { translate: 0.25rem 0; scale: 1.04; }
   /* Sections meet at an inset hairline (new.html .hair, 16px in). */
   .dm-np .dm-flow-pv-live,
   .dm-np .dm-flow-pv-fold[data-open] + .dm-flow-pv-start,
   .dm-np .dm-flow-pv-deposit { box-shadow: none; background: linear-gradient(var(--line), var(--line)) 1rem 0 / calc(100% - 2rem) 1px no-repeat; }
   .dm-np .dm-flow-pv-price { gap: 0; padding: 1.125rem 1rem 0.25rem; }
-  .dm-np .dm-flow-pv-label { font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.01em; color: var(--subtle); }
+  .dm-np .dm-flow-pv-label { font-size: 0.8125rem; line-height: normal; font-weight: 500; letter-spacing: -0.01em; color: var(--subtle); }
+  .dm-np .dm-flow-pv-price-head { min-height: 0; }
+  .dm-np .dm-flow-pv-price-head .dm-pill { min-height: 0; padding-block: 0; font-size: 0.8125rem; line-height: normal; }
   .dm-np .dm-flow-pv-price-line { gap: 0.5625rem; margin-top: 0.75rem; }
+  .dm-np .dm-flow-preview[data-step="pool"] .dm-flow-pv-price-line { display: none; }
   .dm-np .dm-flow-pv-price-line > .dm-fig-lg { font-family: var(--font-display); font-size: 3.25rem; line-height: 1; font-weight: 400; letter-spacing: -0.025em; color: var(--fg); }
   .dm-np .dm-flow-pv-unit { font-size: 0.8125rem; line-height: 1.125rem; letter-spacing: -0.01em; color: var(--subtle); }
   .dm-np .dm-flow-preview [data-preview-waits] { color: var(--muted); }
@@ -156,7 +214,9 @@
   .dm-np .dm-flow-pv-range-axis { height: 1px; background: var(--lip); }
   .dm-np .dm-flow-pv-range-grip,
   .dm-np .dm-flow-pv-range[data-in="false"] .dm-flow-pv-range-grip { width: 0.75rem; height: 1.375rem; margin: -0.6875rem 0 0 -0.375rem; border-radius: 0; background: var(--dm-np-handle) center / contain no-repeat; box-shadow: none; }
-  .dm-np .dm-flow-preview:hover .dm-flow-pv-range[data-in="true"] .dm-flow-pv-range-grip { background-image: var(--dm-np-handle-lit); }
+  .dm-np .dm-flow-pv-range-grip { transition: background-image 0.2s var(--e-std) allow-discrete, rotate 0.4s var(--e-enter); }
+  .dm-np .dm-flow-pv-range:hover[data-in="true"] .dm-flow-pv-range-grip { background-image: var(--dm-np-handle-lit); }
+  .dm-np .dm-flow-pv-range-ping { display: none; }
   .dm-np .dm-flow-pv-range[data-in="false"] .dm-flow-pv-range-grip { background-image: var(--dm-np-handle-quiet); }
   .dm-np .dm-flow-pv-range[data-in="false"] .dm-flow-pv-range-band { background: linear-gradient(180deg, transparent, var(--v4-w05)); box-shadow: none; }
   .dm-np .dm-flow-pv-range[data-in="false"] .dm-flow-pv-range-edge::before { background: var(--strong); }
@@ -164,30 +224,84 @@
   .dm-np .dm-flow-pv-range-now::before { left: -0.5px; width: 1px; background: linear-gradient(var(--muted) 50%, transparent 0) 0 0 / 1px 0.3125rem repeat-y; opacity: 0.8; }
   .dm-np .dm-flow-pv-range-dot { box-shadow: 0 0 0 0.1875rem rgb(247 241 234 / 0.14); }
   .dm-np .dm-flow-pv-range-mark > span { font-size: 0.75rem; line-height: 1rem; font-weight: 400; letter-spacing: -0.01em; color: var(--subtle); }
+  /* Look before you choose (new.html linked hovers): pointing at Wider stretches the band about today's price (x1.32),
+     Custom a little less and paler (x1.12, .62), while the distances and the hint fade out and the figures quiet to .35;
+     pointing at Lowest or Highest turns that handle (-18deg, lit) and warms its figure. PositionPreview writes the band's
+     ends and today's price (--pv-lo, --pv-hi, --pv-mid, numbers of the window's width); with nothing pointed at, the band
+     is drawn exactly where they are. */
+  .dm-np .dm-flow-pv-range { --lo: calc((var(--pv-mid, 50) + (var(--pv-lo, 0) - var(--pv-mid, 50)) * var(--k, 1)) * 1%); --hi: calc((var(--pv-mid, 50) + (var(--pv-hi, 100) - var(--pv-mid, 50)) * var(--k, 1)) * 1%); }
+  .dm-np .dm-flow-pv-range-band { transition: clip-path 0.35s var(--e-enter), opacity 0.2s var(--e-std); }
+  .dm-np .dm-flow-pv-range-edge { transition: translate 0.35s var(--e-enter); }
+  .dm-np :is(.dm-flow-width-line, .dm-flow-bound-away, .dm-flow-bound-price) { transition: opacity 0.2s var(--e-std), color 0.2s var(--e-std); }
+  @media (hover: hover) {
+    .dm-np:has(.dm-flow-widths > [data-width="wide"]:hover:not([aria-checked="true"])) .dm-flow-pv-range { --k: 1.32; }
+    .dm-np:has(.dm-flow-widths > [data-width="custom"]:hover:not([aria-checked="true"])) .dm-flow-pv-range { --k: 1.12; }
+    .dm-np:has(.dm-flow-widths > [data-width="custom"]:hover:not([aria-checked="true"])) .dm-flow-pv-range-band { opacity: 0.62; }
+    .dm-np:has(.dm-flow-widths > :is([data-width="wide"], [data-width="custom"]):hover:not([aria-checked="true"])) :is(.dm-flow-pv-range-mark > span, .dm-flow-width-line, .dm-flow-bound-away) { opacity: 0; }
+    .dm-np:has(.dm-flow-widths > :is([data-width="wide"], [data-width="custom"]):hover:not([aria-checked="true"])) :is(.dm-flow-pv-bounds dd, .dm-flow-bound-price) { opacity: 0.35; }
+    .dm-np:has([data-range-controls] > :first-child:hover) .dm-flow-pv-range-edge[data-end="lower"] .dm-flow-pv-range-grip,
+    .dm-np:has([data-range-controls] > :last-child:hover) .dm-flow-pv-range-edge[data-end="upper"] .dm-flow-pv-range-grip { rotate: -18deg; background-image: var(--dm-np-handle-lit); }
+    .dm-np:has([data-range-controls] > :first-child:hover) .dm-flow-pv-range-mark--lo > span,
+    .dm-np:has([data-range-controls] > :last-child:hover) .dm-flow-pv-range-mark--hi > span { color: var(--fg); }
+    .dm-np:has([data-range-controls] > :first-child:hover) .dm-flow-pv-bounds > div:first-child dd,
+    .dm-np:has([data-range-controls] > :last-child:hover) .dm-flow-pv-bounds > div:last-child dd { color: #ffc69f; }
+  }
+  /* Where the ember rests with no pointer (new.html restX = card left + 70, restY = card top - 40): EmberLight puts it 6px
+     right of and 34px over the first [data-ember-rest] it finds, so the point stands 64px in and 6px over the card. */
+  .dm-np .dm-np-ember-at,
+  .dm-np [data-stage-card="review"] [data-stage="review"] > section:has(> h3[id$="steps-heading"]) > .dm-np-ember-at { position: absolute; top: -0.375rem; left: 4rem; width: 1px; height: 1px; margin: 0; pointer-events: none; }
+  /* The right card's lit edge and wash rest on (new.html eo2: gated by the ember's distance only; the radial keeps it
+     local), so at rest, with the ember just above it, its top-left rim glows. The steps card keeps the pointer's gate. */
+  .dm-np .dm-flow-preview.dm-lit::before,
+  .dm-np .dm-flow-preview.dm-lit::after { opacity: 1; }
+
   /* Lowest / Highest (new.html .pv-b) */
-  .dm-np .dm-flow-pv-bounds { gap: 1rem; padding: 1rem 1rem 0.375rem; }
-  .dm-np .dm-flow-pv-bounds dt { font-size: 0.78125rem; line-height: 1.125rem; letter-spacing: -0.01em; color: var(--subtle); }
-  .dm-np .dm-flow-pv-bounds dd { margin-top: 0.25rem; font-size: 1.0625rem; line-height: 1.5rem; font-weight: 500; color: var(--fg); }
+  .dm-np .dm-flow-pv-bounds { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; padding: 1rem 1rem 0.375rem; }
+  .dm-np .dm-flow-pv-bounds > div:last-child { text-align: right; }
+  .dm-np .dm-flow-preview[data-step="range"] .dm-flow-pv-bounds { display: grid; }
+  .dm-np .dm-flow-preview[data-step="range"] .dm-flow-pv-live { padding-bottom: 0; }
+  .dm-np .dm-flow-pv-bounds dt { font-size: 0.78125rem; line-height: normal; letter-spacing: -0.01em; color: var(--subtle); }
+  .dm-np .dm-flow-pv-bounds dd { margin-top: 0.375rem; font-size: 1.0625rem; line-height: normal; font-weight: 500; color: var(--fg); transition: color 0.2s var(--e-std), opacity 0.2s var(--e-std); }
+  .dm-np .dm-flow-pv-range-mark > span { transition: opacity 0.2s var(--e-std), color 0.2s var(--e-std); }
 
   /* Before a pool: the picture (new.html .pv-il), its caption and the 2 x 2 legend. */
   .dm-np .dm-flow-pv-start { padding: 0.375rem 1rem 0.25rem; }
   .dm-np .dm-flow-pv-stage::before { display: none; }
-  .dm-np .dm-flow-preview-example { margin: 0.625rem 0 0; padding: 0; font-size: 0.78125rem; line-height: 1.125rem; color: var(--subtle); text-align: center; }
-  .dm-np .dm-flow-pv-art .band-0 { stop-color: var(--in); stop-opacity: 0; }
-  .dm-np .dm-flow-pv-art .band-1 { stop-color: var(--in); stop-opacity: 0.16; }
-  .dm-np .dm-flow-pv-art .edge-0 { stop-color: var(--in); stop-opacity: 0; }
-  .dm-np .dm-flow-pv-art .edge-1 { stop-color: var(--in); stop-opacity: 0.45; }
-  .dm-np .dm-flow-pv-art .line-out { stroke: var(--subtle); stroke-opacity: 0.6; }
+  .dm-np .dm-flow-preview-example { margin: 0.625rem 0 0; padding: 0; font-size: 0.78125rem; line-height: normal; color: var(--subtle); text-align: center; }
+  /* The picture (new.html .il): full width at its own 360 x 150 proportion, no faded sides. Once, as the inner load
+     moment (new.html .fast): the curve draws from the left (.6s at .2s), the pips pop (.3s from .48s), the domino fades
+     in (.35s at .5s). The lines keep a still endless hold, the shared decorative motion's mark (render tests). */
+  .dm-np .dm-flow-pv-stage { height: auto; margin-top: 0.375rem; }
+  .dm-np .dm-flow-pv-stage > svg { width: 100%; max-width: none; height: auto; }
+  .dm-np .dm-flow-pv-art { overflow: visible; -webkit-mask-image: none; mask-image: none; }
+  .dm-np .dm-flow-pv-art .band { fill: var(--in); fill-opacity: 0.08; }
+  .dm-np .dm-flow-pv-art .edge { stroke: var(--in); stroke-opacity: 0.45; stroke-width: 1px; }
+  .dm-np .dm-flow-pv-art .line { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: none; stroke-dashoffset: 0; animation: dm-np-hold 10s linear infinite; }
+  .dm-np .dm-flow-pv-art .line-out { stroke: var(--subtle); stroke-opacity: 1; stroke-width: 1.5px; }
+  .dm-np .dm-flow-pv-art .line-in { stroke: var(--tan); stroke-opacity: 1; stroke-width: 1.75px; }
+  .dm-np .dm-flow-pv-art .reveal { animation: dm-np-reveal 0.6s var(--e-enter) 0.2s backwards; }
+  .dm-np .dm-flow-pv-art .pip { opacity: 1; translate: none; scale: none; fill: none; transform-box: fill-box; transform-origin: 50% 50%; animation: dm-v4-pip 0.3s var(--e-pop) 0.48s backwards; }
+  .dm-np .dm-flow-pv-art .pip-2 { animation-delay: 0.54s; }
+  .dm-np .dm-flow-pv-art .pip-3 { animation-delay: 0.57s; }
+  .dm-np .dm-flow-pv-art .pip-4 { animation-delay: 0.6s; }
+  .dm-np .dm-flow-pv-art .pip-halo { fill: var(--tan); fill-opacity: 0.14; }
+  .dm-np .dm-flow-pv-art .pip-light { fill: #ffd7ba; fill-opacity: 0.5; }
+  .dm-np .dm-flow-pv-art .pip-core { fill: var(--tan); }
+  .dm-np .dm-flow-pv-art .dom { animation: dm-v4-fade 0.35s var(--e-std) 0.5s backwards; }
+  .dm-np .dm-flow-pv-art .dom-face { fill: var(--tan); }
+  .dm-np .dm-flow-pv-art .dom-groove { stroke: var(--tan-fg); stroke-opacity: 0.55; stroke-width: 1.2px; stroke-linecap: round; }
+  .dm-np .dm-flow-pv-art .dom-pip { fill: var(--tan-fg); }
   .dm-np .dm-flow-pv-legend { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.625rem 1rem; margin: 1.125rem 0.125rem 0.625rem; padding: 0.875rem 0 0; box-shadow: inset 0 1px 0 var(--line); }
   @media (min-width: 640px) and (max-width: 899px) {
     .dm-np .dm-flow-pv-legend { grid-template-columns: repeat(4, auto); justify-content: center; column-gap: 1.75rem; }
   }
-  .dm-np .dm-flow-pv-legend > li { gap: 0.5625rem; font-size: 0.78125rem; line-height: 1.125rem; letter-spacing: -0.01em; color: var(--muted); }
+  .dm-np .dm-flow-pv-legend > li { gap: 0.5625rem; font-size: 0.78125rem; line-height: normal; letter-spacing: -0.01em; color: var(--muted); }
   .dm-np .dm-flow-pv-swatch { width: 1rem; height: 0.625rem; }
   .dm-np .dm-flow-pv-swatch[data-swatch="in"]::before { background: var(--tan); box-shadow: none; }
   .dm-np .dm-flow-pv-swatch[data-swatch="out"]::before { background: var(--subtle); }
   .dm-np .dm-flow-pv-swatch[data-swatch="band"]::before { height: 0.625rem; border-radius: 2px; background: rgb(95 208 154 / 0.12); box-shadow: inset 0 1px 0 rgb(95 208 154 / 0.5), inset 0 -1px 0 rgb(95 208 154 / 0.5); }
-  .dm-np .dm-flow-pv-swatch[data-swatch="fees"]::before { background: var(--tan); box-shadow: 0.4375rem -0.1875rem 0 -0.5px rgb(255 157 98 / 0.6); }
+  /* Fees earned: one pip as the picture draws it (a Tangerine dot in its faint halo). */
+  .dm-np .dm-flow-pv-swatch[data-swatch="fees"]::before { left: 0.3625rem; width: 0.275rem; height: 0.275rem; margin-top: -0.1375rem; border-radius: 50%; background: var(--tan); box-shadow: 0 0 0 0.1375rem rgb(255 157 98 / 0.14); }
 
   /* The deposit and its total, as summary rows. */
   .dm-np .dm-flow-pv-deposit { padding: 0.625rem 1rem 0.5rem; }
@@ -232,10 +346,46 @@
   .dm-np .dm-flow-hit-meta { font-size: 0.78125rem; line-height: 1.125rem; letter-spacing: -0.01em; }
   .dm-np .dm-flow-hit > .dm-chip { transition: box-shadow 0.2s var(--e-std), color 0.18s var(--e-std); }
   .dm-np .dm-flow-hit:hover > .dm-chip { color: var(--muted); }
+  /* On a row's hover its first tag (the network) takes a lime ring, the token's disc grows a little (new.html .trow,
+     .prow, .sel), and a pool row's APR brightens. */
+  .dm-np .dm-flow-hit:hover > .dm-chip,
+  .dm-np [data-picker-variant="create"] li.dm-mkt-option:hover :is(.dm-flow-pool-net, .dm-flow-pool-chips > .dm-chip:first-child),
+  .dm-np [data-chosen-pool]:hover [data-pool-chips] > .dm-chip:first-child { box-shadow: inset 0 0 0 1px rgb(204 255 0 / 0.45); color: var(--muted); }
+  .dm-np .dm-flow-hit > :first-child { transition: scale 0.3s var(--e-enter); }
+  .dm-np .dm-flow-hit:hover > :first-child { scale: 1.06; }
+  /* (flow.css pins the APR's colour with !important in an earlier layer, which this layer cannot outrank: the text fill does it.) */
+  .dm-np [data-picker-variant="create"] .dm-mkt-option-apr[data-row-apr] > span:last-child { -webkit-text-fill-color: currentColor; transition: -webkit-text-fill-color 0.18s var(--e-std); }
+  .dm-np [data-picker-variant="create"] li.dm-mkt-option:hover .dm-mkt-option-apr:is([data-row-apr="estimate"], [data-row-apr="stale"]) > span:last-child { -webkit-text-fill-color: #7fdcae; }
   .dm-np .dm-flow-listbox-empty { padding: 0.75rem 0.875rem; font-size: 0.84375rem; line-height: 1.5; color: var(--muted); }
+  /* On a phone a result's network tag goes on its own line under the name, the chevron keeps its column (new.html phone
+     polish .trow: 32px, the words, 28px; 12px and 6px apart; 10px 4px 10px 14px). */
+  @media (max-width: 767px) {
+    .dm-np .dm-flow-hit:has(> .dm-chip) { display: grid; grid-template-columns: 2rem minmax(0, 1fr) 1.75rem; grid-auto-rows: auto; column-gap: 0.75rem; row-gap: 0.375rem; align-content: center; min-height: 3.875rem; padding: 0.625rem 0.25rem 0.625rem 0.875rem; }
+    .dm-np .dm-flow-hit:has(> .dm-chip) > :first-child { grid-column: 1; grid-row: 1 / span 2; }
+    .dm-np .dm-flow-hit:has(> .dm-chip) > :not(:first-child) { grid-column: 2; min-width: 0; }
+    .dm-np .dm-flow-hit:has(> .dm-chip) > .dm-chip { justify-self: start; }
+    .dm-np .dm-flow-hit:has(> .dm-chip)::after { grid-column: 3; grid-row: 1 / span 2; width: 1.75rem; }
+  }
 
   /* Existing pools (new.html .plist, .prow): flat rows, a pip and the marks parting on hover, the chosen row lit. */
   .dm-np .dm-flow-pools-legend { margin: 0.25rem 0 0.625rem; font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.01em; color: var(--subtle); }
+  /* Once a token is picked the whole block (label, band, rows; or its resting shape) rises from blur, the rows together
+     (new.html .plist panel-in .5s), never one by one. */
+  .dm-np .dm-flow-pool-rows > li { animation: none; }
+  .dm-np [data-picker-variant="create"] > :is(fieldset, div[aria-hidden="true"]) { animation: dm-np-panel 0.5s var(--e-enter) backwards; }
+  /* The column band over the rows (new.html .band.pcols): Pool, TVL, 24h volume, APR, once, so the rows show their
+     figures alone. Drawn where the figures stand beside the pair; where they stack (a phone, a narrow list) the rows keep
+     their own labels and there is no band. */
+  .dm-np .dm-flow-pools-band { display: none; }
+  @media (min-width: 768px) {
+    @container dm-pools (width > 36.5rem) {
+      .dm-np .dm-flow-pools-band { display: grid; grid-template-columns: 2.25rem minmax(0, 1fr) 4.5rem 6rem 6rem; align-items: center; height: 2.5rem; margin: 2px 0 0.375rem; padding: 0 1rem 0 1.25rem; border-radius: 0.75rem; background: var(--v4-w045); font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.01em; color: var(--subtle); }
+      .dm-np .dm-flow-pools-band > :nth-child(n + 3) { text-align: right; }
+      .dm-np [data-picker-variant="create"]:has(.dm-flow-pools-band) .dm-flow-pool-figures > [data-provider-figure] > div > span:first-child,
+      .dm-np [data-picker-variant="create"]:has(.dm-flow-pools-band) .dm-flow-pool-figures > .dm-mkt-option-apr > span:first-child { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+      .dm-np [data-picker-variant="create"]:has(.dm-flow-pools-band) .dm-flow-pool-figures > [data-provider-figure] > div > span:last-child { font-weight: 500; color: var(--fg); }
+    }
+  }
   .dm-np [data-picker-variant="create"] .dm-mkt-option { position: relative; border-radius: 0.875rem; transition: background-color 0.18s var(--e-std), box-shadow 0.2s var(--e-std); }
   .dm-np [data-picker-variant="create"] li.dm-mkt-option:hover { background: var(--v4-w045); }
   .dm-np [data-picker-variant="create"] .dm-mkt-option:has(input:checked) { background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.5); }
@@ -265,10 +415,25 @@
   }
   /* No pools, or none to read: a quiet line at the step's start; the text is the code's. */
   .dm-np :is([data-pools-empty], [data-pools-unavailable]) { padding: 0.875rem 0.125rem 0.25rem; font-size: 0.875rem; line-height: 1.5; color: var(--muted); text-align: left; }
+  /* No pools (board G2 .empt): a dashed domino outline, then the line. The text box stays a block (its text is read
+     whole); the outline is drawn in its padding. Can't be read (G3): the note's dot. */
+  .dm-np [data-pools-empty] { position: relative; min-height: 3.5rem; padding: 1.09375rem 0 1.09375rem 3.375rem; }
+  .dm-np [data-pools-empty]::before { content: ''; position: absolute; left: 0; top: 50%; width: 2.5rem; height: 2.5rem; margin-top: -1.25rem; background: var(--faint); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 44' fill='none'%3E%3Crect x='14.5' y='5.5' width='15' height='33' rx='4' stroke='%23000' stroke-width='1.4' stroke-dasharray='3 3'/%3E%3Cpath d='M17.5 22h9' stroke='%23000' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 44' fill='none'%3E%3Crect x='14.5' y='5.5' width='15' height='33' rx='4' stroke='%23000' stroke-width='1.4' stroke-dasharray='3 3'/%3E%3Cpath d='M17.5 22h9' stroke='%23000' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat; }
+  .dm-np [data-pools-unavailable] { position: relative; padding-left: 1.125rem; }
+  .dm-np [data-pools-unavailable]::before { content: ''; position: absolute; left: 2px; top: calc(0.875rem + 0.62em); width: 0.375rem; height: 0.375rem; border-radius: var(--radius-pill); background: var(--subtle); box-shadow: 0 0 0 0.1875rem var(--v4-w06); }
 
   /* The chosen pool (new.html .sel): Tangerine wash and ring, the check that stamps, Change pool as a small pill. */
-  .dm-np .dm-flow-panel[data-chosen-pool] { min-height: 4.875rem; padding: 0.625rem 0.625rem 0.625rem 1.125rem; border-radius: 1.125rem; background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.5); animation: dm-np-panel 0.45s var(--e-enter) backwards; }
+  .dm-np .dm-flow-panel[data-chosen-pool] { min-height: 4.875rem; padding: 0.625rem 0.625rem 0.625rem 1.125rem; border-radius: 1.125rem; background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.5); animation: dm-np-panel 0.5s var(--e-enter) backwards; }
   .dm-np [data-chosen-pool] .dm-flow-pool-head { gap: 0.5rem 0.875rem; }
+  /* On a phone Change pool drops under the name (new.html phone polish .sel: 26px and the pool; 12px rows; 14 12 14 16). */
+  @media (max-width: 767px) {
+    .dm-np .dm-flow-panel[data-chosen-pool] { padding: 0.875rem 0.75rem 0.875rem 1rem; }
+    .dm-np [data-chosen-pool] .dm-flow-pool-head { display: grid; grid-template-columns: 1.5rem auto minmax(0, 1fr); align-items: center; gap: 0.75rem 0.875rem; }
+    .dm-np [data-chosen-pool] .dm-flow-pool-head > .dm-btn { grid-column: 2 / -1; justify-self: start; margin-left: 0; }
+    /* Its 38px face keeps a 44px target (new.html .more::after, 3px over and under). */
+    .dm-np :is([data-stage="token"], [data-stage="pool"]) .dm-btn--ghost.dm-btn--sm { position: relative; }
+    .dm-np :is([data-stage="token"], [data-stage="pool"]) .dm-btn--ghost.dm-btn--sm::after { content: ''; position: absolute; inset: -0.1875rem 0; }
+  }
   .dm-np .dm-flow-chosen-check { width: 1.5rem; height: 1.5rem; background: transparent; box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.6); color: var(--tan); animation: dm-np-stamp 0.45s var(--e-pop) 0.12s backwards; }
   .dm-np .dm-flow-chosen-check path { animation: none; }
   .dm-np [data-chosen-pool] .dm-flow-pool-pair { font-size: 0.9375rem; line-height: 1.375rem; font-weight: 500; }
@@ -288,17 +453,19 @@
 
   /* Create a new pool (advanced) (new.html .mk): a quiet line led by the chevron, which turns as it opens. */
   .dm-np [data-pool-advanced] { border-radius: 0; background: none; box-shadow: none; }
-  .dm-np [data-pool-advanced] > summary { justify-content: flex-start; gap: 0.5rem; width: max-content; max-width: 100%; min-height: 2.25rem; padding: 0 0.75rem 0 0.375rem; border-radius: 0.625rem; font-size: 0.84375rem; font-weight: 500; color: var(--muted); transition: color 0.18s var(--e-std), background-color 0.18s var(--e-std), scale 0.1s var(--e-press); }
+  .dm-np [data-pool-advanced] > summary { justify-content: flex-start; gap: 0.5rem; width: max-content; max-width: 100%; min-height: 2.25rem; padding: 0 0.75rem 0 0.375rem; border-radius: 0.625rem; font-size: 1rem; font-weight: 400; letter-spacing: normal; color: var(--muted); transition: color 0.18s var(--e-std), background-color 0.18s var(--e-std), scale 0.1s var(--e-press); }
   .dm-np [data-pool-advanced] > summary::before { order: -1; width: 0.875rem; height: 0.875rem; margin: 0; border-radius: 0; box-shadow: none; background: var(--subtle); -webkit-mask: var(--dm-np-chev) center / contain no-repeat; mask: var(--dm-np-chev) center / contain no-repeat; rotate: 0deg; transition: rotate 0.25s var(--e-enter), translate 0.25s var(--e-enter), background-color 0.18s var(--e-std); }
   .dm-np [data-pool-advanced] > summary:hover { background: var(--v4-w04); color: var(--fg); }
   .dm-np [data-pool-advanced] > summary:hover::before { box-shadow: none; background: var(--fg); translate: 2px 0; }
   .dm-np [data-pool-advanced][open] > summary::before { rotate: 90deg; translate: 0 0; background: var(--fg); }
   .dm-np [data-pool-advanced] > summary:active { scale: 0.98; }
+  @media (max-width: 767px) { .dm-np [data-pool-advanced] > summary { min-height: 2.75rem; } }
   .dm-np .dm-details[data-pool-advanced] > :not(summary) { padding: 0.5rem 0 0.25rem 1.75rem; }
   .dm-np [data-pool-advanced] .text-caption { max-width: 62ch; font-size: 0.84375rem; line-height: 1.5; color: var(--muted); }
   .dm-np [data-network-creation] { font-size: 0.84375rem; line-height: 1.5; color: var(--muted); }
 
   @media (max-width: 767px) {
+    .dm-np .dm-flow-combo-input { font-size: 1rem; }
     .dm-np .dm-flow-hit { gap: 0.75rem; min-height: 3.75rem; padding: 0.5rem 0.25rem 0.5rem 1.125rem; }
     .dm-np .dm-flow-hit::after { width: 1.625rem; height: 1.625rem; }
   }
@@ -321,26 +488,40 @@
 
   /* ---- 4. Step 2, Range (new.html .today, .chs/.ch, .hint, .bds/.bd) ------------------------------------------------ */
   .dm-np .dm-flow-now { align-items: baseline; gap: 0.25rem 1rem; padding: 0 0.125rem 0.875rem; border-radius: 0; background: none; box-shadow: none; }
-  .dm-np .dm-flow-now-label { font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.01em; color: var(--subtle); }
-  .dm-np .dm-flow-now-price { font-size: 0.9375rem; line-height: 1.375rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); }
+  .dm-np .dm-flow-now-label { font-size: 0.8125rem; line-height: normal; font-weight: 500; letter-spacing: -0.01em; color: var(--subtle); }
+  .dm-np .dm-flow-now-price { font-size: 0.9375rem; line-height: normal; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); }
   /* Closer / Wider / Custom (V4 .chs): one framed track of three tall choices, each with its little drawing over its word;
      the chosen one lighter with the lip ring and its band green. The choice is aria-checked (a radio group). */
   .dm-np .dm-flow-widths { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.1875rem; height: auto; padding: 0.1875rem; border-radius: 1.0625rem; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); }
-  .dm-np .dm-flow-widths > .dm-seg-item { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.625rem; height: 5.25rem; min-height: 5.25rem; padding: 0 0.5rem; border-radius: 0.875rem; background: transparent; box-shadow: none; font-size: 0.84375rem; font-weight: 500; color: var(--muted); transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std), box-shadow 0.18s var(--e-std), scale 0.1s var(--e-press); }
+  .dm-np .dm-flow-widths > .dm-seg-item { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.625rem; height: 5.25rem; min-height: 5.25rem; padding: 0 0.5rem; border-radius: 0.875rem; background: transparent; box-shadow: none; font-size: 1rem; font-weight: 400; letter-spacing: normal; color: var(--muted); transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std), box-shadow 0.18s var(--e-std), scale 0.1s var(--e-press); }
   .dm-np .dm-flow-widths > .dm-seg-item:hover { background: var(--v4-w04); box-shadow: none; color: var(--fg); }
   .dm-np .dm-flow-widths > .dm-seg-item[aria-checked="true"],
   .dm-np .dm-flow-widths > .dm-seg-item[aria-checked="true"]:hover { background: var(--v4-w08); box-shadow: inset 0 0 0 1px var(--lip); color: var(--fg); }
   .dm-np .dm-flow-widths > .dm-seg-item:active { scale: 0.97; }
   /* The drawing (new.html .gl-*): an axis, today's price dotted, the band with a handle at each side. */
-  .dm-np .dm-flow-width-art { width: 3.5rem; height: 1.25rem; background: linear-gradient(rgb(255 236 220 / 0.2), rgb(255 236 220 / 0.2)) center / 100% 1px no-repeat; }
-  .dm-np .dm-flow-width-art::after { top: 0; bottom: 0; left: 50%; width: 1px; border: 0; background: linear-gradient(var(--subtle) 50%, transparent 0) 0 0 / 1px 0.21875rem repeat-y; }
-  .dm-np .dm-flow-width-art > span { inset: 0.1875rem 30%; border: 0; border-radius: 2px; background: var(--v4-w06); box-shadow: inset 1.5px 0 0 var(--muted), inset -1.5px 0 0 var(--muted), inset 0 0 0 1px rgb(255 236 220 / 0.3); transition: background-color 0.2s var(--e-std), box-shadow 0.2s var(--e-std), scale 0.3s var(--e-enter); }
-  .dm-np .dm-flow-width-art[data-width-art="wide"] > span { inset-inline: 5%; }
-  .dm-np .dm-flow-width-art[data-width-art="custom"] > span { inset: 0.125rem 12% 0.3125rem 38%; box-shadow: inset 1.5px 0 0 var(--muted), inset -1.5px 0 0 var(--muted); background-image: repeating-linear-gradient(90deg, rgb(255 236 220 / 0.3) 0 2px, transparent 2px 0.25rem), repeating-linear-gradient(90deg, rgb(255 236 220 / 0.3) 0 2px, transparent 2px 0.25rem); background-size: 100% 1px; background-position: 0 0, 0 100%; background-repeat: no-repeat; }
+  /* 56 x 20 (new.html .gl-*): the axis from 2 to 54, today's price dotted (1.5 on, 2 off) at the middle, a thin band
+     8px tall (y 6-14) with a 1px ring, and a 1.6px handle at each side standing 2px out of it. Closer 19-37, Wider 9-47,
+     Custom 14-44 with dashed edges. */
+  .dm-np .dm-flow-width-art { width: 3.5rem; height: 1.25rem; background: linear-gradient(rgb(255 236 220 / 0.2), rgb(255 236 220 / 0.2)) center / calc(100% - 0.25rem) 1px no-repeat; }
+  .dm-np .dm-flow-width-art::after { top: 0.125rem; bottom: 0.125rem; left: 50%; width: 1px; margin-left: -0.5px; border: 0; background: linear-gradient(var(--subtle) 0 1.5px, transparent 0) 0 0 / 1px 0.21875rem repeat-y; }
+  .dm-np .dm-flow-width-art > span { inset: 0.375rem 33.93%; border: 0; border-radius: 1.5px; background: rgb(255 236 220 / 0.06); box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.3); transition: background-color 0.2s var(--e-std), box-shadow 0.2s var(--e-std), scale 0.3s var(--e-enter); }
+  .dm-np .dm-flow-width-art > span::before,
+  .dm-np .dm-flow-width-art > span::after { content: ''; position: absolute; top: -2px; bottom: -2px; width: 1.6px; border-radius: 1px; background: var(--muted); transition: background-color 0.2s var(--e-std); }
+  .dm-np .dm-flow-width-art > span::before { left: -0.8px; }
+  .dm-np .dm-flow-width-art > span::after { right: -0.8px; }
+  .dm-np .dm-flow-width-art[data-width-art="wide"] > span { inset-inline: 16.07%; }
+  .dm-np .dm-flow-width-art[data-width-art="custom"] > span { inset: 0.375rem 21.43% 0.375rem 25%; box-shadow: none; background-image: repeating-linear-gradient(90deg, rgb(255 236 220 / 0.3) 0 2px, transparent 2px 0.25rem), repeating-linear-gradient(90deg, rgb(255 236 220 / 0.3) 0 2px, transparent 2px 0.25rem); background-size: 100% 1px; background-position: 0 0, 0 100%; background-repeat: no-repeat; }
   .dm-np .dm-flow-widths > .dm-seg-item:hover .dm-flow-width-art > span { scale: 1.08 1; }
-  .dm-np .dm-seg-item[aria-checked="true"] .dm-flow-width-art > span { background-color: rgb(95 208 154 / 0.16); box-shadow: inset 1.5px 0 0 var(--in), inset -1.5px 0 0 var(--in), inset 0 0 0 1px rgb(95 208 154 / 0.6); }
-  .dm-np .dm-seg-item[aria-checked="true"] .dm-flow-width-art[data-width-art="custom"] > span { box-shadow: inset 1.5px 0 0 var(--in), inset -1.5px 0 0 var(--in); background-image: repeating-linear-gradient(90deg, rgb(95 208 154 / 0.6) 0 2px, transparent 2px 0.25rem), repeating-linear-gradient(90deg, rgb(95 208 154 / 0.6) 0 2px, transparent 2px 0.25rem); }
-  .dm-np .dm-flow-width-line { min-height: 2.5rem; margin: 0.25rem 0.125rem 0.25rem; padding: 0; font-size: 0.8125rem; line-height: 1.25rem; letter-spacing: -0.01em; color: var(--subtle); }
+  .dm-np .dm-seg-item[aria-checked="true"] .dm-flow-width-art > span { background-color: rgb(95 208 154 / 0.16); box-shadow: inset 0 0 0 1px rgb(95 208 154 / 0.6); }
+  .dm-np .dm-seg-item[aria-checked="true"] .dm-flow-width-art > span::before,
+  .dm-np .dm-seg-item[aria-checked="true"] .dm-flow-width-art > span::after { background: var(--in); }
+  .dm-np .dm-seg-item[aria-checked="true"] .dm-flow-width-art[data-width-art="custom"] > span { box-shadow: none; background-image: repeating-linear-gradient(90deg, rgb(95 208 154 / 0.6) 0 2px, transparent 2px 0.25rem), repeating-linear-gradient(90deg, rgb(95 208 154 / 0.6) 0 2px, transparent 2px 0.25rem); }
+  /* The step's rhythm (new.html .today 14px, then the track; .hint 12px 2px 18px, then Lowest / Highest). */
+  .dm-np .dm-flow-stack[data-stage="range"] { gap: 0; }
+  .dm-np .dm-flow-stack[data-stage="token"] > [data-picker="pool"] { margin-top: 0.375rem; }
+  .dm-np .dm-flow-stack[data-stage="range"] > .grid:not(:has(.dm-flow-width-line)) { margin-bottom: 1.125rem; }
+  .dm-np .dm-flow-stack[data-stage="range"] > :is(.dm-hint, .dm-flow-position) { margin-top: 1rem; }
+  .dm-np .dm-flow-width-line { min-height: 0; margin: 0.25rem 0.125rem 1.125rem; padding: 0; font-size: 0.8125rem; line-height: normal; letter-spacing: -0.01em; color: var(--subtle); }
 
   /* Lowest / Highest (new.html .bds): two flat columns split by a hairline, a ring and a tint only on hover; the figure
      in the serif (it already has its own span), the words around it small. */
@@ -349,10 +530,11 @@
   .dm-np .dm-flow-bound + .dm-flow-bound::before { content: ''; position: absolute; left: 0; top: 0.875rem; bottom: 0.875rem; width: 1px; background: var(--line); transition: opacity 0.2s var(--e-std); pointer-events: none; }
   .dm-np .dm-flow-bounds:hover .dm-flow-bound + .dm-flow-bound::before { opacity: 0; }
   .dm-np .dm-flow-bound:hover { background: var(--v4-w045); box-shadow: inset 0 0 0 1px var(--lip); }
-  .dm-np .dm-flow-bound-label { font-size: 0.78125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.01em; color: var(--subtle); }
-  .dm-np .dm-flow-bound-away { font-size: 0.78125rem; line-height: 1.125rem; letter-spacing: -0.01em; color: var(--subtle); }
-  .dm-np .dm-flow-bound-price { font-size: 0.84375rem; line-height: 2.125rem; font-weight: 400; letter-spacing: -0.01em; color: var(--muted); }
-  .dm-np .dm-flow-bound-price .dm-flow-fig { font-family: var(--font-display); font-size: 2rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); transition: color 0.2s var(--e-std); }
+  .dm-np .dm-flow-bound-label { font-size: 0.78125rem; line-height: normal; font-weight: 500; letter-spacing: -0.01em; color: var(--subtle); }
+  .dm-np .dm-flow-bound-away { font-size: 0.78125rem; line-height: normal; letter-spacing: -0.01em; color: var(--subtle); }
+  .dm-np .dm-flow-bound-price { font-size: 0.84375rem; line-height: 1; font-weight: 400; letter-spacing: -0.01em; color: var(--muted); }
+  .dm-np .dm-flow-bound-price bdi { overflow: clip; vertical-align: baseline; }
+  .dm-np .dm-flow-bound-price .dm-flow-fig { margin-inline: 0.21875rem; font-family: var(--font-display); font-size: 2rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); transition: color 0.2s var(--e-std); }
   .dm-np .dm-flow-bound:hover .dm-flow-bound-price .dm-flow-fig { color: var(--v4-lit); }
   /* Custom: a typed price, its steps and the slider (V4 §8.5 field, small). */
   .dm-np .dm-flow-bound-unit { font-size: 0.8125rem; color: var(--muted); }
@@ -396,9 +578,13 @@
   /* The + joining the two panels (new.html .join): a 30px medallion centred in the gap between the two panels. Where the
      second panel has its caption ("Paired automatically"), the medallion stands on the caption's line, in the middle,
      and takes no height of its own; without a caption the gap is the medallion's. */
-  .dm-np .dm-flow-link { width: 1.875rem; height: 1.875rem; margin: 0.375rem auto; background: var(--card); box-shadow: inset 0 0 0 1px var(--lip); color: var(--muted); }
-  .dm-np .dm-flow-link:has(+ .dm-flow-pair-row > .dm-flow-pair-caption) { margin-bottom: -2.25rem; }
-  .dm-np .dm-flow-link + .dm-flow-pair-row > .dm-flow-pair-caption { margin-block: 0.75rem; line-height: 1.125rem; }
+  .dm-np .dm-flow-link { position: relative; z-index: 1; width: 1.875rem; height: 1.875rem; margin: -0.9375rem auto 0; background: var(--card); box-shadow: inset 0 0 0 1px var(--lip); color: var(--muted); }
+  /* Centred on the first panel's lower edge (new.html .join: height 0, the 30px medallion pulled up by half); the second
+     caption follows 22px under that edge, under the medallion. Without a caption the second panel starts just under the
+     first, the medallion over the seam. */
+  .dm-np .dm-flow-link:has(+ .dm-flow-pair-row > .dm-flow-pair-caption) { margin-bottom: 0; }
+  .dm-np .dm-flow-link + .dm-flow-pair-row > .dm-flow-pair-caption { margin: 0.4375rem 0 0.625rem; line-height: 1.125rem; }
+  .dm-np .dm-flow-link:not(:has(+ .dm-flow-pair-row > .dm-flow-pair-caption)) { margin-bottom: -0.5rem; }
   .dm-np .dm-flow-pair-row:has(.dm-error, .dm-hint) + .dm-flow-link { margin-top: 0.5rem; }
 
   /* Estimated total: a summary row on a hairline, its figure in the serif. */
@@ -427,6 +613,11 @@
   .dm-np [data-flow-advanced] > summary > span:first-child { flex: none; }
   .dm-np [data-flow-advanced] .dm-flow-advanced-value { overflow: visible; white-space: normal; text-overflow: clip; text-align: right; text-wrap: balance; }
   .dm-np .dm-details[data-flow-advanced] > :not(summary) { padding: 0.875rem 0.875rem 0.375rem; }
+  /* A disclosure opens and folds (new.html .acc-b: rows 0fr to 1fr .45s e-enter, opacity .25s): the details' content
+     grows to its height and fades in (Chrome 131+; elsewhere it snaps, as before). */
+  .dm-np { interpolate-size: allow-keywords; }
+  .dm-np details.dm-details::details-content { block-size: 0; opacity: 0; overflow: clip; transition: block-size 0.45s var(--e-enter), opacity 0.25s var(--e-std), content-visibility 0.45s allow-discrete; }
+  .dm-np details.dm-details[open]::details-content { block-size: auto; opacity: 1; transition: block-size 0.45s var(--e-enter), opacity 0.25s var(--e-std); } /* opening never transitions content-visibility: the content is there (and readable) at once */
 
   /* Slippage (ActionForms .slp): the presets as the segmented track, the rail in the site's tints, the exact box. */
   .dm-np .dm-flow-slip-head > .dm-label { font-size: 0.8125rem; font-weight: 500; color: var(--subtle); }
@@ -437,7 +628,7 @@
   .dm-np .dm-flow-slip-thumb { background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / 0.35), inset 0 0 0 1.5px var(--tan); }
   .dm-np .dm-flow-slip-scale { font-size: 0.75rem; color: var(--subtle); }
   .dm-np .dm-flow-slip-exact-label { font-size: 0.8125rem; color: var(--subtle); }
-  .dm-np .dm-flow-slip-exact > .dm-flow-input { width: 6.5rem; height: 2.5rem; border-radius: 0.75rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--lip); color: var(--subtle); transition: box-shadow 0.2s var(--e-std), background-color 0.2s var(--e-std); }
+  .dm-np .dm-flow-slip-exact > .dm-flow-input { width: 11rem; max-width: 100%; height: 2.5rem; border-radius: 0.75rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--lip); color: var(--subtle); transition: box-shadow 0.2s var(--e-std), background-color 0.2s var(--e-std); }
   .dm-np .dm-flow-slip-exact > .dm-flow-input:hover { box-shadow: inset 0 0 0 1px var(--strong); }
   .dm-np .dm-flow-slip-exact > .dm-flow-input:focus-within { outline: none; background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong), 0 0 0 0.25rem var(--v4-tan-halo); }
   .dm-np .dm-flow-slip-exact > .dm-flow-input[data-invalid] { box-shadow: inset 0 0 0 1px rgb(244 96 122 / 0.6); }
@@ -445,6 +636,15 @@
   .dm-np .dm-flow-slip-hint { font-size: 0.78125rem; line-height: 1.5; color: var(--subtle); }
   .dm-np .dm-flow-slip-warn { position: relative; padding-left: 1.125rem; font-size: 0.84375rem; line-height: 1.5; color: var(--fg); }
   .dm-np .dm-flow-slip-warn::before { content: ''; position: absolute; left: 2px; top: 0.6em; width: 0.375rem; height: 0.375rem; border-radius: var(--radius-pill); background: var(--out); box-shadow: 0 0 0 0.1875rem rgb(244 96 122 / 0.14); }
+  /* The presets (ActionForms .sg): three equal places and one thumb that slides to the one taken (.42s), gone when a
+     value between them is typed. The error and the warning arrive with a short rise (.35s up-a). */
+  .dm-np .dm-flow-slip .dm-slip-presets { display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 0; }
+  .dm-np .dm-flow-slip .dm-slip-presets::before { content: ''; position: absolute; left: 0.1875rem; top: 0.1875rem; bottom: 0.1875rem; width: calc((100% - 0.375rem) / 3); border-radius: 0.625rem; background: var(--v4-w08); box-shadow: inset 0 0 0 1px var(--lip); opacity: 0; pointer-events: none; transition: translate 0.42s var(--e-enter), opacity 0.2s var(--e-std); }
+  .dm-np .dm-flow-slip .dm-slip-presets:has(> :nth-child(1)[aria-pressed="true"])::before { opacity: 1; translate: 0 0; }
+  .dm-np .dm-flow-slip .dm-slip-presets:has(> :nth-child(2)[aria-pressed="true"])::before { opacity: 1; translate: 100% 0; }
+  .dm-np .dm-flow-slip .dm-slip-presets:has(> :nth-child(3)[aria-pressed="true"])::before { opacity: 1; translate: 200% 0; }
+  .dm-np .dm-flow-slip .dm-slip-presets > .dm-seg-item[aria-pressed="true"] { background: transparent; box-shadow: none; }
+  .dm-np .dm-flow-slip :is(.dm-error, .dm-flow-slip-warn) { animation: dm-v4-up 0.35s var(--e-enter) backwards; }
 
   @media (max-width: 767px) {
     .dm-np .dm-flow-amount { padding: 0.875rem 1rem; }
@@ -545,25 +745,57 @@
   .dm-np .dm-funds-route-art[data-transfer-route="checking"] .dm-funds-route-coin { opacity: 0.55; box-shadow: 0 0 0 2px #1c1a16, 0 0 1.5rem 0.375rem rgb(255 236 220 / 0.08); }
 
   /* ---- 7. Step 4, Review (NewPositionFlow A-F: .yp, .sums, .notes, .cbx, .facts, .ws-list, .cbtn, .made, .cxl) ------ */
-  .dm-np .dm-flow-stack[data-stage="review"] { gap: 1.5rem; }
+  .dm-np .dm-flow-stack[data-stage="review"] { gap: 0.875rem; }
+  .dm-np [data-created-slot]:empty { display: none; }
   .dm-np [data-stage="review"] .dm-flow-section { gap: 0.625rem; }
-  .dm-np .dm-flow-subtitle { margin: 0.25rem 0 0; font-family: var(--font-sans); font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.01em; color: var(--subtle); }
-  /* Your position (.yp): the well you check before signing; the pair and its tags on one line, the amounts in the serif,
-     then each fact as a row on a hairline. The facts stay one sentence each (their text is read whole). */
+  .dm-np .dm-flow-subtitle { margin: 0; font-family: var(--font-sans); font-size: 0.8125rem; line-height: normal; font-weight: 500; letter-spacing: -0.01em; color: var(--subtle); }
+  /* Your position (.yp): the well you check before signing; the pair with its 40px marks and its tags on one line, the
+     amounts (the figures in the serif, the words around them small), then the facts. */
   .dm-np .dm-flow-headline { grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0; padding: 0.25rem 0.375rem 0.125rem; border: 0; border-radius: 1.25rem; background: rgb(255 236 220 / 0.025); box-shadow: inset 0 0 0 1px var(--line); transition: box-shadow 0.2s var(--e-std), opacity 0.25s var(--e-std); }
   .dm-np .dm-flow-headline:hover { box-shadow: inset 0 0 0 1px var(--lip); }
   .dm-np .dm-flow-headline > :not(.dm-flow-headline-pair, [data-pool-chips]) { grid-column: 1 / -1; }
   .dm-np .dm-flow-headline-pair { gap: 0.875rem; padding: 0.875rem 0.75rem 0.125rem; font-size: 1.0625rem; line-height: 1.5rem; font-weight: 500; letter-spacing: -0.01em; }
+  .dm-np .dm-flow-headline-pair > :first-child > * { transition: translate 0.3s var(--e-enter), scale 0.3s var(--e-enter); }
+  .dm-np .dm-flow-headline:hover .dm-flow-headline-pair > :first-child > :first-child { scale: 1.04; }
+  .dm-np .dm-flow-headline:hover .dm-flow-headline-pair > :first-child > :last-child { translate: 0.25rem 0; scale: 1.04; }
   .dm-np .dm-flow-headline > [data-pool-chips] { justify-self: end; padding: 0.875rem 0.75rem 0.125rem 0; }
-  .dm-np .dm-flow-headline-amounts { margin: 0; padding: 1.125rem 0.75rem 1.25rem; font-family: var(--font-display); font-size: 2.5rem; line-height: 1.1; font-weight: 400; letter-spacing: -0.022em; color: var(--fg); text-wrap: balance; }
-  .dm-np .dm-flow-headline-amounts .dm-skel { height: 1em; }
-  .dm-np .dm-flow-headline-line { display: block; min-height: 2.75rem; margin: 0; padding: 0.75rem 0.875rem; box-shadow: inset 0 1px 0 var(--line); font-size: 0.84375rem; line-height: 1.45; letter-spacing: -0.01em; color: var(--subtle); }
-  .dm-np .dm-flow-headline-usd { margin: 0; padding: 0.625rem 0.875rem; border: 0; box-shadow: inset 0 1px 0 var(--line); font-family: var(--font-display); font-size: 1.75rem; line-height: 1.2; font-weight: 400; color: var(--fg); }
-  .dm-np .dm-flow-headline-usd > span:first-child { font-family: var(--font-sans); font-size: 0.84375rem; color: var(--subtle); }
-  /* The one-token plan's note and the preview gate's sentence: plates with a glyph (V4 .plate, .lock). */
-  .dm-np .dm-flow-position:is([data-review-swap-note], [data-v2-locked]) { position: relative; display: block; padding: 0.875rem 1rem 0.875rem 2.875rem; border-radius: 1rem; background: rgb(255 236 220 / 0.025); box-shadow: inset 0 0 0 1px var(--line); font-size: 0.84375rem; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
-  .dm-np .dm-flow-position:is([data-review-swap-note], [data-v2-locked])::before { position: absolute; top: 0.9375rem; left: 1rem; width: 1rem; height: 1rem; margin: 0; border-radius: 0; background: var(--subtle); }
-  .dm-np .dm-flow-position[data-v2-locked]::before { -webkit-mask: var(--dm-np-lock) center / contain no-repeat; mask: var(--dm-np-lock) center / contain no-repeat; }
+  /* The amounts (new.html .yp-a): "About" and each unit 13.5 subtle, each figure the serif at 46px, the + the serif at 30
+     quiet; the parts stay inline spans of one sentence, spaced by their spaces (word-spacing: 10px between parts, 7px
+     between a figure and its unit). */
+  .dm-np .dm-flow-headline-amounts { margin: 0; padding: 1.25rem 0.75rem; font-family: var(--font-sans); font-size: 0.84375rem; line-height: 1.45; font-weight: 400; letter-spacing: -0.01em; word-spacing: 0.375rem; color: var(--subtle); text-wrap: balance; transition: opacity 0.25s var(--e-std); }
+  .dm-np .dm-flow-headline-amounts :is(.dm-rv-about, .dm-rv-num, .dm-rv-unit, .dm-rv-plus) { word-spacing: normal; }
+  .dm-np .dm-flow-headline-amounts .dm-rv-about { margin-right: 0.125rem; }
+  .dm-np .dm-flow-headline-amounts .dm-rv-num { font-family: var(--font-display); font-size: 2.875rem; line-height: 1; font-weight: 400; letter-spacing: -0.022em; color: var(--fg); }
+  .dm-np .dm-flow-headline-amounts .dm-rv-unit { margin-left: -0.1875rem; }
+  .dm-np .dm-flow-headline-amounts .dm-rv-plus { font-family: var(--font-display); font-size: 1.875rem; line-height: 1; color: var(--subtle); }
+  .dm-np .dm-flow-headline-amounts .dm-skel { height: 2.875rem; vertical-align: bottom; }
+  /* The facts. Today's review (board C1) keeps a sentence per row, muted on a hairline, and its value line as a label and
+     a figure. Domino V2's (board A, .sums) reads each as a label on the left and its value on the right, with no hairline:
+     the two halves are inline-block spans of the same sentence (its words and stops kept; the colon and the middle dot
+     are kept in the text, not drawn). */
+  .dm-np .dm-flow-headline-line { display: block; min-height: 2.75rem; margin: 0; padding: 0.75rem; box-shadow: inset 0 1px 0 var(--line); font-size: 0.84375rem; line-height: 1.45; letter-spacing: -0.01em; color: var(--muted); }
+  .dm-np .dm-flow-headline-usd { margin: 0; padding: 0 0.75rem 1rem; border: 0; box-shadow: none; font-family: var(--font-sans); font-size: 0.84375rem; line-height: 1.45; font-weight: 500; color: var(--fg); }
+  .dm-np .dm-flow-headline-usd > span:first-child { font-family: var(--font-sans); font-size: 0.84375rem; font-weight: 400; color: var(--subtle); }
+  .dm-np [data-zap-review] .dm-flow-headline-line { min-height: 2.75rem; padding: 0.75rem 0.875rem; box-shadow: none; color: var(--subtle); text-align: justify; text-align-last: justify; }
+  .dm-np [data-zap-review] .dm-flow-headline-line:has(> .dm-rv-v) + .dm-flow-headline-line { margin-top: 0.125rem; }
+  /* The rows as the sheets' summary list (.sums 4px 0 2px; a two-line value 10px above and below it). */
+  .dm-np [data-zap-review] .dm-flow-headline-amounts + .dm-flow-headline-line { margin-top: 0.25rem; }
+  .dm-np [data-zap-review] .dm-flow-headline > .dm-flow-headline-line:last-child { margin-bottom: 0.125rem; }
+  .dm-np [data-zap-review] .dm-flow-headline-line:has(.dm-rv-i) { padding-block: 0.5rem; }
+  .dm-np .dm-flow-headline-line > :is(.dm-rv-k, .dm-rv-v) { display: inline-block; vertical-align: middle; text-align-last: auto; }
+  .dm-np .dm-flow-headline-line > .dm-rv-k { text-align: left; }
+  .dm-np .dm-flow-headline-line > .dm-rv-v { max-width: 70%; text-align: right; text-align-last: right; font-weight: 500; color: var(--fg); }
+  .dm-np .dm-rv-c { font-size: 0; }
+  .dm-np .dm-rv-i { display: inline-block; width: 100%; margin-top: 0.25rem; font-size: 0.78125rem; line-height: 1.4; font-weight: 400; color: var(--subtle); }
+  /* The notes under the well start 18px under it (new.html .notes), 10px apart. */
+  .dm-np [data-stage="review"] .dm-flow-section > .dm-flow-headline + * { margin-top: 0.5rem; }
+  /* The one-token plan's note and the preview gate's sentence: plates led by a ringed 30px glyph (board C1 .plate, .lock). */
+  .dm-np .dm-flow-position:is([data-review-swap-note], [data-v2-locked]) { position: relative; display: block; min-height: 3.625rem; padding: 0.875rem 1rem 0.875rem 3.625rem; border-radius: 1rem; background: rgb(255 236 220 / 0.03); box-shadow: inset 0 0 0 1px var(--line); font-size: 0.84375rem; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
+  .dm-np .dm-flow-position:is([data-review-swap-note], [data-v2-locked])::before { content: ''; position: absolute; top: 0.875rem; left: 1rem; width: 1.875rem; height: 1.875rem; margin: 0; border-radius: 50%; background: none; box-shadow: inset 0 0 0 1px var(--lip); -webkit-mask: none; mask: none; }
+  .dm-np .dm-flow-position:is([data-review-swap-note], [data-v2-locked])::after { content: ''; position: absolute; top: 1.375rem; left: 1.5rem; width: 0.875rem; height: 0.875rem; background: var(--subtle); pointer-events: none; }
+  .dm-np .dm-flow-position[data-review-swap-note]::after { -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='M2.5 4.5h8.5M8.6 2.2 11 4.5 8.6 6.8M11.5 9.5H3M5.4 7.2 3 9.5l2.4 2.3' stroke='%23000' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='M2.5 4.5h8.5M8.6 2.2 11 4.5 8.6 6.8M11.5 9.5H3M5.4 7.2 3 9.5l2.4 2.3' stroke='%23000' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat; }
+  .dm-np .dm-flow-position[data-v2-locked]::after { -webkit-mask: var(--dm-np-lock) center / contain no-repeat; mask: var(--dm-np-lock) center / contain no-repeat; }
+  .dm-np .dm-flow-position[data-v2-locked] { display: flex; align-items: center; }
   /* The new-pool consent (.cbx): a box with the ring; ticked, it takes the Tangerine wash. */
   .dm-np label:has(> input[data-new-pool-confirm]) { gap: 0.75rem; padding: 1rem 1.125rem; border-radius: 1rem; box-shadow: inset 0 0 0 1px var(--line); font-size: 0.875rem; line-height: 1.5; color: var(--fg); cursor: pointer; transition: background-color 0.2s var(--e-std), box-shadow 0.2s var(--e-std); }
   .dm-np label:has(> input[data-new-pool-confirm]:checked) { background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 1px var(--v4-tan-ring); }
@@ -571,7 +803,7 @@
 
   /* Details (.acc-h, .facts): the foundation's round "+", the facts as a two-column list on hairlines. */
   .dm-np [data-review-details] { border-radius: 0.875rem; background: none; box-shadow: none; }
-  .dm-np [data-review-details] > summary { min-height: 2.875rem; padding: 0 0.625rem 0 0.75rem; font-size: 0.90625rem; }
+  .dm-np [data-review-details] > summary { min-height: 2.875rem; padding: 0 0.625rem 0 0.75rem; font-size: 1rem; font-weight: 400; letter-spacing: normal; }
   .dm-np .dm-details[data-review-details] > :not(summary) { padding: 0.25rem 0.75rem 0.5rem; }
   .dm-np .dm-flow-facts > div { display: grid; grid-template-columns: minmax(0, 12.5rem) minmax(0, 1fr); align-items: baseline; gap: 0 1rem; padding: 0.6875rem 0; box-shadow: inset 0 1px 0 var(--line); }
   .dm-np .dm-flow-facts > div:last-child { box-shadow: inset 0 1px 0 var(--line); }
@@ -581,14 +813,17 @@
 
   /* In your wallet (.ws-list): the steps in a well, each marker a small domino whose pips are its number. It leans while
      it is checked and while your wallet asks, leans further once sent, stands grey when the answer is unknown, and once
-     confirmed closes as a check on green. The number stays in the DOM (it is aria-hidden); the tile is drawn behind it. */
+     confirmed it topples and lies flat, green, a check beside its pips. The number stays in the DOM (it is aria-hidden);
+     the tile is drawn behind it. */
   .dm-np .dm-flow-wsteps { gap: 0; margin: 0.25rem 0 0; padding: 0.375rem 0; border: 0; border-radius: 1.125rem; background: rgb(255 236 220 / 0.025); box-shadow: inset 0 0 0 1px var(--line); }
   .dm-np .dm-flow-wsteps > li { --tile-bg: var(--card); --tile-ring: var(--strong); --tile-pip: var(--subtle); --tile-groove: var(--strong); --tile-turn: none; gap: 0.875rem; min-height: 0; padding: 0.5625rem 0.75rem; border-radius: 0; background: transparent; transition: opacity 0.25s var(--e-std); }
-  .dm-np .dm-flow-wsteps > li:not(:last-child)::before { top: 2.8125rem; bottom: -0.6875rem; left: calc(1.6875rem - 0.5px); width: 1px; border-radius: 0; background: var(--line); transition: background-color 0.4s var(--e-enter) 0.34s; }
-  .dm-np .dm-flow-wsteps > li[data-step-state="done"]:not(:last-child)::before { background: var(--v4-tan-ring); }
+  /* The connector (.ws-conn): a grey line, and a Tangerine one that fills it from the top once the step is confirmed. */
+  .dm-np .dm-flow-wsteps > li:not(:last-child)::before { top: 2.8125rem; bottom: -0.6875rem; left: calc(1.6875rem - 0.5px); width: 1px; border-radius: 0; background: var(--line); transition: none; }
+  .dm-np .dm-flow-wsteps > li:not(:last-child)::after { content: ''; position: absolute; top: 2.8125rem; bottom: -0.6875rem; left: calc(1.6875rem - 0.5px); width: 1px; background: rgb(255 157 98 / 0.45); transform: scaleY(0); transform-origin: top; transition: transform 0.4s var(--e-enter); pointer-events: none; }
+  .dm-np .dm-flow-wsteps > li[data-step-state="done"]:not(:last-child)::after { transform: none; transition-delay: 0.34s; }
   .dm-np .dm-flow-wsteps .dm-step-marker,
   .dm-np .dm-flow-wsteps > li[data-step-state] .dm-step-marker { width: 1.875rem; height: 2.125rem; background: none; box-shadow: none; color: transparent; font-size: 0; animation: none; }
-  .dm-np .dm-flow-wsteps .dm-step-marker::after { content: none; }
+  .dm-np .dm-flow-wsteps > li:not([data-step-state="done"]) .dm-step-marker::after { content: none; }
   .dm-np .dm-flow-wsteps .dm-step-marker::before { content: ''; position: absolute; left: 0.375rem; top: 0.125rem; width: 1.125rem; height: 1.875rem; border-radius: 0.3125rem; background: var(--tile-pips, none), linear-gradient(var(--tile-groove), var(--tile-groove)) center / calc(100% - 0.5rem) 1px no-repeat, var(--tile-bg); box-shadow: inset 0 0 0 1.25px var(--tile-ring), var(--tile-halo, 0 0 0 0 transparent); transform: var(--tile-turn); transform-origin: 50% 80%; transition: transform 0.45s var(--e-enter), background-color 0.2s var(--e-std), box-shadow 0.2s var(--e-std); }
   /* The pips: the step's number on the top half (new.html .tp1-.tp4; five and six continue the pattern). */
   .dm-np .dm-flow-wsteps > li:nth-child(1) { --tile-pips: radial-gradient(circle at 0.5625rem 0.46875rem, var(--tile-pip) 0 1.5px, transparent 1.6px); }
@@ -601,12 +836,15 @@
   .dm-np .dm-flow-wsteps > li:where(:has(> .dm-step-marker[data-state="current"])) { --tile-ring: var(--lip); --tile-pip: var(--muted); }
   .dm-np .dm-flow-wsteps > li:is([data-step-status="preparing"], [data-step-status="wallet"], [data-step-state="reading"], [data-step-state="wallet"]) { --tile-bg: rgb(255 157 98 / 0.08); --tile-ring: rgb(255 157 98 / 0.7); --tile-halo: 0 0 0 0.25rem var(--v4-tan-halo); --tile-pip: var(--tan); --tile-groove: rgb(255 157 98 / 0.5); --tile-turn: rotate(8deg); }
   .dm-np .dm-flow-wsteps > li:is([data-step-status="sent"], [data-step-state="chain"]) { --tile-bg: rgb(255 157 98 / 0.08); --tile-ring: rgb(255 157 98 / 0.7); --tile-halo: 0 0 0 0.25rem var(--v4-tan-halo); --tile-pip: var(--tan); --tile-groove: rgb(255 157 98 / 0.5); --tile-turn: rotate(22deg); }
+  .dm-np .dm-flow-wsteps > li:is([data-step-status="sent"], [data-step-state="chain"]) .dm-step-marker::before { transition-duration: 0.5s, 0.2s, 0.2s; }
   .dm-np .dm-flow-wsteps > li:is([data-step-status="unknown"], [data-step-state="failed"]) { --tile-bg: var(--v4-w06); --tile-ring: var(--lip); --tile-turn: none; }
-  /* Confirmed: the domino has done its work and the step closes as every finished step does, the check on green (the
-     marker's money-in fill is read by the V1 suite: each done step shows a check on green). */
-  .dm-np .dm-flow-wsteps > li[data-step-state="done"] .dm-step-marker[data-state="done"] { height: 1.875rem; margin-top: 0.125rem; border-radius: var(--radius-pill); background: var(--money-in); box-shadow: none; color: var(--bg); font-size: 0.78125rem; line-height: 1; font-weight: 600; animation: dm-np-stamp 0.45s var(--e-pop) backwards; }
-  .dm-np .dm-flow-wsteps > li[data-step-state="done"] .dm-step-marker[data-state="done"]::before { content: none; }
-  .dm-np .dm-flow-wsteps[aria-busy] > li { opacity: 0.42; }
+  /* Confirmed (.s-ok): it falls and lies flat, then turns green (from .3s) with a check on its left half (at .4s). The marker
+     keeps its money-in fill and its ✓ (the V1 suite reads both), painted nowhere: an empty content box clips the fill, and
+     the ✓ has no size; the tile and the drawn check are its pseudo-elements. */
+  .dm-np .dm-flow-wsteps > li[data-step-state="done"] { --tile-bg: rgb(95 208 154 / 0.12); --tile-ring: rgb(95 208 154 / 0.55); --tile-pip: var(--in); --tile-groove: rgb(95 208 154 / 0.45); --tile-halo: 0 0 0 0 transparent; --tile-turn: translate(-0.5625rem, -0.4375rem) rotate(90deg); }
+  .dm-np .dm-flow-wsteps > li[data-step-state="done"] .dm-step-marker[data-state="done"] { box-sizing: border-box; height: 2.125rem; margin-top: 0; padding: 1.0625rem 0.9375rem; border-radius: 0; background-color: var(--money-in); background-image: none; background-clip: content-box; box-shadow: none; color: transparent; font-size: 0; animation: none; transition: none; }
+  .dm-np .dm-flow-wsteps > li[data-step-state="done"] .dm-step-marker[data-state="done"]::before { content: ''; transition: transform 0.46s cubic-bezier(0.55, 0.06, 0.9, 0.4), background-image 0.6s allow-discrete, background-color 0.25s var(--e-std) 0.3s, box-shadow 0.25s var(--e-std) 0.3s; }
+  .dm-np .dm-flow-wsteps > li[data-step-state="done"] .dm-step-marker[data-state="done"]::after { content: ''; position: absolute; left: 0.15625rem; top: 0.875rem; width: 0.625rem; height: 0.625rem; border-radius: 0; background: var(--in); box-shadow: none; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10' fill='none'%3E%3Cpath d='M2.2 5.3 4.2 7.2 7.9 3.2' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10' fill='none'%3E%3Cpath d='M2.2 5.3 4.2 7.2 7.9 3.2' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat; inset: auto; animation: dm-np-tk 0.3s var(--e-pop) 0.4s backwards; pointer-events: none; }
   .dm-np .dm-flow-wstep-body { gap: 0.1875rem; padding-top: 0.375rem; }
   .dm-np .dm-flow-wstep-title { font-size: 0.9375rem; line-height: 1.35; font-weight: 500; letter-spacing: -0.01em; color: var(--muted); transition: color 0.2s var(--e-std); }
   .dm-np .dm-flow-wsteps > li:is(:has(> .dm-step-marker[data-state="current"]), [data-step-status], [data-step-state]) .dm-flow-wstep-title { color: var(--fg); }
@@ -614,145 +852,243 @@
   .dm-np .dm-flow-wstep-note { font-size: 0.8125rem; line-height: 1.45; letter-spacing: -0.01em; color: var(--subtle); }
   .dm-np .dm-flow-wsteps > li:is([data-step-status="wallet"], [data-step-state="wallet"]) .dm-flow-wstep-note { color: var(--fg); }
   .dm-np .dm-flow-wsteps > li[data-step-state="done"] .dm-flow-wstep-note { color: var(--in); }
+  /* Each new caption arrives with a 3px rise, a name per state so every change replays it (new.html cap1-cap5). */
+  .dm-np .dm-flow-wsteps > li .dm-flow-wstep-note { animation: dm-np-cap1 0.3s var(--e-enter) backwards; }
+  .dm-np .dm-flow-wsteps > li:is([data-step-status="preparing"], [data-step-state="reading"]) .dm-flow-wstep-note { animation-name: dm-np-cap2; }
+  .dm-np .dm-flow-wsteps > li:is([data-step-status="wallet"], [data-step-state="wallet"]) .dm-flow-wstep-note { animation-name: dm-np-cap3; }
+  .dm-np .dm-flow-wsteps > li:is([data-step-status="sent"], [data-step-state="chain"]) .dm-flow-wstep-note { animation-name: dm-np-cap4; }
+  .dm-np .dm-flow-wsteps > li[data-step-state="done"] .dm-flow-wstep-note { animation-name: dm-np-cap5; }
   .dm-np a.dm-flow-wstep-note[data-step-explorer] { width: max-content; font-weight: 500; color: var(--muted); text-decoration: none; transition: color 0.18s var(--e-std); }
   .dm-np a.dm-flow-wstep-note[data-step-explorer]:hover { color: var(--fg); }
+  /* Before the first quote lists the steps (boards B7 'First'): three resting rows in the card, a circle and a bar each. */
+  .dm-np .dm-np-wsk { display: flex; flex-direction: column; gap: 0.375rem; padding: 0.375rem 0.875rem 0.625rem; }
+  .dm-np .dm-np-wsk-row { display: flex; align-items: center; gap: 0.875rem; height: 2.625rem; }
+  .dm-np .dm-np-wsk-c { flex: none; width: 1.875rem; height: 1.875rem; border-radius: 50%; }
+  .dm-np .dm-np-wsk-a { flex: 1; height: 0.625rem; max-width: 13.75rem; border-radius: 0.375rem; }
+  .dm-np .dm-np-wsk-row:nth-child(2) .dm-np-wsk-a { max-width: 11.25rem; }
+  .dm-np .dm-np-wsk-row:nth-child(3) .dm-np-wsk-a { max-width: 8.125rem; }
 
-  /* Create position and its faces (.cbtn): ready Tangerine, working Tangerine with the arc, done green with the check. */
-  .dm-np .dm-flow-foot[data-final] > [data-create-position] { height: 3.375rem; border-radius: 0.875rem; font-size: 0.96875rem; }
+  /* Create position and its faces (.cbtn): ready Tangerine, working Tangerine with its turning arc (.9s), done green
+     with the check that stamps in (.45s pop at .05s); each new label rises 4px. */
+  .dm-np .dm-flow-foot[data-final] > [data-create-position] { height: 3.375rem; border-radius: 0.875rem; font-size: 1rem; font-weight: 400; }
   .dm-np .dm-flow-foot[data-final] > [data-create-position="done"]:disabled { background: rgb(95 208 154 / 0.12); color: var(--in); box-shadow: inset 0 0 0 1px rgb(95 208 154 / 0.4); }
-  /* Getting a quote (aria-busy, not yet running): the busy face, quiet: a Tangerine wash and ring, the words in Tangerine
-     and the foundation's arc beside them (currentColor), so the label never sits dark on dark. */
-  .dm-np .dm-flow-foot[data-final] > [data-create-position][aria-busy="true"]:disabled:not([data-create-position="running"], [data-create-position="done"]) { background: rgb(255 157 98 / 0.08); box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.32); color: var(--tan-hi); cursor: progress; }
-  /* Not ready and not working: the quiet disabled face Continue has, its words readable. */
-  .dm-np .dm-flow-foot[data-final] > [data-create-position]:disabled:not([aria-busy="true"], [data-create-position="running"], [data-create-position="done"]) { background: var(--v4-w06); color: var(--subtle); box-shadow: inset 0 0 0 1px var(--line); }
+  .dm-np .dm-flow-foot[data-final] > [data-create-position="running"]:disabled { box-shadow: inset 0 1px 0 rgb(255 240 228 / 0.45), inset 0 -1px 0 rgb(120 50 15 / 0.25), 0 0.5rem 1.375rem -1rem rgb(255 157 98 / 0.5); }
+  .dm-np [data-create-position="running"]::before { animation-duration: 0.9s; }
+  .dm-np [data-create-position="done"]::before { animation: dm-np-stamp 0.45s var(--e-pop) 0.05s backwards; }
+  .dm-np .dm-flow-foot[data-final] > [data-create-position="running"] { animation: dm-np-lab1 0.3s var(--e-enter) backwards; }
+  .dm-np .dm-flow-foot[data-final] > [data-create-position="done"] { animation: dm-np-lab2 0.35s var(--e-enter) backwards; }
+  /* Getting a quote, or not ready (boards B7, D2): the quiet disabled face Continue has, its words readable, no arc; the
+     reason under it says why. Only the wallet at work is Tangerine with the arc. */
+  .dm-np .dm-flow-foot[data-final] > [data-create-position][aria-busy="true"]:disabled:not([data-create-position="running"], [data-create-position="done"]) { cursor: progress; }
+  .dm-np .dm-flow-foot[data-final] > [data-create-position][aria-busy="true"]:disabled:not([data-create-position="running"], [data-create-position="done"])::before { content: none; }
+  .dm-np .dm-flow-foot[data-final] > [data-create-position]:disabled:not([data-create-position="running"], [data-create-position="done"]) { background: var(--v4-w06); color: var(--subtle); box-shadow: inset 0 0 0 1px var(--line); }
   .dm-np .dm-flow-foot[data-final] > .dm-btn--outline:not(:first-child),
   .dm-np .dm-flow-foot[data-final] > .dm-btn[data-cancel-signature] { height: 2.75rem; border-radius: 0.75rem; }
-
-  /* Created (.made, .cxl): the line in the serif, then the four ways on as small cousins of the pool row. */
-  .dm-np .dm-created { gap: 0.5rem; }
-  .dm-np .dm-created-line { margin: 0 0 0.5rem; font-family: var(--font-display); font-size: 2.25rem; line-height: 1.06; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
-  .dm-np .dm-created-choices { gap: 2px; }
-  .dm-np .dm-created-choice { position: relative; grid-template-columns: 3.25rem minmax(0, 1fr) auto; gap: 1rem; min-height: 4.875rem; padding: 0.625rem 0.5rem 0.625rem 1.375rem; border-radius: 0.875rem; background: transparent; box-shadow: none; transition: background-color 0.18s var(--e-std), scale 0.1s var(--e-press); }
-  .dm-np .dm-created-choice:hover { background: var(--v4-w045); box-shadow: none; }
-  .dm-np .dm-created-choice:active { scale: 0.997; }
-  .dm-np .dm-created-choice::before { content: ''; position: absolute; left: 0.375rem; top: 50%; width: 0.3125rem; height: 0.3125rem; margin-top: -0.15625rem; border-radius: var(--radius-pill); background: var(--tan); opacity: 0; transform: scale(0.2); transition: opacity 0.2s var(--e-std), transform 0.35s var(--e-enter); pointer-events: none; }
-  .dm-np .dm-created-choice:hover::before { opacity: 1; transform: none; }
-  /* Each row's art in its own fixed, clipped box: the drawing fills it, scaled to fit and standing on its bottom edge
-     (the V2 panel's mode arts are the 240 x 100 card drawings, which at their own size spilled into the next row). */
-  .dm-np .dm-created-art { display: block; position: relative; overflow: hidden; align-self: center; width: 3.25rem; height: 2.5rem; padding: 0; border-radius: 0; background: none; box-shadow: none; color: var(--subtle); transition: color 0.2s var(--e-std); }
-  .dm-np .dm-created-art > svg { display: block; width: 100%; height: 100%; max-width: none; max-height: none; }
-  .dm-np .dm-created-name { font-size: 0.96875rem; line-height: 1.4; font-weight: 500; color: var(--fg); }
-  .dm-np .dm-created-fee { font-weight: 400; color: var(--subtle); }
-  .dm-np .dm-created-note { margin-top: 0.25rem; font-size: 0.84375rem; line-height: 1.45; color: var(--subtle); }
-  .dm-np .dm-created-go { gap: 0.25rem; font-size: 0.84375rem; font-weight: 500; color: var(--muted); transition: color 0.18s var(--e-std), background-color 0.18s var(--e-std), box-shadow 0.25s var(--e-std); }
-  .dm-np .dm-created-choice:hover .dm-created-go { color: var(--fg); }
-  /* The way on that keeps the position as it is: the one Tangerine pill (.cx-go.pri). */
-  .dm-np .dm-created-choice:is([data-created-next="plain"], [data-created-next="position"]) .dm-created-go { height: 2.375rem; padding: 0 0.75rem 0 0.9375rem; border-radius: 0.75rem; background: var(--tan); color: var(--tan-fg); box-shadow: inset 0 1px 0 rgb(255 240 228 / 0.5), inset 0 -1px 0 rgb(120 50 15 / 0.25), 0 0.5rem 1.375rem -0.75rem rgb(255 157 98 / 0.55); }
-  .dm-np .dm-created-choice:is([data-created-next="plain"], [data-created-next="position"]):hover .dm-created-go { background: var(--tan-hi); color: var(--tan-fg); }
-  /* Recommended (.rec): a quiet tag, never a filled badge. */
-  .dm-np .dm-created-pill { height: 1.375rem; padding: 0 0.5rem 0 0.4375rem; border-radius: 0.4375rem; background: var(--v4-w055); box-shadow: none; font-size: 0.75rem; font-weight: 500; color: var(--muted); }
+  /* An error is a line with the money-out dot (new.html .err), above the button in the wallet card (boards B8, B10, H2). */
+  .dm-np p[role="alert"][data-error-code].dm-flow-reason { position: relative; padding-left: 1.125rem; font-size: 0.84375rem; line-height: 1.55; letter-spacing: -0.01em; color: var(--fg); text-align: left; }
+  .dm-np p[role="alert"][data-error-code].dm-flow-reason::before { content: ''; position: absolute; left: 2px; top: 0.62em; width: 0.375rem; height: 0.375rem; border-radius: var(--radius-pill); background: var(--out); box-shadow: 0 0 0 0.1875rem rgb(244 96 122 / 0.16); }
+  .dm-np .dm-flow-foot[data-final] > p[role="alert"]:not(p[role="alert"] ~ p[role="alert"]) { grid-area: err; margin: 0 0.25rem 0.25rem; }
+  /* New position, under "Position created" (new.html .btn-line.alt): a quiet full-width line button. */
+  .dm-np .dm-np-again { grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; height: 2.75rem; margin-top: 0; border-radius: 0.75rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--lip); font-size: 1rem; line-height: 1.25rem; font-weight: 400; letter-spacing: normal; color: var(--fg); text-decoration: none; transition: background-color 0.18s var(--e-std), box-shadow 0.2s var(--e-std), color 0.18s var(--e-std), scale 0.1s var(--e-press); }
+  .dm-np .dm-np-again:hover { background: rgb(255 157 98 / 0.07); box-shadow: inset 0 0 0 1px rgb(255 157 98 / 0.45); color: var(--tan-hi); }
+  .dm-np .dm-np-again:active { scale: 0.98; }
 
   @media (max-width: 767px) {
     .dm-np .dm-flow-headline { grid-template-columns: minmax(0, 1fr); }
     .dm-np .dm-flow-headline > [data-pool-chips] { justify-self: start; padding: 0.5rem 0.75rem 0; }
-    .dm-np .dm-flow-headline-amounts { font-size: 2.125rem; }
-    /* Review's footer on a phone: Create position, then the line that explains it directly under it, then Back on its
-       own line at its own width (grid areas only; the DOM order is unchanged). */
-    .dm-np .dm-flow-foot[data-final] { grid-template-columns: minmax(0, 1fr); grid-template-areas: "cta" "reason" "back"; }
-    .dm-np .dm-flow-foot[data-final] > #create-reason { margin-top: -0.25rem; text-align: left; }
-    .dm-np .dm-flow-foot[data-final] > .dm-btn:first-child { justify-self: start; width: auto; min-width: 6rem; padding: 0 1.125rem 0 0.875rem; }
+    .dm-np .dm-flow-headline-amounts .dm-rv-num { font-size: 2.125rem; }
+    .dm-np .dm-flow-headline-amounts .dm-skel { height: 2.125rem; }
+    .dm-np .dm-flow-headline-line > .dm-rv-v { max-width: 64%; }
     .dm-np .dm-flow-facts > div { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); }
-    .dm-np .dm-created-line { font-size: 1.75rem; }
-    .dm-np .dm-created-choice { grid-template-columns: 2.5rem minmax(0, 1fr) auto; gap: 0.75rem; padding-left: 0.875rem; }
-    .dm-np .dm-created-art { width: 2.5rem; height: 2rem; }
-  }
-  @media (max-width: 479px) {
-    .dm-np .dm-created-choice:is([data-created-next="plain"], [data-created-next="position"]) .dm-created-go { height: auto; padding: 0; background: none; color: var(--muted); box-shadow: none; }
-    .dm-np .dm-flow-headline-amounts { font-size: 1.875rem; }
   }
 
-  /* ---- 8. Review on a wide screen: what you check on the left, In your wallet on the right (new.html .wc) ----------------
-     One DOM, laid out by the step's own grid: the step content box steps aside (display: contents, never located by a
-     test), the review stack keeps its box and lends its columns and rows to its parts (subgrid), and the footer joins the
-     wallet steps in the right column. Visual order only; the DOM order (what you chose, then the wallet, then the button)
-     is the reading and tab order. The right column's card is drawn by pseudo-elements, so the footer keeps the exact width
-     of its buttons (Create position's place is its whole width). */
-  .dm-np[data-create-step="review"] { grid-template-columns: minmax(0, 1fr); max-width: calc(var(--content-flow) + 2 * var(--gutter)); }
-  @media (min-width: 1100px) {
-    /* The rows: the head; the wallet steps' row, no taller than they are (min-content: what you chose, spanning it and
-       the next row, grows the next one), so the footer starts right under them; Tick; Details; and a last flexible row
-       that takes whatever height the footer needs beyond them. */
-    .dm-np [data-stage-card="review"] { display: grid; grid-template-columns: minmax(0, 1fr) 25.25rem; grid-template-rows: auto min-content auto auto 1fr; column-gap: 1.5rem; row-gap: 0; align-items: start; }
-    .dm-np [data-stage-card="review"] > .dm-flow-head { grid-column: 1 / -1; grid-row: 1; }
-    .dm-np [data-stage-card="review"] > .dm-flow-content { display: contents; }
-    .dm-np [data-stage-card="review"] [data-stage="review"] { grid-column: 1 / -1; grid-row: 2 / span 4; display: grid; grid-template-columns: subgrid; grid-template-rows: subgrid; row-gap: 0; align-items: start; margin-top: 0.25rem; }
-    .dm-np [data-stage-card="review"] [data-stage="review"] > * { grid-column: 1; margin-bottom: 1.5rem; }
-    .dm-np [data-stage-card="review"] [data-stage="review"] > :last-child { margin-bottom: 0; }
-    .dm-np [data-stage-card="review"] [data-stage="review"] > section:has(> h3[id$="choices-heading"]) { grid-row: 1 / span 2; }
-    /* The right column's card: In your wallet over the button, joined by the tile's groove (the seam). It starts level
-       with the Your position well (past its small heading: 0.25 + 1.125 + 0.625rem) and holds its content 1.25rem in from
-       its ring, as the wells do; the card is the column itself, so nothing reaches past it. The footer keeps the exact
-       width of its buttons (tests: Create position's place is its whole width), so its inset is a margin and its part of
-       the card reaches out over it. */
-    .dm-np [data-stage-card="review"] [data-stage="review"] > section:has(> h3[id$="steps-heading"]) { position: relative; isolation: isolate; grid-column: 2; grid-row: 1; margin: 2rem 0 0; padding: 0 1.25rem 0.75rem; }
-    .dm-np [data-stage-card="review"] [data-stage="review"] > section:has(> h3[id$="steps-heading"])::before { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: 1.25rem 1.25rem 0 0; background: rgb(255 236 220 / 0.025); box-shadow: inset 1px 0 0 var(--line), inset -1px 0 0 var(--line), inset 0 1px 0 var(--line); pointer-events: none; }
-    .dm-np [data-stage-card="review"] [data-stage="review"] > section > h3[id$="steps-heading"] { margin: 0; padding: 1.25rem 0 0.375rem; font-family: var(--font-display); font-size: 2.375rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
-    .dm-np [data-stage-card="review"] > [data-journey-footer] { position: relative; isolation: isolate; grid-column: 2; grid-row: 3 / span 3; grid-template-columns: minmax(0, 1fr); grid-template-areas: "cta" "reason" "back"; align-self: start; margin: 0 1.25rem 1.25rem; padding-top: 1.125rem; box-shadow: none; }
-    .dm-np [data-stage-card="review"] > [data-journey-footer]::after { content: ''; position: absolute; inset: 0 -1.25rem -1.25rem; z-index: -1; border-radius: 0 0 1.25rem 1.25rem; background: rgb(255 236 220 / 0.025); box-shadow: inset 1px 0 0 var(--line), inset -1px 0 0 var(--line), inset 0 -1px 0 var(--line); pointer-events: none; }
-    .dm-np [data-stage-card="review"] > [data-journey-footer]::before { content: ''; position: absolute; top: 0; left: -0.25rem; right: -0.25rem; height: 2px; background: linear-gradient(rgb(0 0 0 / 0.5), rgb(0 0 0 / 0.5)) 0 0 / 100% 1px no-repeat, linear-gradient(rgb(255 236 220 / 0.075), rgb(255 236 220 / 0.075)) 0 1px / 100% 1px no-repeat; pointer-events: none; }
-    .dm-np [data-stage-card="review"] > [data-journey-footer] > .dm-btn:first-child { justify-self: start; width: auto; min-width: 6rem; }
-    .dm-np [data-stage-card="review"] > [data-journey-footer] > #create-reason { margin-top: -0.25rem; text-align: left; }
-    /* No wallet steps listed yet: the footer is the right column's card on its own, level with the well too. */
-    .dm-np [data-stage-card="review"]:not(:has(h3[id$="steps-heading"])) > [data-journey-footer] { grid-row: 2 / span 4; margin-top: 3.5rem; }
-    .dm-np [data-stage-card="review"]:not(:has(h3[id$="steps-heading"])) > [data-journey-footer]::after { inset: -1.25rem -1.25rem -1.25rem; border-radius: 1.25rem; box-shadow: inset 0 0 0 1px var(--line); }
-    .dm-np [data-stage-card="review"]:not(:has(h3[id$="steps-heading"])) > [data-journey-footer]::before { content: none; }
-    /* Today's review (StageReview): its well is short and its wallet steps carry notes, so the wallet steps are the
-       taller part. Then what you chose stays one row, the wallet steps span it and the next, and Details starts right
-       under what you chose, spanning to the end with its top held (never pushed down by the right column); the footer
-       starts right under the wallet steps. (The V2 review keeps the rows above: its well is the taller part there.) */
-    .dm-np [data-stage-card="review"]:has(#create-steps-heading) [data-stage="review"] > section:has(> h3[id$="choices-heading"]) { grid-row: 1; }
-    .dm-np [data-stage-card="review"]:has(#create-steps-heading) [data-stage="review"] > section:has(> h3[id$="steps-heading"]) { grid-row: 1 / span 2; }
-    .dm-np [data-stage-card="review"]:has(#create-steps-heading) [data-stage="review"] > [data-review-details] { grid-row: 2 / span 3; align-self: start; }
-    .dm-np [data-stage-card="review"]:has(#create-steps-heading) > [data-journey-footer] { grid-row: 4 / span 2; }
+  /* ---- 8. Review: what you check in the steps card, In your wallet as its own card beside it (new.html .wc) -------------
+     One DOM (the wallet steps inside the review stack, the footer inside the review body: tests and the reading order
+     need both). From 900px the page keeps its two columns; the review body reaches over the empty second column (its
+     right margin), lays itself out as two columns, and its second column sits exactly on the page's. The wallet section
+     is placed there, top-aligned with the steps card (12rem above the body: the card's top padding and three 60px done
+     rows), its card's upper half drawn behind it; the footer starts right under it (--np-wh, the section's measured height,
+     components/create/reviewColumns.ts) with the seam, and draws the card's lower half with spread shadows, so it keeps the
+     exact width of its buttons. Back stands at the end of the left card, under its hairline (new.html .sep, .foot). */
+  .dm-np[data-create-step="review"] { max-width: calc(var(--content-flow) + 2 * var(--gutter)); }
+  @media (min-width: 900px) {
+    .dm-np[data-create-step="review"] { grid-template-columns: minmax(0, 1fr) 25.25rem; column-gap: 1.5rem; }
+    .dm-np .dm-flow-step[data-state="current"] .dm-flow-body[data-stage-card="review"] { position: relative; isolation: isolate; display: grid; grid-template-columns: minmax(0, 1fr) 25.25rem; grid-template-rows: auto 1fr; column-gap: 3rem; align-items: start; margin-right: -27.625rem; padding-right: 0; padding-bottom: calc(1.375rem + 1px + 1.375rem + 3.375rem + 1.625rem); }
+    .dm-np [data-stage-card="review"] > .dm-flow-head { grid-column: 1; grid-row: 1; }
+    .dm-np [data-stage-card="review"] > .dm-flow-content { grid-column: 1; grid-row: 2; }
+    /* The left card's hairline over Back (new.html hr.sep, 22px each side). */
+    .dm-np [data-stage-card="review"]::before { content: ''; position: absolute; left: 3.5rem; right: 28.25rem; bottom: calc(1.625rem + 3.375rem + 1.375rem); height: 1px; background: var(--line); pointer-events: none; }
+    /* In your wallet: the right card's upper half (.wc padding 8px 10px; .wc-h 20px 14px 12px 16px; .ws-list 4px 6px 12px). */
+    .dm-np [data-stage-card="review"] [data-stage="review"] > section:has(> h3[id$="steps-heading"]) { position: absolute; top: -12rem; right: 0; z-index: 1; width: 25.25rem; gap: 0; padding: 0.5rem 0.625rem 0; }
+    .dm-np [data-stage-card="review"] [data-stage="review"] > section:has(> h3[id$="steps-heading"])::before { content: ''; position: absolute; inset: 1px 1px -1px; z-index: -1; border-radius: calc(1.625rem - 1px) calc(1.625rem - 1px) 0 0; background: var(--v4-card-lift), var(--card); box-shadow: 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 var(--v4-w06); clip-path: inset(-1px -1px 1px round 1.625rem 1.625rem 0 0); pointer-events: none; }
+    .dm-np [data-stage-card="review"] [data-stage="review"] > section:has(> h3[id$="steps-heading"])::after { content: ''; position: absolute; top: calc(100% - 1px); right: 1px; left: 1px; height: calc(var(--np-fh, 0px) + 1rem); border-radius: 0 0 calc(1.625rem - 1px) calc(1.625rem - 1px); box-shadow: 0 0 0 1px var(--v4-card-ring); clip-path: inset(1px -1px -1px round 0 0 1.625rem 1.625rem); pointer-events: none; }
+    .dm-np [data-stage-card="review"] [data-stage="review"] > section > h3[id$="steps-heading"] { margin: 0; padding: 1.25rem 0.875rem 0.75rem 1rem; font-family: var(--font-display); font-size: 2.375rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); text-wrap: balance; }
+    .dm-np [data-stage-card="review"] [data-stage="review"] > section:has(> h3[id$="steps-heading"]) > :not(h3) { margin: 0.25rem 0.375rem 0.75rem; }
+    /* The footer: the seam (.seam, 6px under the list, 14px in), then Create position 18px under it (.wc-go), the reason. */
+    .dm-np [data-stage-card="review"] > [data-journey-footer] { position: static; grid-column: 2; grid-row: 1 / -1; align-self: start; grid-template-columns: minmax(0, 1fr); grid-template-areas: "cta" "reason"; row-gap: 0; margin: calc(var(--np-wh, 0px) - 12rem) 1rem 0; padding: 1.25rem 0 0; border-radius: 0 0 0.625rem 0.625rem; background: linear-gradient(rgb(0 0 0 / 0.5), rgb(0 0 0 / 0.5)) 0.5rem 0 / calc(100% - 1rem) 0.0625rem no-repeat, linear-gradient(rgb(255 236 220 / 0.075), rgb(255 236 220 / 0.075)) 0.5rem 0.0625rem / calc(100% - 1rem) 0.0625rem no-repeat, var(--card); box-shadow: 0 0 0 calc(1rem - 1px) var(--card), 0 2.5rem 5rem -3rem rgb(0 0 0 / 0.9); }
+    .dm-np [data-stage-card="review"] > [data-journey-footer]::before,
+    .dm-np [data-stage-card="review"] > [data-journey-footer]::after { content: none; }
+    .dm-np [data-stage-card="review"] > [data-journey-footer]:has(> p[role="alert"]) { grid-template-areas: "err" "cta" "reason"; }
+    .dm-np [data-stage-card="review"] > [data-journey-footer] > #create-reason { margin: 0.75rem 0.25rem 0; text-align: left; }
+    .dm-np [data-stage-card="review"] > [data-journey-footer] > :is(.dm-btn, .dm-np-again):not(:first-child, [data-create-position]) { margin-top: 0.75rem; }
+    /* No wallet section (a review that draws none): the footer alone is the right card, from the card's top. */
+    .dm-np [data-stage-card="review"]:not(:has(h3[id$="steps-heading"])) > [data-journey-footer] { margin-top: -11rem; padding-top: 0.5rem; border-radius: 0.625rem; background: var(--card); box-shadow: 0 0 0 calc(1rem - 1px) var(--card), 0 0 0 1rem var(--v4-card-ring), var(--v4-card-drop); }
+    /* Back (new.html .btn-back at the end of the left card): 54px, out of the footer's flow, so the footer keeps the width
+       of its buttons; disabled at .45 while the wallet works, gone once the position exists. */
+    .dm-np [data-stage-card="review"] > [data-journey-footer] > .dm-btn--outline:first-child { position: absolute; left: 3.5rem; bottom: 1.625rem; grid-area: auto; justify-self: auto; width: auto; min-width: 0; height: 3.375rem; min-height: 3.375rem; padding: 0 1.375rem 0 1rem; border-radius: 0.875rem; font-size: 1rem; font-weight: 400; }
+    .dm-np [data-stage-card="review"] > [data-journey-footer] > .dm-btn--outline:first-child:disabled { opacity: 0.45; }
+    /* Once created, Back goes; the hairline stays, 22px over the body's 26px (new.html .foot.is-hidden). */
+    .dm-np .dm-flow-step[data-state="current"] .dm-flow-body[data-stage-card="review"]:has([data-created-position]) { padding-bottom: calc(1.375rem + 1px + 1.375rem + 1.625rem); }
+    .dm-np [data-stage-card="review"]:has([data-created-position])::before { bottom: calc(1.625rem + 1.375rem); }
+  }
+  /* Under 900px the two cards stack (new.html at 390: the steps card ends with its hairline and Back; In your wallet is
+     its own card 16px under it). One DOM still: the wallet section stands 16px under the steps card (its offset from the
+     review content is all known lengths: the hairline 22px either side, Back, the body's and the card's bottom padding,
+     the gap), the footer starts under it (--np-wh, measured) and draws the card's lower half, Back and the hairline hang
+     from the footer back up into the steps card, and the steps card is drawn by the list's ::before down to where it
+     ends (--np-fh, the footer's measured height). components/create/reviewColumns.ts writes both on the steps card. */
+  @media (max-width: 899px) {
+    .dm-np[data-create-step="review"] { grid-template-columns: minmax(0, 1fr); --np-cpt: 0.75rem; --np-cpr: 0.875rem; --np-cpb: 0.875rem; --np-cpl: 0.75rem; --np-bpr: 0.625rem; --np-bpb: 1.625rem; --np-bpl: 3.5rem; --np-backh: 3.375rem; }
+    .dm-np[data-create-step="review"] .dm-flow-card { --np-c2: 1rem; }
+    .dm-np[data-create-step="review"] .dm-flow-card:has([data-stage-card="review"] h3[id$="steps-heading"]) { --np-c2: var(--np-wh, 0px); }
+    .dm-np [data-stage-card="review"] { --np-tail: calc(1.375rem + 1px + 1.375rem + var(--np-backh) + var(--np-bpb) + var(--np-cpb) + 1rem); }
+    .dm-np [data-stage-card="review"]:has([data-created-position]) { --np-backh: 0px; }
+    /* The steps card: the card element paints nothing here; its list draws the upper card. */
+    .dm-np[data-create-step="review"] .dm-flow-card { background: none; box-shadow: none; }
+    .dm-np[data-create-step="review"] .dm-flow-card.dm-lit::before,
+    .dm-np[data-create-step="review"] .dm-flow-card.dm-lit::after { content: none; }
+    .dm-np[data-create-step="review"] .dm-flow-steps { position: relative; isolation: isolate; }
+    .dm-np[data-create-step="review"] .dm-flow-steps::before { content: ''; position: absolute; z-index: -1; top: calc(-1 * var(--np-cpt)); right: calc(-1 * var(--np-cpr)); bottom: calc(1rem - var(--np-cpb) + var(--np-fh, 0px) + var(--np-c2) + 1rem); left: calc(-1 * var(--np-cpl)); border-radius: 1.625rem; background: var(--v4-card-lift), var(--card); box-shadow: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 var(--v4-w06), var(--v4-card-drop); pointer-events: none; }
+    .dm-np .dm-flow-step[data-state="current"] .dm-flow-body[data-stage-card="review"] { position: relative; padding-bottom: calc(1rem - var(--np-cpb)); }
+    .dm-np [data-stage-card="review"] [data-stage="review"] { position: relative; }
+    /* In your wallet: the lower card's upper half (.wc padding 8px 10px; .wc-h 20px 14px 12px 16px, 28px; .ws-list 4px 6px 12px). */
+    .dm-np [data-stage-card="review"] [data-stage="review"] > section:has(> h3[id$="steps-heading"]) { position: absolute; top: calc(100% + var(--np-tail)); right: calc(-1 * (var(--np-cpr) + var(--np-bpr))); left: calc(-1 * (var(--np-cpl) + var(--np-bpl))); z-index: 1; gap: 0; margin: 0; padding: 0.5rem 0.625rem 0; }
+    .dm-np [data-stage-card="review"] [data-stage="review"] > section:has(> h3[id$="steps-heading"])::before { content: ''; position: absolute; inset: 1px 1px -1px; z-index: -1; border-radius: calc(1.625rem - 1px) calc(1.625rem - 1px) 0 0; background: var(--v4-card-lift), var(--card); box-shadow: 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 var(--v4-w06); clip-path: inset(-1px -1px 1px round 1.625rem 1.625rem 0 0); pointer-events: none; }
+    .dm-np [data-stage-card="review"] [data-stage="review"] > section:has(> h3[id$="steps-heading"])::after { content: ''; position: absolute; top: calc(100% - 1px); right: 1px; left: 1px; height: calc(var(--np-fh, 0px) + 1rem); border-radius: 0 0 calc(1.625rem - 1px) calc(1.625rem - 1px); box-shadow: 0 0 0 1px var(--v4-card-ring); clip-path: inset(1px -1px -1px round 0 0 1.625rem 1.625rem); pointer-events: none; }
+    .dm-np [data-stage-card="review"] [data-stage="review"] > section > h3[id$="steps-heading"] { margin: 0; padding: 1.25rem 0.875rem 0.75rem 1rem; font-family: var(--font-display); font-size: 1.75rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); text-wrap: balance; }
+    .dm-np [data-stage-card="review"] [data-stage="review"] > section:has(> h3[id$="steps-heading"]) > :not(h3) { margin: 0.25rem 0.375rem 0.75rem; }
+    /* The footer: the seam, Create position 18px under it (.wc-go 18px 6px 2px), the reason; its spread shadows draw the
+       lower card's sides and bottom (16px round it: .wc 10px + .wc-go 6px; 14px + 2px below). */
+    .dm-np [data-stage-card="review"] > [data-journey-footer] { position: relative; grid-template-columns: minmax(0, 1fr); grid-template-areas: "cta" "reason"; row-gap: 0; margin: calc(var(--np-tail) + var(--np-c2)) calc(1rem - var(--np-cpr) - var(--np-bpr)) 0 calc(1rem - var(--np-cpl) - var(--np-bpl)); padding: 1.25rem 0 0; border-radius: 0 0 0.625rem 0.625rem; background: linear-gradient(rgb(0 0 0 / 0.5), rgb(0 0 0 / 0.5)) 0.5rem 0 / calc(100% - 1rem) 0.0625rem no-repeat, linear-gradient(rgb(255 236 220 / 0.075), rgb(255 236 220 / 0.075)) 0.5rem 0.0625rem / calc(100% - 1rem) 0.0625rem no-repeat, var(--card); box-shadow: 0 0 0 calc(1rem - 1px) var(--card), var(--v4-card-drop); }
+    .dm-np [data-stage-card="review"]:not(:has(h3[id$="steps-heading"])) > [data-journey-footer] { padding-top: 0; border-radius: 0.625rem; background: var(--card); box-shadow: 0 0 0 calc(1rem - 1px) var(--card), 0 0 0 1rem var(--v4-card-ring), var(--v4-card-drop); }
+    .dm-np [data-stage-card="review"] > [data-journey-footer]:has(> p[role="alert"]) { grid-template-areas: "err" "cta" "reason"; }
+    .dm-np [data-stage-card="review"] > [data-journey-footer] > #create-reason { margin: 0.75rem 0.25rem 0; text-align: left; }
+    .dm-np [data-stage-card="review"] > [data-journey-footer] > :is(.dm-btn, .dm-np-again):not(:first-child, [data-create-position]) { margin-top: 0.75rem; }
+    /* The steps card's hairline (new.html hr.sep, 22px under what you check) and Back under it, hung from the footer. */
+    .dm-np [data-stage-card="review"] > [data-journey-footer]::before { content: ''; position: absolute; top: calc(1.375rem - var(--np-tail) - var(--np-c2)); right: calc(var(--np-cpr) + var(--np-bpr) - 1rem); left: calc(var(--np-cpl) + var(--np-bpl) - 1rem); height: 1px; background: var(--line); pointer-events: none; }
+    .dm-np [data-stage-card="review"] > [data-journey-footer]::after { content: none; }
+    .dm-np [data-stage-card="review"] > [data-journey-footer] > .dm-btn--outline:first-child { position: absolute; top: calc(1.375rem + 1px + 1.375rem - var(--np-tail) - var(--np-c2)); left: calc(var(--np-cpl) + var(--np-bpl) - 1rem); grid-area: auto; justify-self: auto; width: auto; min-width: 0; height: var(--np-backh); min-height: var(--np-backh); padding: 0 1.375rem 0 1rem; border-radius: 0.875rem; font-size: 1rem; font-weight: 400; }
+    .dm-np [data-stage-card="review"] > [data-journey-footer] > .dm-btn--outline:first-child:disabled { opacity: 0.45; }
+  }
+  @media (max-width: 767px) {
+    .dm-np[data-create-step="review"] { --np-cpt: 0.5rem; --np-cpr: 0.5rem; --np-cpb: 0.625rem; --np-cpl: 0.375rem; --np-bpr: 0.25rem; --np-bpb: 1.375rem; --np-bpl: 0.5rem; --np-backh: 3.125rem; }
   }
 
-  /* ---- 9. Created: the position, now a tile you hold (new.html .made-st). The Domino tile, drawn by the section's own
-     pseudo-elements beside the line (no markup, nothing read): a 2|3 domino face with its groove and five recessed pips,
-     its depth as stepped slabs, tilted as the signature tile rests, landing once. Decorative, it takes no pointer. */
-  .dm-np .dm-created { position: relative; }
-  /* The tile sits inside the section (top 0.625rem leaves room for its tilt) and the line stops 1rem short of it. */
-  .dm-np .dm-created-line { padding-right: 6.25rem; min-height: 7.875rem; }
-  .dm-np .dm-created::before { content: ''; position: absolute; top: 0.625rem; right: 1.25rem; width: 4rem; height: 7rem; border-radius: 0.625rem; background:
-      radial-gradient(circle at 50% 38%, #1a110b, #3b2416 70%, #4a2c1a) 31% 15% / 0.6875rem 0.6875rem no-repeat,
-      radial-gradient(circle at 50% 38%, #1a110b, #3b2416 70%, #4a2c1a) 69% 32% / 0.6875rem 0.6875rem no-repeat,
-      radial-gradient(circle at 50% 38%, #1a110b, #3b2416 70%, #4a2c1a) 28% 64% / 0.6875rem 0.6875rem no-repeat,
-      radial-gradient(circle at 50% 38%, #1a110b, #3b2416 70%, #4a2c1a) 50% 76% / 0.6875rem 0.6875rem no-repeat,
-      radial-gradient(circle at 50% 38%, #1a110b, #3b2416 70%, #4a2c1a) 72% 88% / 0.6875rem 0.6875rem no-repeat,
-      linear-gradient(rgb(84 34 8 / 0.55), rgb(84 34 8 / 0.55)) center / calc(100% - 0.75rem) 1px no-repeat,
-      linear-gradient(158deg, #ffc39c 0%, #ffa771 30%, #ff9d62 55%, #f28a4c 100%);
-    box-shadow: inset 0 1px 0 rgb(255 240 228 / 0.7), inset 0 0 0 1px rgb(255 220 196 / 0.35), inset 0 -0.25rem 0.5rem rgb(130 52 14 / 0.35), 1px 1px 0 #ec8549, 2px 2px 0 #d8753e, 0.1875rem 0.1875rem 0 #c06534, 0.25rem 0.25rem 0 #b05c2f, 0.3125rem 0.3125rem 0 #9c522a, 0.375rem 0.375rem 0 #7c4223, 0.5rem 1.25rem 1.5rem -0.375rem rgb(0 0 0 / 0.6);
-    transform: rotate(-7deg); pointer-events: none; animation: dm-np-land 0.6s var(--e-enter) 0.12s backwards; }
-  @media (max-width: 479px) {
-    .dm-np .dm-created-line { padding-right: 4.875rem; min-height: 6.25rem; }
-    .dm-np .dm-created::before { top: 0.5rem; right: 0.75rem; width: 3.125rem; height: 5.5rem; border-radius: 0.5rem; background-size: 0.5625rem 0.5625rem, 0.5625rem 0.5625rem, 0.5625rem 0.5625rem, 0.5625rem 0.5625rem, 0.5625rem 0.5625rem, calc(100% - 0.625rem) 1px, auto; }
+  /* ---- 9. Created (new.html .made): the line and the tile you now hold, the four ways on, a hairline; at the top of
+     Review's body, above Your position (createdParts.tsx InCreatedSlot). The receipt (Domino V2) under the line. ------- */
+  .dm-np .dm-created { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 6rem; column-gap: 1.25rem; row-gap: 0; align-items: center; margin: 0 0 0.5rem; padding: 0.125rem 0.125rem 1.375rem; box-shadow: inset 0 -1px 0 var(--line); animation: none; }
+  .dm-np .dm-created > * { grid-column: 1 / -1; }
+  .dm-np .dm-created > .dm-created-line { grid-column: 1; grid-row: 1; margin: 0; padding: 0; min-height: 0; font-family: var(--font-display); font-size: 2.25rem; line-height: 1.06; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); animation: dm-np-panel 0.5s var(--e-enter) backwards; }
+  .dm-np .dm-created-q { display: inline-block; width: 100%; margin-top: 0.5rem; color: var(--muted); }
+  .dm-np .dm-created > .dm-flow-facts[data-receipt] { margin: 0.75rem 0 0.25rem; }
+  .dm-np .dm-created > .dm-created-choices { margin-top: 1.125rem; }
+  .dm-np .dm-created:not(:has(> .dm-created-st)) > .dm-created-line { grid-column: 1 / -1; }
+  /* The tile (.made-st, 96 x 132): the brand's sculptural domino at .34 (components/docs/DominoTile.tsx, styled by
+     v4-system.css), landing once (.95s at .12s), its floor shadow fading in (.9s at .3s), its pips popping one by one;
+     then it turns toward the pointer (createdParts.tsx writes --rx and --ry; 1s drift). */
+  .dm-np .dm-created-st { position: relative; grid-column: 2; grid-row: 1; align-self: center; height: 8.25rem; pointer-events: none; }
+  .dm-np .dm-created-shadow { position: absolute; left: 0.75rem; right: 0.25rem; bottom: 0.25rem; height: 0.875rem; border-radius: 50%; background: radial-gradient(closest-side, rgb(0 0 0 / 0.8), rgb(0 0 0 / 0.3) 55%, rgb(0 0 0 / 0)); filter: blur(0.1875rem); animation: dm-v4-fade 0.9s var(--e-std) 0.3s backwards; }
+  .dm-np .dm-created-land { position: absolute; left: 1.125rem; top: 0.125rem; width: 4rem; height: 7.0625rem; animation: dm-np-land2 0.95s var(--e-enter) 0.12s backwards; }
+  .dm-np .dm-created-land > .dm-tile-shadow { display: none; }
+  .dm-np .dm-created-land > .dm-tile { transform: scale(0.34); transform-origin: 0 0; }
+  .dm-np .dm-created-st .dm-tile-3d { transform: rotateX(var(--rx, 6deg)) rotateY(var(--ry, -18deg)) rotateZ(-7deg); transition: transform 1s var(--e-drift); }
+  .dm-np .dm-created-st .dm-tile-3d i { animation: dm-v4-pip 0.45s var(--e-pop) 0.62s backwards; }
+  .dm-np .dm-created-st .dm-tile-3d i:nth-of-type(2) { animation-delay: 0.69s; }
+  .dm-np .dm-created-st .dm-tile-3d i:nth-of-type(3) { animation-delay: 0.76s; }
+  .dm-np .dm-created-st .dm-tile-3d i:nth-of-type(4) { animation-delay: 0.83s; }
+  .dm-np .dm-created-st .dm-tile-3d i:nth-of-type(5) { animation-delay: 0.9s; }
+  @media (forced-colors: active) { .dm-np .dm-created-st { display: none; } }
+  /* The four ways on (.cxl, .cx): a line drawing, the name and its fee, the description, the way (the first the Tangerine
+     pill), and the chevron in its own column; they rise one after another (.3s to .48s). */
+  .dm-np .dm-created-choices { gap: 0.125rem; }
+  .dm-np .dm-created-choice { position: relative; grid-template-columns: 2.75rem minmax(0, 1fr) auto 2.125rem; gap: 1rem; min-height: 4.875rem; padding: 0.625rem 0.5rem 0.625rem 1.375rem; border-radius: 0.875rem; background: transparent; box-shadow: none; transition: background-color 0.18s var(--e-std), scale 0.1s var(--e-press); animation: dm-np-panel 0.5s var(--e-enter) 0.3s backwards; }
+  .dm-np .dm-created-choice:nth-child(2) { animation-delay: 0.36s; }
+  .dm-np .dm-created-choice:nth-child(3) { animation-delay: 0.42s; }
+  .dm-np .dm-created-choice:nth-child(4) { animation-delay: 0.48s; }
+  .dm-np .dm-created-choice:nth-child(n + 5) { animation-delay: 0.54s; }
+  .dm-np .dm-created-choice:hover { background: var(--v4-w045); box-shadow: none; }
+  .dm-np .dm-created-choice:active { scale: 0.997; }
+  .dm-np .dm-created-choice::before { content: ''; position: absolute; left: 0.375rem; top: 50%; width: 0.3125rem; height: 0.3125rem; margin-top: -0.15625rem; border-radius: var(--radius-pill); background: var(--tan); opacity: 0; transform: scale(0.2); transition: opacity 0.2s var(--e-std), transform 0.35s var(--e-enter); pointer-events: none; }
+  .dm-np .dm-created-choice:hover::before { opacity: 1; transform: none; }
+  .dm-np .dm-created-art { display: block; position: relative; overflow: visible; align-self: center; width: 2.75rem; height: 2.75rem; padding: 0; border-radius: 0; background: none; box-shadow: none; color: var(--subtle); transition: color 0.2s var(--e-std); }
+  .dm-np .dm-created-art > svg { display: block; width: 100%; height: 100%; max-width: none; max-height: none; overflow: visible; }
+  .dm-np .dm-created-art g { transform-box: fill-box; transform-origin: center; transition: transform 0.35s var(--e-enter); }
+  .dm-np .dm-created-choice:hover .dm-created-art { color: var(--tan); }
+  .dm-np .dm-created-choice:hover .dm-created-art .ca-t { transform: rotate(-8deg); }
+  .dm-np .dm-created-choice:hover .dm-created-art .ca-r { transform: rotate(-16deg); }
+  .dm-np .dm-created-choice:hover .dm-created-art .ca-u { transform: translateY(-2px); }
+  .dm-np .dm-created-choice:hover .dm-created-art .ca-x { transform: translateX(2px); }
+  .dm-np .dm-created-name { font-size: 0.96875rem; line-height: 1.4; font-weight: 500; color: var(--fg); }
+  .dm-np .dm-created-fee { margin-left: 0.375rem; font-weight: 400; color: var(--subtle); }
+  .dm-np .dm-created-note { margin-top: 0.375rem; font-size: 0.84375rem; line-height: 1.45; color: var(--subtle); }
+  /* The way on (.cx-go) in the third column, the chevron (.chev) in the fourth: the go link's own box steps aside. */
+  .dm-np .dm-created-go { display: contents; }
+  .dm-np .dm-created-go-text { justify-self: end; font-size: 0.84375rem; line-height: normal; font-weight: 500; color: var(--muted); white-space: nowrap; transition: color 0.18s var(--e-std), background-color 0.18s var(--e-std), box-shadow 0.25s var(--e-std); }
+  .dm-np .dm-created-choice:hover .dm-created-go-text { color: var(--fg); }
+  .dm-np .dm-created-go > svg { box-sizing: content-box; justify-self: center; width: 0.875rem; height: 0.875rem; padding: 0.625rem; border-radius: 50%; color: var(--faint); transition: color 0.18s var(--e-std), background-color 0.18s var(--e-std), translate 0.25s var(--e-enter); }
+  .dm-np .dm-created-choice:hover .dm-created-go > svg { color: var(--fg); background: var(--v4-w06); translate: 2px 0; }
+  /* The way on that keeps the position as it is: the one Tangerine pill (.cx-go.pri). */
+  .dm-np .dm-created-choice:is([data-created-next="plain"], [data-created-next="position"]) .dm-created-go-text { display: inline-flex; align-items: center; height: 2.375rem; padding: 0 0.9375rem; border-radius: 0.75rem; background: var(--tan); color: var(--tan-fg); box-shadow: inset 0 1px 0 rgb(255 240 228 / 0.5), inset 0 -1px 0 rgb(120 50 15 / 0.25), 0 0.5rem 1.375rem -0.75rem rgb(255 157 98 / 0.55); }
+  .dm-np .dm-created-choice:is([data-created-next="plain"], [data-created-next="position"]):hover .dm-created-go-text { background: var(--tan-hi); color: var(--tan-fg); box-shadow: inset 0 1px 0 rgb(255 240 228 / 0.6), inset 0 -1px 0 rgb(120 50 15 / 0.2), 0 0.75rem 1.75rem -0.75rem rgb(255 157 98 / 0.7); }
+  /* Recommended (.rec): a quiet tag led by a small tile that turns on the row's hover. */
+  .dm-np .dm-created-pill { display: inline-flex; align-items: center; gap: 0.375rem; height: 1.375rem; padding: 0 0.5rem 0 0.4375rem; border: 0; border-radius: 0.4375rem; background: var(--v4-w055); box-shadow: none; font-size: 0.75rem; line-height: 1rem; font-weight: 500; color: var(--muted); vertical-align: 0.0625rem; }
+  .dm-np .dm-created-pill::before { content: ''; flex: none; width: 0.5625rem; height: 0.875rem; background: rgb(255 157 98 / 0.55); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 14' fill='none'%3E%3Crect x='.6' y='.6' width='7.8' height='12.8' rx='2' stroke='%23000' stroke-width='1.2'/%3E%3Cpath d='M2.5 7h4' stroke='%23000' stroke-width='1.1' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 14' fill='none'%3E%3Crect x='.6' y='.6' width='7.8' height='12.8' rx='2' stroke='%23000' stroke-width='1.2'/%3E%3Cpath d='M2.5 7h4' stroke='%23000' stroke-width='1.1' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat; transition: rotate 0.4s var(--e-enter); }
+  .dm-np .dm-created-choice:hover .dm-created-pill::before { rotate: -18deg; }
+
+  @media (max-width: 899px) {
+    .dm-np .dm-created { grid-template-columns: minmax(0, 1fr) 4.5rem; }
+    .dm-np .dm-created > .dm-created-line { font-size: 1.75rem; }
+    .dm-np .dm-created-st { height: 6.5rem; }
+    .dm-np .dm-created-land { left: 0.375rem; top: 0; transform-origin: 0 0; scale: 0.78; }
+    .dm-np .dm-created-shadow { left: 0.25rem; right: 0; bottom: 0.5rem; }
+    .dm-np .dm-created-choice { grid-template-columns: 2.5rem minmax(0, 1fr) auto 1.75rem; gap: 0.75rem; padding-left: 0.875rem; }
+    .dm-np .dm-created-art { width: 2.5rem; height: 2.5rem; }
+    .dm-np .dm-created-art > svg { width: 2.75rem; height: 2.75rem; }
   }
-  @media (forced-colors: active) { .dm-np .dm-created::before { content: none; } }
+  @media (max-width: 479px) {
+    .dm-np .dm-created-choice { grid-template-columns: 2.5rem minmax(0, 1fr) 1.75rem; }
+    .dm-np .dm-created-go-text,
+    .dm-np .dm-created-choice:is([data-created-next="plain"], [data-created-next="position"]) .dm-created-go-text { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  }
 
   /* ---- Motion: reduced motion keeps the look and drops the movement (V4 §6.4) ---------------------------------------- */
   @media (prefers-reduced-motion: reduce) {
-    .dm-np .dm-flow-collapse[data-open] .dm-flow-body,
+    .dm-np .dm-flow-collapse[data-open] .dm-flow-body:not([data-stage-card="review"]) > :is(.dm-flow-content, .dm-flow-foot),
+    .dm-np .dm-flow-collapse[data-open] .dm-flow-head .dm-flow-lead,
+    .dm-np .dm-flow-collapse[data-open] [data-stage-card="review"] [data-stage="review"] > *,
+    .dm-np .dm-flow-collapse[data-open] [data-stage-card="review"] > .dm-flow-foot > *,
+    .dm-np > .dm-flow-card.dm-flow-rise, .dm-np > .dm-flow-preview.dm-flow-rise, .dm-np > .dm-np-head .dm-page-sub,
     .dm-np .dm-flow-step .dm-step-marker > svg,
     .dm-np .dm-flow-listbox,
     .dm-np .dm-flow-panel[data-chosen-pool],
     .dm-np .dm-flow-chosen-check,
-    .dm-np .dm-created::before,
-    .dm-np .dm-flow-wsteps > li[data-step-state="done"] .dm-step-marker[data-state="done"] { animation: none; }
+    .dm-np [data-picker-variant="create"] > :is(fieldset, div[aria-hidden="true"]),
+    .dm-np .dm-flow-pv-live.dm-arrive, .dm-np .dm-flow-pv-start.dm-arrive,
+    .dm-np .dm-flow-slip :is(.dm-error, .dm-flow-slip-warn),
+    .dm-np .dm-flow-wsteps > li .dm-flow-wstep-note,
+    .dm-np .dm-flow-wsteps > li[data-step-state="done"] .dm-step-marker[data-state="done"]::after,
+    .dm-np .dm-flow-foot[data-final] > [data-create-position],
+    .dm-np [data-create-position="done"]::before,
+    .dm-np .dm-created > .dm-created-line, .dm-np .dm-created-shadow, .dm-np .dm-created-land, .dm-np .dm-created-st .dm-tile-3d i,
+    .dm-np .dm-created-choice { animation: none; }
+    .dm-np details.dm-details::details-content { transition: none; }
+    .dm-np .dm-created-st .dm-tile-3d { transform: rotateX(6deg) rotateY(-18deg) rotateZ(-7deg); transition: none; }
     .dm-np .dm-flow-step::after,
     .dm-np .dm-flow-step .dm-step-marker,
     .dm-np .dm-flow-foot > .dm-btn,
     .dm-np .dm-flow-foot > .dm-btn::before,
     .dm-np .dm-flow-combo-icon,
-    .dm-np .dm-flow-hit, .dm-np .dm-flow-hit::before, .dm-np .dm-flow-hit::after,
+    .dm-np .dm-flow-hit, .dm-np .dm-flow-hit::before, .dm-np .dm-flow-hit::after, .dm-np .dm-flow-hit > :first-child,
     .dm-np [data-picker-variant="create"] li.dm-mkt-option::before,
     .dm-np [data-picker-variant="create"] .dm-mkt-option-head > span[aria-hidden="true"] > *,
     .dm-np [data-picker-variant="create"] .dm-flow-pool-figures > *,
@@ -760,19 +1096,27 @@
     .dm-np [data-pool-advanced] > summary, .dm-np [data-pool-advanced] > summary::before,
     .dm-np .dm-flow-widths > .dm-seg-item, .dm-np .dm-flow-width-art > span,
     .dm-np [data-flow-advanced] > summary, .dm-np [data-flow-advanced] > summary::before,
+    .dm-np .dm-flow-slip .dm-slip-presets::before,
     .dm-np .dm-funds-line, .dm-np .dm-funds-line::before, .dm-np .dm-funds-line-action::after,
     .dm-np .dm-flow-wsteps .dm-step-marker::before,
-    .dm-np .dm-flow-wsteps > li::before, .dm-np .dm-created-choice, .dm-np .dm-created-choice::before { transition-property: opacity, color, background-color, box-shadow; }
+    .dm-np .dm-flow-wsteps > li::before, .dm-np .dm-flow-wsteps > li::after,
+    .dm-np .dm-flow-pv-pool > :first-child > *, .dm-np .dm-flow-headline-pair > :first-child > *,
+    .dm-np .dm-flow-pv-range-band, .dm-np .dm-flow-pv-range-edge, .dm-np .dm-flow-pv-range-grip,
+    .dm-np .dm-created-choice, .dm-np .dm-created-choice::before, .dm-np .dm-created-art g, .dm-np .dm-created-go > svg, .dm-np .dm-created-pill::before, .dm-np .dm-np-again { transition-property: opacity, color, background-color, box-shadow; }
     .dm-np button.dm-flow-row:hover .dm-step-marker,
     .dm-np .dm-flow-foot > .dm-btn:active,
     .dm-np .dm-flow-hit:active,
+    .dm-np .dm-flow-hit:hover > :first-child,
     .dm-np :is([data-stage="token"], [data-stage="pool"]) .dm-btn:active,
     .dm-np [data-pool-advanced] > summary:active,
     .dm-np .dm-flow-widths > .dm-seg-item:active,
     .dm-np [data-flow-advanced] > summary:active,
     .dm-np .dm-funds-line:active,
     .dm-np .dm-created-choice:active,
+    .dm-np .dm-np-again:active,
     .dm-np .dm-flow-widths > .dm-seg-item:hover .dm-flow-width-art > span,
+    .dm-np .dm-flow-preview:hover .dm-flow-pv-pool > :first-child > *,
+    .dm-np .dm-flow-headline:hover .dm-flow-headline-pair > :first-child > *,
     .dm-np [data-picker-variant="create"] li.dm-mkt-option:hover .dm-mkt-option-head > span[aria-hidden="true"] > :is(:first-child, :last-child),
     .dm-np [data-chosen-pool]:hover .dm-flow-pool-head > span[aria-hidden="true"]:not(.dm-flow-chosen-check) > :is(:first-child, :last-child) { scale: none; }
     .dm-np [data-picker-variant="create"] li.dm-mkt-option:hover .dm-mkt-option-head > span[aria-hidden="true"] > :is(:first-child, :last-child),
@@ -781,14 +1125,35 @@
     .dm-np .dm-flow-hit:is(:hover, [data-active]):not(.dm-flow-hit--off)::after,
     .dm-np :is([data-pool-advanced], [data-flow-advanced]) > summary:hover::before,
     .dm-np .dm-flow-foot > .dm-btn--outline:first-child:hover:not(:disabled)::before,
-    .dm-np .dm-funds-line:hover .dm-funds-line-action::after { translate: none; }
+    .dm-np .dm-funds-line:hover .dm-funds-line-action::after,
+    .dm-np .dm-flow-preview:hover .dm-flow-pv-pool > :first-child > :last-child,
+    .dm-np .dm-flow-headline:hover .dm-flow-headline-pair > :first-child > :last-child,
+    .dm-np .dm-created-choice:hover .dm-created-go > svg { translate: none; }
+    .dm-np .dm-flow-pv-range-grip, .dm-np .dm-created-pill::before { rotate: none !important; }
+    .dm-np .dm-flow-pv-range { --k: 1 !important; }
+    .dm-np .dm-created-art g { transform: none !important; }
     .dm-np .dm-flow-wsteps > li:is([data-step-status="preparing"], [data-step-status="wallet"], [data-step-state="reading"], [data-step-state="wallet"], [data-step-status="sent"], [data-step-state="chain"]) { --tile-turn: none; }
+    .dm-np .dm-flow-wsteps > li[data-step-state="done"] .dm-step-marker[data-state="done"]::before { transition: none; }
   }
-  html.dm-still .dm-np :is(.dm-flow-collapse[data-open] .dm-flow-body, .dm-flow-step .dm-step-marker > svg, .dm-flow-listbox, .dm-flow-panel[data-chosen-pool], .dm-flow-chosen-check) { animation: none; }
-  html.dm-still .dm-np .dm-created::before { animation: none; }
+  html.dm-still .dm-np :is(.dm-flow-collapse[data-open] .dm-flow-body > :is(.dm-flow-content, .dm-flow-foot), .dm-flow-collapse[data-open] .dm-flow-head .dm-flow-lead, .dm-flow-collapse[data-open] [data-stage-card="review"] [data-stage="review"] > *, .dm-flow-collapse[data-open] [data-stage-card="review"] > .dm-flow-foot > *, .dm-flow-step .dm-step-marker > svg, .dm-flow-listbox, .dm-flow-panel[data-chosen-pool], .dm-flow-chosen-check, .dm-flow-pv-live.dm-arrive, .dm-flow-pv-start.dm-arrive, .dm-flow-wsteps > li .dm-flow-wstep-note, .dm-flow-foot[data-final] > [data-create-position], .dm-created > .dm-created-line, .dm-created-shadow, .dm-created-land, .dm-created-st .dm-tile-3d i, .dm-created-choice) { animation: none; }
+  html.dm-still .dm-np > :is(.dm-flow-card, .dm-flow-preview).dm-flow-rise,
+  html.dm-still .dm-np > .dm-np-head .dm-page-sub,
+  html.dm-still .dm-np [data-picker-variant="create"] > :is(fieldset, div[aria-hidden="true"]) { animation: none; }
+  html.dm-still .dm-np details.dm-details::details-content { transition: none; }
+  html.dm-still .dm-np .dm-created-st .dm-tile-3d { transform: rotateX(6deg) rotateY(-18deg) rotateZ(-7deg); transition: none; }
 }
 
 @keyframes dm-np-stamp { from { opacity: 0; transform: scale(0.5) rotate(-12deg); } to { opacity: 1; transform: none; } }
 @keyframes dm-np-menu { from { opacity: 0; transform: translateY(-0.25rem) scale(0.96); } to { opacity: 1; transform: none; } }
-@keyframes dm-np-land { from { opacity: 0; transform: translateY(1.625rem) rotate(-7deg) scale(0.96); filter: blur(0.5rem); } to { opacity: 1; transform: rotate(-7deg); filter: none; } }
+@keyframes dm-np-land2 { from { opacity: 0; transform: translateY(1.625rem) scale(0.96); filter: blur(0.5rem); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes dm-np-tk { from { opacity: 0; scale: 0.6; } }
+@keyframes dm-np-cap1 { from { opacity: 0; translate: 0 0.1875rem; } }
+@keyframes dm-np-cap2 { from { opacity: 0; translate: 0 0.1875rem; } }
+@keyframes dm-np-cap3 { from { opacity: 0; translate: 0 0.1875rem; } }
+@keyframes dm-np-cap4 { from { opacity: 0; translate: 0 0.1875rem; } }
+@keyframes dm-np-cap5 { from { opacity: 0; translate: 0 0.1875rem; } }
+@keyframes dm-np-lab1 { from { color: transparent; padding-top: 0.5rem; } }
+@keyframes dm-np-lab2 { from { color: transparent; padding-top: 0.5rem; } }
+@keyframes dm-np-reveal { from { width: 0; } }
+@keyframes dm-np-hold { to { stroke-opacity: 1; } }
 @keyframes dm-np-panel { from { opacity: 0; transform: translateY(0.625rem); filter: blur(0.25rem); } to { opacity: 1; transform: none; filter: none; } }

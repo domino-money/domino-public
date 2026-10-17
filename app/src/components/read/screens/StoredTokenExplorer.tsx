@@ -66,6 +66,21 @@ const NONE: Market[] = []
  * (useDiscoveredPools), each pool once; today's Top pools that hold the token first, then by liquidity; the pools with
  * a very high fee or that Domino can't open positions in are flagged and left out until "Show all"; how many pools are
  * still being collected is said; and a token that passes for one of the site's main tokens says so first. */
+/**
+ * V4: the card's rise plays once. A figures dialog holds it still while open (v4-markets.css); once it has risen, or its
+ * rise was cut short, the card says so (data-risen) and no later state replays it. Presentation only.
+ */
+function holdRise(card: HTMLElement | null) {
+  if (!card) return
+  const done = (event: Event) => { if (event.target === card) card.setAttribute('data-risen', '') }
+  card.addEventListener('animationend', done)
+  card.addEventListener('animationcancel', done)
+  return () => {
+    card.removeEventListener('animationend', done)
+    card.removeEventListener('animationcancel', done)
+  }
+}
+
 export function StoredTokenExplorer({ source, token }: { source: ReadSource; token: string }) {
   const [pages, setPages] = useState<Page[]>([{}])
   const [refresh, setRefresh] = useState(0)
@@ -117,6 +132,8 @@ export function StoredTokenExplorer({ source, token }: { source: ReadSource; tok
   const merged = useMemo(() => mergeTokenPools(stored, firstPage ? discovered : NONE, { listed, liquidity: (poolId) => dexStore.pool(poolId)?.liquidityUsd ?? null }), [stored, discovered, firstPage, listed])
   const split = useMemo(() => splitFlagged(merged), [merged])
   const rows = showAll ? merged : split.shown
+  // The flagged pools Show all brings in rise into place (V4 token.html); none while they are folded away.
+  const revealed = useMemo(() => new Set(showAll ? split.hidden.map((row) => row.poolId) : []), [showAll, split])
   const provider = useMemo<MarketsProvider>(() => {
     const state: MarketsState = { phase: 'ready', result: { source: 'live', chainId: 4663, network: 'Robinhood Chain', markets: rows }, problems: [] }
     return { kind: 'bridge', getSnapshot: () => state, subscribe: () => () => {}, ensure() {}, refresh() { setRefresh((n) => n + 1) } }
@@ -142,7 +159,7 @@ export function StoredTokenExplorer({ source, token }: { source: ReadSource; tok
   const said = failure && merged.length === 0 ? failure : selected?.acquisition.status === 'rejected' ? 'This token could not be verified.' : loading ? 'Reading pools…' : ''
 
   return (
-    <section className="mt-6 grid gap-4" aria-labelledby="stored-token-title" data-stored-token={token} data-acquisition={atCapacity ? 'at_capacity' : pending ? 'pending' : 'settled'} data-pools-merged={merged.length} data-pools-discovered={discovered.length}>
+    <section className="mt-6 grid gap-4 dm-lit" aria-labelledby="stored-token-title" data-stored-token={token} data-acquisition={atCapacity ? 'at_capacity' : pending ? 'pending' : 'settled'} data-pools-merged={merged.length} data-pools-discovered={discovered.length} ref={holdRise}>
       <Card pad="md">
         {/* V4 (D-M5): the token's mark beside its name, decoration only. */}
         {candidate && <span aria-hidden="true" className="dm-mkt-token-mark"><TokenMark token={candidate.token} size={44} /></span>}
@@ -155,7 +172,7 @@ export function StoredTokenExplorer({ source, token }: { source: ReadSource; tok
       {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): while the token's pools are still being
           collected (or the producer is at capacity) the empty table rests as a loading bubble; it used to say "Domino’s
           data service is busy, and no pools of this token are stored yet." or "Pool data is being collected." */}
-      {(value || merged.length > 0) && <MarketsContext.Provider value={provider}><MarketsTable variant="full" includeCatalogue={false} poolToken={token} empty={atCapacity || pending ? <div className="p-5"><Skeleton className="mx-auto h-10 max-w-[30rem]" /></div> : <p className="p-5 text-body text-fg-muted">{split.hidden.length > 0 ? 'Every pool of this token has a very high fee, or is one Domino can’t open positions in.' : 'No verified pools are stored for this token yet.'}</p>} /></MarketsContext.Provider>}
+      {(value || merged.length > 0) && <MarketsContext.Provider value={provider}><MarketsTable variant="full" includeCatalogue={false} poolToken={token} revealed={revealed} empty={atCapacity || pending ? <div className="p-5"><Skeleton className="mx-auto h-10 max-w-[30rem]" /></div> : <p className="p-5 text-body text-fg-muted">{split.hidden.length > 0 ? 'Every pool of this token has a very high fee, or is one Domino can’t open positions in.' : 'No verified pools are stored for this token yet.'}</p>} /></MarketsContext.Provider>}
       <div className="flex flex-wrap items-center gap-3">
         {split.hidden.length > 0 && (
           <Button variant="ghost" onClick={() => setShowAll((all) => !all)} data-show-all-pools={showAll ? 'shown' : 'hidden'} title="Pools with a fee above 10% of every swap, and pools Domino can’t open positions in.">

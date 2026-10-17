@@ -49,6 +49,8 @@ export function LimitsFields({ form, onChange, problems, dex, disabled }: {
       <label className="dm-label dm-acct-lf">
         {LABEL[name]}
         <input className="dm-field" inputMode="decimal" disabled={disabled} value={form[name]} aria-invalid={problemFor(name) ? true : undefined} aria-describedby={`${fieldId}-${name}-hint${problemFor(name) ? ` ${fieldId}-${name}-error` : ''}`} onChange={(event) => onChange({ ...form, [name]: event.target.value })} data-setting-input={name} />
+        {/* V4 (the approved sequence.html .fld span): the unit inside the field, decoration only (the label already says %). */}
+        {name.endsWith('Percent') && <span className="dm-seq-limit-unit" aria-hidden="true">%</span>}
       </label>
       <p className="dm-seq-hint" id={`${fieldId}-${name}-hint`}>{HELP[name]}{hint ? ` ${hint}` : ''}</p>
       {problemFor(name) && <p className="dm-seq-limit-why" id={`${fieldId}-${name}-error`}>{problemFor(name)}</p>}

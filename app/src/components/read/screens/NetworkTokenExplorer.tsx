@@ -77,7 +77,7 @@ export function NetworkTokenExplorer({ location, others, checking, initial = nul
       </div>}
       {token && others && <section className="dm-mkt-found animate-rise" aria-labelledby="network-found-pools-title" data-found-pools="">
         <h2 id="network-found-pools-title" className="dm-title">Pools</h2>
-        <Card className="mt-3 p-2">
+        <Card className="mt-3 p-2 dm-lit">
           <NetworkPoolPicker key={`${chainId}:${address}:${attempt}`} read={(signal) => others.pools(token, signal)} network={network} pending={null} onPending={() => undefined} browse />
         </Card>
       </section>}

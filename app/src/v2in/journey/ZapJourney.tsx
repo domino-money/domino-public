@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useFirstLoad, useReviewColumns } from '../../components/create/reviewColumns'
 import { StepList, VISUAL_STEPS, type StepView, type VisualStep } from '../../components/create/StepList'
 import { Button, PageHeader, PageShell } from '../../components/ui'
 import { CREATE } from '../../lib/create/copy'
@@ -96,6 +97,9 @@ export function ZapJourney({ chainId, gate, finderOnly, onListed, poolId = '', l
   const price = journeyPrice(state, now)
   const current = state.step
   const locked = view.busy || view.receipt !== null || fundingBusy
+  // V4 (presentation only): the first moment's flag, and Review's two cards on a wide screen (components/create/reviewColumns.ts).
+  const firstLoad = useFirstLoad()
+  useReviewColumns(current === 'review')
   // Changed on purpose 2026-10-06 (the final check's F1/F6, a second look): once the position exists the flow is marked
   // made (lib/create/createProgress.ts publishFlowMade), as the owner's journey marks it, so New position's own link starts
   // a fresh flow here too (screens/NewPosition.tsx; from the pool finder, ./NewPositionV2.tsx then opens today's journey);
@@ -295,7 +299,7 @@ export function ZapJourney({ chainId, gate, finderOnly, onListed, poolId = '', l
   })
 
   return (
-    <PageShell width="flow" className="dm-np" data-create-journey="" data-create-step={current} data-zap-journey={chainId} data-zap-gate={gate.mode}>
+    <PageShell width="flow" className="dm-np" data-create-journey="" data-create-step={current} data-zap-journey={chainId} data-zap-gate={gate.mode} data-first-load={firstLoad ? '' : undefined}>
       <PageHeader size="display" title={CREATE.page.title} description={CREATE.page.description} className="dm-np-head dm-flow-rise" />
       <div className="dm-card dm-flow-card dm-flow-rise dm-lit" style={{ '--delay': '40ms' } as CSSProperties}>
         <StepList steps={steps} onOpen={reopen} locked={locked} />

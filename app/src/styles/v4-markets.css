@@ -11,6 +11,11 @@
 
   /* ---- The title row: "Markets" at the left, the token search on its baseline at the right (§1.2) ---- */
   [data-markets] .dm-v3-market-heading { align-items: flex-end; gap: 1.5rem; }
+  /* The title's .05em of room over its letters (.ln), so the search's foot and the rail fall where the prototype's do. */
+  [data-markets] .dm-v3-market-heading h1.dm-display-h1, [data-markets] > h1.dm-display-h1 { padding-top: 0.05em; }
+  /* The page's title that replaces the one drawn while its networks load keeps that title's clock (Explore.tsx). */
+  html:not(.dm-booted) [data-markets] .dm-v3-market-heading h1.dm-display-h1 { animation-delay: calc(0.04s + var(--dm-title-shift, 0s)); }
+  html:not(.dm-booted) [data-markets] .dm-v3-market-heading h1.dm-display-h1::after { animation-delay: calc(0.42s + var(--dm-title-shift, 0s)); }
   .dm-v3-market-search { width: 27.5rem; margin-bottom: 0.625rem; }
   .dm-v3-market-search .dm-flow-combo-icon { top: 50%; left: 1rem; color: var(--subtle); transition: color 0.2s var(--e-std), rotate 0.3s var(--e-enter); }
   .dm-v3-market-search .dm-flow-combo:focus-within .dm-flow-combo-icon { color: var(--tan-hi); }
@@ -62,13 +67,14 @@
   .dm-v3-market-search .dm-flow-listbox-empty[data-search-unavailable] { font-size: 0.78125rem; color: var(--subtle); box-shadow: inset 0 1px 0 var(--line); }
 
   @media (max-width: 767px) {
-    [data-markets] .dm-v3-market-heading { gap: 1.25rem; padding-top: 0.75rem; }
+    [data-markets] .dm-v3-market-heading { gap: 1.25rem; padding-top: 0.5rem; }
+    [data-markets] > h1.dm-display-h1 { margin-top: 0.5rem; }
     .dm-v3-market-search { width: 100%; margin-bottom: 0; }
     /* On a phone a hit's tag keeps its mark; its word stays in the DOM (innerText), clipped out of sight. */
     .dm-v3-market-search .dm-flow-hit .dm-chip[data-chain-chip] { gap: 0; width: 1.5rem; padding: 0 0.3125rem; overflow: hidden; color: transparent; white-space: nowrap; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .dm-v3-market-search :is(.dm-flow-combo-icon, .dm-flow-hit, .dm-flow-hit::before, .dm-flow-hit > :first-child, .dm-chip[data-chain-chip], .dm-chip[data-chain-chip]::before) { transition-property: opacity, color, background-color, box-shadow; }
+    .dm-v3-market-search :is(.dm-flow-combo-icon, .dm-flow-hit, .dm-flow-hit > :first-child, .dm-chip[data-chain-chip]), .dm-v3-market-search .dm-flow-hit::before, .dm-v3-market-search .dm-chip[data-chain-chip]::before { transition-property: opacity, color, background-color, box-shadow; }
     .dm-v3-market-search .dm-flow-listbox:not([hidden]), .dm-v3-market-search .dm-flow-combo-icon.animate-pulse-soft { animation: none; }
   }
   html.dm-still .dm-v3-market-search .dm-flow-listbox:not([hidden]) { animation: none; }
@@ -86,6 +92,8 @@
   [data-markets] .dm-mkt-pools { margin-top: 2.25rem; padding: 0.5rem 0.625rem 0.75rem; border: 0; border-radius: 1.625rem; background: var(--v4-card-lift), var(--card); box-shadow: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 rgb(255 236 220 / 0.06), var(--v4-card-drop); }
   /* The figures dialog is not portalled: while it is open its section shares the page's layer, never animated. */
   [data-markets] .dm-mkt-pools:has(.dm-dialog-backdrop) { z-index: auto; animation: none; }
+  /* Once risen, the card stays still (Explore.tsx, StoredTokenExplorer.tsx data-risen): no later state replays a rise. */
+  [data-markets] :is(.dm-mkt-pools, [data-stored-token])[data-risen] { animation: none; }
   [data-markets] .dm-mkt-pools-toolbar { align-items: center; gap: 1rem; padding: 1.375rem 1.125rem 1.125rem 1.375rem; }
   [data-markets] .dm-mkt-pools .dm-mkt-pools-head { margin: 0; }
   [data-markets] .dm-mkt-pools-head .dm-section-head-main { align-items: baseline; gap: 0.25rem 0.875rem; }
@@ -95,18 +103,18 @@
 
   /* The Asset filter: a chip, its menu hanging from its right edge. Keyboard and options are the Select's own. */
   [data-markets] .dm-mkt-filters { margin: 0; }
-  [data-markets] .dm-mkt-asset .dm-select-trigger { height: 2.25rem; min-height: 2.25rem; gap: 0.5rem; padding: 0 0.75rem 0 1rem; border: 0; border-radius: 999px; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); font-size: 0.84375rem; line-height: 1; font-weight: 500; color: var(--muted); transition: background-color 0.18s var(--e-std), box-shadow 0.2s var(--e-std), color 0.18s var(--e-std), scale 0.1s var(--e-press); }
+  [data-markets] .dm-mkt-asset .dm-select-trigger { height: 2.25rem; min-height: 2.25rem; gap: 0.5rem; padding: 0 0.75rem 0 1rem; border: 0; border-radius: 999px; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); font-size: 1rem; line-height: normal; font-weight: 400; letter-spacing: normal; color: var(--fg); transition: background-color 0.18s var(--e-std), box-shadow 0.2s var(--e-std), color 0.18s var(--e-std), scale 0.1s var(--e-press); }
   [data-markets] .dm-mkt-asset .dm-select-trigger:is(:hover, [aria-expanded="true"]) { background: var(--v4-w06); box-shadow: inset 0 0 0 1px var(--lip); color: var(--fg); }
   [data-markets] .dm-mkt-asset .dm-select-trigger > :not(.min-w-0, .dm-select-chevron) { zoom: 1.25; margin-left: -0.375rem; }
-  [data-markets] .dm-mkt-asset .dm-select-chevron { transition: rotate 0.3s var(--e-enter); }
+  [data-markets] .dm-mkt-asset .dm-select-chevron { width: 0.75rem; height: 0.75rem; color: inherit; transition: rotate 0.3s var(--e-enter); }
   [data-markets] .dm-mkt-asset .dm-listbox { left: auto; right: 0; min-width: 15rem; transform-origin: top right; animation: dm-v4-mkt-menu 0.28s var(--e-enter) backwards; }
-  [data-markets] .dm-mkt-asset .dm-option { font-size: 0.90625rem; }
+  [data-markets] .dm-mkt-asset .dm-option { font-size: 1rem; line-height: normal; font-weight: 400; letter-spacing: normal; color: var(--fg); }
   [data-markets] .dm-mkt-asset .dm-option-check { color: var(--fg); animation: dm-v4-mkt-check 0.3s var(--e-enter) backwards; }
   [data-markets] .dm-mkt-asset .dm-listbox-sep { margin: 0.375rem 0.625rem; background: var(--line); }
 
   /* The band and the rows: rounded, 2px apart, a wash and the Tangerine pip under the pointer, no hairlines. */
   [data-markets] .dm-mkt-table { --dm-mkt-ring: var(--card); --skeleton: rgb(255 236 220 / 0.055); --skeleton-shine: rgb(255 190 146 / 0.08); }
-  [data-markets] .dm-mkt-table .dm-table { border-collapse: separate; border-spacing: 0 2px; margin-top: -2px; }
+  [data-markets] .dm-mkt-table .dm-table { border-collapse: separate; border-spacing: 0 0.125rem; margin-top: -0.125rem; }
   [data-markets] .dm-mkt-table thead { background: none; }
   [data-markets] .dm-mkt-table .dm-table thead th { height: 2.75rem; padding-block: 0; border: 0; background: var(--v4-w045); font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.01em; color: var(--subtle); }
   [data-markets] .dm-mkt-table .dm-table thead th:first-child { border-radius: 0.75rem 0 0 0.75rem; }
@@ -126,23 +134,45 @@
   /* The discs part under the pointer, their cut-out ring the hovered row's colour. */
   [data-markets] .dm-mkt-table .dm-mkt-marks > span > *, [data-markets] .dm-mkt-table [data-pool-catalogue] .dm-mkt-pool > span:first-child > * { transition: scale 0.3s var(--e-enter), translate 0.3s var(--e-enter); }
   [data-markets] .dm-mkt-ident { display: flex; flex-direction: column; align-items: flex-start; gap: 0.375rem; }
+  /* The marks centred beside the name, 14px apart (.cpool); a stand-in row's link is the flex row itself. */
+  [data-markets] .dm-mkt-table .dm-mkt-pool { gap: 0.875rem; }
+  [data-markets] .dm-mkt-table a.dm-mkt-pool.dm-mkt-name { display: flex; align-items: center; width: fit-content; max-width: 100%; }
   /* The venue and fee as one quiet tag segment; a flag in a red wash that answers with its title. */
   [data-markets] .dm-mkt-table :is(.dm-mkt-venue:not(.dm-mkt-flag), [data-pool-catalogue] .dm-chip) { display: inline-flex; width: fit-content; min-height: 0; margin: 0; padding: 0.125rem 0.4375rem; border-radius: 0.375rem; background: var(--v4-w055); box-shadow: none; font-size: 0.75rem; line-height: 1.4; font-weight: 400; letter-spacing: 0; color: var(--subtle); }
+  /* A stand-in's tag on its own line under the name, as a read row's. */
+  [data-markets] .dm-mkt-table [data-pool-catalogue] .dm-chip { display: block; margin: 0.375rem 0 0; }
+  /* The tag (.tag): two joined segments, "Uniswap" and "0.30% fee", 2px apart, outer corners 6px, inner 2px; the "·"
+     stays in the text (innerText, the accessible name), unseen. Segments are inline blocks, never flex items, so the
+     chip's text keeps one line. */
+  [data-markets] .dm-mkt-table :is(.dm-mkt-venue, [data-pool-catalogue] .dm-chip):has(> .dm-fee-venue) { display: block; padding: 0; border-radius: 0; background: none; line-height: normal; white-space: normal; }
+  [data-markets] .dm-mkt-table :is(.dm-fee-venue, .dm-fee-value) { display: inline-block; padding: 0.125rem 0.4375rem; background: var(--v4-w055); line-height: normal; white-space: nowrap; vertical-align: top; }
+  [data-markets] .dm-mkt-table .dm-fee-venue { margin-right: 0.125rem; border-radius: 0.375rem 0.125rem 0.125rem 0.375rem; }
+  [data-markets] .dm-mkt-table .dm-fee-value { border-radius: 0.125rem 0.375rem 0.375rem 0.125rem; }
+  /* The separator stays inline text between the two segments, at no size: innerText and the name keep " · ". */
+  [data-markets] .dm-mkt-table .dm-fee-sep { display: inline; font-size: 0; }
   [data-markets] .dm-mkt-table .dm-mkt-venue.dm-mkt-flag { position: relative; z-index: 1; display: inline-flex; align-items: center; width: fit-content; min-height: 1.25rem; margin: 0; padding: 0 0.5rem; border-radius: 0.375rem; background: rgb(244 96 122 / 0.1); font-size: 0.75rem; line-height: 1.25rem; font-weight: 400; color: #f58a9c; cursor: help; }
   /* The price: "1 BASE =" quietly over the figure, the quote's symbol in muted ink. */
   [data-markets] .dm-mkt-table .dm-mkt-price { position: relative; z-index: 1; display: inline-flex; flex-direction: column; align-items: flex-end; gap: 0.1875rem; cursor: help; }
-  [data-markets] .dm-mkt-table .dm-mkt-price-unit { margin: 0; font-size: 0.78125rem; line-height: 1rem; font-weight: 400; letter-spacing: 0; color: var(--subtle); transition: color 0.18s var(--e-std); }
+  [data-markets] .dm-mkt-table .dm-mkt-price-unit { margin: 0; font-size: 0.78125rem; line-height: normal; font-weight: 400; letter-spacing: 0; color: var(--subtle); transition: color 0.18s var(--e-std); }
   [data-markets] .dm-mkt-table tr:hover .dm-mkt-price-unit { color: var(--muted); }
-  [data-markets] .dm-mkt-table .dm-mkt-price > .tnum { font-size: 0.9375rem; line-height: 1.25rem; }
+  [data-markets] .dm-mkt-table .dm-mkt-price > .tnum { font-size: 0.9375rem; line-height: normal; }
   [data-markets] .dm-mkt-table .dm-mkt-price > .tnum > bdi:last-child { font-weight: 400; color: var(--muted); }
   [data-markets] .dm-mkt-table .dm-mkt-num { font-size: 0.9375rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; }
   /* APR in the money-in green, a touch brighter and 1px up under the pointer. */
   [data-markets] .dm-mkt-table .dm-mkt-apr > * { display: inline-block; transition: translate 0.25s var(--e-enter); }
+  /* The pending APR keeps its shimmer at the right, under the header, as the TVL and volume placeholders. */
+  [data-markets] .dm-mkt-table .dm-mkt-apr > [data-apr-estimate="pending"] { display: inline-flex; }
   [data-markets] .dm-mkt-table .dm-mkt-apr .text-money-in { color: var(--in); transition: color 0.18s var(--e-std); }
+  [data-markets] .dm-mkt-table .dm-mkt-apr .dm-apr-est { font-size: 0.78125rem; font-weight: 400; color: var(--subtle); }
   [data-markets] .dm-mkt-table tr:hover .dm-mkt-apr .text-money-in { color: var(--v4-in-hover); }
   /* The end cell: the figures button slides in (the foundation's row actions), the chevron in a circle. */
   [data-markets] .dm-mkt-table .dm-mkt-end .dm-icon-btn { width: 2.125rem; height: 2.125rem; min-height: 0; border-radius: 0.625rem; background: var(--v4-w06); box-shadow: inset 0 0 0 1px var(--line); color: var(--fg); transition: background-color 0.18s var(--e-std), box-shadow 0.18s var(--e-std), color 0.18s var(--e-std), scale 0.1s var(--e-press); }
   [data-markets] .dm-mkt-table .dm-mkt-end .dm-icon-btn:hover { background: var(--v4-tan-12); box-shadow: inset 0 0 0 1px var(--v4-tan-ring); color: var(--tan-hi); }
+  /* A touch screen keeps the 34px button (.ib) and takes the pointer 5px around it (.row .ib::before: 44px). */
+  @media (pointer: coarse) {
+    [data-markets] .dm-mkt-table .dm-mkt-end .dm-icon-btn { position: relative; min-width: 0; min-height: 0; }
+    [data-markets] .dm-mkt-table .dm-mkt-end .dm-icon-btn::after { content: ''; position: absolute; inset: -0.3125rem; }
+  }
   [data-markets] .dm-mkt-table .dm-row-actions:has(:focus-visible) { opacity: 1; translate: none; }
   [data-markets] .dm-mkt-table .dm-row-end { display: inline-flex; align-items: center; justify-content: flex-end; gap: 0.375rem; }
   [data-markets] .dm-mkt-table .dm-mkt-end .i-chev-r { color: var(--faint); transition: translate 0.25s var(--e-enter), color 0.18s var(--e-std), background-color 0.18s var(--e-std); }
@@ -151,26 +181,57 @@
   [data-markets] .dm-mkt-table .dm-table tfoot td { padding: 1rem; font-size: 0.875rem; color: var(--muted); }
   [data-markets] .dm-mkt-table .dm-mkt-empty { padding: 1.625rem 1.125rem 1.375rem; }
   [data-markets] .dm-mkt-table[data-filter-empty] thead { display: none; }
+  /* The rows start 6px under the band (.rows margin-top): a transparent border under the band's cells, outside their
+     painted box, plus the rows' own spacing. */
+  [data-markets] .dm-mkt-table .dm-table thead th { height: calc(2.75rem + 0.25rem); border-bottom: 0.25rem solid transparent; background-clip: padding-box; }
+  /* A filter pick: the rows that stay rise back in, 30ms apart (.f-a .row); the first render has no row motion. */
+  [data-markets] .dm-mkt-table tbody.animate-fade { animation: none; }
+  [data-markets] .dm-mkt-table tbody[data-refilter] > tr { animation: dm-v4-mkt-rowin 0.4s var(--e-enter) backwards; }
+  [data-markets] .dm-mkt-table tbody[data-refilter] > tr:nth-child(2) { animation-delay: 0.03s; }
+  [data-markets] .dm-mkt-table tbody[data-refilter] > tr:nth-child(3) { animation-delay: 0.06s; }
+  [data-markets] .dm-mkt-table tbody[data-refilter] > tr:nth-child(4) { animation-delay: 0.09s; }
+  [data-markets] .dm-mkt-table tbody[data-refilter] > tr:nth-child(5) { animation-delay: 0.12s; }
+  /* The flagged rows "Show all N pools" reveals rise in, the next one 50ms later (token.html). */
+  [data-markets] [data-stored-token] .dm-mkt-table tbody > tr[data-revealed] { animation: dm-v4-mkt-rowin 0.42s var(--e-enter) backwards; }
+  [data-markets] [data-stored-token] .dm-mkt-table tbody > tr[data-revealed] ~ tr[data-revealed] { animation-delay: 0.05s; }
+  /* The "x of N" count fades in when the filter is set (.cnt). */
+  [data-markets] .dm-mkt-pools-head .dm-section-head-aside { animation: dm-v4-fade 0.2s var(--e-std) backwards; }
+  /* The Asset menu's options at a 40px pitch, no gap (.menu). */
+  [data-markets] .dm-mkt-asset .dm-listbox { gap: 0; }
+  /* The stored token page's band: TVL and APR carry the 22px info circle (token.html), its glyph 14px, faint, warming
+     under the pointer. Generated content only: the trigger's text and name are unchanged. */
+  [data-markets] [data-stored-token] .dm-mkt-table thead .dm-info-tip-trigger { position: relative; display: inline-flex; align-items: center; gap: 0.25rem; cursor: help; }
+  [data-markets] [data-stored-token] .dm-mkt-table thead .dm-info-tip-trigger::before { content: ''; position: absolute; right: 0; top: 50%; width: 1.375rem; height: 1.375rem; margin-top: -0.6875rem; border-radius: 50%; background: transparent; transition: background-color 0.18s var(--e-std); }
+  [data-markets] [data-stored-token] .dm-mkt-table thead .dm-info-tip-trigger::after { content: ''; flex: none; width: 1.375rem; height: 1.375rem; background: var(--faint); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round'%3E%3Ccircle cx='8' cy='8' r='6'/%3E%3Cpath d='M8 7.25V11'/%3E%3Ccircle cx='8' cy='5' r='.85' fill='%23000' stroke='none'/%3E%3C/svg%3E") center / 0.875rem 0.875rem no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round'%3E%3Ccircle cx='8' cy='8' r='6'/%3E%3Cpath d='M8 7.25V11'/%3E%3Ccircle cx='8' cy='5' r='.85' fill='%23000' stroke='none'/%3E%3C/svg%3E") center / 0.875rem 0.875rem no-repeat; transition: background-color 0.18s var(--e-std), scale 0.3s var(--e-enter); }
+  [data-markets] [data-stored-token] .dm-mkt-table thead .dm-info-tip-trigger:is(:hover, :focus-visible)::before { background: var(--v4-w06); }
+  [data-markets] [data-stored-token] .dm-mkt-table thead .dm-info-tip-trigger:is(:hover, :focus-visible)::after { background-color: var(--fg); }
 
   @media (min-width: 1024px) {
-    [data-markets] .dm-mkt-table .dm-mkt-col-price { width: 19%; }
-    [data-markets] .dm-mkt-table :is(.dm-mkt-col-tvl, .dm-mkt-col-volume, .dm-mkt-col-apr) { width: 15.25%; }
-    [data-markets] .dm-mkt-table .dm-mkt-end { width: 6.25rem; }
+    /* The prototype's grid (2.3fr 1.25fr 1fr 1fr 1fr 96px, 16px gaps) as table columns: each figure's right edge where
+       the prototype's falls (the cells' 18px sides counted in), the actions column 96px plus its gap and side. */
+    [data-markets] .dm-mkt-table .dm-mkt-col-price { width: 18.49%; }
+    [data-markets] .dm-mkt-table :is(.dm-mkt-col-tvl, .dm-mkt-col-volume, .dm-mkt-col-apr) { width: 13.87%; }
+    [data-markets] .dm-mkt-table .dm-mkt-end { width: 7rem; }
     [data-markets] .dm-mkt-table .dm-table :is(th, td).dm-mkt-end { padding-left: 0; }
     [data-markets] .dm-mkt-table .dm-mkt-end .i-chev-r { box-sizing: content-box; padding: 0.625rem; border-radius: 50%; }
     [data-markets] .dm-mkt-table tr:hover .dm-mkt-end .i-chev-r { background: var(--v4-w06); }
   }
   @media (max-width: 767px) {
-    [data-markets] .dm-mkt-pools { margin-top: 2rem; }
-    [data-markets] .dm-mkt-pools-toolbar { padding: 1rem 0.625rem 0.875rem 0.75rem; }
+    [data-markets] .dm-mkt-pools-toolbar { row-gap: 0.75rem; padding: 1rem 0.625rem 0.875rem 0.75rem; }
     [data-markets] .dm-mkt-pools-head .dm-title { font-size: 1.75rem; }
-    [data-markets] .dm-mkt-pools-head .dm-section-head-aside { display: none; }
     [data-markets] .dm-mkt-filters { display: flex; }
     [data-markets] .dm-mkt-asset .dm-select-trigger { width: auto; justify-content: flex-start; }
     [data-markets] .dm-mkt-table .dm-table :is(th, td):first-child { padding-left: 0.75rem; }
-    [data-markets] .dm-mkt-table .dm-table tbody td { height: 4rem; padding-block: 0.625rem; }
-    [data-markets] .dm-mkt-table .dm-mkt-name { font-size: 0.875rem; line-height: 1.125rem; }
+    /* Rows stay 70px; the pair keeps its 15.5px and ends in an ellipsis, 10px after the discs (phone .row, .plink). */
+    [data-markets] .dm-mkt-table .dm-table tbody td { height: 4.375rem; padding-block: 0.625rem; }
+    [data-markets] .dm-mkt-table .dm-mkt-name { font-size: 0.96875rem; line-height: normal; }
+    [data-markets] .dm-mkt-table .dm-mkt-pool { gap: 0.625rem; }
+    [data-markets] .dm-mkt-asset .dm-option { height: 2.75rem; }
     [data-markets] .dm-mkt-table :is(.dm-mkt-venue:not(.dm-mkt-flag), [data-pool-catalogue] .dm-chip) { font-size: 0.71875rem; }
+    /* A phone keeps both segments (markets.css hid "Uniswap"), wrapping as whole segments, 2px between lines. */
+    [data-markets] .dm-mkt-table a.dm-mkt-pool.dm-mkt-name { width: auto; }
+    [data-markets] .dm-mkt-table .dm-fee-venue { display: inline-block; }
+    [data-markets] .dm-mkt-table :is(.dm-fee-venue, .dm-fee-value) { margin-block: 1px; padding: 0.125rem 0.375rem; }
   }
   @media (max-width: 479px) {
     [data-markets] .dm-mkt-filters { flex-basis: 100%; }
@@ -183,7 +244,10 @@
     [data-markets] .dm-mkt-table :is(.dm-mkt-marks > span > *, .dm-mkt-apr > *, .dm-mkt-end .i-chev-r, .dm-mkt-end .dm-icon-btn), [data-markets] .dm-mkt-table tbody td:first-child::before, [data-markets] .dm-mkt-asset :is(.dm-select-trigger, .dm-select-chevron) { transition-property: opacity, color, background-color, box-shadow; }
     [data-markets] .dm-mkt-table tbody td:first-child::before { scale: 1; }
     [data-markets] .dm-mkt-asset :is(.dm-listbox, .dm-option-check) { animation: none; }
+    [data-markets] .dm-mkt-table :is(tbody[data-refilter] > tr, tbody > tr[data-revealed]), [data-markets] .dm-mkt-pools-head .dm-section-head-aside { animation: none; }
+    [data-markets] [data-stored-token] .dm-mkt-table thead .dm-info-tip-trigger::after { transition-property: background-color; }
   }
+  html.dm-still [data-markets] .dm-mkt-table :is(tbody[data-refilter] > tr, tbody > tr[data-revealed]), html.dm-still [data-markets] .dm-mkt-pools-head .dm-section-head-aside { animation: none; }
 }
 
 @keyframes dm-v4-mkt-menu { from { opacity: 0.01; transform: translateY(-0.25rem) scale(0.96); } to { opacity: 1; transform: none; } }
@@ -193,10 +257,10 @@
   /* ---- The featured rail: plates that are each one link, on the rail's own scroll and snap (the arrows and the dots
      read its padding, so only the room under the plates for their drop changes); the page dots and round arrows
      under it (§1.3). Every rule is [data-markets] .dm-v3-market-featured. ---- */
-  [data-markets] .dm-v3-market-featured { margin-top: 2.5rem; }
+  [data-markets] .dm-v3-market-featured { margin-top: 2.125rem; }
   [data-markets] .dm-v3-market-featured .dm-mkt-rail { gap: 1rem; grid-auto-columns: calc((100% - 2rem) / 3); margin: 0 -0.25rem -2.75rem; padding: 0.375rem 0.25rem 2.75rem; }
   [data-markets] .dm-v3-market-featured .dm-mkt-card { --skeleton: rgb(255 236 220 / 0.06); --skeleton-shine: rgb(255 190 146 / 0.1); container-type: inline-size; }
-  [data-markets] .dm-v3-market-featured .dm-mkt-card.dm-plate { height: 21.875rem; padding: 1.25rem 1.375rem 1.125rem; grid-template-rows: 2.125rem auto minmax(0, 1fr) auto; border: 0; border-radius: 1.5rem; background: var(--v4-card-lift), var(--card); box-shadow: var(--v4-card-drop); overflow: visible; translate: none; transition: scale 0.1s var(--e-press); }
+  [data-markets] .dm-v3-market-featured .dm-mkt-card.dm-plate { height: 22.1725rem; padding: 1.25rem 1.375rem 1.125rem; grid-template-rows: minmax(2.125rem, auto) auto minmax(0, 1fr) auto; border: 0; border-radius: 1.5rem; background: var(--v4-card-lift), var(--card); box-shadow: var(--v4-card-drop); overflow: visible; translate: none; transition: scale 0.1s var(--e-press); }
   /* No dot grid (the ember's dots are the only texture); the ring and the lip ride above the plot on ::after. */
   [data-markets] .dm-v3-market-featured .dm-mkt-card::before { display: none; }
   [data-markets] .dm-v3-market-featured .dm-mkt-card.dm-plate::after { display: block; content: ''; position: absolute; inset: 0; z-index: 2; border-radius: inherit; background: none; box-shadow: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 rgb(255 236 220 / 0.06); pointer-events: none; transition: box-shadow 0.2s var(--e-std); }
@@ -209,9 +273,11 @@
   [data-markets] .dm-v3-market-featured .dm-mkt-pair { gap: 0.75rem; box-shadow: none; }
   [data-markets] .dm-v3-market-featured .dm-mkt-pair > [aria-hidden="true"] > * { transition: scale 0.3s var(--e-enter), translate 0.3s var(--e-enter); }
   [data-markets] .dm-v3-market-featured .dm-mkt-pair-identity { gap: 0.25rem; }
-  [data-markets] .dm-v3-market-featured .dm-mkt-pair-name { font-size: 0.96875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); }
-  [data-markets] .dm-v3-market-featured .dm-mkt-pair-fee { font-size: 0.78125rem; line-height: 1rem; color: var(--subtle); }
-  [data-markets] .dm-v3-market-featured .dm-mkt-card-open { width: 2.125rem; height: 2.125rem; border: 0; border-radius: 50%; background: transparent; color: var(--faint); font-size: 1rem; transition: color 0.18s var(--e-std), background-color 0.18s var(--e-std), translate 0.25s var(--e-enter); }
+  [data-markets] .dm-v3-market-featured .dm-mkt-pair-name { font-size: 0.96875rem; line-height: normal; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); }
+  [data-markets] .dm-v3-market-featured .dm-mkt-pair-fee { font-size: 0.78125rem; line-height: normal; color: var(--subtle); }
+  [data-markets] .dm-v3-market-featured .dm-mkt-card-open { display: flex; align-items: center; justify-content: center; width: 2.125rem; height: 2.125rem; border: 0; border-radius: 50%; background: transparent; color: var(--faint); font-size: 0; transition: color 0.18s var(--e-std), background-color 0.18s var(--e-std), translate 0.25s var(--e-enter); }
+  /* The arrow is the prototype's 14px stroke (.p-go), drawn in currentColor; the "↗" stays in the DOM, unseen. */
+  [data-markets] .dm-v3-market-featured .dm-mkt-card-open::before { content: ''; width: 0.875rem; height: 0.875rem; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 11 11 5M6.5 5H11v4.5'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 11 11 5M6.5 5H11v4.5'/%3E%3C/svg%3E") center / contain no-repeat; }
   [data-markets] .dm-v3-market-featured .dm-mkt-card:hover .dm-mkt-card-open { color: var(--fg); background: var(--v4-w06); }
   /* The price row: the serif close, its change as a pill, the unit under both. */
   [data-markets] .dm-v3-market-featured .dm-mkt-card-price { align-items: center; justify-content: space-between; gap: 0.5rem 0.75rem; margin-top: 1.375rem; padding-top: 0; }
@@ -221,7 +287,7 @@
   [data-markets] .dm-v3-market-featured .dm-mkt-card-delta[data-sign="1"] { background: rgb(95 208 154 / 0.12); color: var(--in); }
   [data-markets] .dm-v3-market-featured .dm-mkt-card-delta[data-sign="-1"] { background: rgb(244 96 122 / 0.12); color: var(--out); }
   [data-markets] .dm-v3-market-featured .dm-mkt-card-delta[data-sign="0"] { background: var(--v4-w06); color: var(--muted); }
-  [data-markets] .dm-v3-market-featured .dm-mkt-card-unit { font-size: 0.8125rem; line-height: 1.25rem; letter-spacing: 0; color: var(--subtle); }
+  [data-markets] .dm-v3-market-featured .dm-mkt-card-unit { font-size: 0.8125rem; line-height: normal; letter-spacing: 0; color: var(--subtle); }
   /* The plot: a 1.5 line in the window's direction, no area; Tangerine when the card shows no direction (as today). */
   [data-markets] .dm-v3-market-featured .dm-mkt-plot { margin: 1rem 0 0; }
   [data-markets] .dm-v3-market-featured .dm-mkt-card:is([data-card-series="bars"], [data-card-series="figure"]) .dm-mkt-plot { margin-top: 1rem; }
@@ -233,9 +299,35 @@
   [data-markets] .dm-v3-market-featured .dm-spark .dm-spark-line { stroke: var(--spark-line); stroke-width: 1.5; }
   [data-markets] .dm-v3-market-featured .dm-spark-base { stroke: rgb(255 236 220 / 0.14); stroke-opacity: 1; stroke-dasharray: 2 5; transition: stroke 0.2s var(--e-std); }
   [data-markets] .dm-v3-market-featured .dm-mkt-card:hover .dm-spark-base { stroke: rgb(255 236 220 / 0.24); }
-  [data-markets] .dm-v3-market-featured .dm-spark-cross { stroke: var(--strong); }
-  [data-markets] .dm-v3-market-featured .dm-spark-tip { padding: 0.375rem 0.625rem; border-radius: 0.625rem; background: var(--s2); -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: inset 0 0 0 1px var(--lip), 0 0.75rem 1.75rem -0.625rem rgb(0 0 0 / 0.6); }
-  [data-markets] .dm-v3-market-featured .dm-spark-tip-price { font-size: 0.78125rem; font-weight: 500; }
+  /* Reading an hour (.p-x, .p-dot): a 1px line from 6px above to 6px below the plot fades in, the one dot jumps to the
+     hour (8px, a 4px ring at 16%) and nothing stays at the end; the line keeps its full strength and no tip floats
+     (the caption tells the hour; the tip is aria-hidden). PriceLine draws the line over the 104px plot; scaled about its
+     middle (116/104) it runs 6px past each edge. */
+  [data-markets] .dm-v3-market-featured .dm-spark-cross { stroke: var(--strong); transform-box: fill-box; transform-origin: center; scale: 1 1.11538; animation: dm-v4-fade 0.18s var(--e-std) backwards; }
+  [data-markets] .dm-v3-market-featured .dm-spark-tip { display: none; }
+  [data-markets] .dm-v3-market-featured .dm-spark-past { opacity: 1; }
+  [data-markets] .dm-v3-market-featured .dm-spark[data-inspecting] .dm-spark-end { opacity: 0; }
+  [data-markets] .dm-v3-market-featured .dm-spark .dm-hover-dot { r: 4px; stroke: none; }
+  [data-markets] .dm-v3-market-featured .dm-spark .dm-hover-halo { r: 8px; opacity: 0.16; }
+  [data-markets] .dm-v3-market-featured .dm-spark:not([data-tone="up"], [data-tone="down"]) :is(.dm-hover-dot, .dm-hover-halo, .dm-end-dot) { fill: var(--tan); }
+  /* The end dot at rest: 8px in the line's tone, a still 4px ring at 16% (no breathing rings); it pops after the wipe. */
+  [data-markets] .dm-v3-market-featured .dm-live-ring { display: none; }
+  [data-markets] .dm-v3-market-featured .dm-spark .dm-end-dot { r: 4px; stroke: rgb(255 157 98 / 0.16); stroke-width: 8px; paint-order: stroke; animation: dm-v4-pip 0.3s var(--e-pop) 0.28s backwards; }
+  [data-markets] .dm-v3-market-featured .dm-spark[data-tone="up"] .dm-end-dot { stroke: rgb(95 208 154 / 0.16); }
+  [data-markets] .dm-v3-market-featured .dm-spark[data-tone="down"] .dm-end-dot { stroke: rgb(244 96 122 / 0.16); }
+  [data-markets] .dm-v3-market-featured .dm-price-wrap[data-reveal] { animation-duration: 0.45s; }
+  /* The change pill follows the hour: its wash and ink fade, the triangle turns over when the sign flips. */
+  [data-markets] .dm-v3-market-featured .dm-mkt-card-delta { transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std); }
+  [data-markets] .dm-v3-market-featured .dm-mkt-card-delta .dm-delta-arrow { clip-path: polygon(50% 0, 100% 100%, 0 100%); transition: rotate 0.3s var(--e-enter); }
+  [data-markets] .dm-v3-market-featured .dm-mkt-card-delta[data-sign="-1"] .dm-delta-arrow { clip-path: polygon(50% 0, 100% 100%, 0 100%); rotate: 180deg; }
+  /* The rim lit by the ember near a plate (.p-edge): a 560px light on its 1px edge, on only while the pointer is within
+     40px of it (MarketCarousel writes --elx/--ely, the pointer in the plate's own px, and --ember-near). */
+  @media (hover: hover) and (pointer: fine) {
+    [data-markets] .dm-v3-market-featured .dm-mkt-rail:not([data-featured-pending]) .dm-mkt-card.dm-plate::before { display: block; content: ''; position: absolute; inset: 0; z-index: 3; border-radius: inherit; padding: 1px; pointer-events: none; background: radial-gradient(closest-side, rgb(255 190 146), rgb(255 157 98 / 0.45) 40%, rgb(255 157 98 / 0.12) 70%, rgb(255 157 98 / 0)) calc(var(--elx, -100rem) - 17.5rem) calc(var(--ely, -100rem) - 17.5rem) / 35rem 35rem no-repeat; -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; opacity: var(--ember-near, 0); transition: opacity 0.45s var(--e-std), background-position 0.5s var(--e-drift); }
+  }
+  @media (forced-colors: active) {
+    [data-markets] .dm-v3-market-featured .dm-mkt-card.dm-plate::before { display: none; }
+  }
   [data-markets] .dm-v3-market-featured .dm-vbar { fill: rgb(255 236 220 / 0.09); }
   [data-markets] .dm-v3-market-featured .dm-vbar[data-accent] { fill: var(--tan); }
   [data-markets] .dm-v3-market-featured .dm-vbar[data-open] { opacity: 0.55; }
@@ -246,23 +338,27 @@
   [data-markets] .dm-v3-market-featured .dm-mkt-card-foot { grid-row: 4; position: relative; display: block; height: 2.5rem; margin-top: 1rem; border: 0; }
   [data-markets] .dm-v3-market-featured .dm-mkt-card-caption { position: absolute; left: 0; right: 0; top: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8125rem; line-height: 1.25rem; letter-spacing: 0; color: var(--subtle); transition: color 0.18s var(--e-std); }
   [data-markets] .dm-v3-market-featured .dm-mkt-card-tvl { position: absolute; right: 0; top: 0; display: inline-flex; align-items: baseline; gap: 0.4375rem; padding-left: 1rem; background: var(--card); line-height: 1.25rem; transition: opacity 0.18s var(--e-std); }
-  [data-markets] .dm-v3-market-featured .dm-mkt-card-label { font-size: 0.78125rem; color: var(--subtle); }
+  [data-markets] .dm-v3-market-featured .dm-mkt-card-label { font-size: 0.78125rem; font-weight: 400; color: var(--subtle); }
   [data-markets] .dm-v3-market-featured .dm-mkt-card-figure { font-size: 0.9375rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); }
   [data-markets] .dm-v3-market-featured .dm-mkt-card:is(:has(.dm-spark[data-inspecting]), :has(.dm-vbars[data-inspecting])) .dm-mkt-card-caption { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; color: var(--muted); }
   [data-markets] .dm-v3-market-featured .dm-mkt-card:is(:has(.dm-spark[data-inspecting]), :has(.dm-vbars[data-inspecting])) .dm-mkt-card-tvl { opacity: 0; }
   /* The waiting plates: the same material and height, warm bubbles. */
   [data-markets] .dm-v3-market-featured [data-featured-pending] .dm-mkt-card-head { height: 2.125rem; }
   /* Under the rail: page dots and round arrows at the right. */
-  [data-markets] .dm-v3-market-featured .dm-mkt-footer-nav { margin-top: 1.125rem; }
+  /* The rail runs 2.75rem under its plates for their drops, and its mask paints it above later blocks: the dots and
+     arrows sit above it, so the drops never dim them and the arrows take the pointer (the prototype's .rnav keeps its
+     own layer through its filled fade). */
+  [data-markets] .dm-v3-market-featured .dm-mkt-footer-nav { position: relative; z-index: 1; margin-top: 1.125rem; }
+  [data-markets] .dm-v3-market-featured .dm-mkt-dots[data-place="rail"] { position: relative; z-index: 1; }
   [data-markets] .dm-v3-market-featured .dm-mkt-nav { gap: 1.125rem; }
   [data-markets] .dm-v3-market-featured .dm-mkt-dots { gap: 0.375rem; }
   [data-markets] .dm-v3-market-featured .dm-mkt-dot { width: 0.3125rem; height: 0.3125rem; background: rgb(255 236 220 / 0.22); transition: width 0.35s var(--e-enter), background-color 0.2s var(--e-std); }
   [data-markets] .dm-v3-market-featured .dm-mkt-dot[data-lit] { width: 1.125rem; background: var(--fg); }
   [data-markets] .dm-v3-market-featured .dm-mkt-arrows { gap: 0.5rem; }
-  [data-markets] .dm-v3-market-featured .dm-mkt-arrows .dm-icon-btn { width: 2.5rem; height: 2.5rem; min-height: 0; border-radius: 50%; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); opacity: 1; transition: background-color 0.18s var(--e-std), box-shadow 0.2s var(--e-std), color 0.18s var(--e-std), opacity 0.2s var(--e-std), scale 0.1s var(--e-press); }
+  [data-markets] .dm-v3-market-featured .dm-mkt-arrows .dm-icon-btn { width: 2.5rem; height: 2.5rem; min-height: 0; border-radius: 50%; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); color: var(--fg); opacity: 1; transition: background-color 0.18s var(--e-std), box-shadow 0.2s var(--e-std), color 0.18s var(--e-std), opacity 0.2s var(--e-std), scale 0.1s var(--e-press); }
   [data-markets] .dm-v3-market-featured .dm-mkt-arrows .dm-icon-btn > svg { transition: translate 0.25s var(--e-enter); }
   [data-markets] .dm-v3-market-featured .dm-mkt-arrows .dm-icon-btn:not(:disabled):hover { background: var(--v4-w06); box-shadow: inset 0 0 0 1px var(--lip); color: var(--fg); }
-  [data-markets] .dm-v3-market-featured .dm-mkt-arrows .dm-icon-btn:disabled { background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); opacity: 0.35; }
+  [data-markets] .dm-v3-market-featured .dm-mkt-arrows .dm-icon-btn:disabled { background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); color: var(--fg); opacity: 0.35; }
 
   @media (min-width: 768px) and (max-width: 1023px) {
     [data-markets] .dm-v3-market-featured .dm-mkt-rail { grid-auto-columns: calc((100% - 1rem) / 2); }
@@ -272,44 +368,61 @@
     [data-markets] .dm-v3-market-featured .dm-mkt-rail { margin-inline: calc(-1 * var(--gutter)); padding-inline: var(--gutter); scroll-padding-inline: var(--gutter); -webkit-mask-image: linear-gradient(90deg, transparent, #000 var(--gutter), #000 calc(100% - var(--gutter)), transparent); mask-image: linear-gradient(90deg, transparent, #000 var(--gutter), #000 calc(100% - var(--gutter)), transparent); }
   }
   @media (max-width: 767px) {
-    [data-markets] .dm-v3-market-featured { margin-top: 1.75rem; }
+    [data-markets] .dm-v3-market-featured { margin-top: 1.375rem; }
     [data-markets] .dm-v3-market-featured .dm-mkt-rail { gap: 1rem; grid-auto-columns: calc(100% - 3.25rem); margin-inline: calc(-1 * var(--gutter)); padding-inline: var(--gutter); scroll-padding-inline: var(--gutter); }
-    [data-markets] .dm-v3-market-featured .dm-mkt-card.dm-plate { height: auto; min-height: 20rem; padding: 1.125rem 1.125rem 1rem; grid-template-rows: minmax(2.125rem, auto) auto minmax(6.75rem, 1fr) auto; }
+    [data-markets] .dm-v3-market-featured .dm-mkt-card.dm-plate { height: auto; min-height: 20rem; padding: 1.25rem 1.375rem 1.125rem; grid-template-rows: minmax(2.125rem, auto) auto minmax(6.5rem, 1fr) auto; }
     [data-markets] .dm-v3-market-featured .dm-mkt-card:is([data-card-series="bars"], [data-card-series="figure"]) { grid-template-rows: minmax(2.125rem, auto) 0 minmax(10.25rem, 1fr) auto; }
     [data-markets] .dm-v3-market-featured .dm-mkt-card-close { font-size: clamp(2.25rem, 11.5vw, 3rem); }
     [data-markets] .dm-v3-market-featured .dm-mkt-dots[data-place="rail"] { margin-top: 1rem; }
   }
   @media (prefers-reduced-motion: reduce) {
-    [data-markets] .dm-v3-market-featured :is(.dm-mkt-card.dm-plate, .dm-mkt-pair > [aria-hidden="true"] > *, .dm-mkt-card-open, .dm-mkt-arrows .dm-icon-btn, .dm-mkt-arrows .dm-icon-btn > svg) { transition-property: opacity, color, background-color, box-shadow; }
+    [data-markets] .dm-v3-market-featured :is(.dm-mkt-card.dm-plate, .dm-mkt-pair > [aria-hidden="true"] > *, .dm-mkt-card-open, .dm-mkt-arrows .dm-icon-btn, .dm-mkt-arrows .dm-icon-btn > svg, .dm-mkt-card-delta .dm-delta-arrow) { transition-property: opacity, color, background-color, box-shadow; }
+    [data-markets] .dm-v3-market-featured :is(.dm-spark-cross, .dm-spark .dm-end-dot) { animation: none; }
   }
+  html.dm-still [data-markets] .dm-v3-market-featured :is(.dm-spark-cross, .dm-spark .dm-end-dot) { animation: none; }
 }
 
 @layer v4 {
   /* ---- "New to pools? Start here": a full-width row with the foundation's plus, three steps under a small domino
      each (its pips the step's number; the "01/02/03" stay in the DOM, unseen), no links (§1.5). ---- */
-  [data-markets] .dm-mkt-guide { margin-top: 1.125rem; padding: 0; border: 0; border-radius: 0.875rem; background: transparent; box-shadow: none; }
-  [data-markets] .dm-mkt-guide > summary { min-height: 3.75rem; padding: 0 0.75rem 0 1.375rem; border-radius: 0.875rem; font-size: 0.96875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); transition: background-color 0.18s var(--e-std), scale 0.1s var(--e-press); }
+  [data-markets] .dm-mkt-guide { margin-top: 1.125rem; padding: 0 0 4rem; border: 0; border-radius: 0.875rem; background: transparent; box-shadow: none; }
+  [data-markets] .dm-mkt-guide > summary { min-height: 3.75rem; padding: 0 0.75rem 0 1.375rem; border-radius: 0.875rem; font-size: 1rem; line-height: normal; font-weight: 400; letter-spacing: normal; color: var(--fg); transition: background-color 0.18s var(--e-std), scale 0.1s var(--e-press); }
   [data-markets] .dm-mkt-guide > summary:hover { color: var(--fg); }
   [data-markets] .dm-mkt-guide > summary::before { transition: rotate 0.35s var(--e-enter), box-shadow 0.2s var(--e-std), color 0.2s var(--e-std); }
   [data-markets] .dm-mkt-guide-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2.5rem; padding: 1.125rem 1.375rem 0.625rem; }
   [data-markets] .dm-mkt-guide-grid > div { display: grid; grid-template-columns: 1.125rem minmax(0, 1fr); column-gap: 1.125rem; align-items: start; align-content: start; }
-  [data-markets] .dm-mkt-guide-grid .dm-guide-number { grid-row: span 2; width: 1.125rem; height: 1.875rem; margin-top: 0.1875rem; overflow: hidden; font-size: 0; color: transparent; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 30' fill='none'%3E%3Crect x='.6' y='.6' width='16.8' height='28.8' rx='4' stroke='%23ff9d62' stroke-opacity='.55' stroke-width='1.2'/%3E%3Cpath d='M4 15h10' stroke='%23ff9d62' stroke-opacity='.55' stroke-width='1.1' stroke-linecap='round'/%3E%3Ccircle cx='9' cy='7.8' r='1.6' fill='%23ff9d62' fill-opacity='.75'/%3E%3C/svg%3E") center / contain no-repeat; }
-  [data-markets] .dm-mkt-guide-grid > div:nth-child(2) .dm-guide-number { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 30' fill='none'%3E%3Crect x='.6' y='.6' width='16.8' height='28.8' rx='4' stroke='%23ff9d62' stroke-opacity='.55' stroke-width='1.2'/%3E%3Cpath d='M4 15h10' stroke='%23ff9d62' stroke-opacity='.55' stroke-width='1.1' stroke-linecap='round'/%3E%3Ccircle cx='5.6' cy='5' r='1.6' fill='%23ff9d62' fill-opacity='.75'/%3E%3Ccircle cx='12.4' cy='10.6' r='1.6' fill='%23ff9d62' fill-opacity='.75'/%3E%3C/svg%3E"); }
-  [data-markets] .dm-mkt-guide-grid > div:nth-child(3) .dm-guide-number { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 30' fill='none'%3E%3Crect x='.6' y='.6' width='16.8' height='28.8' rx='4' stroke='%23ff9d62' stroke-opacity='.55' stroke-width='1.2'/%3E%3Cpath d='M4 15h10' stroke='%23ff9d62' stroke-opacity='.55' stroke-width='1.1' stroke-linecap='round'/%3E%3Ccircle cx='5.2' cy='4.4' r='1.6' fill='%23ff9d62' fill-opacity='.75'/%3E%3Ccircle cx='9' cy='7.8' r='1.6' fill='%23ff9d62' fill-opacity='.75'/%3E%3Ccircle cx='12.8' cy='11.2' r='1.6' fill='%23ff9d62' fill-opacity='.75'/%3E%3C/svg%3E"); }
+  [data-markets] .dm-mkt-guide-grid .dm-guide-number { position: relative; grid-row: span 2; width: 1.125rem; height: 1.875rem; margin-top: 0.1875rem; overflow: hidden; font-size: 0; color: transparent; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 30' fill='none'%3E%3Crect x='.6' y='.6' width='16.8' height='28.8' rx='4' stroke='%23ff9d62' stroke-opacity='.55' stroke-width='1.2'/%3E%3Cpath d='M4 15h10' stroke='%23ff9d62' stroke-opacity='.55' stroke-width='1.1' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat; }
+  [data-markets] .dm-mkt-guide-grid .dm-guide-number::before { content: ''; position: absolute; inset: 0; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 30'%3E%3Ccircle cx='9' cy='7.8' r='1.6' fill='%23ff9d62' fill-opacity='.75'/%3E%3C/svg%3E") center / contain no-repeat; transform-origin: 50% 25%; }
+  [data-markets] .dm-mkt-guide-grid > div:nth-child(2) .dm-guide-number::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 30'%3E%3Ccircle cx='5.6' cy='5' r='1.6' fill='%23ff9d62' fill-opacity='.75'/%3E%3Ccircle cx='12.4' cy='10.6' r='1.6' fill='%23ff9d62' fill-opacity='.75'/%3E%3C/svg%3E"); }
+  [data-markets] .dm-mkt-guide-grid > div:nth-child(3) .dm-guide-number::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 30'%3E%3Ccircle cx='5.2' cy='4.4' r='1.6' fill='%23ff9d62' fill-opacity='.75'/%3E%3Ccircle cx='9' cy='7.8' r='1.6' fill='%23ff9d62' fill-opacity='.75'/%3E%3Ccircle cx='12.8' cy='11.2' r='1.6' fill='%23ff9d62' fill-opacity='.75'/%3E%3C/svg%3E"); }
+  [data-markets] .dm-mkt-guide[open] .dm-mkt-guide-grid > div .dm-guide-number::before { animation: dm-v4-pip 0.45s var(--e-pop) 0.22s backwards; }
+  [data-markets] .dm-mkt-guide[open] .dm-mkt-guide-grid > div:nth-child(2) .dm-guide-number::before { animation-delay: 0.28s; }
+  [data-markets] .dm-mkt-guide[open] .dm-mkt-guide-grid > div:nth-child(3) .dm-guide-number::before { animation-delay: 0.34s; }
   [data-markets] .dm-mkt-guide-grid h2 { align-self: start; margin: 0; font-family: var(--font-display); font-size: 1.625rem; line-height: 1.05; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
   [data-markets] .dm-mkt-guide-grid p { grid-column: 2; max-width: 36ch; margin: 0.625rem 0 0; font-size: 0.875rem; line-height: 1.55; color: var(--muted); }
   [data-markets] .dm-mkt-guide[open] .dm-mkt-guide-grid > div { animation: dm-v4-up 0.55s var(--e-enter) backwards; }
   [data-markets] .dm-mkt-guide[open] .dm-mkt-guide-grid > div:nth-child(2) { animation-delay: 0.06s; }
   [data-markets] .dm-mkt-guide[open] .dm-mkt-guide-grid > div:nth-child(3) { animation-delay: 0.12s; }
   @media (max-width: 767px) {
+    [data-markets] .dm-mkt-guide { padding-bottom: 2rem; }
     [data-markets] .dm-mkt-guide > summary { padding: 0 0.375rem 0 0.75rem; }
     [data-markets] .dm-mkt-guide-grid { grid-template-columns: minmax(0, 1fr); gap: 1.625rem; padding: 0.875rem 0.75rem 0.5rem; }
   }
   @media (prefers-reduced-motion: reduce) {
-    [data-markets] .dm-mkt-guide[open] .dm-mkt-guide-grid > div { animation: none; }
+    [data-markets] .dm-mkt-guide[open] .dm-mkt-guide-grid > div, [data-markets] .dm-mkt-guide[open] .dm-mkt-guide-grid .dm-guide-number::before { animation: none; }
     [data-markets] .dm-mkt-guide > summary::before { transition-property: opacity, color, background-color, box-shadow; }
   }
-  html.dm-still [data-markets] .dm-mkt-guide[open] .dm-mkt-guide-grid > div { animation: none; }
+  html.dm-still [data-markets] .dm-mkt-guide[open] .dm-mkt-guide-grid > div, html.dm-still [data-markets] .dm-mkt-guide[open] .dm-mkt-guide-grid .dm-guide-number::before { animation: none; }
+  /* Opening and closing glide (.acc-b: rows 0fr to 1fr in 0.45s): the guide here, the figures dialog's Details. */
+  @supports selector(::details-content) {
+    :is([data-markets] .dm-mkt-guide, [data-pool-figures-dialog] .dm-pool-figures-details) { interpolate-size: allow-keywords; }
+    :is([data-markets] .dm-mkt-guide, [data-pool-figures-dialog] .dm-pool-figures-details)::details-content { height: 0; overflow: clip; transition: height 0.45s var(--e-enter), content-visibility 0.45s allow-discrete; }
+    :is([data-markets] .dm-mkt-guide, [data-pool-figures-dialog] .dm-pool-figures-details)[open]::details-content { height: auto; transition: height 0.45s var(--e-enter); } /* opening never transitions content-visibility: the content is there (and readable) at once */
+    @media (prefers-reduced-motion: reduce) {
+      :is([data-markets] .dm-mkt-guide, [data-pool-figures-dialog] .dm-pool-figures-details)::details-content { transition: none; }
+    }
+    html.dm-still :is([data-markets] .dm-mkt-guide, [data-pool-figures-dialog] .dm-pool-figures-details)::details-content { transition: none; }
+  }
 }
 
 @layer v4 {
@@ -322,21 +435,40 @@
   }
   [data-pool-figures-dialog] .dm-pool-figures-head { --surface-2: var(--card); position: relative; gap: 0.875rem; padding: 1.125rem 3rem 1rem 0.875rem; }
   [data-pool-figures-dialog] .dm-pool-figures-head > :first-child > * { transition: translate 0.3s var(--e-enter); }
-  [data-pool-figures-dialog] .dm-pool-figures-head .dm-dialog-title { padding-right: 0; font-size: 2rem; line-height: 1; letter-spacing: -0.02em; overflow-wrap: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  [data-pool-figures-dialog] .dm-pool-figures-venue { margin-top: 0.375rem; font-size: 0.8125rem; line-height: 1.125rem; color: var(--subtle); }
+  [data-pool-figures-dialog] .dm-pool-figures-head .dm-dialog-title { padding-right: 0; font-size: 2rem; line-height: 1; letter-spacing: -0.02em; overflow-wrap: anywhere; text-wrap: balance; }
+  [data-pool-figures-dialog] .dm-pool-figures-venue { margin-top: 0.375rem; font-size: 0.8125rem; line-height: normal; color: var(--subtle); }
   /* The seam: a groove under the head, drawn in from the left as the sheet opens. */
   [data-pool-figures-dialog] .dm-pool-figures-head::after { content: ''; position: absolute; left: 0.875rem; right: 0.875rem; bottom: 0; height: 2px; background: linear-gradient(rgb(0 0 0 / 0.5), rgb(0 0 0 / 0.5)) 0 0 / 100% 1px no-repeat, linear-gradient(rgb(255 236 220 / 0.075), rgb(255 236 220 / 0.075)) 0 1px / 100% 1px no-repeat; transform-origin: left center; animation: dm-v4-mkt-seam 0.7s var(--e-enter) 0.15s backwards; pointer-events: none; }
   /* Three figures in serif, a hairline between them, one under them. */
-  [data-pool-figures-dialog] .dm-pool-figures-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; padding: 0.375rem 0.25rem 0.25rem; border: 0; border-radius: 0; background: transparent; box-shadow: 0 1px 0 var(--line); }
+  [data-pool-figures-dialog] .dm-pool-figures-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; margin-top: 0.125rem; padding: 0.375rem 0.25rem 0.3125rem; border: 0; border-radius: 0; background: linear-gradient(var(--line), var(--line)) 0.875rem 100% / calc(100% - 1.75rem) 1px no-repeat; box-shadow: none; }
   [data-pool-figures-dialog] .dm-pool-figures-metrics > div { position: relative; min-width: 0; padding: 0.875rem 0.75rem 1rem 0.875rem; }
   [data-pool-figures-dialog] .dm-pool-figures-metrics > div + div::before { content: ''; position: absolute; left: 0; top: 1.125rem; bottom: 1.125rem; width: 1px; background: var(--line); }
-  [data-pool-figures-dialog] .dm-pool-figures-metrics dt { font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; color: var(--subtle); }
-  [data-pool-figures-dialog] .dm-pool-figures-metrics dd { min-height: 2.125rem; margin-top: 0.625rem; font-family: var(--font-display); font-size: 2.25rem; line-height: 0.9; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
-  [data-pool-figures-dialog] .dm-pool-figures-metrics dd :not(.sr-only, .dm-skel) { font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; }
+  [data-pool-figures-dialog] .dm-pool-figures-metrics dt { font-size: 0.8125rem; line-height: normal; font-weight: 500; color: var(--subtle); }
+  [data-pool-figures-dialog] .dm-pool-figures-metrics dd { min-height: 2.125rem; margin-top: 0.75rem; font-family: var(--font-display); font-size: 2.25rem; line-height: 0.9; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
+  [data-pool-figures-dialog] .dm-pool-figures-metrics dd :not(.sr-only, .dm-skel, .dm-apr-est) { font-family: inherit; font-size: inherit; line-height: inherit; font-weight: inherit; letter-spacing: inherit; }
+  [data-pool-figures-dialog] .dm-pool-figures-metrics dd .dm-apr-est { margin-left: 0.05rem; font-family: var(--font-sans); font-size: 0.78125rem; line-height: normal; font-weight: 400; letter-spacing: -0.01em; color: var(--subtle); }
   [data-pool-figures-dialog] .dm-pool-figures-metrics dd .text-money-in { color: var(--in); }
   /* Details: a row with the foundation's plus; the facts as rows with inset hairlines. */
-  [data-pool-figures-dialog] .dm-pool-figures-details { border: 0; }
-  [data-pool-figures-dialog] .dm-pool-figures-details > summary { min-height: 3rem; padding: 0 0.625rem 0 0.875rem; border-radius: 0.875rem; font-size: 0.90625rem; line-height: 1.25rem; font-weight: 500; color: var(--fg); }
+  [data-pool-figures-dialog] .dm-pool-figures-details { margin-top: 0; padding-top: 0.3125rem; border: 0; background: linear-gradient(var(--line), var(--line)) 0.875rem 0 / calc(100% - 1.75rem) 1px no-repeat; }
+  /* On each open the head's words and the three figures tick in (fg-tick). */
+  [data-pool-figures-dialog] :is(.dm-pool-figures-head > .min-w-0, .dm-pool-figures-metrics) { animation: dm-v4-mkt-tick 0.35s var(--e-enter) backwards; }
+  /* The close (40px) in the head row, centred on it: about 33px from the sheet's top and 18px from its right. */
+  @media (min-width: 640px) {
+    [data-pool-figures-dialog] .dm-dialog-close { top: 2.0625rem; right: 1.125rem; }
+  }
+  /* The ember's light on the sheet (.fg-edge, .fg-cwash): a 760px light on its 1px rim and a 1040px wash, following the
+     pointer (the ember writes --ex/--ey and --ember-on on [data-ember]); the seam catches a 260px light on its lower
+     line (.fg-seam-lit). Not the .dm-lit class: its ::before would take the phone's grab handle. */
+  @media (min-width: 640px) and (hover: hover) and (pointer: fine) {
+    [data-pool-figures-dialog]::before, [data-pool-figures-dialog]::after { display: block; content: ''; position: absolute; inset: 0; translate: none; width: auto; height: auto; border-radius: inherit; pointer-events: none; background-repeat: no-repeat; background-attachment: fixed; opacity: var(--ember-on, 0); transition: opacity 0.45s var(--e-std), background-position 0.5s var(--e-drift); }
+    [data-pool-figures-dialog]::before { z-index: 3; padding: 1px; background-image: radial-gradient(closest-side, rgb(255 190 146), rgb(255 157 98 / 0.45) 40%, rgb(255 157 98 / 0.12) 70%, rgb(255 157 98 / 0)); background-size: 47.5rem 47.5rem; background-position: calc(var(--ex, -100rem) - 23.75rem) calc(var(--ey, -100rem) - 23.75rem); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+    [data-pool-figures-dialog]::after { background-image: radial-gradient(closest-side, rgb(255 157 98 / 0.07), rgb(255 157 98 / 0.025) 50%, rgb(255 157 98 / 0)); background-size: 65rem 65rem; background-position: calc(var(--ex, -100rem) - 32.5rem) calc(var(--ey, -100rem) - 32.5rem); transition-duration: 0.45s, 0.7s; }
+    [data-pool-figures-dialog] .dm-pool-figures-head::before { content: ''; position: absolute; left: 0.875rem; right: 0.875rem; bottom: 0; height: 1px; background: linear-gradient(90deg, rgb(255 190 146 / 0), rgb(255 190 146 / 0.8), rgb(255 190 146 / 0)) calc(var(--ex, -100rem) - 8.125rem) 0 / 16.25rem 100% repeat-y fixed; opacity: var(--ember-on, 0); transform-origin: left center; pointer-events: none; transition: opacity 0.45s var(--e-std), background-position 0.5s var(--e-drift); animation: dm-v4-mkt-seam 0.7s var(--e-enter) 0.15s backwards; }
+  }
+  @media (forced-colors: active) {
+    [data-pool-figures-dialog]::after, [data-pool-figures-dialog] .dm-pool-figures-head::before { content: none; }
+  }
+  [data-pool-figures-dialog] .dm-pool-figures-details > summary { min-height: 3rem; padding: 0 0.625rem 0 0.875rem; border-radius: 0.875rem; font-size: 1rem; line-height: normal; font-weight: 400; letter-spacing: normal; color: var(--fg); }
   [data-pool-figures-dialog] .dm-pool-figures-facts { gap: 0; padding: 0.125rem 0.875rem 0.375rem; }
   [data-pool-figures-dialog] .dm-pool-figures-facts > div { align-items: center; min-height: 2.75rem; padding-block: 0.5rem; font-size: 0.875rem; line-height: 1.25rem; box-shadow: inset 0 -1px 0 var(--line); }
   [data-pool-figures-dialog] .dm-pool-figures-facts > div:last-child { box-shadow: none; }
@@ -346,38 +478,56 @@
     [data-pool-figures-dialog] .dm-pool-figures-head { padding: 0.5rem 3rem 1rem 0.5rem; }
     [data-pool-figures-dialog] .dm-pool-figures-head .dm-dialog-title { font-size: 1.75rem; }
     [data-pool-figures-dialog] .dm-pool-figures-metrics dd { font-size: clamp(1.375rem, 7vw, 1.875rem); }
-    [data-pool-figures-dialog] .dm-pool-figures-metrics > div { padding: 0.75rem 0.5rem 0.875rem 0.625rem; }
+    [data-pool-figures-dialog] .dm-pool-figures-metrics > div { padding: 0.875rem 0.5rem 1rem 0.625rem; }
     [data-pool-figures-dialog] .dm-pool-figures-facts dd { overflow-wrap: anywhere; }
+    [data-pool-figures-dialog] .dm-dialog-close { top: 2.375rem; right: 0.875rem; width: 2.75rem; height: 2.75rem; }
   }
   @media (prefers-reduced-motion: reduce) {
-    [data-pool-figures-dialog] .dm-pool-figures-head::after { animation: none; }
+    [data-pool-figures-dialog] .dm-pool-figures-head::after, [data-pool-figures-dialog] .dm-pool-figures-head::before, [data-pool-figures-dialog] :is(.dm-pool-figures-head > .min-w-0, .dm-pool-figures-metrics) { animation: none; }
     [data-pool-figures-dialog] .dm-pool-figures-head > :first-child > * { transition: none; }
   }
-  html.dm-still [data-pool-figures-dialog] .dm-pool-figures-head::after { animation: none; }
+  html.dm-still [data-pool-figures-dialog] .dm-pool-figures-head::after, html.dm-still [data-pool-figures-dialog] .dm-pool-figures-head::before, html.dm-still [data-pool-figures-dialog] :is(.dm-pool-figures-head > .min-w-0, .dm-pool-figures-metrics) { animation: none; }
 }
 
 @keyframes dm-v4-mkt-seam { from { transform: scaleX(0); } to { transform: none; } }
+@keyframes dm-v4-mkt-tick { from { opacity: 0.25; transform: translateY(0.375rem); filter: blur(0.125rem); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes dm-v4-mkt-rowin { from { opacity: 0.01; transform: translateY(0.375rem); } to { opacity: 1; transform: none; } }
 
 @layer v4 {
   /* ---- Token pages: the stored one (#/markets/<token>), the older read path, and Base and Arbitrum One's
      (#/markets/network/<id>/<token>) (§1.7-1.9). ---- */
   /* The back link: a quiet pill, its chevron stepping back under the pointer. */
-  [data-markets] .dm-mkt-crumbs { font-size: 0.875rem; line-height: 1.25rem; }
-  [data-markets] .dm-mkt-back { gap: 0.375rem; height: 2.125rem; margin-left: -0.5rem; padding: 0 0.75rem 0 0.5rem; border-radius: 999px; font-size: 0.875rem; font-weight: 500; letter-spacing: -0.01em; color: var(--muted); transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std), scale 0.1s var(--e-press); }
+  /* The back pill 28px under the header (.ptop), the title's letters 23.3px under it (18px plus .ln's .05em). */
+  [data-markets] .dm-mkt-crumbs { margin-top: -0.5rem; padding-bottom: 0.125rem; font-size: 0.875rem; line-height: 1.25rem; }
+  [data-markets] .dm-mkt-titlebar h1.dm-display-h1 { padding-top: 0.05em; }
+  [data-markets] .dm-mkt-back { gap: 0.375rem; height: 2.125rem; margin-left: -0.5rem; padding: 0 0.75rem 0 0.5rem; border-radius: 999px; font-size: 0.875rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std), scale 0.1s var(--e-press); }
   [data-markets] .dm-mkt-back:hover { background: var(--v4-w04); color: var(--fg); }
   /* The title row: the page title at the left, a token's New position on its baseline at the right. */
   [data-markets] .dm-mkt-titlebar { align-items: flex-end; justify-content: space-between; gap: 1.5rem; }
   /* The joined tag under a token's title: Uniswap | network | short address, one quiet strip. */
-  [data-markets] .dm-mkt-tags { display: inline-flex; flex-wrap: wrap; gap: 2px; margin-top: 0.75rem; }
-  [data-markets] .dm-mkt-tags > * { display: inline-flex; align-items: center; gap: 0.375rem; min-height: 0; padding: 0.125rem 0.4375rem; border-radius: 0.125rem; background: var(--v4-w055); box-shadow: none; font-size: 0.78125rem; line-height: 1.125rem; font-weight: 400; color: var(--subtle); }
+  [data-markets] .dm-mkt-tags { display: inline-flex; flex-wrap: wrap; gap: 0.125rem; margin-top: 1rem; }
+  [data-markets] .dm-mkt-tags > * { display: inline-flex; align-items: center; gap: 0.375rem; min-height: 0; padding: 0.125rem 0.4375rem; border-radius: 0.125rem; background: var(--v4-w055); box-shadow: none; font-size: 0.78125rem; line-height: normal; font-weight: 400; color: var(--subtle); }
   [data-markets] .dm-mkt-tags > :first-child { border-radius: 0.375rem 0.125rem 0.125rem 0.375rem; }
   [data-markets] .dm-mkt-tags > :last-child { border-radius: 0.125rem 0.375rem 0.375rem 0.125rem; }
   [data-markets] .dm-mkt-tags .dm-hex { font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0; color: var(--muted); }
-  [data-markets] .dm-mkt-tags > :nth-child(2)::before { content: ''; flex: none; width: 0.875rem; height: 0.875rem; background: var(--dm-net-4663) center / contain no-repeat; }
+  /* The network segment (.tn): its 12px mark 5px in, 5px before the name. */
+  [data-markets] .dm-mkt-tags > :nth-child(2) { gap: 0.3125rem; padding-left: 0.3125rem; }
+  [data-markets] .dm-mkt-tags > :nth-child(2)::before { content: ''; flex: none; width: 0.75rem; height: 0.75rem; background: var(--dm-net-4663) center / contain no-repeat; }
   [data-markets] .dm-mkt-tags > [data-chain-chip="8453"]::before { background-image: var(--dm-net-8453); }
   [data-markets] .dm-mkt-tags > [data-chain-chip="42161"]::before { background-image: var(--dm-net-42161); }
   [data-markets] :is(.dm-mkt-found > .dm-title, [data-stored-token] ~ .dm-mkt-found > .dm-title) { margin: 0 0 1rem 0.25rem; font-family: var(--font-display); font-size: 2.375rem; line-height: 1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
   [data-markets] .dm-mkt-found { margin-top: 2.25rem; }
+  /* The older path's pools, under "Pools for …", rise in when Find pools answers (MarketsMore B), 48px under the token's
+     card; the catalogue card 12px under them. */
+  [data-markets] div.mt-6 + .dm-mkt-found { margin-top: 3rem; animation: dm-v4-card 0.7s var(--e-enter) backwards; }
+  [data-markets] .dm-mkt-found + .dm-mkt-catalogue { margin-top: 0.75rem; }
+  /* "Show all N pools" ends in a 12px chevron that turns over once they are shown. */
+  [data-markets] [data-stored-token] [data-show-all-pools]::after { content: ''; flex: none; width: 0.75rem; height: 0.75rem; margin-left: 0.5rem; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E") center / contain no-repeat; transition: rotate 0.35s var(--e-enter); }
+  [data-markets] [data-stored-token] [data-show-all-pools="shown"]::after { rotate: 180deg; }
+  /* The button itself (.btn-gh): 44px, 16/14px sides, 12px corners, the button's own type (16px regular, the page's ink). */
+  [data-markets] [data-stored-token] [data-show-all-pools] { height: 2.75rem; min-height: 2.75rem; padding: 0 0.875rem 0 1rem; border: 0; border-radius: 0.75rem; background: transparent; box-shadow: none; font-size: 1rem; line-height: normal; font-weight: 400; letter-spacing: normal; color: var(--fg); transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std), scale 0.1s var(--e-press); }
+  [data-markets] [data-stored-token] [data-show-all-pools]:hover { background: rgb(255 236 220 / 0.05); color: var(--fg); }
+  [data-markets] .dm-mkt-back > svg { transition: translate 0.25s var(--e-enter); }
   [data-markets] .dm-mkt-found > .dm-card { margin-top: 0; padding: 0.5rem 0.625rem 0.625rem; border: 0; border-radius: 1.625rem; background: var(--v4-card-lift), var(--card); box-shadow: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 rgb(255 236 220 / 0.06), var(--v4-card-drop); }
 
   /* The stored token: one card holds the token's head, its pools and their buttons. It is the figures dialog's
@@ -441,9 +591,10 @@
   [data-markets] .dm-mkt-catalogue .dm-mkt-candidate + .dm-mkt-candidate { box-shadow: inset 0 1px 0 var(--line); border-radius: 0; }
 
   /* Base and Arbitrum One: the token's mark beside its title, New position on the title's baseline. */
-  [data-network-token-view] .dm-mkt-titlebar > .min-w-0 > .flex { align-items: flex-end; gap: 1rem; }
-  [data-network-token-view] .dm-mkt-titlebar > .min-w-0 > .flex > :first-child:not(h1) { zoom: 1.3333; margin-bottom: 0.375rem; box-shadow: 0 0 0 2px var(--bg); transition: rotate 0.3s var(--e-enter), scale 0.3s var(--e-enter); }
-  [data-network-token-view] [data-network-new-position] { flex: none; height: 3.375rem; margin-bottom: 2.5rem; padding-inline: 1.5rem; font-size: 0.96875rem; }
+  [data-network-token-view] .dm-mkt-titlebar > .min-w-0 > .flex:not(.dm-mkt-tags) { align-items: flex-end; gap: 1rem; }
+  [data-network-token-view] .dm-mkt-titlebar > .min-w-0 > .flex:not(.dm-mkt-tags) > :first-child:not(h1) { zoom: 1.3333; margin-bottom: 0.375rem; box-shadow: 0 0 0 2px var(--bg); transition: rotate 0.3s var(--e-enter), scale 0.3s var(--e-enter); }
+  [data-network-token-view] [data-network-new-position] { flex: none; height: 3.375rem; margin-bottom: 3.5rem; padding-inline: 1.5rem; font-size: 0.96875rem; }
+  [data-network-token-view] .dm-mkt-found { margin-top: 2.5rem; }
   [data-network-token-view] > .mt-6 { margin-top: 1.5rem; }
   [data-network-token-view] > .mt-6 > p[role="status"] { font-size: 0.90625rem; color: var(--muted); }
   /* Its pools: read-only rows (no pip, no chevron), the pair and its joined chips, three figures at the right. */
@@ -462,13 +613,16 @@
   [data-network-token-view] .dm-flow-pool-figures > * { cursor: help; }
 
   @media (max-width: 767px) {
+    /* The back pill a 44px target 12px under the header, the title 12px under it (token.html's phone head). */
+    [data-markets] .dm-mkt-crumbs { margin: 0 0 -0.25rem; padding-bottom: 0; }
+    [data-markets] .dm-mkt-back { height: 2.75rem; }
     [data-markets] .dm-mkt-titlebar { flex-direction: column; align-items: stretch; }
     [data-markets] .dm-mkt-found > .dm-title { font-size: 1.75rem; }
     [data-markets] #stored-token-title, [data-markets] .dm-mkt-lookup-symbol { font-size: 2.125rem; }
     [data-markets] [data-stored-token] > .dm-card:first-child { padding: 1rem 0.625rem 1rem 0.75rem; }
     [data-markets] .dm-mkt-found .dm-mkt-option:not([data-pool-key]) > :is(.dm-mkt-option-figures, .dm-mkt-option-note) { grid-template-columns: repeat(3, minmax(0, 1fr)); padding-left: 1.375rem; }
     [data-markets] .dm-mkt-found .dm-mkt-option-details { margin-left: 1.375rem; }
-    [data-network-token-view] .dm-mkt-titlebar > .min-w-0 > .flex > :first-child:not(h1) { margin-bottom: 0.25rem; }
+    [data-network-token-view] .dm-mkt-titlebar > .min-w-0 > .flex:not(.dm-mkt-tags) > :first-child:not(h1) { margin-bottom: 0.25rem; }
     [data-network-token-view] [data-network-new-position] { width: 100%; height: 3.125rem; margin-bottom: 0; }
     [data-network-token-view] .dm-mkt-option { grid-template-columns: minmax(0, 1fr); gap: 0.75rem; padding: 1rem 0.75rem; }
     [data-network-token-view] .dm-mkt-option-figures.dm-flow-pool-figures { padding-left: 0; }
@@ -476,14 +630,20 @@
   @media (hover: none) {
     [data-markets] .dm-mkt-found .dm-mkt-option-head::before { display: none; }
   }
+  @media (prefers-reduced-motion: reduce) {
+    [data-markets] div.mt-6 + .dm-mkt-found { animation: none; }
+    [data-markets] [data-stored-token] [data-show-all-pools]::after { transition: none; }
+  }
+  html.dm-still [data-markets] div.mt-6 + .dm-mkt-found { animation: none; }
   /* Hover gestures that move something: only where motion is welcome (V4 §6.4). */
   @media (prefers-reduced-motion: no-preference) {
     [data-markets] .dm-mkt-back:active { scale: 0.97; }
+    [data-markets] .dm-mkt-back:hover > svg { translate: -0.125rem 0; }
     [data-markets] [data-stored-token] > .dm-card:first-child:hover .dm-mkt-token-mark { rotate: -8deg; scale: 1.04; }
     [data-markets] .dm-mkt-lookup-token:hover > :first-child { rotate: -8deg; scale: 1.04; }
     [data-markets] .dm-mkt-found .dm-mkt-option-head:hover > [aria-hidden="true"] > :last-child { translate: 0.25rem 0; scale: 1.06; }
     [data-markets] .dm-mkt-catalogue > summary:hover .dm-mkt-catalogue-icon { rotate: -8deg; }
-    [data-network-token-view] .dm-mkt-titlebar:hover > .min-w-0 > .flex > :first-child:not(h1) { rotate: -8deg; scale: 1.04; }
+    [data-network-token-view] .dm-mkt-titlebar:hover > .min-w-0 > .flex:not(.dm-mkt-tags) > :first-child:not(h1) { rotate: -8deg; scale: 1.04; }
     [data-network-token-view] .dm-mkt-option:hover .dm-mkt-option-head > [aria-hidden="true"] > :last-child { translate: 0.1875rem 0; }
     [data-markets] .dm-mkt-found .dm-mkt-option-head:hover > .i-chev-r { translate: 0.125rem 0; }
   }
@@ -494,18 +654,32 @@
      blocks that already rise (animate-rise) take V4's motions, done by about 0.8s; once <html> is dm-booted nothing
      rises, as before. Fills are backwards only, ending on no transform and no filter. The pools card is the figures
      dialog's ancestor: while the dialog is open it never animates. ---- */
-  html:not(.dm-booted) [data-markets] .dm-v3-market-heading.animate-rise { animation: dm-v4-fade 0.4s var(--e-std) backwards; }
+  /* Markets: the title only rises inside its line (the foundation's), the search comes up, the plates step in 40ms apart
+     with their plots wiping and their dots popping after them, the dots and arrows under the rail fade, then the pools
+     card and the guide's row. */
+  html:not(.dm-booted) [data-markets] .dm-v3-market-heading.animate-rise { animation: none; }
   html:not(.dm-booted) [data-markets] .dm-v3-market-heading.animate-rise > .dm-v3-market-search { animation: dm-v4-up 0.5s var(--e-enter) 0.14s backwards; }
-  html:not(.dm-booted) [data-markets] .dm-v3-market-featured.animate-rise { animation: dm-v4-fade 0.4s var(--e-std) 0.1s backwards; }
+  html:not(.dm-booted) [data-markets] .dm-v3-market-featured.animate-rise { animation: none; }
+  html:not(.dm-booted) [data-markets] .dm-v3-market-featured :is(.dm-mkt-footer-nav, .dm-mkt-dots[data-place="rail"]) { animation: dm-v4-fade 0.4s var(--e-std) 0.3s backwards; }
   html:not(.dm-booted) [data-markets] .dm-v3-market-featured .dm-mkt-card.animate-rise { animation: dm-v4-card 0.55s var(--e-enter) backwards; animation-delay: calc(0.16s + var(--delay, 0s)); }
-  html:not(.dm-booted) [data-markets] .dm-mkt-pools.animate-rise:not(:has(.dm-dialog-backdrop)) { animation: dm-v4-card 0.55s var(--e-enter) 0.24s backwards; }
-  html:not(.dm-booted) [data-markets] .dm-mkt-crumbs.animate-rise { animation: dm-v4-up 0.5s var(--e-enter) 0.02s backwards; }
-  html:not(.dm-booted) [data-markets] .dm-mkt-titlebar.animate-rise { animation: dm-v4-fade 0.4s var(--e-std) 0.04s backwards; }
+  html:not(.dm-booted) [data-markets] .dm-v3-market-featured .dm-price-wrap[data-reveal] { animation-delay: calc(0.24s + var(--delay, 0s)); }
+  html:not(.dm-booted) [data-markets] .dm-v3-market-featured .dm-spark .dm-end-dot { animation-delay: calc(0.44s + var(--delay, 0s) * 0.75); }
+  html:not(.dm-booted) [data-markets] .dm-mkt-pools.animate-rise:not(:has(.dm-dialog-backdrop), [data-risen]) { animation: dm-v4-card 0.55s var(--e-enter) 0.24s backwards; }
+  html:not(.dm-booted) [data-markets] .dm-mkt-guide { animation: dm-v4-fade 0.4s var(--e-std) 0.36s backwards; }
+  /* Token pages: the back link, the tag strip (and a network token's mark) come up, New position and "Pools" after
+     them, then the card. The stored token's card is the figures dialog's ancestor: never animated while it is open. */
+  html:not(.dm-booted) [data-markets] .dm-mkt-crumbs.animate-rise { animation: dm-v4-up 0.5s var(--e-enter) 0.14s backwards; }
+  html:not(.dm-booted) [data-markets] .dm-mkt-titlebar.animate-rise { animation: none; }
+  html:not(.dm-booted) [data-markets] :is(.dm-mkt-titlebar .dm-mkt-tags, [data-network-token-view] .dm-mkt-titlebar > .min-w-0 > .flex:not(.dm-mkt-tags) > :first-child:not(h1)) { animation: dm-v4-up 0.5s var(--e-enter) 0.14s backwards; }
+  html:not(.dm-booted) [data-network-token-view] :is([data-network-new-position], .dm-mkt-found > .dm-title) { animation: dm-v4-up 0.5s var(--e-enter) 0.2s backwards; }
+  html:not(.dm-booted) [data-network-token-view] .dm-mkt-found.animate-rise { animation: none; }
+  html:not(.dm-booted) [data-network-token-view] .dm-mkt-found > .dm-card { animation: dm-v4-card 0.55s var(--e-enter) 0.24s backwards; }
+  html:not(.dm-booted) [data-markets] [data-stored-token]:not(:has(.dm-dialog-backdrop), [data-risen]) { animation: dm-v4-card 0.55s var(--e-enter) 0.24s backwards; }
   html:not(.dm-booted) [data-markets] :is(.dm-mkt-found, .mt-6).animate-rise { animation: dm-v4-card 0.55s var(--e-enter) 0.24s backwards; }
   @media (prefers-reduced-motion: reduce) {
-    html:not(.dm-booted) [data-markets] :is(.animate-rise, .animate-rise > .dm-v3-market-search) { animation: none; }
+    html:not(.dm-booted) [data-markets] :is(.animate-rise, .animate-rise > .dm-v3-market-search, .dm-mkt-footer-nav, .dm-mkt-dots, .dm-mkt-guide, .dm-mkt-tags, [data-stored-token], [data-network-new-position], .dm-mkt-found > *, .dm-mkt-titlebar > .min-w-0 > .flex > *) { animation: none; }
   }
-  html.dm-still [data-markets] :is(.animate-rise, .animate-rise > .dm-v3-market-search) { animation: none; }
+  html.dm-still [data-markets] :is(.animate-rise, .animate-rise > .dm-v3-market-search, .dm-mkt-footer-nav, .dm-mkt-dots, .dm-mkt-guide, .dm-mkt-tags, [data-stored-token], [data-network-new-position], .dm-mkt-found > *, .dm-mkt-titlebar > .min-w-0 > .flex > *) { animation: none; }
 }
 
 @layer v4 {
@@ -521,6 +695,8 @@
     [data-markets] .dm-mkt-table tr:is(:hover, :focus-within) :is(.dm-mkt-marks > span, [data-pool-catalogue] .dm-mkt-pool > span:first-child) > :last-child { translate: 0.25rem 0; scale: 1.06; }
     [data-markets] .dm-mkt-table tr:hover .dm-mkt-apr > * { translate: 0 -1px; }
     [data-markets] .dm-mkt-table .dm-mkt-end .dm-icon-btn:active { scale: 0.97; }
+    [data-markets] .dm-mkt-table tbody tr:not([data-row-loading]):active { scale: 0.997; }
+    [data-markets] [data-stored-token] .dm-mkt-table thead .dm-info-tip-trigger:hover::after { scale: 1.08; }
     [data-markets] .dm-mkt-table tr:hover .dm-mkt-end .i-chev-r { translate: 0.125rem 0; }
     [data-markets] .dm-v3-market-featured .dm-mkt-card.dm-plate:active { scale: 0.995; }
     [data-markets] .dm-v3-market-featured .dm-mkt-card:hover .dm-mkt-pair > [aria-hidden="true"] > :first-child { scale: 1.06; }

@@ -63,7 +63,7 @@ function BlockView({ block }: { block: Block }) {
       return <Bullets items={block.items} />
     case 'steps':
       return (
-        <ol className="dm-card dm-docs-steps">
+        <ol className="dm-card dm-docs-steps dm-lit">
           {block.items.map((step, index) => (
             <li key={step.title} className="dm-docs-step">
               <span aria-hidden="true" className="dm-docs-step-n tnum">
@@ -161,7 +161,7 @@ function BlockView({ block }: { block: Block }) {
     case 'diagram':
       return (
         <figure className="dm-docs-figure" data-docs-diagram={block.name}>
-          <div className="dm-docs-diagram">
+          <div className="dm-docs-diagram dm-lit">
             <DocsDiagram name={block.name} alt={block.alt} />
           </div>
           <figcaption>

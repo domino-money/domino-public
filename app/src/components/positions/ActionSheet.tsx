@@ -1,6 +1,7 @@
-import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react'
+import { useLayoutEffect, useRef, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useDialog } from '../../lib/useDialog'
+import { useMediaQuery } from '../../lib/useMediaQuery'
 import { IconChevronDown, IconChevronLeft, IconClose, IconLock } from '../icons'
 import { IconButton, cx } from '../ui'
 
@@ -19,6 +20,40 @@ import { IconButton, cx } from '../ui'
 
 type Data = Record<`data-${string}`, string | undefined>
 
+/**
+ * A position sheet's way out (V4's .as-dlg closing): the dialog itself leaves the page at once (its role, focus and every
+ * hook go with it), and a still copy of it, with no role, name, id, link or test hook and taking no input, fades and sinks
+ * for 220ms (slides down on a phone, 280ms) before it is removed. Only the position sheets ([data-position-dialog]) leave
+ * one; never under reduced motion or the stilled site.
+ */
+function leaveGhost(backdrop: HTMLElement) {
+  if (typeof window === 'undefined' || !backdrop.isConnected || !backdrop.querySelector('.dm-dialog:is([data-position-dialog], [data-bulk-close])')) return
+  if (document.documentElement.classList.contains('dm-still') || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  // Where the sheet had scrolled to, so the copy leaves from what was on screen.
+  const scrolls = Array.from(backdrop.querySelectorAll<HTMLElement>('.dm-dialog, .dm-pa-body')).map((node) => node.scrollTop)
+  // After the commit: a sheet still on the page (React's StrictMode rehearsal) leaves nothing behind.
+  queueMicrotask(() => {
+    if (backdrop.isConnected) return
+    const ghost = backdrop.cloneNode(true) as HTMLElement
+    for (const element of [ghost, ...Array.from(ghost.querySelectorAll<Element>('*'))]) {
+      for (const name of element.getAttributeNames()) {
+        if (name === 'id' || name === 'role' || name === 'name' || name === 'for' || name === 'tabindex' || name === 'href' || name === 'title' || name.startsWith('aria-')) element.removeAttribute(name)
+      }
+    }
+    // The sheet's own hooks name no action on the copy (its look keys on the attribute being there, never on its value).
+    for (const sheet of Array.from(ghost.querySelectorAll<HTMLElement>('.dm-dialog'))) {
+      for (const name of sheet.getAttributeNames()) if (name.startsWith('data-')) sheet.removeAttribute(name)
+      sheet.setAttribute('data-position-dialog', '')
+    }
+    ghost.setAttribute('aria-hidden', 'true')
+    ghost.inert = true
+    ghost.classList.add('dm-dialog-ghost')
+    document.body.append(ghost)
+    Array.from(ghost.querySelectorAll<HTMLElement>('.dm-dialog, .dm-pa-body')).forEach((node, index) => { node.scrollTop = scrolls[index] ?? 0 })
+    window.setTimeout(() => ghost.remove(), window.matchMedia('(max-width: 639px)').matches ? 280 : 220)
+  })
+}
+
 export function ActionSheet({ id, title, lede, back, onClose, footer, children, ...data }: {
   /** The ids' stem: `<id>-title`, `<id>-lede`. */
   id: string
@@ -32,11 +67,21 @@ export function ActionSheet({ id, title, lede, back, onClose, footer, children, 
   children: ReactNode
 } & Data) {
   const dialog = useDialog(true, onClose)
+  const backdrop = useRef<HTMLDivElement>(null)
+  // The sheet catches the ember on its rim and in a wash (EmberLight's .dm-lit) where it is a card, from 640px; on a
+  // phone its first pseudo-element is the bottom sheet's handle.
+  const lit = useMediaQuery('(min-width: 640px)')
+  useLayoutEffect(() => {
+    const node = backdrop.current
+    return () => {
+      if (node) leaveGhost(node)
+    }
+  }, [])
   const titleId = `${id}-title`
   const ledeId = `${id}-lede`
   return createPortal(
-    <div role="presentation" className="dm-dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={lede ? ledeId : undefined} className="dm-dialog dm-flow-dialog dm-pa" {...data}>
+    <div ref={backdrop} role="presentation" className="dm-dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={lede ? ledeId : undefined} className={cx('dm-dialog dm-flow-dialog dm-pa', lit && 'dm-lit')} {...data}>
         <div className={cx('dm-flow-dialog-head dm-pa-head', back && 'dm-pa-head--back')}>
           {back && <BackButton {...back} />}
           <h2 id={titleId} tabIndex={-1} className="dm-dialog-title dm-pa-title outline-none">

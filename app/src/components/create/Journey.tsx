@@ -55,6 +55,7 @@ import { CreateUnavailable, FinalControl, StageReview, preloadCreateControl } fr
 import { StageToken, type PreselectStatus } from './StageToken'
 import { AmountSummary, PoolSummary, RangeSummary, StepList, VISUAL_STEPS, type StepView, type VisualStep } from './StepList'
 import { PositionPreview } from './PositionPreview'
+import { useFirstLoad, useReviewColumns } from './reviewColumns'
 import { useLivePoolPrice, usePayFacts, usePricedPool } from './usePricedPool'
 import { heldAmounts, rawBalances } from './valuation'
 import { fundingContext, type FundingContinuation } from '../../lib/create/fundingContext'
@@ -310,6 +311,9 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
       : { kind: 'checking', again: attempt > 0 }
 
   const current = visualOf(state, part)
+  // V4 (presentation only): the first moment's flag, and Review's two cards on a wide screen (./reviewColumns.ts).
+  const firstLoad = useFirstLoad()
+  useReviewColumns(current === 'review')
 
   // Speed wave, 2026-09-28 (study item 33): Create position's code is asked once a pool is chosen, so Review finds it
   // loaded instead of waiting for it behind its disabled button. Loading it runs nothing.
@@ -674,7 +678,7 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
 
   // The page is the steps and, on a wide screen, the position they make, drawn beside them as it takes shape.
   return (
-    <PageShell width="flow" className="dm-np" data-create-journey="" data-create-step={current}>
+    <PageShell width="flow" className="dm-np" data-create-journey="" data-create-step={current} data-first-load={firstLoad ? '' : undefined}>
       <PageHeader size="display" title={CREATE.page.title} className="dm-np-head dm-flow-rise" />
       <div className="dm-card dm-flow-card dm-flow-rise dm-lit" style={{ '--delay': '40ms' } as CSSProperties}>
         <StepList steps={steps} onOpen={reopen} locked={creating} />
