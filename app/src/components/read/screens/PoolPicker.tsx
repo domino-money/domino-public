@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react'
 import { reasonText } from '../../../lib/read/describe'
 import { aprDigits } from '../../../lib/format/apr'
 import { feeWords } from '../../../lib/format/fee'
@@ -33,6 +33,28 @@ type Check = { code: string; text: string }
 /** What a plain row keeps out of sight: said in its title only, and only when there is something to say. */
 const plainNotes = (option: PoolOption) =>
   [option.tokenMetadata === 'partial' ? COPY.picker.partialMetadata : '', option.providerConflict ? COPY.picker.providerConflict : ''].filter(Boolean).join('. ') || undefined
+
+/**
+ * Added 2026-10-31 (QA round 2 follow-ups, R18): New position's plain list folds into the chosen pool the moment one is
+ * picked, and a native arrow key picks the next radio at once, so the first arrow chose a pool and lost the focus. There
+ * the arrows move the focus between the rows (wrapping), and Enter picks the focused row; Space and a click pick it
+ * natively, through onChange. The rows look and read exactly as before.
+ */
+function moveOrPick(event: KeyboardEvent<HTMLInputElement>, onPick: () => void) {
+  const step = event.key === 'ArrowDown' || event.key === 'ArrowRight' ? 1 : event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? -1 : 0
+  if (step !== 0) {
+    event.preventDefault()
+    const radio = event.currentTarget
+    const radios = [...(radio.closest('ul')?.querySelectorAll<HTMLInputElement>('input[type="radio"]') ?? [])].filter((other) => other.name === radio.name)
+    const at = radios.indexOf(radio)
+    if (at >= 0) radios[(at + step + radios.length) % radios.length].focus()
+    return
+  }
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    onPick()
+  }
+}
 
 /**
  * One verified pool. As a radio it is a choice inside a picker; with `open`
@@ -81,7 +103,7 @@ function PoolRow({ option, checked, onPick, name, compact = false, open = false,
     </button>
   ) : (
     <label className="dm-mkt-option-head">
-      <input type="radio" name={name} checked={checked} onChange={onPick} className="shrink-0" />
+      <input type="radio" name={name} checked={checked} onChange={onPick} onKeyDown={plain ? (event) => moveOrPick(event, onPick) : undefined} className="shrink-0" />
       {identity}
     </label>
   )

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { Instant } from '../../../lib/markets'
+import { baseIndex } from '../../../lib/read/orientation'
 import { COPY } from '../../../lib/read/screens/copy'
 import { ACTIVITY_TOO_OLD, activityAge, heldSeconds, poolActivityView, type AmountPair, type TokenAmount } from '../../../lib/read/screens/figures'
 import type { PoolOption } from '../../../lib/read/screens/poolsList'
@@ -35,10 +36,18 @@ export function Amount({ amount }: { amount: TokenAmount | null }) {
 }
 
 /**
- * Both amounts of a pair, or a dash in each cell where there are none.
+ * Which of the pool's two tokens a table's first amount column holds: the one its price is written for, so the columns
+ * read as the pool's name does ("PRIORS / USDG": PRIORS, then USDG; lib/read/orientation.ts).
+ * Changed on purpose 2026-10-31 (QA round 2 follow-ups, Q24): the columns used to be in the pool's own order, USDG first
+ * in a pool whose USDG address is the lower one. Each amount stays with its own token; only the columns' order changes.
+ */
+export const leadIndex = (option: PoolOption): 0 | 1 => baseIndex(option.currencies[0].address, option.currencies[1].address)
+
+/**
+ * Both amounts of a pair, or a dash in each cell where there are none, `lead`'s first (leadIndex).
  * Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the dashes no longer carry "Unavailable: <reason>".
  */
-export function PairCells({ pair }: { pair: AmountPair }) {
+export function PairCells({ pair, lead }: { pair: AmountPair; lead: 0 | 1 }) {
   if (pair.state === 'unavailable') {
     return (
       <>
@@ -49,20 +58,21 @@ export function PairCells({ pair }: { pair: AmountPair }) {
   }
   return (
     <>
-      <td><Amount amount={pair.amounts[0]} /></td>
-      <td><Amount amount={pair.amounts[1]} /></td>
+      <td><Amount amount={pair.amounts[lead]} /></td>
+      <td><Amount amount={pair.amounts[1 - lead]} /></td>
     </>
   )
 }
 
-/** The two currencies over a table's amount columns, in the pool's order. */
+/** The two currencies over a table's amount columns, in the order the pool's name is written (leadIndex). */
 export function CurrencyHead({ option, first }: { option: PoolOption; first: ReactNode }) {
+  const lead = leadIndex(option)
   return (
     <thead>
       <tr>
         <th scope="col">{first}</th>
-        <th scope="col"><SymbolText token={option.currencies[0]} /></th>
-        <th scope="col"><SymbolText token={option.currencies[1]} /></th>
+        <th scope="col"><SymbolText token={option.currencies[lead]} /></th>
+        <th scope="col"><SymbolText token={option.currencies[1 - lead]} /></th>
       </tr>
     </thead>
   )
@@ -87,6 +97,8 @@ export function PoolActivityCard({ read, option, now, embedded = false }: { read
   const tooOld = age?.state === 'too_old'
   // Pool age, the window and every amount come from the snapshot, so a snapshot too far behind gives none of them.
   const view = answer && !tooOld ? poolActivityView(answer.data, option.currencies) : null
+  // The amount columns in the order the pool's name is written (Q24): its priced token first.
+  const lead = leadIndex(option)
   const failure = read && read.state !== 'ok' && read.state !== 'aborted' ? read : null
   // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no reason on the card, its dashes or its live
   // region any more: the failed read's words (failureText), "Stale: indexed <lag> behind the chain head, at block <n>."
@@ -138,15 +150,15 @@ export function PoolActivityCard({ read, option, now, embedded = false }: { read
           <tbody>
             <tr data-activity-row="turnover">
               <th scope="row">Turnover ({span})</th>
-              {view ? <><td><Amount amount={view.turnover[0]} /></td><td><Amount amount={view.turnover[1]} /></td></> : blank}
+              {view ? <><td><Amount amount={view.turnover[lead]} /></td><td><Amount amount={view.turnover[1 - lead]} /></td></> : blank}
             </tr>
             <tr data-activity-row="lp-fees">
               <th scope="row">LP fees ({span})</th>
-              {view ? <PairCells pair={view.lpFees} /> : blank}
+              {view ? <PairCells pair={view.lpFees} lead={lead} /> : blank}
             </tr>
             <tr data-activity-row="lp-assets">
               <th scope="row">LP assets</th>
-              {view ? <PairCells pair={view.lpAssets} /> : blank}
+              {view ? <PairCells pair={view.lpAssets} lead={lead} /> : blank}
             </tr>
           </tbody>
         </table>

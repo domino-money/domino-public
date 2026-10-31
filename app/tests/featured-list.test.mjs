@@ -373,6 +373,19 @@ test('the first reads take the replies the page sent before the app started, onc
   globalThis.__dominoEarly = { at: performance.now(), replies: { [`POST /api/read/v3/overview ${question}`]: earlyOverview } };
   assert.equal(takeEarly('/api/read/v3/overview', 'POST', JSON.stringify({ poolIds: [A.poolId.toLowerCase()] })), null, 'another question');
   assert.equal(takeEarly('/api/read/v3/overview', 'POST', question), earlyOverview);
+  // Added 2026-10-31 (QA round 2 follow-ups, N41): the script asks the overview only once the list and the capabilities have
+  // answered, so it is kept for the app's own first ask with that very body for EARLY_OVERVIEW_MS; the list's reply, and
+  // anything under a bare key, are still let go after EARLY_LIST_MS. The app used to drop it and send the same question.
+  const { EARLY_OVERVIEW_MS } = built('lib/read/earlyList');
+  assert.equal(EARLY_OVERVIEW_MS, 30_000);
+  const slow = Promise.resolve(new Response('{}'));
+  globalThis.__dominoEarly = { at: performance.now() - EARLY_LIST_MS - 1, replies: { [`POST /api/read/v3/overview ${question}`]: slow, 'POST /api/read/v5/featured-pools': reply } };
+  assert.equal(takeEarly('/api/read/v5/featured-pools', 'POST'), null, 'the list past 5 s: let go');
+  assert.equal(takeEarly('/api/read/v3/overview', 'POST', question), slow, 'the overview past 5 s: taken');
+  globalThis.__dominoEarly = { at: performance.now() - EARLY_OVERVIEW_MS, replies: { [`POST /api/read/v3/overview ${question}`]: slow } };
+  assert.equal(takeEarly('/api/read/v3/overview', 'POST', question), null, 'the overview past 30 s: let go');
+  globalThis.__dominoEarly = { at: performance.now() - EARLY_LIST_MS - 1, replies: { 'POST /api/read/v3/overview': slow } };
+  assert.equal(takeEarly('/api/read/v3/overview', 'POST', question), null, 'a reply under the bare key keeps the 5 s limit');
   delete globalThis.__dominoEarly;
 });
 

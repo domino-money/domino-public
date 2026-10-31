@@ -274,6 +274,12 @@ const tabs = async (page) => {
   await page.getByRole('tab').first().waitFor();
   return page.getByRole('tab').allInnerTexts().then((all) => all.map((value) => value.replace(/\s+/g, ' ').trim()));
 };
+// Added 2026-10-31 (QA round 2 follow-ups, N63): the tabs count nothing until both inventories have answered, which can
+// be a moment after the rows (and data-owned="ready") are drawn; a test that reads the counts waits for them first.
+const countedTabs = async (page) => {
+  await page.getByRole('tab', { name: /^Open \d/ }).waitFor({ timeout: 15_000 });
+  return tabs(page);
+};
 /** V1's open row, as V1's own suite reads it (tests/finance.browser.test.mjs). */
 async function v1RowAsItIs(page) {
   const row = page.locator(`a[data-v2-position-row="${rowKey(V1_OPEN)}"]`);
@@ -769,7 +775,10 @@ test('a visitor’s position page shows the dollars of the owner’s row, from t
     assert.equal(await s.page.locator('[data-position-v2]').count(), 0, 'Robinhood Chain’s own position page');
     assert.equal(await fees.textContent(), '$4.00', 'the owner’s row’s dollars (the page’s own USDG rule until 2026-10-14)');
     assert.deepEqual([await value.getAttribute('data-usd-basis'), await fees.getAttribute('data-usd-basis')], ['qualified-prices', 'qualified-prices']);
-    assert.match(await value.getAttribute('title'), /^Qualified valuation at block \d+$/);
+    // Changed on purpose 2026-10-31 (QA round 2 follow-ups, R23; N16): a current figure at qualified prices has no title; it
+    // said "Qualified valuation at block N". The strip names no block either.
+    assert.equal(await value.getAttribute('title'), null);
+    assert.equal(await detail.locator('[data-position-stats]').getAttribute('title'), null);
     assert.equal(await detail.locator('[data-usd-dated], [data-usd-why]').count(), 0, 'a current figure says no time');
     const shown = [await value.textContent(), await fees.textContent()];
     // One read of the owner's portfolio, the page's Activity's own; then one per half minute, never two.
@@ -854,7 +863,8 @@ test('an ETH / token position shows the same dollars on its own page as in its r
     assert.equal(await value.getAttribute('data-usd-basis'), 'pool-price');
     assert.match(await value.getAttribute('title'), /^Estimated from the pool price at block \d+, converted with ETH’s qualified USD price\. This is not a sale quote\.$/, 'the estimate names the pool mark and its qualified anchor');
     assert.equal(await fees.getAttribute('data-usd-basis'), 'qualified-prices');
-    assert.match(await fees.getAttribute('title'), /^Qualified valuation at block \d+$/);
+    // Changed on purpose 2026-10-31 (QA round 2 follow-ups, R23): no title on the qualified figure (it named the block).
+    assert.equal(await fees.getAttribute('title'), null);
     assert.equal(await detail.locator('[data-usd-dated], [data-usd-why]').count(), 0, 'a current figure says no time and needs no reason');
     assert.doesNotMatch(await detail.innerText(), /USD unavailable/i);
     const details = detail.locator('[data-position-details]');
@@ -1138,7 +1148,7 @@ test('read gate off: historical NFTs remain in the unified collection and read-v
   try {
     await s.page.locator('[data-owned="ready"]').waitFor();
     await v1RowAsItIs(s.page);
-    assert.deepEqual(await tabs(s.page), ['Open 1', 'Closed 0']);
+    assert.deepEqual(await countedTabs(s.page), ['Open 1', 'Closed 0']);
     await s.page.waitForTimeout(500);
     assert.equal(await s.page.locator('[data-v2-position-row]').count(), 1);
     assert.equal(await s.page.locator('[data-v2-examples], [data-v2-own-note], [data-v2-receipt]').count(), 0);
@@ -1162,7 +1172,7 @@ test('preview with no read-v6 route: V1 stays intact, with no fixture positions 
     await s.page.locator('[data-owned="ready"]').waitFor();
     await v1RowAsItIs(s.page);
     await v1CardsExact(s.page);
-    assert.deepEqual(await tabs(s.page), ['Open 1', 'Closed 0']);
+    assert.deepEqual(await countedTabs(s.page), ['Open 1', 'Closed 0']);
     await s.page.locator('[data-automation-cards="integrated"]').waitFor();
     await s.page.waitForFunction(() => document.querySelector('[data-owned-rows="open"] [data-v2-position-row]'));
     assert.equal(await s.page.locator('[data-v2-examples], [data-test-data]').count(), 0);
@@ -1198,7 +1208,7 @@ test('preview reads the connected wallet from the site route and shows its parti
     assert.doesNotMatch(await s.page.locator('[data-owned]').innerText(), /unavailable right now|updated 15 min ago/);
     assert.equal(await s.page.locator(`a[data-v2-position-row="${rowKey('7')}"] [data-v2-stale]`).getAttribute('data-v2-stale'), 'updated 15 min ago');
     await v1RowAsItIs(s.page);
-    assert.deepEqual(await tabs(s.page), ['Open 2', 'Closed 0']);
+    assert.deepEqual(await countedTabs(s.page), ['Open 2', 'Closed 0']);
     assert.equal(await s.page.locator('[data-v2-examples], [data-test-data]').count(), 0);
     assert.doesNotMatch(await s.page.locator('main').innerText(), /Test data|Example positions/);
     assert.deepEqual(s.asked.find(entry => entry.route === 'portfolio').body, { wallet: OWNER });
@@ -1295,6 +1305,39 @@ test('live: the Open and Closed tabs carry no count until the inventories answer
   }
 });
 
+// Added 2026-10-31 (QA round 2 follow-ups, N63): the first inventory's rows are drawn at once, but the tabs and the status
+// line count nothing until the other has answered too. They counted the first one alone ("1 open and 6 closed
+// positions."), then changed to the merged count ("1 open and 14 closed") a moment later.
+test('live: one inventory’s rows are drawn at once, and the count waits for both inventories', async () => {
+  const own = about('portfolio', fixture('portfolio.json'), OWNER);
+  // The same NFT V1 lists (Robinhood Chain's v4 position manager, its id): shown once, as V1's row.
+  own.positions[2].tokenId = V1_OPEN;
+  let releasePortfolio;
+  const portfolioReady = new Promise(resolveReady => { releasePortfolio = resolveReady; });
+  const respond = routeOn((route) => ({ status: 200, body: route === 'portfolio' ? own : about('activity', fixture('activity.json'), OWNER) }));
+  const s = await scenario({ hooks: LIVE, readV6: async (method, route, body) => {
+    if (method === 'POST' && route === 'portfolio') await portfolioReady;
+    return respond(method, route, body);
+  } });
+  try {
+    const rows = s.page.locator('[data-owned-rows="open"] a[data-v2-position-row]');
+    // V1's own inventory answers with its one NFT; read-v6's portfolio is held.
+    await v1RowAsItIs(s.page);
+    await s.page.waitForTimeout(500);
+    assert.deepEqual(await rows.evaluateAll(all => all.map(row => row.getAttribute('data-v2-position-row').split(':').at(-1))), [V1_OPEN], 'the row read is drawn at once');
+    assert.deepEqual(await tabs(s.page), ['Open', 'Closed'], 'no count of one inventory alone');
+    assert.equal(await s.page.locator('[data-owned-status]').textContent(), '', 'the status line says nothing yet');
+    releasePortfolio();
+    await s.page.getByRole('tab', { name: /^Open \d/ }).waitFor({ timeout: 15_000 });
+    // The first count said is the merged one (the NFT both list counted once; the two still being checked not as Open).
+    assert.deepEqual(await tabs(s.page), ['Open 3', 'Closed 0']);
+    assert.equal(await s.page.locator('[data-owned-status]').textContent(), '3 open and 0 closed positions.');
+  } finally {
+    releasePortfolio();
+    await s.close();
+  }
+});
+
 test('live, the site’s route not deployed: V1 remains available without an empty V2 section or test data', async () => {
   let releaseCapabilities;
   const capabilities = new Promise(resolve => { releaseCapabilities = resolve; });
@@ -1310,7 +1353,7 @@ test('live, the site’s route not deployed: V1 remains available without an emp
     // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): a hidden marker.
     await s.page.locator('[data-automation-cards="integrated"] [data-activity-error]').waitFor({ state: 'attached' });
     await s.page.waitForFunction(() => document.querySelector('[data-owned-rows="open"] [data-v2-position-row]'));
-    assert.deepEqual(await tabs(s.page), ['Open 1', 'Closed 0']);
+    assert.deepEqual(await countedTabs(s.page), ['Open 1', 'Closed 0']);
     assert.equal(await s.page.locator('[data-v2-position-row]').count(), 1);
     assert.equal(await s.page.locator('[data-v2-examples], [data-test-data]').count(), 0);
     assert.equal(await s.page.locator('[data-v2-own-receipts="unavailable"]').count(), 1, 'unavailable public history never becomes a silent private-only fallback');

@@ -315,7 +315,9 @@ const wholenessOf = (snap: WalletSnapshot, unread: number, reading: boolean): Li
  *   have, or one a collect or a withdraw brought into the card on screen.
  * - The total: the priced tokens' sum whenever the balances are whole, with
  *   one quiet line under it when it leaves held tokens out ("Total of priced
- *   tokens · 47 not priced"), or the list was cut ("· more not listed"). A
+ *   tokens · 47 not priced"), or the list was cut ("Total of priced tokens"
+ *   alone; changed on purpose 2026-10-31, QA round 2 follow-ups, N64: it
+ *   added "· more not listed", which says something is not shown). A
  *   token with no market, a pool too thin, a lost price or no answer yet no
  *   longer withholds it, nor does a list longer than the card reads. While the
  *   load's prices are on their way, the figure holds its place (or the last
@@ -655,9 +657,12 @@ export function PortfolioTokens({ address }: { address: string }) {
   // The total's place is held while the list is first read (a first visit), and while a whole list's prices are due.
   const holdPlace = displayedTotal === null && (waiting || (!recalled && !settledOnce && withheld === 'reading' && holdings.valued > 0) || (pending && withheld === null))
   // The one line under the figure when it leaves held tokens out, or the list was cut (2026-10-14, D2); the figure shown
-  // from the last valuation keeps that valuation's own count.
+  // from the last valuation keeps that valuation's own count. Changed on purpose 2026-10-31 (QA round 2 follow-ups, N64): a
+  // cut list no longer adds " · more not listed" (the owner: nothing says something is not shown; the approved card reads
+  // "Total of priced tokens · 61 not priced" only). The line still says the total is of the priced tokens; the card keeps
+  // data-wallet-capped and data-wallet-partial.
   const unpriced = previousTotal !== null ? (complete.snapshot?.unpriced ?? 0) : leaves.unpriced
-  const totalNote = unpriced > 0 || leaves.cut ? `Total of priced tokens${unpriced > 0 ? ` · ${unpriced} not priced` : ''}${leaves.cut ? ' · more not listed' : ''}` : null
+  const totalNote = unpriced > 0 || leaves.cut ? `Total of priced tokens${unpriced > 0 ? ` · ${unpriced} not priced` : ''}` : null
   // "Show all" prices the rest of the list, a page of PRICED_PER_LOAD once the page before it is answered (2026-10-14, D2).
   if (expanded && !pending && order.length > askedList.length && askedList.length >= bound && bound < PRICED_AT_MOST) setPricedPages(pricedPages + 1)
   const askedSet = new Set(askedList)

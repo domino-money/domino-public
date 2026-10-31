@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { ROBINHOOD_NAME } from '../../config/chainIdentity'
 import { catalogueTokens, type PoolCatalogueEntry } from '../../config/selectedPoolCatalogue'
 import { CREATE } from '../../lib/create/copy'
 import { networkCandidate, type NetworkToken, type OtherChains } from '../../lib/create/otherChains'
@@ -13,7 +14,7 @@ import type { StatusLine } from '../../lib/read/screens/statusLine'
 import { knownTokens } from '../../lib/read/screens/tokenSearch'
 import { mergeCandidates, type TokenCandidate } from '../../lib/read/screens/tokens'
 import type { ReadSource } from '../../lib/read/types'
-import { SEARCH_EVERY_NETWORK_UNDER_LABEL, SEARCH_LABEL, SEARCH_PLACEHOLDER, TokenSearch, type NetworkChoice } from '../read/screens/TokenSearch'
+import { SEARCH_LABEL, TokenSearch, type NetworkChoice } from '../read/screens/TokenSearch'
 import { FEE_MEANING } from '../explore/feeMeaning'
 import { newPositionHref } from '../explore/routes'
 import { CatalogueLabel } from '../PoolCatalogueIdentity'
@@ -229,12 +230,18 @@ export function StageToken({
   const [changing, setChanging] = useState(false)
   // QA round 2, N57 (2026-10-30): Change pool and Keep this pool swap the panel the focus was on for another, so the focus
   // moves with them: to the search, or back to the chosen pool's button, never to the page's start.
-  const focusNext = useRef<'search' | 'chosen' | null>(null)
+  // Changed on purpose 2026-10-31 (QA round 2 follow-ups, N57): a click or a tap on Change pool (`keep`) puts the focus on
+  // Keep this pool, the button in its place, as a search not yet drawn does; it fell to the page's start when the button
+  // clicked went away.
+  const focusNext = useRef<'search' | 'chosen' | 'keep' | null>(null)
   useEffect(() => {
     const next = focusNext.current
     focusNext.current = null
-    if (next === 'search') document.getElementById('create-token-search')?.focus()
-    else if (next === 'chosen') document.querySelector<HTMLElement>('[data-chosen-pool] button')?.focus()
+    if (next === null) return
+    const keep = document.querySelector<HTMLElement>('[data-keep-pool]')
+    if (next === 'search') (document.getElementById('create-token-search') ?? keep)?.focus()
+    else if (next === 'keep') keep?.focus()
+    else document.querySelector<HTMLElement>('[data-chosen-pool] button')?.focus()
   }, [changing])
   const known = knownTokens({ catalogue: catalogueTokens(), candidates })
   // Another network's pasted address, read through the wallet once chosen; a newer choice, or leaving, stops it.
@@ -270,11 +277,18 @@ export function StageToken({
     onPool(option)
     if (!option) return
     setChanging(false)
+    // Changed on purpose 2026-10-31 (QA round 2 follow-ups, R18): a row picked from the keyboard (or focused by a click) goes
+    // away with the list, so the focus it leaves on nothing moves to the chosen pool's Change pool, never to the page's
+    // start. A pool the list chose on its own (a link's, N5) moves no focus.
+    const fromList = document.activeElement?.closest('[data-picker="pool"]') != null
     // The list folds into the one chosen pool. Picked low in a long list, the fold can leave it above the screen,
     // under the header: bring it back into view once it is drawn, as a step change does (StepList.tsx).
     requestAnimationFrame(() => {
       const panel = document.querySelector('[data-chosen-pool]')
       if (!panel) return
+      const focused = document.activeElement
+      // Without a scroll of its own: the lines below bring the panel into view as they always have.
+      if (fromList && (!focused || focused === document.body || !focused.isConnected)) panel.querySelector<HTMLElement>('button')?.focus({ preventScroll: true })
       const header = Math.max(0, document.querySelector('header')?.getBoundingClientRect().bottom ?? 0)
       const top = panel.getBoundingClientRect().top
       const air = rootScale()
@@ -317,9 +331,9 @@ export function StageToken({
         <ChosenPool
           option={chosen}
           onChange={(event) => {
-            // Only from the keyboard (a click's detail is 0): the search opens its list on focus, which a mouse click on
-            // Change pool should not do over the pools it means to show (QA round 2 review, N57).
-            if (event.detail === 0) focusNext.current = 'search'
+            // The search only from the keyboard (a key's detail is 0): it opens its list on focus, which a mouse click on
+            // Change pool should not do over the pools it means to show (QA round 2 review, N57). A click or a tap: Keep this pool.
+            focusNext.current = event.detail === 0 ? 'search' : 'keep'
             setChanging(true)
           }}
           network={others?.name(chosen.currencies[0].chainId) ?? null}
@@ -336,6 +350,7 @@ export function StageToken({
                   focusNext.current = 'chosen'
                   setChanging(false)
                 }}
+                data-keep-pool=""
               >
                 {CREATE.pool.keep}
               </Button>
@@ -347,10 +362,10 @@ export function StageToken({
               known={known}
               onFound={fromSearch}
               id="create-token-search"
-              // QA round 2, N33/N102: the one label and placeholder of every search; where other networks are searched too,
-              // the placeholder says so without repeating the label shown above it.
+              // QA round 2, N33/N102: the one label and placeholder of every search. Changed on purpose 2026-10-31 (QA round 2
+              // follow-ups, N102): the placeholder is the search's own, word for word as Markets says it ("Search a token on
+              // any network" where other networks are searched too), no longer a New position wording of its own.
               label={SEARCH_LABEL}
-              placeholder={others ? SEARCH_EVERY_NETWORK_UNDER_LABEL : SEARCH_PLACEHOLDER}
               initialValue={state.token ? searchName(state.token) : undefined}
               onChoose={choosing}
               onPoint={warmPoolHints}
@@ -365,7 +380,9 @@ export function StageToken({
             </p>
           )}
           {source && state.token && <PoolList source={source} state={state} onPool={pickPool} onPreview={onPreview} others={others} hint={initialPool} />}
-          {source && !state.token && !state.pool && <TopPools entries={top.slice(0, TOP_POOLS)} network={others?.home ?? null} server={topServer} />}
+          {/* Changed on purpose 2026-10-31 (QA round 2 follow-ups, R10): the list is Robinhood Chain's, so each pool names it
+              from the first paint; waiting for the other networks' answer drew the chip late and pushed the fee down a line. */}
+          {source && !state.token && !state.pool && <TopPools entries={top.slice(0, TOP_POOLS)} network={others?.home ?? ROBINHOOD_NAME} server={topServer} />}
         </>
       )}
       {/* Changed on purpose 2026-10-30 (QA round 2 sweep): in the gate's own words, as the V2 journey says a closed network. */}

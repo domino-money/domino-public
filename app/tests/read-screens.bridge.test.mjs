@@ -752,9 +752,11 @@ test('a partial list is read to its last page on its own, then checked once by a
       // Changed on purpose 2026-10-14 (incident of 2026-10-13, package D2): candidates the pages skipped were never listed nor valued, and
       // the card no longer withholds its total for them ("skipped_candidates"): the total is the listed priced tokens',
       // and the line under it says the list was cut.
+      // Changed on purpose 2026-10-31 (QA round 2 follow-ups, N64): the line says the total is of the priced tokens, and no
+      // longer adds "· more not listed" (the owner: nothing says something is not shown); the cut is data-wallet-partial (above).
       assert.equal(await list.getAttribute('data-wallet-total-withheld'), null);
       assert.equal(await list.locator('[data-wallet-total]').count(), 1);
-      assert.match(await list.locator('[data-wallet-total-note]').textContent(), /^Total of priced tokens( · \d+ not priced)? · more not listed$/, 'no total claims to be the whole wallet’s');
+      assert.match(await list.locator('[data-wallet-total-note]').textContent(), /^Total of priced tokens( · \d+ not priced)?$/, 'no total claims to be the whole wallet’s');
       assert.equal(await list.getByRole('button', { name: /Load more|All pages loaded/ }).count(), 0, 'the last page leaves nothing to press, and says nothing about being complete');
       assert.equal(asked.filter((url) => url.includes('/token-pairs/v1/')).length, 1, 'one shared price/artwork GET for its non-stable holding');
       assert.deepEqual(errors, []);
@@ -1214,7 +1216,9 @@ test('a list cut short shows its priced tokens\' total and says so; read again q
     try {
       const list = page.locator('[data-portfolio-tokens]');
       await page.locator('[data-portfolio-tokens][data-wallet-prices="ok"] [data-wallet-total-note]').waitFor({ timeout: 30_000 });
-      assert.equal(await list.locator('[data-wallet-total-note]').textContent(), 'Total of priced tokens · more not listed');
+      // Changed on purpose 2026-10-31 (QA round 2 follow-ups, N64): no "· more not listed"; the cut list is the card's data.
+      assert.equal(await list.locator('[data-wallet-total-note]').textContent(), 'Total of priced tokens');
+      assert.ok(await list.evaluate((card) => card.hasAttribute('data-wallet-capped') || card.hasAttribute('data-wallet-partial')), 'the list was cut: the card says so in its data');
       assert.equal(await list.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$3,025.50', '1,000,000 UFG at $0.003, 0.01 ETH at $2,000 and 5.5 USDG');
       assert.deepEqual(await rowsOf(list), [UFG, NATIVE, USDG]);
       await page.evaluate(() => window.__mark());
@@ -1474,7 +1478,9 @@ test('a completed incomplete inventory ends the last-known total even while a ne
       releasePrice();
       await page.locator('[data-portfolio-tokens][data-wallet-prices="ok"] [data-wallet-total]').waitFor();
       assert.equal(await list.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$2,038.50', 'the priced tokens, NEWDROP included');
-      assert.equal(await list.locator('[data-wallet-total-note]').textContent(), 'Total of priced tokens · more not listed', 'receiving every requested price does not complete discovery: the card says so');
+      // Changed on purpose 2026-10-31 (QA round 2 follow-ups, N64): no "· more not listed"; the cut list is the card's data.
+      assert.equal(await list.locator('[data-wallet-total-note]').textContent(), 'Total of priced tokens');
+      assert.ok(await list.evaluate((card) => card.hasAttribute('data-wallet-capped') || card.hasAttribute('data-wallet-partial')), 'receiving every requested price does not complete discovery: the card says so in its data');
       await honestTotals(page);
       assert.deepEqual(errors, []);
     } finally { releasePrice(); await context.close(); }

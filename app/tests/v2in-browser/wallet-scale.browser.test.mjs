@@ -216,7 +216,8 @@ test('a wallet of 700 tokens (a list longer than the card reads): the total of t
     assert.equal(report.state.attrs['data-wallet-capped'], '', `read to the card's page cap: ${report.text}`);
     // 5 pages of 20 tokens and native ETH: 101 held; priced: USDG, ETH, UFG, AI, SCORE and the ten dust tokens.
     assertBoundedTotal(report, { held: 101, total: '$3,421.98', priced: 15, gets: PRICE_GETS_SLOW_LIST });
-    assert.equal(report.state.note, 'Total of priced tokens · 86 not priced · more not listed', report.text);
+    // Changed on purpose 2026-10-31 (QA round 2 follow-ups, N64): no "· more not listed"; data-wallet-capped (above) says it.
+    assert.equal(report.state.note, 'Total of priced tokens · 86 not priced', report.text);
     assert.ok(report.upstream <= 31, `our edge asked the provider for no more than the tokens priced: ${report.text}`);
   } finally { await w.s.close(); }
 });

@@ -70,7 +70,8 @@ export const POOL_PAGE: DocPage = {
         // 2026-09-28 (round 6 review): the estimate shares the pool's fees with the money already in it, and a pool
         // Domino can't open positions in has no estimate or typical range.
         shot('pool', 'A pool’s page: what the pool earns and its key figures, with Create a position at the top.'),
-        p('A pool’s page opens with one sentence on what the pool is and what it earns, then its APR, 24h volume, TVL and price, with 24h fees where Domino history provides them, and a chart of its price from its own swaps.'),
+        // Changed on purpose 2026-10-31 (QA round 2 follow-ups, R48): the pool page as it is.
+        p('A pool’s page opens with the pair, its network and fee, then its APR, 24h volume, TVL and pool price, with 24h fees where Domino history provides them, and a chart of its price from its own swaps.'),
         p(b('Create a position'), ' opens the same four steps of New position as anywhere else, with this pool already chosen.'),
       ],
     },
@@ -78,14 +79,15 @@ export const POOL_PAGE: DocPage = {
       id: 'estimates',
       title: 'Estimates and activity',
       blocks: [
-        p(b('Estimate your earnings'), ' works out your share of the pool’s recent fees for an amount you type. ', b('Price range'), ' draws the band New position starts on against the pool’s price. Open ', b('Recent activity'), ' for the last day in words. A pool Domino can’t open positions in says why instead.'),
+        p(b('Estimate your earnings'), ' works out your share of the pool’s recent fees for an amount you type. ', b('Choosing a price range'), ', closed until opened, draws the band New position starts on against the pool’s price. Open ', b('Recent activity'), ' for the last day in words. A pool Domino can’t open positions in says why instead.'),
       ],
     },
     {
+      // The id stays, so links still land.
       id: 'pool-details',
-      title: 'Details',
+      title: 'Technical details',
       blocks: [
-        p(b('Details'), ', closed until opened, lists the pool id, tokens, fees, tick spacing, hooks, where the figures come from and the block the pool was verified at.'),
+        p(b('Technical details'), ', closed until opened, lists the network, pool id, tokens, fees, tick spacing, hooks, where the figures come from and the block the pool was verified at.'),
       ],
     },
   ],
@@ -96,6 +98,7 @@ export const POOL_PAGE: DocPage = {
  * (src/v2in/journey): an amount in either token or both, or another token, swapped by Domino when needed; Review's quote
  * from the planning service (sign-in); and Create position as one transaction after any exact approval, Domino's
  * contract keeping nothing. Its sentences are written here: a V1 file never imports src/v2in.
+ * Changed on purpose 2026-10-31 (free-amounts, R9): the amount step as the screen has it.
  */
 export const NEW_POSITION: DocPage = {
   slug: 'new-position',
@@ -111,7 +114,7 @@ export const NEW_POSITION: DocPage = {
           items: [
             { title: CREATE.step.pool.title, body: [CREATE.step.pool.lead] },
             { title: CREATE.step.range.title, body: [CREATE.step.range.lead] },
-            { title: CREATE.step.amount.title, body: ['Enter an amount in either token, or both. Domino swaps for you when needed.'] },
+            { title: CREATE.step.amount.title, body: [CREATE.step.amount.lead] },
             { title: CREATE.step.review.title, body: [CREATE.step.review.lead] },
           ],
         },
@@ -152,7 +155,7 @@ export const NEW_POSITION: DocPage = {
       title: 'Amount',
       blocks: [
         shot('new-amount', 'Step 3: the amounts; slippage is under Advanced.'),
-        p('Type an amount in either token, or both, and Domino swaps between them to fit your range; or pay with ', b('Another token'), ', such as USDG, ETH or WETH. A range beside today’s price takes its one token only: see ', doc('A range beside the price', 'ranges', 'one-sided'), '. A wallet that can’t fund the position is offered to ', doc('bring funds from another network', 'bring-funds'), '.'),
+        p('Type an amount in one token and the other fills in to fit your range. Hold both? Type your own amount in each: the position takes as much as both allow, and the rest stays in your wallet. ', b(CREATE.amount.fillIn), ' works out the second amount again. Short of one? Domino can swap part of the other, or offer to pay with another token you hold. A range beside today’s price takes its one token only: see ', doc('A range beside the price', 'ranges', 'one-sided'), '. A wallet that can’t fund the position is offered to ', doc('bring funds from another network', 'bring-funds'), '.'),
         // 2026-09-27 (round 6): the tolerance moved under the amount step's Advanced, closed until opened.
         p('Under ', b('Advanced'), ', slippage tolerance is how far the price may move before a step stops. It starts at 0.5%; choose 0.1% to 5%.'),
       ],

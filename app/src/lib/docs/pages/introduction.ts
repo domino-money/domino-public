@@ -153,7 +153,8 @@ export const WALLET: DocPage = {
         list(
           ['A quote: for ', doc('New position', 'new-position'), ', and for Add liquidity, Change range or a withdrawal in one token on a position’s page.'],
           [doc('Bringing funds from another network', 'bring-funds'), '.'],
-          ['What older automation did, in Automated positions and Receipts on ', doc('Positions', 'positions', 'managed-positions'), '.'],
+          // Changed on purpose 2026-10-31 (QA round 2 follow-ups, N26): no Automated positions card on Positions.
+          ['What older automation did, in Receipts on ', doc('Positions', 'positions', 'managed-positions'), '.'],
         ),
         p('Public pages need no sign-in, and neither does a step without a quote, such as collecting fees, closing a position, or setting up automation or Auto-exit.'),
       ],

@@ -8,7 +8,7 @@ const { createPositionValuations, usdAged } = require('../../.test-build/app/src
 const { USD_CURRENT_SECONDS } = require('../../.test-build/app/src/v2in/usd.js');
 const { createPositionEvidence, createWalletReadGuard, subscribePositionEvidence } = require('../../.test-build/app/src/lib/positionEvidence.js');
 const { positionRows, usdAsOf } = require('../../.test-build/app/src/v2in/lists/model.js');
-const { historicalPositionRows, mergePositionRows, positionCounts, hasPositionApr, withCreatedPositions } = require('../../.test-build/app/src/v2in/lists/positionCollection.js');
+const { historicalPositionRows, mergePositionRows, newestFirst, positionCounts, hasPositionApr, withCreatedPositions } = require('../../.test-build/app/src/v2in/lists/positionCollection.js');
 const { createCreatedPositionStore } = require('../../.test-build/app/src/v2in/lists/createdPositions.js');
 const { createPositionReadings, recordedPriceHistory } = require('../../.test-build/app/src/v2in/position/recordedReadings.js');
 const { v2Chain } = require('../../.test-build/app/src/v2/chains.js');
@@ -322,6 +322,23 @@ test('the collection merges complete identities, counts only proven liquidity an
   assert.equal(hasPositionApr(differentManager), false, 'same token id on another manager never hits Robinhood fees endpoint');
   assert.equal(hasPositionApr({ ...root, chainId: 8453 }), false);
   assert.equal(hasPositionApr(root), true);
+});
+
+// Added 2026-10-31 (QA round 2 follow-ups, R21): the merged collection is newest NFT first on each network. read-v6's rows
+// were appended after the site's own in read-v6's order, so the newest closes (#3844150) sat behind "Show 4 more".
+test('the collection lists the newest NFT first on each network, Robinhood Chain first, whatever order the inventories gave', () => {
+  const row = (chainId, tokenId, dex = 4) => ({ key: `${chainId}:${dex}:${tokenId}`, chainId, dex, tokenId });
+  const merged = [row(4663, '3589588'), row(8453, '6238157'), row(4663, '3844150'), row(4663, '3659830')];
+  assert.deepEqual(newestFirst(merged).map(item => item.tokenId), ['3844150', '3659830', '3589588', '6238157']);
+  assert.deepEqual(merged.map(item => item.tokenId), ['3589588', '6238157', '3844150', '3659830'], 'the rows handed in are not reordered in place');
+  assert.deepEqual(newestFirst([row(42161, '9'), row(8453, '2'), row(4663, '1')]).map(item => item.chainId), [4663, 8453, 42161]);
+  assert.deepEqual(newestFirst([row(8453, '5', 3), row(8453, '4', 4)]).map(item => item.dex), [4, 3], 'Uniswap v4 before v3 on one network');
+  // Ids past 2^53 compare exactly, as numbers, never as text ("10" after "9").
+  assert.deepEqual(newestFirst([row(4663, '9'), row(4663, '10'), row(4663, '9007199254740993'), row(4663, '9007199254740992')]).map(item => item.tokenId), ['9007199254740993', '9007199254740992', '10', '9']);
+  // An id that is not a whole number never throws: it goes after the numbered ones, and equal ones keep their order.
+  const odd = [row(4663, 'pending-a'), row(4663, '7'), row(4663, 'pending-b')];
+  assert.deepEqual(newestFirst(odd).map(item => item.tokenId), ['7', 'pending-a', 'pending-b']);
+  assert.deepEqual(newestFirst([]), []);
 });
 
 test('unknown custody cannot claim automation is running and reservations are not open liquidity', () => {

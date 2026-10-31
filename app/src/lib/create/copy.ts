@@ -205,6 +205,11 @@ export const CREATE = {
     slippageWarning: 'High slippage: you may receive noticeably less than quoted.',
     rangeHeading: 'Price range',
     maxLabel: 'Max',
+    /**
+     * Added 2026-10-31 (QA round 2 follow-ups, free-amounts; the owner: "tem que ter a opção de preencher de forma
+     * automática"): beside the amount typed second, once both are typed; it works that amount out from the other again.
+     */
+    fillIn: 'Fill in for me',
     connectForBalance: 'Connect a wallet to see your balance.',
     /**
      * Added 2026-10-30 (QA round 2, N22): after it, with no wallet, what the landing and the docs promise. The other-network
@@ -270,8 +275,11 @@ export const CREATE = {
     /** Added 2026-10-30 (QA round 2, Q31): the same section's title while no wallet is connected, as V2's Review titles it. */
     stepsConnect: 'Next: connect your wallet',
     stepsNote: 'Your wallet will ask you to confirm these, in order.',
-    /** Added 2026-10-30 (QA round 2, Q12): automation is added later, from Automate; the last word is the link. */
-    automateLater: 'You can add Auto-compound or Auto-exit after the position is created, from',
+    /**
+     * Added 2026-10-30 (QA round 2, Q12): automation is added later, from Automate; the last word is the link. Changed on
+     * purpose 2026-10-31 (QA round 2 follow-ups, Q12): it names Domino-compound too, as the created view and Automate offer it.
+     */
+    automateLater: 'You can add Auto-compound, Domino-compound or Auto-exit after the position is created, from',
     /** The same for a Full range position, which Auto-exit is not offered for (N73, the owner's decision; its review). */
     automateLaterFull: 'You can add Auto-compound after the position is created, from',
     automateLink: 'Automate',

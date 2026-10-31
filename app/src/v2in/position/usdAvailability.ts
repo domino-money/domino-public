@@ -52,10 +52,12 @@ export const poolEstimateWords = (anchor: string, dollar: boolean, block: number
  * line when it is an estimate at the pool's price (poolEstimateWords), else undefined. `block`: of its reading, for a
  * current figure at qualified prices. The time and the basis are both said, never one in place of the other.
  */
-export function usdTitleWords({ asOf, estimate, block }: { asOf: number | undefined; estimate: string | undefined; block: number | null }): string | undefined {
+export function usdTitleWords({ estimate }: { asOf: number | undefined; estimate: string | undefined; block: number | null }): string | undefined {
   // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices, "as of 02:25 UTC" named among them): a figure that
   // is not current no longer says its time ("Last complete valuation, from 10-14 13:05 UTC."); it names its basis when it
   // is an estimate, and no block (that of a reading after it).
-  if (asOf !== undefined) return estimate
-  return estimate ?? (block !== null ? `Qualified valuation at block ${block}` : undefined)
+  // Changed on purpose 2026-10-31 (QA round 2 follow-ups, R23; N16: no block numbers in the main tooltips): a current figure
+  // at qualified prices has no title; it said "Qualified valuation at block 102031092". `asOf` and `block` stay in the
+  // signature for its callers.
+  return estimate
 }

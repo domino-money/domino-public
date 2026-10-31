@@ -838,6 +838,9 @@ test('with no wallet, a phone is offered the wallet apps that open this site (do
     ['https://metamask.io/download/', '_blank', 'noopener noreferrer'],
     ['https://rabby.io/', '_blank', 'noopener noreferrer'],
   ]);
+  // Added 2026-10-31 (QA round 2 follow-ups, R34): each link's name says it opens in a new tab, as every other such link does.
+  assert.equal(await dialog(desk).getByRole('link', { name: 'MetaMask (opens in a new tab)', exact: true }).count(), 1);
+  assert.equal(await dialog(desk).getByRole('link', { name: 'Rabby (opens in a new tab)', exact: true }).count(), 1);
   assert.equal(await dialog(desk).getByRole('list', { name: 'Wallet apps' }).count(), 0);
   await computer.close();
 });

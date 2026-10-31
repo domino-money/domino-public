@@ -1327,7 +1327,11 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // (.wallet-test-v2-dist 661,602 B), 6,449 B over 657,000 B. Each moves by its overshoot rounded up to 0.5 kB plus one
     // more 0.5 kB of headroom: initial entry 242,000 B, session/public reads 168,000 B, all lazy 404,000 B, domino v2
     // 664,000 B. No dependency, every other ceiling unchanged.
-    for (const [family, files, productionBudget] of [['initial entry', first, 242_000], ['route screens', routes, 191_000], ['session/public reads', base, 168_000], ['financial', financial, 347_000], ['pool history chart', poolChart, 13_000], ['all lazy', allLazy, 404_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 664_000], ['V2 fixture data', fixtureData, 13_000]]) {
+    // Changed on purpose 2026-10-31 (QA round 2 follow-ups, PR #431: free amounts on New position and the 25 follow-up
+    // fixes, five areas merged): CI measured .wallet-test-dist all lazy at 407,817 B, 817 B over its 407,000 B (404,000 B
+    // + 3,000 B test-only); dist all lazy is 334,290 B. Raise all lazy to 405,500 B: the overshoot rounded up to 0.5 kB
+    // plus one more 0.5 kB of headroom. No dependency, every other ceiling unchanged.
+    for (const [family, files, productionBudget] of [['initial entry', first, 242_000], ['route screens', routes, 191_000], ['session/public reads', base, 168_000], ['financial', financial, 347_000], ['pool history chart', poolChart, 13_000], ['all lazy', allLazy, 405_500], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 664_000], ['V2 fixture data', fixtureData, 13_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       const testOnly = dir !== DIST && (family === 'financial' || family === 'all lazy');
       const budget = productionBudget + (testOnly ? 3_000 : 0);

@@ -230,6 +230,9 @@
      and the axis themselves, the axis inside the chart's body), so the cards below never drop when the history lands. */
   [data-pool-page] .dm-pool-chart > .dm-pool-skel-figure { min-height: 5.475rem; align-content: start; }
   [data-pool-page] .dm-pool-chart-head > .dm-pool-skel-seg { width: 9.96875rem; height: 2.375rem; border-radius: 0.8125rem; }
+  /* QA round 2 follow-ups, N97 (2026-10-31): the lazy chunk's stand-in rests its "Price of" switch at the drawn switch's
+     38px track too (it kept pool.css's 30px pill), so Recent activity no longer drops about 6px when the chart lands. */
+  :is([data-pool-page], [data-pool-figures-dialog]) .dm-pool-chart-foot > .dm-pool-skel-switch { height: 2.375rem; border-radius: 0.8125rem; }
   [data-pool-page] .dm-pool-chart .dm-pool-skel-axis { align-items: flex-start; height: 1.875rem; margin-top: 0.625rem; padding-top: 0.375rem; }
   [data-pool-figures-dialog] .dm-pool-chart .dm-pool-skel-axis { align-items: flex-start; height: 1.625rem; margin-top: 0.5rem; padding-top: 0.375rem; }
   [data-pool-page] .dm-pool-chart > .dm-pool-skel-quiet { height: auto; min-height: 3.875rem; padding: 0.875rem 0 0.625rem; }

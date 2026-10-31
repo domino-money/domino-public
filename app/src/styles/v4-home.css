@@ -595,8 +595,14 @@
   .dm-home .dm-cm-side { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
   .dm-home .dm-home-control-intro { max-width: 34ch; margin: 0; color: var(--muted); font-size: 1.0625rem; line-height: 1.55; text-wrap: pretty; }
   /* The travelling tile (z 6) drifts for a second from the range scene down to this one; the words on its way stand above
-     it, so it passes behind them instead of covering them (QA round 2, N92). The tile, its path and its stops stay. */
+     it, so it passes behind them instead of covering them (QA round 2, N92). The tile, its path and its stops stay.
+     Changed on purpose 2026-10-31 (QA round 2 follow-ups, N92): the drift between the funding step and the functions
+     stage crossed the funding caption ("Bring supported tokens across networks…") and the next chapter's heading
+     ("Choose what happens next."), measured at 1440 × 900; they stand above it too. Nothing between them and main sets a
+     z-index, so their 7 meets the tile's 6 in main's stacking, and neither is an ancestor of #pools. The drawings' own
+     labels, where the tile stands, stay under it. */
   .dm-home .dm-home-control :is(.dm-sx-head, .dm-home-control-intro) { position: relative; z-index: 7; }
+  .dm-home :is(.dm-funding-caption, .dm-home-automations > .dm-home-chapter-heading) { position: relative; z-index: 7; }
   .dm-home .dm-cm-scene { position: relative; display: none; width: 25rem; height: 18.75rem; }
   .dm-home .dm-cm-floor { position: absolute; left: 4.375rem; right: 4.375rem; top: 15.375rem; height: 0.0625rem; background: linear-gradient(90deg, rgb(255 236 220 / 0), rgb(255 236 220 / 0.14), rgb(255 236 220 / 0)); }
 

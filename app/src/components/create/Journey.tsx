@@ -5,6 +5,7 @@ import {
   canContinue,
   canOpen,
   candidatesFromPool,
+  effectiveAmounts,
   goTo,
   initialState,
   linkedDepositToken,
@@ -17,13 +18,14 @@ import {
   takesOnly,
   validateRange,
   verificationToken,
-  withBudget,
   withFreshPool,
+  withOtherAmount,
   withPayWith,
   withPool,
   withRange,
   withSlippage,
   withToken,
+  withTypedAmount,
   type Check,
   type JourneyState,
   type Preselect,
@@ -34,7 +36,7 @@ import {
 import { useOtherChains } from '../../lib/create/otherChains'
 import { payFunding } from '../../lib/create/payFunding'
 import type { PayFacts } from '../../lib/create/poolPrices'
-import { reviewPlan } from '../../lib/create/reviewPlan'
+import { lacksOne, reviewPlan } from '../../lib/create/reviewPlan'
 import { forgetCreatePools } from '../../lib/create/poolsAhead'
 import { featuredStore, useFeatured } from '../../lib/read/featuredSource'
 import { appPaint } from '../../lib/read/appPaint'
@@ -208,10 +210,15 @@ export function Journey({
   const source = useReadSource()
   const now = useNow(false).wall
   const [state, setState] = useState<JourneyState>(() => initialToken ? withToken(initialState(), initialToken) : initialState())
+  // Added 2026-10-31 (QA round 2 follow-ups, free-amounts): the state every plan reads. With both amounts the person's own
+  // (`own`), its amount is the side that limits the position (lib/create/journey.ts effectiveAmounts), so Review, the
+  // preview, the funds offer and Create position receive one amount and the other worked out from it, as always. Step 1,
+  // Range and every transition keep the state as typed.
+  const amounts = useMemo(() => effectiveAmounts(state), [state])
   const walletIdentity = useWalletIdentity()
   const [fundingFlowKey] = useState(() => __DOMINO_V2__ ? crypto.randomUUID() : '')
   const walletKey = walletIdentity.kind === 'connected' ? `${walletIdentity.connectorName}|${walletIdentity.address.toLowerCase()}` : ''
-  const fundingKey = __DOMINO_V2__ ? fundingContext(state, walletKey, fundingFlowKey) : ''
+  const fundingKey = __DOMINO_V2__ ? fundingContext(amounts, walletKey, fundingFlowKey) : ''
   const fundingKeyRef = useRef(fundingKey)
   useEffect(() => { fundingKeyRef.current = fundingKey }, [fundingKey])
   const [funding, setFunding] = useState<{ key: string; value: FundingContinuation } | null>(null)
@@ -530,11 +537,16 @@ export function Journey({
     setPool(option)
   }
   const setRange = (range: TickRange) => update(withRange(state, range))
-  const setBudget = (text: string) => update(withBudget(state, text))
-  // Typing in the other token's row is one change, not two: switching the
-  // independent token clears the amount (withToken), so setting them
-  // separately from the same state would lose whichever landed first.
-  const setDeposit = (candidate: TokenCandidate, text: string) => update(withBudget(withToken(state, candidate), text))
+  // Changed on purpose 2026-10-31 (QA round 2 follow-ups, free-amounts; the owner: "tem que ser livre"): typing in the
+  // other token's row before anything is typed makes it the amount, and the first row is worked out from it, as before;
+  // once an amount is typed, a figure typed over the worked-out one is the person's own and stays as typed (withOtherAmount).
+  // Cleared, or "Fill in for me" pressed, it is worked out again. One change each, from the same state.
+  // Changed on purpose 2026-10-31 (free-amounts review; the owner: "preencher de forma automática quando o usuário não tem
+  // o token"): with a wallet read holding none of one of the two tokens, the field typed in is the amount and the other is
+  // worked out from it, as before (lib/create/reviewPlan.ts lacksOne). `pair` is the balances read below, as drawn.
+  const setBudget = (text: string) => update(withTypedAmount(state, text))
+  const setDeposit = (candidate: TokenCandidate, text: string) =>
+    update(withOtherAmount(state, candidate, text, !(state.pool && lacksOne(state.pool, rawBalances(pair)))))
   const setSlippage = (text: string) => update(withSlippage(state, text))
 
   const blocked = rangeBlock.lower ?? rangeBlock.upper ?? null
@@ -657,9 +669,10 @@ export function Journey({
   }, [balanceKey, balanceRevision])
   // Added 2026-10-06 (the owner: "USD estimate unavailable" for Robinhood Chain pairs without USDG): the chosen pool with its
   // currencies' qualified prices, once read (./usePricedPool.ts), for what the steps value: the amount step, its row, the
-  // preview and Review. Everything else keeps the state as it is.
+  // preview and Review. Everything else keeps the state as it is. Since 2026-10-31 (free-amounts) over the state plans read
+  // (`amounts`), which still carries both amounts as typed for the amount step to draw.
   const pricedPool = usePricedPool(state.pool)
-  const valued = useMemo<JourneyState>(() => (pricedPool === state.pool ? state : { ...state, pool: pricedPool }), [state, pricedPool])
+  const valued = useMemo<JourneyState>(() => (pricedPool === amounts.pool ? amounts : { ...amounts, pool: pricedPool }), [amounts, pricedPool])
   // Added 2026-10-06 (the owner: AI/PONS short on Robinhood Chain and nothing offered): what paying with one other token
   // would be for this pool and wallet, read once and again with the balances (./usePricedPool.ts usePayFacts): on a
   // deliberate read again and on Amount's tick, keeping its last answer meanwhile; the tick apart, so a tick's read never
@@ -676,7 +689,7 @@ export function Journey({
   }, current === 'amount', priceTick)
   useEffect(() => { marketReading.current = priceReading })
   const paidFunding = state.payWith ? payFunding(state.payWith, pay) : null
-  const pairFunding = state.payWith ? null : reviewPlan(state, rawBalances(pair))
+  const pairFunding = state.payWith ? null : reviewPlan(amounts, rawBalances(pair))
   // Continue held by a read that answered without the figure it needs: the token chosen to pay with, or the pool's two
   // balances (a background read that reads nothing keeps the figures it had, usePairBalances.ts, so this is a first read,
   // a deliberate one, or the offer's).
@@ -898,16 +911,16 @@ export function Journey({
           <CreateUnavailable note={reviewHold.reason} />
         ) : V2Create ? (
           <V2Create
-            state={state}
+            state={amounts}
             balances={pair}
             pay={pay}
             onBusy={setCreating}
             onReadAgain={() => setBalanceRevision((n) => n + 1)}
             onFreshPool={(fresh) => setState((was) => withFreshPool(was, fresh))}
-            v1={<FinalControl state={state} balances={pair} onBusy={setCreating} />}
+            v1={<FinalControl state={amounts} balances={pair} onBusy={setCreating} />}
           />
         ) : (
-          <FinalControl state={state} balances={pair} onBusy={setCreating} />
+          <FinalControl state={amounts} balances={pair} onBusy={setCreating} />
         )
       ) : (
         <>

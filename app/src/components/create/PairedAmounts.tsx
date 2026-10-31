@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react'
 import { CREATE } from '../../lib/create/copy'
-import { candidatesFromPool, candidateDecimals, takesOnly, validateBudget, type JourneyState, type PayWith } from '../../lib/create/journey'
+import { candidatesFromPool, candidateDecimals, freeFit, takesOnly, validateBudget, type JourneyState, type PayWith } from '../../lib/create/journey'
 import { groupedAmount } from '../../lib/create/amountText'
 import { pairedAmount } from '../../lib/create/pairAmount'
 import type { PayFacts } from '../../lib/create/poolPrices'
@@ -37,6 +37,9 @@ const unitsOf = (raw: bigint | string, decimals: number | null) => {
  */
 const fieldText = (text: string) => shortAmount(text).short.replace(/,/g, '')
 
+/** Added 2026-10-31 (free-amounts review): what Review can spend of a raw balance (maxSpend), or null when it was not read as a figure. */
+const spendableOf = (raw: string | null, native: boolean): bigint | null => (raw !== null && /^\d+$/.test(raw) ? maxSpend(BigInt(raw), native) : null)
+
 /**
  * The deposit as both of the pool's tokens: one row each, the amount typed in
  * either, and the other following from the range and the pool's price.
@@ -62,6 +65,12 @@ const fieldText = (text: string) => shortAmount(text).short.replace(/,/g, '')
  * amount is typed in it (the journey moves it there, journey.ts withRange).
  * Nothing is swapped when the wallet holds that token; when it holds only the
  * other one, the line under the panel says all of it is swapped.
+ *
+ * Changed on purpose 2026-10-31 (QA round 2 follow-ups, free-amounts; the owner: "se o usuário tiver os dois tokens, não
+ * precisa ser autoajustar. Só se o usuário quiser"): a figure typed over the worked-out one is the person's own and stays
+ * as typed, and nothing is worked out any more (lib/create/journey.ts OwnAmounts). "Fill in for me" beside the one typed
+ * second, or clearing it, works it out again. The position takes the most it can within both (freeFit), and one line
+ * says what stays in the wallet when they don't fit the range exactly.
  */
 export function PairedAmounts({
   state,
@@ -92,6 +101,9 @@ export function PairedAmounts({
   // that follows changes nothing in it.
   const [editing, setEditing] = useState<string | null>(null)
   const shownAs = (id: string, text: string) => (editing === id ? text : groupedAmount(text))
+  // Added 2026-10-31 (free-amounts): a field just cleared by the person, which is worked out for them again: it stays
+  // empty while they are still in it, so the next figure they type starts afresh, and shows the worked-out one once left.
+  const [blank, setBlank] = useState<string | null>(null)
   const pool = state.pool
   // QA round 2, N8 (pass 3): the pool's TVL as its preview card and Markets show it, for the share sentence below only
   // (display, never an amount); nothing is asked.
@@ -163,8 +175,13 @@ export function PairedAmounts({
   }
   const choices = candidatesFromPool(pool)
   const independent = pool.currencies.findIndex((currency) => currency.address === state.token?.key)
-  if ((independent === 0 || independent === 1) && first?.pool !== pool.key) setFirst({ pool: pool.key, side: independent })
-  const order: readonly (0 | 1)[] = (first?.pool === pool.key ? first.side : independent) === 1 ? [1, 0] : [0, 1]
+  // Free-amounts (2026-10-31): both figures the person's own. `independent` is then the side that limits the position, as
+  // every plan reads it (lib/create/journey.ts effectiveAmounts); the field typed first is the other side from `second`.
+  const own = state.own
+  const ownFirst = own ? (own.second === 0 ? 1 : 0) : null
+  const lead = ownFirst ?? independent
+  if ((lead === 0 || lead === 1) && first?.pool !== pool.key) setFirst({ pool: pool.key, side: lead })
+  const order: readonly (0 | 1)[] = (first?.pool === pool.key ? first.side : lead) === 1 ? [1, 0] : [0, 1]
   const decimals = state.token ? candidateDecimals(state.token) : null
   const budget = validateBudget(state.budget, decimals)
 
@@ -199,7 +216,8 @@ export function PairedAmounts({
   // The panel the amount was typed in is never quieted: when the swap buys the typed token, the wallet's token pays for
   // the whole position, and the line under the panels says so from the wallet's side. Fixed 2026-09-28 (round 6 review):
   // 1000 MARLIN typed with no MARLIN in the wallet greyed the typed panel and named a USDG deposit shown nowhere.
-  const quiet = swapped !== null && swapped !== independent ? swapped : null
+  // Both figures typed by the person (free-amounts): neither is quieted.
+  const quiet = !own && swapped !== null && swapped !== independent ? swapped : null
 
   const otherText = (index: 0 | 1): { value: string; note: string | null } => {
     const currency = pool.currencies[index]
@@ -227,8 +245,16 @@ export function PairedAmounts({
   const sizeId = 'create-amount-size'
   const describedBy = [short ? shortId : null, sizeLine ? sizeId : null].filter(Boolean).join(' ')
 
-  // Each amount's raw units, for its USD line: the typed one once it is a real amount, the other once the range pairs one with it.
-  const rawOf = (side: 0 | 1): string | null => (side === independent ? (budget.ok ? budget.raw : null) : other && other.kind === 'amount' ? other.raw : null)
+  // Added 2026-10-31 (free-amounts): with both figures typed, what the range uses of each and what stays in the wallet,
+  // when they don't fit it exactly. Not while the wallet changes the plan: the swap and short lines say it then.
+  // Changed on purpose 2026-10-31 (free-amounts review): never while the balances are being read, as the swap and short
+  // lines wait for them; and "stays in your wallet" only of a wallet read holding all of that figure (Review's spendable
+  // figure). With no wallet, or a figure typed above what the wallet holds, it says that figure isn't used.
+  const fit = freeFit(state)
+  const leftOver = fit && fit.left > 0n && (plan === null || plan.kind === 'both') && (disconnected || balances.status === 'ready') ? fit : null
+  const leftSide: 0 | 1 | null = leftOver ? (leftOver.limiting === 0 ? 1 : 0) : null
+  const leftSpend = leftSide !== null ? spendableOf(rawBalances(balances)?.[leftSide] ?? null, pool.currencies[leftSide].address === NATIVE_CURRENCY) : null
+  const leftHeld = leftOver !== null && leftSide !== null && leftSpend !== null && leftSpend >= leftOver.used[leftSide] + leftOver.left
 
   return (
     <div className="dm-flow-stack">
@@ -238,20 +264,56 @@ export function PairedAmounts({
           // A range that takes one token alone asks for that token's amount only.
           // A background price move may leave the typed token outside the range. Keep that input visible
           // until the person changes it; hiding it would look as though their amount had been cleared.
-          if (only !== null && side !== only && side !== independent) return null
-          const mine = side === independent
+          // Both figures typed by the person (free-amounts) stay in sight.
+          if (!own && only !== null && side !== only && side !== independent) return null
+          const mine = own !== null || side === independent
           const choice = choices[side]
           const unreadable = choice.why !== null || choice.token.decimals === null
-          const shown = mine ? { value: state.budget, note: null } : otherText(side)
+          // The figure as the person typed it, checked in its own token; the worked-out one otherwise.
+          const typedText = own ? own.texts[side] : mine ? state.budget : null
+          const typed = own ? validateBudget(own.texts[side], choice.token.decimals) : mine ? budget : null
+          const shown = typedText !== null ? { value: typedText, note: null } : otherText(side)
           const fieldId = `create-amount-${side}`
+          // The field typed first speaks through onBudget, the other through onDeposit (journey.ts withTypedAmount,
+          // withOtherAmount), as typing and Max do alike.
+          const typeIn = (text: string) => ((own ? side === ownFirst : mine) ? onBudget(text) : onDeposit(choice, text))
+          // "Fill in for me" (free-amounts): beside the figure typed second, it works that one out again from the other.
+          // Changed on purpose 2026-10-31 (free-amounts review): Max's own small well (secondary), after Max, so on a phone
+          // it wraps onto a line of its own and Max stays beside its balance; its name says which token it fills in.
+          const fillIn = own && side === own.second && !unreadable ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              data-pair-fill={side}
+              onClick={() => {
+                setBlank(null)
+                onDeposit(choice, '')
+                // The button goes with the figure it replaced: the field it filled in takes the focus, or, where a range
+                // taking one token alone leaves that field out once it is worked out, the field that stays.
+                document.getElementById(only !== null && side !== only ? `create-amount-${only}` : fieldId)?.focus({ preventScroll: true })
+              }}
+            >
+              {CREATE.amount.fillIn}
+              {/* The symbol isolated as SymbolText isolates it, inline, so the name reads "Fill in for me (ETH)". */}
+              {currency.symbol !== null && (
+                <span className="sr-only">
+                  {' ('}
+                  <bdi>{currency.symbol}</bdi>)
+                </span>
+              )}
+            </Button>
+          ) : null
           const balance = balances.balances?.[side] ?? null
           // A figure only for a balance read as a number (lib/read/pagers.ts amountFact: a value, or zero).
           const readable = balance?.fact && (balance.fact.state === 'value' || balance.fact.state === 'zero') ? balance.fact.text : null
           // Max leaves native ETH's gas allowance in the wallet (maxSpend), so Review never finds it short of what Max typed.
           const spend = balance?.raw && /^\d+$/.test(balance.raw) ? maxSpend(BigInt(balance.raw), currency.address === NATIVE_CURRENCY) : 0n
           const fill = spend > 0n ? unitsOf(spend, currency.decimals).replace(/,/g, '') : null
-          // The swapped side has no USD of its own: the preview's deposit stays the one statement of value.
-          const usd = side === quiet ? null : usdOfSide(pool, side, rawOf(side))
+          // Each amount's raw units, for its USD line: a typed one once it is a real amount, a worked-out one once the range
+          // pairs one with it. The swapped side has no USD of its own: the preview's deposit stays the one statement of value.
+          const raw = typed ? (typed.ok ? typed.raw : null) : other && other.kind === 'amount' ? other.raw : null
+          const usd = side === quiet ? null : usdOfSide(pool, side, raw)
           return (
             <Fragment key={currency.address}>
               {/* Between the two panels, as the swap form joins its two: decoration only. */}
@@ -274,22 +336,28 @@ export function PairedAmounts({
                   }
                   inputMode="decimal"
                   placeholder="0"
-                  value={shownAs(fieldId, shown.value)}
+                  value={blank === fieldId && editing === fieldId ? '' : shownAs(fieldId, shown.value)}
                   onFocus={(event) => {
                     const input = event.currentTarget
                     if (input.value !== shown.value) input.value = shown.value
                     setEditing(fieldId)
                   }}
-                  onBlur={() => setEditing((was) => (was === fieldId ? null : was))}
+                  onBlur={() => {
+                    setEditing((was) => (was === fieldId ? null : was))
+                    setBlank((was) => (was === fieldId ? null : was))
+                  }}
                   disabled={unreadable}
-                  onChange={(event) => (mine ? onBudget(event.target.value) : onDeposit(choice, event.target.value))}
-                  error={mine && state.budget !== '' && !budget.ok ? budget.reason : unreadable ? CREATE.amount.pairUnreadable : null}
-                  {...(mine && short ? { 'aria-invalid': true } : {})}
-                  {...(mine && describedBy ? { 'aria-describedby': describedBy } : {})}
+                  onChange={(event) => {
+                    setBlank(event.target.value.trim() === '' ? fieldId : null)
+                    typeIn(event.target.value)
+                  }}
+                  error={typed && typedText !== '' && !typed.ok ? typed.reason : unreadable ? CREATE.amount.pairUnreadable : null}
+                  {...(side === independent && short ? { 'aria-invalid': true } : {})}
+                  {...(side === independent && describedBy ? { 'aria-describedby': describedBy } : {})}
                   usd={usd !== null ? <UsdText value={usd} floor /> : undefined}
                   below={shown.note ? <p className="dm-hint">{shown.note}</p> : null}
                   footer={
-                    disconnected ? null : (
+                    disconnected ? (fillIn ? <div className="dm-flow-balance">{fillIn}</div> : null) : (
                       <div className="dm-flow-balance" data-pair-balance={balances.status} data-pair-refreshing={balances.refreshing ? '' : undefined}>
                         <p className="dm-flow-balance-line">
                           <span className="text-fg-subtle">{balances.status !== 'ready' ? CREATE.amount.pairReading : CREATE.amount.balanceAt(null)}</span>{' '}
@@ -299,10 +367,11 @@ export function PairedAmounts({
                           {balances.status === 'ready' && <bdi className={readable ? 'tnum text-fg' : 'tnum text-fg-subtle'}>{readable ?? <FigureDash />}</bdi>}
                         </p>
                         {fill !== null && !unreadable && (
-                          <Button type="button" variant="secondary" size="sm" data-pair-max={side} onClick={() => (mine ? onBudget(fill) : onDeposit(choice, fill))}>
+                          <Button type="button" variant="secondary" size="sm" data-pair-max={side} onClick={() => typeIn(fill)}>
                             {CREATE.amount.maxLabel}
                           </Button>
                         )}
+                        {fillIn}
                       </div>
                     )
                   }
@@ -352,6 +421,33 @@ export function PairedAmounts({
           )}
         </p>
       )}
+      {/* Added 2026-10-31 (QA round 2 follow-ups, free-amounts): with both figures typed and more of one than the range pairs
+          with the other, what the range uses and what stays in the wallet, in one plain line, polite to a screen reader as
+          the step's other lines are. Mounted empty, out of sight, so its first words are announced. Since its review (same
+          day): what stays in the wallet only when the wallet holds it; otherwise that the figure isn't used (`leftHeld`). */}
+      <p
+        role="status"
+        className={leftOver ? 'dm-flow-position' : 'sr-only'}
+        data-tone={leftOver ? 'neutral' : undefined}
+        data-amount-left={leftSide ?? undefined}
+        data-amount-left-held={leftOver ? String(leftHeld) : undefined}
+      >
+        {leftOver && leftSide !== null && (
+          <span>
+            Your range uses{' '}
+            {order
+              .filter((side) => leftOver.used[side] > 0n)
+              .map((side, index) => (
+                <Fragment key={side}>
+                  {index > 0 && ' and '}
+                  <AmountText text={unitsOf(leftOver.used[side], pool.currencies[side].decimals)} /> <SymbolText token={pool.currencies[side]} />
+                </Fragment>
+              ))}
+            . <AmountText text={unitsOf(leftOver.left, pool.currencies[leftSide].decimals)} /> <SymbolText token={pool.currencies[leftSide]} />{' '}
+            {leftHeld ? 'stays in your wallet.' : 'isn’t used.'}
+          </span>
+        )}
+      </p>
       {/* One line under the panels, only when the wallet changes the plan: part of one token swapped, or not enough. */}
       {swap && swapped !== null && (
         <p className="dm-flow-position" data-tone="neutral" data-amount-swap={swap.from} data-amount-swap-typed={swapped === independent ? '' : undefined}>

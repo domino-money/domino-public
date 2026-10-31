@@ -330,8 +330,10 @@ export function PoolHistoryChart({ source, option, market, loading, quote: quote
           !data ? <div className="dm-pool-plot dm-pool-plot-empty"><span className="text-fg-subtle">—</span></div> :
           !plot || !point || !last ? <div className="dm-pool-plot dm-pool-plot-empty"><p className="text-body text-fg-muted">{data.status === 'available' ? 'No swaps in this window.' : coverage || 'No prices to draw for this window.'}</p></div> : <>
             <div className="dm-pool-canvas" data-swap={swapped ? '' : undefined}>
+              {/* Changed on purpose 2026-10-31 (QA round 2 follow-ups, R37): the slider's name says the step it takes, a day
+                  on 30d (daily candles), an hour otherwise; it said "by hour" on 30d too. */}
               <svg width="100%" height="15rem" viewBox={`0 0 ${plot.width} ${plot.height}`} preserveAspectRatio="none" role="slider"
-                aria-label="Inspect the pool’s price by hour" aria-valuemin={1} aria-valuemax={plot.points.length} aria-valuenow={index + 1}
+                aria-label={`Inspect the pool’s price by ${data.resolutionSeconds >= 86400 ? 'day' : 'hour'}`} aria-valuemin={1} aria-valuemax={plot.points.length} aria-valuenow={index + 1}
                 aria-valuetext={hourText(point.candle, quote.symbol)} tabIndex={0} className="dm-pool-chart-svg"
                 onPointerMove={inspectAt} onPointerDown={event => { event.currentTarget.focus({ preventScroll: true }); inspectAt(event) }}
                 onPointerLeave={event => { if (event.pointerType !== 'touch') setInspected(null) }} onPointerCancel={() => setInspected(null)}

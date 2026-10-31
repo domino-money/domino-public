@@ -6,7 +6,7 @@ import { V2PositionRow } from './parts'
 import { anyIn, chainsIn, useCreatedPositions, useKeyed, useKeyedLatest, useListsGate, useUsdAged } from './hooks'
 import { routeQuiet } from './read'
 import { OWN_PORTFOLIO } from './source'
-import { hasPositionApr, historicalPositionRows, mergePositionRows, positionCounts, withCreatedPositions } from './positionCollection'
+import { hasPositionApr, historicalPositionRows, mergePositionRows, newestFirst, positionCounts, withCreatedPositions } from './positionCollection'
 import { positionObservation, subscribePositionChanges, type PositionIdentity, type PositionObservation } from './positionSync'
 import { feesStore } from '../../lib/fees/spawn'
 import type { FeeHistoryView } from '../../lib/fees/types'
@@ -64,7 +64,12 @@ export function OwnedCollection({ owner, readOnly = false, deposits, onEmptyActi
     if (change.kind === 'state') setObservation(() => (identity: PositionIdentity) => positionObservation(identity))
     else if (!change.wallet || change.wallet === owner) setVersion((value) => value + 1)
   }), [owner])
-  const rows = useMemo(() => mergePositionRows(historicalPositionRows(retained, current !== null, retained ? walletAnswerAt(retained) : null, observation), own.rows), [retained, current, own.rows, observation])
+  // Changed on purpose 2026-10-31 (QA round 2 follow-ups, R21): newest NFT first on each network (positionCollection.ts
+  // newestFirst). read-v6's rows were appended after the site's own in read-v6's order, so the newest closes sat behind
+  // "Show 4 more". Only the order of the list changes: Close positions keeps the merged order (`merged`, below), so its
+  // choices, its groups of two and each group's NFTs, intent and receipts stay exactly as before.
+  const merged = useMemo(() => mergePositionRows(historicalPositionRows(retained, current !== null, retained ? walletAnswerAt(retained) : null, observation), own.rows), [retained, current, own.rows, observation])
+  const rows = useMemo(() => newestFirst(merged), [merged])
   const counts = useMemo(() => positionCounts(rows), [rows])
   const [chosen, setChosen] = useState<'open' | 'closed' | null>(null)
   const tab = chosen ?? (counts.open === 0 && counts.pending === 0 && counts.closed > 0 ? 'closed' : 'open')
@@ -86,8 +91,16 @@ export function OwnedCollection({ owner, readOnly = false, deposits, onEmptyActi
   const empty = settled && rows.length === 0 && !note && !partial
   // (QA round 2, N63) The tabs and the status line count nothing until something is known: they said "Open 0 · Closed 0"
   // for seconds while the two inventories were still on their way (the rows keep their loading rows meanwhile).
-  const counted = rows.length > 0 || empty
+  // Changed on purpose 2026-10-31 (QA round 2 follow-ups, N63): and nothing until both inventories have answered. With the
+  // first row of either one they counted it alone ("1 open and 6 closed positions."), then changed to the merged count
+  // ("1 open and 14 closed") when the other answered. The rows already drawn stay drawn meanwhile.
+  // A failed historical inventory counts as answered once and stays so: askWallet sets 'retrying' again on its next ask,
+  // and the counts and the status line would come and go with each one (latched as `kept` is).
   const failed = historical.phase === 'failed'
+  const [heard, setHeard] = useState(false)
+  if (failed && !heard) setHeard(true)
+  const answered = (retained !== null || heard) && (!own.live || own.reply !== null)
+  const counted = empty || (rows.length > 0 && answered)
   useLayoutEffect(() => {
     onEmptyAction?.(empty && !readOnly)
     return () => onEmptyAction?.(false)
@@ -99,7 +112,7 @@ export function OwnedCollection({ owner, readOnly = false, deposits, onEmptyActi
       <div className="dm-own-head">
         <h2 id="own-title" className="dm-title">{readOnly ? <>Positions of <span title={owner}>{shortAddress(owner)}</span></> : 'Your positions'}</h2>
         <div className="dm-own-tools flex items-center gap-2 flex-wrap justify-end">
-          {!readOnly && <BulkClosePositions key={owner} owner={owner} rows={rows} />}
+          {!readOnly && <BulkClosePositions key={owner} owner={owner} rows={merged} />}
           <Tabs label="Positions by state" value={tab} onChange={setChosen} items={[{ key: 'open', label: 'Open', count: counted ? counts.open : undefined }, { key: 'closed', label: 'Closed', count: counted ? counts.closed : undefined }]} />
         </div>
       </div>

@@ -78,8 +78,13 @@ function PasteForm({ source, onFound, id }: { source: ReadSource; onFound: (cand
       }
       if (outcome.state === 'ok') {
         setPhase('idle')
-        found.current(candidateFromToken(outcome.data, wire))
-        setSaid({ code: 'ok', words: `Read at block ${outcome.data.snapshot.number}.` })
+        const candidate = candidateFromToken(outcome.data, wire)
+        found.current(candidate)
+        // Changed on purpose 2026-10-31 (QA round 2 follow-ups, R20): a screen reader hears the token's name and where it
+        // went, no longer "Read at block 102023570." (beginner first: no block numbers). Here a checked address joins the
+        // list to choose from (`add`), so it is never said as selected; one that cannot be chosen says why on its row.
+        const symbol = candidate.token.symbol
+        setSaid({ code: 'ok', words: candidate.why === null && symbol !== null ? `${symbol.length > 24 ? `${symbol.slice(0, 24)}…` : symbol} added to the list.` : '' })
         return
       }
       const wait = reaskDelayMs(outcome, attempt)

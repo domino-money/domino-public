@@ -167,9 +167,15 @@ test('Close positions: each group is done at its block and the next starts at on
   const s = await scenario(undefined, undefined, (method, params) => (method === 'eth_getBlockByNumber' && params[0] === 'finalized' && !final ? { result: { number: '0x0' } } : undefined), [501001n, 501002n, 501003n]);
   try {
     const page = s.page;
+    // Added 2026-10-31 (QA round 2 follow-ups, R21): the list is newest NFT first, and Close positions keeps the merged
+    // order, so its choices, its groups of two and each group's NFTs (held, intent, receipts below) are the same as before.
+    const listed = page.locator('[data-owned-rows="open"] a[data-v2-position-row]');
+    await listed.nth(2).waitFor();
+    assert.deepEqual(await listed.evaluateAll((all) => all.map((row) => row.getAttribute('data-v2-position-row').split(':').at(-1))), ['501003', '501002', '501001'], 'the list: newest first');
     await page.locator('[data-bulk-close-open]').click();
     const dialog = page.locator('[data-bulk-close]');
     assert.equal(await dialog.getByRole('checkbox').count(), 3);
+    assert.deepEqual(await dialog.locator('.dm-bulk-choice').evaluateAll((all) => all.map((choice) => /position (\d+) on/.exec(choice.getAttribute('aria-label'))[1])), ['501001', '501002', '501003'], 'the dialog: the merged order');
     for (const choice of await dialog.getByRole('checkbox').all()) await choice.check();
     await dialog.getByRole('button', { name: 'Review 3 positions', exact: true }).click();
     await page.locator('[data-bulk-close="review"]').waitFor();

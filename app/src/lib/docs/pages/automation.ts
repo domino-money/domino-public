@@ -210,7 +210,8 @@ export const YOUR_AUTOMATION: DocPage = {
       id: 'one-position',
       title: 'One position, one automation',
       blocks: [
-        p('Setting up Auto-compound, Domino-compound or Auto-exit creates a contract for that one position: your automation. Made for your wallet alone; only your wallet controls it.'),
+        // Changed on purpose 2026-10-31 (QA round 2 follow-ups, N26): whole sentences.
+        p('Setting up Auto-compound, Domino-compound or Auto-exit creates a contract for that one position: your automation, made for your wallet alone. Only your wallet controls it.'),
         p('Your position stays in your wallet: you approve only that NFT, and approving another app on it stops your automation. Positions Domino-compound opens are held by your automation until you withdraw them.'),
       ],
     },
@@ -230,7 +231,8 @@ export const YOUR_AUTOMATION: DocPage = {
       id: 'its-card',
       title: 'Its card',
       blocks: [
-        p('The mode and status button at the top of your position opens its controls. ', b('Automated positions'), ' links there, with one row per position. ', b('Activity'), ' shows completed actions.'),
+        // Changed on purpose 2026-10-31 (QA round 2 follow-ups, N26): no Automated positions card on Positions.
+        p('The mode and status button at the top of your position opens its controls, and its ', b('Activity'), ' shows completed actions.'),
         p(b('Pause'), ' and ', b('Resume'), ' control compounding only. A position has compounding or Auto-exit, never both. Auto-exit has its own ', b('Turn off'), ', ', b('Turn on'), ' and ', b('Approve again'), '. ', b('Previous setup balances'), ' keeps earlier funds available to recover.'),
       ],
     },
@@ -241,7 +243,8 @@ export const YOUR_AUTOMATION: DocPage = {
         p('Your automation keeps the fees it collected and hasn’t reinvested yet. They’re yours: ', b('Withdraw to wallet'), ' sends them to your wallet any time, whatever its state, with no Domino fee.'),
         p('Once your position is closed, Domino returns them to your wallet on its next pass, or ', b('Return my reserves'), ' does it now. No fee either way.'),
         // 2026-10-04 (rugged97's delta of 4 Oct §2 item 1): a withdrawal names its recipient.
-        p('If a token refuses your wallet, ', b('Send to another address you own'), ' appears.'),
+        // Changed on purpose 2026-10-31 (QA round 2 follow-ups, N26): offered once a transfer failed.
+        p('If a token can’t be sent to your wallet, choose ', b('Send to another address you own'), '.'),
       ],
     },
     {
@@ -259,7 +262,8 @@ export const YOUR_AUTOMATION: DocPage = {
       id: 'when-it-stops',
       title: 'When it stops',
       blocks: [
-        p('If you change the position, move it or approve another app, automation stops for it until you turn it back on. ', b('Turn back on'), ' asks your consent again for the fees it has not collected.'),
+        // Changed on purpose 2026-10-31 (QA round 2 follow-ups, N49): by mode (v2in/position/constants.ts).
+        p('With Auto-compound or Domino-compound, changing the position, moving it or approving another app stops automation until you turn it back on. ', b('Turn back on'), ' asks your consent again for the fees it has not collected. Auto-exit pauses only when its approval changes; ', b('Approve again'), ' ends the pause.'),
         p('If Domino stops automation on a network for safety, runs and Auto-exit stop there; you can still withdraw and manage your positions.'),
       ],
     },

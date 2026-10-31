@@ -24,13 +24,13 @@ import { Address } from './Address'
  * The search's one label and placeholder, wherever it is (QA round 2, N102: Markets said "Token name or address" and
  * "Search token or address", New position "Search a token" and "Name or address, like USDG"; the pair kept is the
  * approved prototype's, new.html). N33 (the owner's option A): where the other networks are searched too, the
- * placeholder says so: Markets, whose label is unseen, says it whole (SEARCH_EVERY_NETWORK); a search whose label shows
- * above it (New position) does not repeat "Search a token" under it (SEARCH_EVERY_NETWORK_UNDER_LABEL).
+ * placeholder says so (SEARCH_EVERY_NETWORK). Changed on purpose 2026-10-31 (QA round 2 follow-ups, N102): one phrase on
+ * Markets and New position alike; New position no longer had a wording of its own under its label ("Name or address, on
+ * any network").
  */
 export const SEARCH_LABEL = 'Search a token'
 export const SEARCH_PLACEHOLDER = 'Name or address, like USDG'
 export const SEARCH_EVERY_NETWORK = 'Search a token on any network'
-export const SEARCH_EVERY_NETWORK_UNDER_LABEL = 'Name or address, on any network'
 
 /**
  * The separator between two facts of a hit's line: a no-break space before the dot, so a line that wraps ends with the
@@ -54,7 +54,11 @@ const READ_ADDRESS = 'Look up this address'
 const ALREADY_CHOSEN = 'Already chosen'
 const NOT_READ = 'This token couldn’t be read.'
 const reading = (name: string) => `Reading ${name}…`
-const readAt = (block: number) => `Read at block ${block}.`
+/**
+ * What a screen reader hears once a pasted address's token is read and chosen. Changed on purpose 2026-10-31 (QA round 2
+ * follow-ups, R20): its name, no longer "Read at block 102023570." (beginner first: no block numbers).
+ */
+const selectedWords = (name: string) => `${name} selected.`
 const WHOLE_ADDRESS = /^0x[0-9a-fA-F]{40}$/
 
 /** What the polite live region says about the chosen token's read. */
@@ -674,7 +678,8 @@ export function TokenSearch({
           return
         }
         foundRef.current(candidate)
-        setSaid({ code: 'ok', words: readAt(outcome.data.snapshot.number) })
+        // A token that cannot be chosen is never said as selected (the step's Continue line says why it cannot go on).
+        setSaid({ code: 'ok', words: candidate.why === null ? selectedWords(candidate.token.symbol === null ? name : shortLabel(candidate.token.symbol)) : '' })
         return
       }
       const wait = reaskDelayMs(outcome, attempt)

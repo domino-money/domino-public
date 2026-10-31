@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { Skeleton } from '../ui'
-import { aboutDigits, aboutPercent, amountProblem, earnings, parseAmount, usdShort, usdText } from './plain'
+import { aboutDigits, aboutPercent, amountProblem, earnings, midThousands, parseAmount, usdShort, usdText } from './plain'
 import { numberFormat } from '../../lib/format/numberFormat'
 
 /** The amounts a person can pick with one press. */
@@ -33,9 +33,10 @@ export function PoolEarnings({ apr, aprDigits, tvl, loading, saved = false, acti
   const yours = shown && amount !== null && amount > 0 ? (shown.year / amount) * 100 : null
   // Why the typed text is not an amount, in words that say what to type instead (QA round 2, Q21). While the field is
   // being typed in, a thousands group half typed ("25,0" on the way to "25,000") is not called a decimal comma: that line
-  // waits until the field is left (QA round 2 review).
+  // waits until the field is left (QA round 2 review). Changed on purpose 2026-10-31 (QA round 2 follow-ups, Q21): only a
+  // real thousands group half typed (plain.ts midThousands); "1.000,50" and "1000,50" get their line at once.
   const [editing, setEditing] = useState(false)
-  const midGroup = editing && /,\d{1,2}$/.test(typed.trim())
+  const midGroup = editing && midThousands(typed)
   const raw = amountProblem(typed)
   const problem = raw === 'format' && midGroup ? null : raw
   return (

@@ -1,5 +1,5 @@
 import { estimateTitle, presentAprEstimate, type AprEstimateObservation } from '../../../lib/read/aprEstimate'
-import { formatUsdCompact, toFixed } from '../../../lib/read/decimal'
+import { formatUsdCompact, grouped, toFixed } from '../../../lib/read/decimal'
 import type { Instant } from '../../../lib/markets'
 import { fixedFeePercent } from '../../../lib/read/screens/fee'
 import { protocolFee } from '../../../lib/read/screens/figures'
@@ -26,8 +26,12 @@ function protocolFeeWords(raw: number): string {
  * rule): the ticker's figure no longer runs "from provider-reported inputs"
  * after it; where the inputs come from stays in its title.
  */
-/** The exact estimate to four decimals, trailing zeros dropped ("25.4409", "10.95"); the full figure stays in its title. */
-export const preciseEstimate = (exact: string) => (toFixed(exact, 4) ?? exact).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')
+/**
+ * The exact estimate to four decimals, trailing zeros dropped ("25.4409", "10.95"); the full figure stays in its title.
+ * Changed on purpose 2026-10-31 (QA round 2 follow-ups, N2): its whole part grouped in thousands ("1,205.5927"), as every
+ * other percent on the site; it read "1205.5927".
+ */
+export const preciseEstimate = (exact: string) => grouped((toFixed(exact, 4) ?? exact).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, ''))
 
 export function PoolAprEstimate({ observation, now, detailed = false, compact = false, label }: { observation?: AprEstimateObservation; now: Instant; detailed?: boolean; compact?: boolean; label?: string }) {
   const shown = presentAprEstimate(observation, now)

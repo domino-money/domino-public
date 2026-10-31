@@ -1356,9 +1356,10 @@ async function doneOrder(page) {
  * Sign in is offered and never pressed. The release the setup client verifies is the chain's own, and the read
  * service reports the chain wallet's balances. Resolves once Create position's lazily loaded control is in
  * (StageReview.tsx FinalControl). `answer` goes to the read stub; `amount` is the TOKEN amount typed; `routes` are
- * more same-origin endpoints for the wallet-server, asked before the read stub.
+ * more same-origin endpoints for the wallet-server, asked before the read stub. `walk` (added 2026-10-31, free-amounts):
+ * a walk of the steps to Review of the scenario's own, in place of walkToReview's.
  */
-async function atReview(chain, { answer, amount, range = null, routes = [], routedQuote = undefined } = {}) {
+async function atReview(chain, { answer, amount, range = null, routes = [], routedQuote = undefined, walk = null } = {}) {
   const read = createReadStub({ answer: firstAnswer(answer, walletAssets(chain)) });
   let onboarding;
   const s = await scenario({ chain: mintedChain(chain), routes: [...routes, (request, url) => routedQuote !== undefined && url.pathname.startsWith('/api/onboarding/v1/') ? onboarding.handle(request) : undefined, (request, url) => read.handle(request, url)] });
@@ -1381,7 +1382,8 @@ async function atReview(chain, { answer, amount, range = null, routes = [], rout
       await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
     }
     await s.page.keyboard.press('Escape');
-    await walkToReview(s.page, { amount, range });
+    if (walk) await walk(s.page);
+    else await walkToReview(s.page, { amount, range });
     await s.page.locator('[data-create-position="idle"]').waitFor({ timeout: 30_000 });
     // Review's plan is drawn once the read service has answered the wallet's balances.
     await s.page.locator('[data-review-plan]').waitFor({ timeout: 30_000 });
@@ -1557,6 +1559,153 @@ test('Create position opens the position from Review through a connected wallet 
     for (const [index, { key, states }] of order.entries()) for (const later of order.slice(index + 1)) assert.notEqual(states[later.key], 'done', `${later.key} was done before ${key}`);
     await onlyTheWallet(s, chain);
     assert.doesNotMatch(await s.page.locator('main').innerText(), FORBIDDEN);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-31 (QA round 2 follow-ups, free-amounts; the owner: "no new position você pode digitar o valor que você
+// quiser também... se o usuário tiver os dois tokens, não precisa ser autoajustar. Só se o usuário quiser. Tem que ser livre
+// isso. Mas tem que ter a opção de preencher de forma automática"). 1 TOKEN pairs with 892,661 wei at the stub's price and
+// range (pairAmount.ts); 500,000 wei typed over it pairs with 0.560122 TOKEN, so ETH limits the position.
+test('New position’s amounts are free: one typed fills in the other, a figure typed over it stays with a line saying what stays in the wallet, Fill in for me works it out again, and Review, Back and Create position keep the amount that limits the position', async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n } });
+  const ETH_TYPED = '0.0000000000005';
+  const LINE = /^Your range uses 0\.560122 TOKEN and 0\.0000000000005 ETH\. 0\.439878 TOKEN stays in your wallet\.$/;
+  const step = (page) => page.locator('[data-stage-card="amount"] [data-stage="amount"]');
+  const field = (page, side) => step(page).locator(`[data-pair-side="${side}"] input[inputmode="decimal"]`);
+  const role = (page, side) => step(page).locator(`[data-pair-side="${side}"]`).getAttribute('data-pair-role');
+  const caption = (page, side) => step(page).locator(`[data-pair-side="${side}"] .dm-flow-pair-caption`).innerText();
+  const s = await atReview(chain, {
+    walk: async (page) => {
+      await choosePool(page);
+      const current = (name) => page.locator(`li[data-step="${name}"][aria-current="step"]`);
+      await pressContinue(current('pool'));
+      await current('range').waitFor();
+      await pressContinue(current('range'));
+      await current('amount').waitFor();
+      await step(page).locator('[data-pair-balance="ready"]').first().waitFor({ timeout: 30_000 });
+      // One amount typed: the other is filled in for the person, and says so; nothing to take back, no line.
+      await field(page, 1).fill('1');
+      await page.waitForFunction(() => document.querySelector('[data-pair-side="0"] input')?.value === '0.000000000000892661');
+      assert.deepEqual([await role(page, 1), await role(page, 0)], ['typed', 'derived']);
+      assert.equal(await caption(page, 0), 'Also needed, worked out for you');
+      assert.equal(await step(page).locator('[data-pair-fill]').count(), 0);
+      assert.equal(await step(page).locator('[data-amount-left]').count(), 0);
+      // The live region is there, empty and out of sight, before its first words.
+      assert.equal(await step(page).locator('p[role="status"].sr-only').count(), 1);
+
+      // A figure typed over it is the person's own: both stay as typed, both captions say so, and the line says what stays.
+      await field(page, 0).fill(ETH_TYPED);
+      const line = step(page).locator('[data-amount-left="1"]');
+      await line.waitFor();
+      assert.match(await line.innerText(), LINE);
+      assert.equal(await line.getAttribute('role'), 'status');
+      assert.deepEqual([await role(page, 1), await role(page, 0)], ['typed', 'typed']);
+      assert.deepEqual([await caption(page, 1), await caption(page, 0)], ['You enter', 'You enter']);
+      assert.deepEqual([await field(page, 1).inputValue(), await field(page, 0).inputValue()], ['1', ETH_TYPED]);
+      // Fill in for me sits with the figure typed second only. Changed on purpose 2026-10-31 (its review): its name says the
+      // token it fills in, after the visible words; the wallet holds the 1 TOKEN typed, so what stays is in it.
+      const fill = step(page).locator('[data-pair-fill="0"]');
+      assert.equal(await fill.textContent(), 'Fill in for me (ETH)');
+      assert.equal(await fill.ariaSnapshot(), '- button "Fill in for me (ETH)"');
+      assert.equal(await step(page).locator('[data-pair-fill="1"]').count(), 0);
+      assert.equal(await line.getAttribute('data-amount-left-held'), 'true');
+      await page.screenshot({ path: join(shots(), 'create-amount-free.png'), fullPage: true });
+      // Added 2026-10-31 (its review): on a phone the panel's foot wraps with Max still on its balance's line, and Fill in
+      // for me never above it; nothing scrolls sideways.
+      await page.setViewportSize({ width: 375, height: 812 });
+      await page.screenshot({ path: join(shots(), 'create-amount-free-375.png'), fullPage: true });
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'the amount step fits 375px');
+      const middle = (box) => box.y + box.height / 2;
+      for (const side of [0, 1]) {
+        const foot = step(page).locator(`[data-pair-side="${side}"] .dm-flow-balance`);
+        const balanceLine = await foot.locator('.dm-flow-balance-line').boundingBox();
+        const max = foot.locator(`[data-pair-max="${side}"]`);
+        if (await max.count()) assert.ok(Math.abs(middle(await max.boundingBox()) - middle(balanceLine)) < 4, `Max stays on its balance’s line (side ${side})`);
+      }
+      const ownLine = await step(page).locator('[data-pair-side="0"] .dm-flow-balance-line').boundingBox();
+      assert.ok(middle(await fill.boundingBox()) >= middle(ownLine) - 4, 'Fill in for me never sits above its balance');
+      await page.setViewportSize({ width: 1320, height: 1000 });
+
+      // Pressed: that figure is worked out from the other again, the line goes, and the field it filled in has the focus.
+      await fill.click();
+      await page.waitForFunction(() => document.querySelector('[data-pair-side="0"] input')?.value === '0.000000000000892661');
+      assert.equal(await role(page, 0), 'derived');
+      assert.equal(await caption(page, 0), 'Also needed, worked out for you');
+      assert.equal(await step(page).locator('[data-amount-left], [data-pair-fill]').count(), 0);
+      assert.equal(await page.evaluate(() => document.activeElement?.id), 'create-amount-0');
+      assert.equal(await field(page, 1).inputValue(), '1', 'the first figure never moved');
+
+      // Typed over again, and on to Review.
+      await field(page, 0).fill(ETH_TYPED);
+      await line.waitFor();
+      await pressContinue(current('amount'));
+      await page.locator('[data-stage-card="review"]').waitFor();
+    },
+  });
+  const { setup } = chain.release.deployment;
+  try {
+    // Review plans the amount that limits the position: the ETH typed, and the TOKEN the range pairs with it.
+    assert.equal(await s.page.locator('[data-review-amounts]').getAttribute('data-review-plan'), 'both');
+    const exact = () => s.page.locator('[data-review-amounts] [data-exact]').evaluateAll(sides => sides.map(side => side.getAttribute('data-exact')));
+    assert.deepEqual(await exact(), [ETH_TYPED, '0.560122']);
+
+    // Back keeps both figures as typed, and the line; Continue brings the same plan.
+    await footerButton(s.page, 'Back').click();
+    await step(s.page).waitFor();
+    assert.deepEqual([await field(s.page, 1).inputValue(), await field(s.page, 0).inputValue()], ['1', ETH_TYPED]);
+    assert.deepEqual([await role(s.page, 1), await role(s.page, 0)], ['typed', 'typed']);
+    assert.match(await step(s.page).locator('[data-amount-left="1"]').innerText(), LINE);
+    await footerButton(s.page, 'Continue').click();
+    await s.page.locator('[data-create-position="idle"]').waitFor({ timeout: 30_000 });
+    assert.deepEqual(await exact(), [ETH_TYPED, '0.560122']);
+
+    // Create position sends that plan: the TOKEN the range pairs with the ETH, never the 1 TOKEN typed.
+    await s.page.locator('[data-create-position]').click();
+    await s.page.locator('[data-created-position="4242"]').waitFor({ timeout: 60_000 });
+    const [approve, open] = chain.decoded();
+    assert.deepEqual([approve.functionName, approve.args[0].toLowerCase(), approve.args[1]], ['approve', setup, withRoom(560_122n)]);
+    const [, , amount0, amount1] = open.args;
+    assert.deepEqual([open.functionName, amount0, open.value, amount1], ['open', withRoom(500_000n), withRoom(500_000n), withRoom(560_122n)]);
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-31 (QA round 2 follow-ups, free-amounts review; the owner: "tem que ter a opção de preencher de forma
+// automática quando o usuário não tem o token"): a wallet with no TOKEN can't fund two figures of its own, so a figure typed
+// over the worked-out ETH makes ETH the amount and the TOKEN is worked out from it, as before free amounts.
+test('New position with a wallet that holds no TOKEN: a figure typed over the worked-out ETH makes ETH the amount, the TOKEN is worked out again, and nothing offers to fill in', async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address);
+  const ETH_TYPED = '0.0000000000005';
+  const step = (page) => page.locator('[data-stage-card="amount"] [data-stage="amount"]');
+  const field = (page, side) => step(page).locator(`[data-pair-side="${side}"] input[inputmode="decimal"]`);
+  const role = (page, side) => step(page).locator(`[data-pair-side="${side}"]`).getAttribute('data-pair-role');
+  const s = await atReview(chain, {
+    walk: async (page) => {
+      await choosePool(page);
+      const current = (name) => page.locator(`li[data-step="${name}"][aria-current="step"]`);
+      await pressContinue(current('pool'));
+      await current('range').waitFor();
+      await pressContinue(current('range'));
+      await current('amount').waitFor();
+      await step(page).locator('[data-pair-balance="ready"]').first().waitFor({ timeout: 30_000 });
+      await field(page, 1).fill('1');
+      await page.waitForFunction(() => document.querySelector('[data-pair-side="0"] input')?.value === '0.000000000000892661');
+      await field(page, 0).fill(ETH_TYPED);
+      await page.waitForFunction(() => document.querySelector('[data-pair-side="1"] input')?.value === '0.560122');
+      assert.deepEqual([await role(page, 0), await role(page, 1)], ['typed', 'derived']);
+      assert.equal(await step(page).locator('[data-pair-side="1"] .dm-flow-pair-caption').innerText(), 'Also needed, worked out for you');
+      assert.equal(await step(page).locator('[data-pair-fill], [data-amount-left]').count(), 0);
+      await pressContinue(current('amount'));
+      await page.locator('[data-stage-card="review"]').waitFor();
+    },
+  });
+  try {
+    // Review plans the ETH typed as the amount, and the TOKEN the range pairs with it, which the wallet's ETH buys.
+    assert.equal(await s.page.locator('[data-review-amounts]').getAttribute('data-review-plan'), 'swap');
+    await footerButton(s.page, 'Back').click();
+    await step(s.page).waitFor();
+    assert.deepEqual([await role(s.page, 0), await role(s.page, 1)], ['typed', 'derived']);
+    assert.equal(await field(s.page, 0).inputValue(), ETH_TYPED);
   } finally { await s.close(); }
 });
 
@@ -3675,6 +3824,44 @@ test('typed in the token the wallet lacks, the typed panel stays whole and the l
   } finally { await s.close(); }
 });
 
+// Added 2026-10-31 (QA round 2 follow-ups, Q12 and Q24): Review names every automation the created view and Automate offer,
+// with "Automate." kept on one line (the hidden new-tab words gave the line a break before the period); and its Details
+// list the pair's contracts in the order the headline names the pair (TOKEN / ETH), never the pool's own (ETH first).
+test('Review names every automation with “Automate.” on one line, and its Details list the contracts in the pair’s order', async () => {
+  // Whether the period after the link sits on the line of the link's visible word.
+  const sameLine = (node) => {
+    const box = (text) => { const range = document.createRange(); range.selectNodeContents(text); return range.getBoundingClientRect(); };
+    const dot = [...node.childNodes].find((child) => child.nodeType === Node.TEXT_NODE && child.textContent === '.');
+    const word = node.querySelector('a').firstChild;
+    return dot !== undefined && Math.abs(box(dot).top - box(word).top) < 2;
+  };
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: 10n ** 18n });
+  const s = await atReview(chain);
+  try {
+    const later = s.page.locator('[data-stage-card="review"] [data-review-automate-later]');
+    assert.match(await later.innerText(), /^You can add Auto-compound, Domino-compound or Auto-exit after the position is created, from Automate/);
+    const kept = later.locator('.whitespace-nowrap');
+    assert.equal(await kept.count(), 1);
+    assert.equal(await kept.locator('a[target="_blank"]').count(), 1, 'the link is inside it');
+    assert.equal(await kept.evaluate(node => node.textContent), 'Automate (opens in a new tab).', 'the link, then its period');
+    assert.equal(await kept.evaluate(sameLine), true, 'the period on the link’s line');
+    const size = s.page.viewportSize();
+    for (const width of [390, 360]) {
+      await s.page.setViewportSize({ width, height: 844 });
+      assert.equal(await kept.evaluate(sameLine), true, `at ${width} px too`);
+    }
+    await s.page.setViewportSize(size);
+    assert.match(await s.page.locator('[data-review-headline] .dm-flow-headline-pair').innerText(), /^TOKEN \/ ETH/);
+    const details = s.page.locator('[data-review-details]');
+    await details.locator('summary').click();
+    const contracts = await details.locator('.dm-flow-facts-tokens > span').allInnerTexts();
+    assert.equal(contracts.length, 2);
+    assert.match(contracts[0], /^TOKEN\b/, 'the token the price is written for first');
+    assert.match(contracts[1], /^ETH\s+native$/, 'then the token it is written in');
+    assert.deepEqual(chain.sends, []);
+  } finally { await s.close(); }
+});
+
 // ---- Before a one-token deposit (2026-09-24): the owner deposited 0.1 USDG alone into USDG/NET 8%, a pool with nothing
 // in range; every swap reverted and the deposit was held. A one-token deposit is now made only into a pool that can
 // swap part of it, and a pool that cannot is said before the wallet is asked for anything. ----
@@ -4349,6 +4536,42 @@ test('for USDG the pools read names the featured pools first, then the provider�
     assert.equal(await picker.locator('[data-pool-option]').count(), 1);
     // Changed on purpose (round 6, 2026-09-27): New position's rows no longer print their pool id; it is data-pool-key.
     assert.equal(await picker.locator('[data-pool-option]').first().getAttribute('data-pool-key'), ETH_USDG.toLowerCase(), 'the row is the read service’s own');
+  } finally { await s.close(); }
+});
+
+// Added 2026-10-31 (QA round 2 follow-ups, R20, R18 and N57): step 1 by keyboard and pointer. A token read is heard by its
+// name, never by a block number; an arrow in the pools moves without choosing (it chose at once, and the focus fell to the
+// page's start), Enter chooses, and the focus lands on the chosen pool's Change pool; Change pool by a click leaves the
+// focus on Keep this pool, and from the keyboard on the search.
+test('New position’s step 1 by keyboard and pointer: the token heard by its name, arrows that choose nothing, and the focus kept through Change pool', async () => {
+  const read = createReadStub();
+  const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
+  await s.context.route(ARTWORK, route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  const focusedOn = (selector) => s.page.waitForFunction((css) => document.activeElement?.matches(css) ?? false, selector, { timeout: 10_000 });
+  try {
+    await s.page.goto(`${s.origin}/#/new`);
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
+    await s.page.getByRole('combobox', { name: 'Search a token' }).fill(FIXTURE_TOKEN);
+    await s.page.locator(`[data-token-option="${FIXTURE_TOKEN}"]`).click();
+    const said = s.page.locator('[data-token-search-status="ok"]');
+    await said.waitFor({ state: 'attached', timeout: 30_000 });
+    assert.equal(await said.textContent(), 'TOKEN selected.');
+    const radio = s.page.locator('[data-picker="pool"] input[name="pool-option"]').first();
+    await radio.waitFor({ timeout: 30_000 });
+    await radio.focus();
+    await s.page.keyboard.press('ArrowDown');
+    await s.page.keyboard.press('ArrowUp');
+    assert.equal(await s.page.locator('[data-chosen-pool]').count(), 0, 'an arrow chooses nothing');
+    assert.equal(await radio.evaluate(node => document.activeElement === node && !node.checked), true, 'the focus stays on the row, unchosen');
+    await s.page.keyboard.press('Enter');
+    await s.page.locator('[data-chosen-pool]').waitFor();
+    await focusedOn('[data-chosen-pool] button');
+    await s.page.locator('[data-chosen-pool] button').click();
+    await focusedOn('[data-keep-pool]');
+    await s.page.locator('[data-keep-pool]').click();
+    await focusedOn('[data-chosen-pool] button');
+    await s.page.keyboard.press('Enter');
+    await focusedOn('#create-token-search');
   } finally { await s.close(); }
 });
 

@@ -970,6 +970,36 @@ test('shared decorative motion repeats, rests outside the viewport or hidden tab
   await close(page);
 });
 
+// Changed on purpose 2026-10-31 (QA round 2 follow-ups, N92): the travelling tile (z 6) passes behind the words on its way
+// instead of covering them. Its drift between the funding step and the functions stage crossed the funding caption ("Bring
+// supported tokens across networks…") and the next chapter's heading (measured at 1440 × 900), as the drift down to Stay
+// informed crossed its copy. Each stands at z 7 with nothing between it and main that starts a stacking context of its
+// own, so its 7 meets the tile's 6. CSS stacking only: nothing moves.
+test('the travelling tile passes behind the words on its way, the funding caption and the next chapter heading included', async () => {
+  const page = await openSimulator();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const tile = page.locator('.dm-home > .dm-trav');
+  assert.deepEqual(await tile.evaluate((el) => [getComputedStyle(el).display, getComputedStyle(el).position, getComputedStyle(el).zIndex]), ['block', 'absolute', '6']);
+  for (const selector of ['#funding .dm-funding-caption', '#learn > .dm-home-chapter-heading', '.dm-home-control .dm-sx-head', '.dm-home-control .dm-home-control-intro']) {
+    const words = page.locator(selector);
+    assert.equal(await words.count(), 1, selector);
+    assert.deepEqual(await words.evaluate((el) => [getComputedStyle(el).position, getComputedStyle(el).zIndex]), ['relative', '7'], selector);
+    const between = await words.evaluate((el) => {
+      const out = [];
+      for (let node = el.parentElement; node && !node.classList.contains('dm-home'); node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (style.zIndex !== 'auto' || style.transform !== 'none' || style.filter !== 'none' || style.opacity !== '1' || style.isolation !== 'auto' || style.contain !== 'none' || style.willChange !== 'auto') out.push(String(node.className));
+      }
+      return out;
+    });
+    assert.deepEqual(between, [], `${selector}: nothing between it and main starts a stacking context`);
+  }
+  for (const selector of ['#funding .dm-funding-caption', '#learn > .dm-home-chapter-heading']) assert.ok(await page.locator(selector).evaluate((el) => !!document.getElementById('pools') && !el.contains(document.getElementById('pools'))), `${selector} is no ancestor of #pools`);
+  await captureUI(page, 'home-traveller-words-1440', '#funding');
+  clean(page, 'travelling tile words');
+  await close(page);
+});
+
 test('New position forms one position, while the shared Auto-exit story reaches the limit before returning tokens; both rest accessibly', async () => {
   const page = await openSimulator();
   await page.emulateMedia({ reducedMotion: 'no-preference' });
@@ -1719,12 +1749,18 @@ test('the docs: every page opens from the sidebar with its title and its link ma
     // block explorer, in a new tab; no other link leaves the app.
     assert.equal(await page.locator('main a[href^="http"]:not([data-docs-explorer]), main a[href="#"]').count(), 0, `${href}: no link leaves the app`);
     if (href === '#/docs/contracts') {
-      const explorers = await page.locator('main a[data-docs-explorer]').evaluateAll((anchors) => anchors.map((a) => [new URL(a.href).origin, a.target, a.rel]));
+      const explorers = await page.locator('main a[data-docs-explorer]').evaluateAll((anchors) => anchors.map((a) => [new URL(a.href).origin, a.target, a.rel, a.textContent, a.getAttribute('aria-label')]));
       assert.ok(explorers.length >= 25, `${explorers.length} explorer links`);
-      for (const [origin, target, rel] of explorers) {
-        assert.ok(['https://robinhoodchain.blockscout.com', 'https://robin.etherscan.io', 'https://basescan.org', 'https://arbiscan.io'].includes(origin), origin);
+      // Changed on purpose 2026-10-31 (QA round 2 follow-ups, R4): each link is named by the explorer it opens, so one name
+      // never stands for two sites (Domino's own contracts open Robin Etherscan, every other Robinhood Chain address Blockscout).
+      const NAMES = { 'https://robinhoodchain.blockscout.com': 'Robinhood explorer', 'https://robin.etherscan.io': 'Robin Etherscan', 'https://basescan.org': 'Basescan', 'https://arbiscan.io': 'Arbiscan' };
+      for (const [origin, target, rel, text, label] of explorers) {
+        assert.ok(origin in NAMES, origin);
         assert.deepEqual([target, rel], ['_blank', 'noreferrer noopener']);
+        assert.equal(text, NAMES[origin], `${origin} is named ${text}`);
+        assert.match(label, new RegExp(` on ${NAMES[origin]} \\(opens in a new tab\\)$`), label);
       }
+      for (const name of ['Robinhood explorer', 'Robin Etherscan']) assert.ok(explorers.some(([, , , text]) => text === name), `a link reads ${name}`);
     } else assert.equal(await page.locator('main a[data-docs-explorer]').count(), 0, `${href}: explorer links only on Contracts`);
     assert.equal(await page.locator('[data-metric], [data-apr-estimate]').count(), 0, `${href}: no figure`);
     assert.deepEqual(await duplicateIds(page), [], `${href}: every id is unique`);

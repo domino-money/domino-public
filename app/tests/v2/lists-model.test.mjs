@@ -213,7 +213,8 @@ test('receipts: what moved, the fee with its kind, rate, token, amount and defer
     ['auto_exit_event', 'Auto-exit signature cancelled'],
     ['auto_exit_event', 'Auto-exit turned off'],
     ['auto_exit_event', 'Claimed'],
-    ['auto_exit', 'Auto-exit: position #8 withdrawn'],
+    // Changed on purpose 2026-10-31 (QA round 2 follow-ups, R25): Auto-exit closes a position, in the words of every card.
+    ['auto_exit', 'Auto-exit closed position #8'],
     ['auto_exit_event', 'Auto-exit turned on for position #8'],
     ['vault_event', 'This position was changed outside Domino.'],
     ['vault_event', 'Automation settings saved: Domino-compound'],

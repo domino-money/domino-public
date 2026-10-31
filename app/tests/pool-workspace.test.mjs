@@ -957,11 +957,13 @@ test('G11: the activity card shows the 24h turnover, the LP fees and the LP asse
   const { PoolActivityCard } = real('src/components/read/screens/PoolActivityCard.tsx')
   const html = renderToStaticMarkup(React.createElement(PoolActivityCard, { read: okRead('pool-activity', 'pool-activity.success'), option: fixturePool() }))
   assert.match(html, /data-pool-activity="ok"/)
-  assert.deepEqual(rowCells(html, 'turnover'), ['<span class="tnum" title="0.000028926913445278">0.0000289269</span>', '<span class="tnum" title="1,635,670.293697">1,635,670</span>'])
+  // Changed on purpose 2026-10-31 (QA round 2 follow-ups, Q24): the columns in the order the pool's name is written,
+  // "TOKEN / ETH" (ETH is the quote, lib/read/orientation.ts), each amount with its own token: TOKEN's first, then ETH's.
+  assert.deepEqual(rowCells(html, 'turnover'), ['<span class="tnum" title="1,635,670.293697">1,635,670</span>', '<span class="tnum" title="0.000028926913445278">0.0000289269</span>'])
   // Changed on purpose 2026-10-01 (audit E7): an amount under a millionth of a token reads "<0.000001", every digit of it
   // in its title, as the Wallet card and the position screens write it.
-  assert.deepEqual(rowCells(html, 'lp-fees'), ['<span class="tnum" title="0.000000086412877935">&lt;0.000001</span>', '<span class="tnum" title="300.000002">300</span>'])
-  assert.deepEqual(rowCells(html, 'lp-assets'), ['<span class="tnum" title="0.000000001012536287">&lt;0.000001</span>', '<span class="tnum" title="20,025,853.294226">20,025,853</span>'])
+  assert.deepEqual(rowCells(html, 'lp-fees'), ['<span class="tnum" title="300.000002">300</span>', '<span class="tnum" title="0.000000086412877935">&lt;0.000001</span>'])
+  assert.deepEqual(rowCells(html, 'lp-assets'), ['<span class="tnum" title="20,025,853.294226">20,025,853</span>', '<span class="tnum" title="0.000000001012536287">&lt;0.000001</span>'])
   const text = markupText(html)
   assert.match(text, /Swaps \(24h\) 4/)
   assert.match(text, /Pool age Older than 24h/)
@@ -970,7 +972,8 @@ test('G11: the activity card shows the 24h turnover, the LP fees and the LP asse
   // "Blocks indexed", in grouped digits; a live window keeps "Blocks covered" (above).
   assert.match(text, /Blocks indexed 10 to 700/)
   assert.doesNotMatch(text, /Blocks covered/)
-  assert.match(text, /ETH TOKEN/, 'the columns are the pool’s tokens, in its order')
+  assert.match(text, /TOKEN ETH/, 'the columns are the pool’s tokens, in the order its name is written (Q24)')
+  assert.doesNotMatch(text, /ETH TOKEN/)
   assert.doesNotMatch(text, /\$|APR|USD|stale|Retry|again/i)
   assert.doesNotMatch(html, /money-wait|dm-inset/)
 
@@ -978,7 +981,8 @@ test('G11: the activity card shows the 24h turnover, the LP fees and the LP asse
   // pack 7, owner: no status notices: with no title; it named the raw amount and that the decimals were not read).
   const young = renderToStaticMarkup(React.createElement(PoolActivityCard, { read: okRead('pool-activity', 'pool-activity.partial'), option: fixturePool([18, null]) }))
   assert.match(markupText(young), /Pool age 19 s Window 19 s observed/)
-  assert.equal(rowCells(young, 'turnover')[1], '<span class="text-fg-subtle">—</span>')
+  // TOKEN, whose decimals were not read, is the first column (Q24, 2026-10-31).
+  assert.equal(rowCells(young, 'turnover')[0], '<span class="text-fg-subtle">—</span>')
 
   // Stale, a few minutes behind: the same figures in the same ink; how far behind is data only (changed on purpose
   // 2026-10-15, pack 7, owner: no status notices: no longer the card's title).
@@ -1066,7 +1070,8 @@ test('G12: positions in this pool: counts, LP assets in token units, and each po
   const text = markupText(html)
   assert.match(html, /data-pool-positions="ok"/)
   assert.match(text, /Positions 3 With liquidity 2 Block 700/)
-  assert.match(text, /LP assets &lt;0\.000001 20,025,853/)
+  // Changed on purpose 2026-10-31 (QA round 2 follow-ups, Q24): TOKEN's amount first, as the pool's name is written.
+  assert.match(text, /TOKEN ETH LP assets 20,025,853 &lt;0\.000001/)
   const rows = [...html.matchAll(/<tr data-pool-position="([^"]+)" data-position-liquidity="([^"]+)">(.*?)<\/tr>/gs)].map(([, key, liquidity, cells]) => [key.slice(0, 6), liquidity, markupText(cells)])
   assert.deepEqual(rows, [['0x09e7', 'some', '-60000 to 60000 — —'], ['0x9b7a', 'some', '-60 to 60 — —'], ['0xbb6a', 'none', '-60000 to 60000 — —']], 'no NFT or owner resolved: dashes that say so')
   assert.match(html, /title="Whoever held the position’s NFT at the snapshot block: public data, not proof of control">Owner at block 700/)
@@ -1118,6 +1123,9 @@ test('G14: the detailed estimate lists its inputs and carries the plain estimate
   // Changed on purpose 2026-10-01 (audit E21): the figure by the one APR rule; the exact estimate stays in the inputs.
   // Changed on purpose 2026-10-30 (QA round 2, Q34): to four decimals, the read service's whole figure in its title.
   assert.match(html, /<dt>Precise estimate<\/dt><dd class="tnum text-fg-muted" title="10\.95[0-9]*%">10\.95%<\/dd>/)
+  // Added 2026-10-31 (QA round 2 follow-ups, N2): its whole part grouped in thousands, as every other percent on the site.
+  const { preciseEstimate } = real('src/components/read/screens/PoolAprEstimate.tsx')
+  assert.deepEqual(['1205.59271234', '10.9500', '1200.0000', '1468.24190000', '0.5'].map(preciseEstimate), ['1,205.5927', '10.95', '1,200', '1,468.2419', '0.5'])
 
   const protocolFee = producer('protocol-fee').estimate
   const protocol = renderToStaticMarkup(React.createElement(PoolAprEstimate, { observation: observed(protocolFee), now, detailed: true }))
@@ -1975,8 +1983,13 @@ test('round 6: plain words: prices in USDG where the pool holds it, a yearly rat
   // Added 2026-10-30 (QA round 2, Q21): a decimal comma is never read as a thousands comma ("1000,50" was 100050, "1,5" was
   // 15), and what is wrong with text that is not an amount is said where it can be.
   assert.deepEqual(['1000,50', '1,5', '1,000,5', '1,000.50', '1,000,000'].map(plain.parseAmount), [null, null, null, 1000.5, 1000000])
-  assert.deepEqual(['99999999999999999999999', '1000000001', '1.000,50', '1000,50', '1.000', '10.125', '-5', '0', '1,000', 'abc', '1e309', ''].map(plain.amountProblem),
-    ['large', 'large', 'format', 'format', 'format', 'format', 'small', 'small', null, null, null, null])
+  // Changed on purpose 2026-10-31 (QA round 2 follow-ups, Q21): a number in e-notation is said too, over the limit
+  // ("1e309") or not written the way the field takes ("1e3"); other text that is no number ("abc") still says nothing.
+  assert.deepEqual(['99999999999999999999999', '1000000001', '1.000,50', '1000,50', '1.000', '10.125', '-5', '0', '1,000', 'abc', '1e309', '1e3', '2.5E+12', ''].map(plain.amountProblem),
+    ['large', 'large', 'format', 'format', 'format', 'format', 'small', 'small', null, null, 'large', 'format', 'large', null])
+  // Only a thousands group still being typed waits for the field to be left; a decimal comma after a dot or after four
+  // digits is never one.
+  assert.deepEqual(['25,0', '5,50', '1,000,5', '$1,000,5', '1.000,50', '1000,50', '1,0000,5', '1,000', ''].map(plain.midThousands), [true, true, true, true, false, false, false, false, false])
   const month = plain.earnings(1000, 100.35)
   assert.equal(plain.usdText(month.month), '$83.63')
   assert.equal(plain.usdText(month.year), '$1,004', 'whole dollars from $1,000')
@@ -2058,6 +2071,33 @@ test('round 6: the earnings estimate says a month, a year and a day at the pool�
   assert.match(resting, /data-pool-earnings="loading"/)
   assert.match(resting, /dm-skel/)
   assert.doesNotMatch(text({ apr: 5, tvl: null, loading: false }), /Retry|again|Refresh/i)
+})
+
+// Added 2026-10-31 (QA round 2 follow-ups, Q21): with the field still in focus, only a thousands group half typed waits
+// for the field to be left; "1.000,50" and "1000,50" say at once how to write the amount, and "1e309" says the limit.
+test('the earnings estimate says what is wrong with the typed amount while the field is in focus', () => {
+  const { numberFormat } = real('src/lib/format/numberFormat.ts')
+  const { PoolEarnings } = load('src/components/pool/PoolEarnings.tsx', { numberFormat })
+  const host = mount(PoolEarnings, { apr: 100, tvl: null, loading: false })
+  const field = () => elements(host.tree, (node) => node.type === 'input')[0]
+  const type = (value) => { field().props.onChange({ currentTarget: { value } }); host.render() }
+  const quiet = () => /<p class="dm-pool-earn-quiet">(.*?)<\/p>/.exec(renderToStaticMarkup(host.tree))?.[1] ?? null
+  field().props.onFocus(); host.render()
+  const FORMAT = 'Use commas for thousands and a dot for cents, like 1,000.50.'
+  for (const [typed, line, invalid] of [['1.000,50', FORMAT, true], ['1000,50', FORMAT, true], ['1e309', 'Enter an amount up to $1,000,000,000.', true], ['1e3', FORMAT, true],
+    ['25,0', 'Type an amount in dollars.', undefined], ['1,000,5', 'Type an amount in dollars.', undefined]]) {
+    type(typed)
+    assert.equal(quiet(), line, typed)
+    assert.equal(field().props['aria-invalid'], invalid, `${typed}: aria-invalid`)
+  }
+  // Left with a half group, it is a decimal comma after all.
+  field().props.onBlur(); host.render()
+  assert.equal(quiet(), FORMAT, '1,000,5 once the field is left')
+  // A whole amount still gets its estimate, and the formula is untouched (D9).
+  field().props.onFocus(); type('1,000')
+  assert.equal(quiet(), null)
+  assert.match(renderToStaticMarkup(host.tree), /\$83\.33<\/span> <span>a month/)
+  host.unmount()
 })
 
 test('round 6: a typical range draws the band, the price now and the last day, and says whether the day stayed inside', () => {
@@ -2220,6 +2260,31 @@ test('Technical details: a fixed fee off the usual tiers reads non-standard, and
   assert.match(link(42161), /href="https:\/\/arbiscan\.io\/address\/0xa{40}"/)
   assert.doesNotMatch(link(1), /<a /, 'a network with no explorer here: the address alone')
   assert.doesNotMatch(link(4663, 'javascript:alert(1)'), /<a /, 'never a link from anything but a contract address')
+})
+
+// Added 2026-10-31 (QA round 2 follow-ups, Q24 and Q34): Technical details and the chart's "Price of" switch list the two
+// tokens in the order the pool's name is written (a USDG-first pool listed USDG first), and the "Pool read" title names the
+// pool's own network (it said Robinhood Chain on Base and Arbitrum One pools too).
+test('Technical details and the chart: the tokens in the order the pool’s name is written, and the pool read on its own network', () => {
+  const USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168'
+  const usdgFirst = { ...option('a'), currencies: [{ ...token('1'), address: USDG, symbol: 'USDG' }, token('9')] }
+  const fixture = workspace({ option: usdgFirst })
+  const host = mount(fixture.PoolWorkspace, fixture.props)
+  const details = elements(host.tree, (node) => node.props?.['data-pool-details'] === '')[0]
+  const labels = elements(details, (node) => node.type === 'dt').flatMap((dt) => elements(dt, (node) => node.type === parts.PoolTokenLabel).map((label) => label.props.token.address))
+  assert.deepEqual(labels, [addr('9'), USDG], '9 / USDG: the priced token first, then USDG, as the title')
+  assert.deepEqual(elements(details, (node) => node.type === parts.ExplorerAddress).map((node) => node.props.address), [addr('9'), USDG])
+  // The chart is handed the pair in that order too, priced in USDG, so its "Price of" switch reads "9 | USDG" (Q24).
+  const chart = part(host, 'PoolHistoryChart').props
+  assert.deepEqual([chart.option.key, chart.option.currencies.map((token) => token.address), chart.quote], [id('a'), [addr('9'), USDG], 1])
+  const read = (page) => elements(page.tree, (node) => node.type === 'dd' && String(node.props?.title ?? '').startsWith('The pool was read'))[0].props.title
+  assert.equal(read(host), 'The pool was read on Robinhood Chain and matches its id. Its tokens are not checked or endorsed.')
+  host.unmount()
+  const onBase = workspace({ option: { ...option('b'), currencies: [{ ...token('1'), chainId: 8453 }, { ...token('2'), chainId: 8453 }] } })
+  const base = mount(onBase.PoolWorkspace, onBase.props)
+  assert.equal(read(base), 'The pool was read on Base and matches its id. Its tokens are not checked or endorsed.')
+  assert.doesNotMatch(renderToStaticMarkup(base.tree), /Robinhood Chain/, 'no other network named anywhere on a Base pool’s page')
+  base.unmount()
 })
 
 test('retained figures keep their source and qualification without update notices; missing and verified zero remain distinct', async () => {

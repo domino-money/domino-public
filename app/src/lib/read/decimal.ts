@@ -53,8 +53,11 @@ function fixedText(units: bigint, places: number): string {
   return negative ? `-${body}` : body
 }
 
-/** Digit grouping for the integer part, the way `toLocaleString('en-US')` writes it. */
-function grouped(text: string): string {
+/**
+ * Digit grouping for the integer part, the way `toLocaleString('en-US')` writes it. Exported 2026-10-31 (QA round 2
+ * follow-ups, N2) for the pool page's precise APR estimate, so it reads "1,205.5927" as every other percent is grouped.
+ */
+export function grouped(text: string): string {
   const [whole, fraction] = text.split('.')
   const sign = whole.startsWith('-') ? '-' : ''
   const digits = sign ? whole.slice(1) : whole

@@ -92,8 +92,13 @@ export function LiveFigure({
 
   if (mode === 'digits') {
     const cents = dimCents ? centsAt(value) : -1
+    // Changed on purpose 2026-10-31 (QA round 2 follow-ups, R23): the figure is heard whole. A screen reader met one span
+    // per character, and where the digits are flex items (the position's overview) read "$", "0", ".", "2" one per line.
+    // role="img" with the value as its name makes the characters one figure for assistive technology (its children are
+    // presentational), as animated-number components do. Not an sr-only copy: that would put the value in the text
+    // twice ("$0.24$0.24") for anything that reads the page's text. Nothing on screen changes.
     return (
-      <span ref={root} className={cx('dm-tick-fig dm-tick-fig--digits', className)}>
+      <span ref={root} role="img" aria-label={value} className={cx('dm-tick-fig dm-tick-fig--digits', className)}>
         {Array.from(value).map((ch, i) => (
           <span key={`${i}:${ch}`} className={cx('dm-tick-d', cents !== -1 && i >= cents && 'dm-amount-tail')}>
             {ch}

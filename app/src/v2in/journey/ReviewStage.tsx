@@ -503,11 +503,15 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
           <p className="dm-flow-position" data-tone="neutral" data-review-automate-later="">
             <span>
               {coversFullRange(range, pool.pool.tickSpacing) ? CREATE.review.automateLaterFull : CREATE.review.automateLater}{' '}
-              <a className="underline" href={automateHref} target="_blank" rel="noopener noreferrer">
-                {CREATE.review.automateLink}
-                <span className="sr-only">{CREATE.page.newTab}</span>
-              </a>
-              .
+              {/* Changed on purpose 2026-10-31 (QA round 2 follow-ups, Q12): the link and its period on one line; the hidden
+                  new-tab words at the link's end gave the line a place to break before the period. */}
+              <span className="whitespace-nowrap">
+                <a className="underline" href={automateHref} target="_blank" rel="noopener noreferrer">
+                  {CREATE.review.automateLink}
+                  <span className="sr-only">{CREATE.page.newTab}</span>
+                </a>
+                .
+              </span>
             </span>
           </p>
         )}
@@ -651,9 +655,11 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
               </Fact>
               <Fact label={JOURNEY.review.network} data="details-network">{chain.name}</Fact>
               {range && <Fact label={CREATE.review.detailRows.ticks} data="details-ticks">{`${range.lower} to ${range.upper}`}</Fact>}
+              {/* Changed on purpose 2026-10-31 (QA round 2 follow-ups, Q24): base then quote, as the headline names the pair. */}
               <Fact label={CREATE.review.detailRows.contracts} data="details-tokens">
-                <span className="block">{pool.pool.currency0 === ZERO_ADDRESS ? `ETH (${CREATE.review.detailRows.native})` : pool.pool.currency0}</span>
-                <span className="block">{pool.pool.currency1}</span>
+                {(flip ? [pool.pool.currency1, pool.pool.currency0] : [pool.pool.currency0, pool.pool.currency1]).map((currency) => (
+                  <span key={currency} className="block">{currency === ZERO_ADDRESS ? `ETH (${CREATE.review.detailRows.native})` : currency}</span>
+                ))}
               </Fact>
               <Fact label={CREATE.review.detailRows.pool} data="details-pool">{pool.id}</Fact>
               {/* §8.2 "Criar pool": the starting price's exact tick and sqrt price, with the price itself in view above. */}

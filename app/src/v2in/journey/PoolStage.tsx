@@ -62,18 +62,23 @@ export function PoolStage({ chainId, gate, state, finderOnly, preselect = NO_LIN
   // the focus was on for another, so the focus moves with them: to the search (or the finder's first choice), or back to
   // the chosen pool's button, never to the page's start. From the keyboard only for Change pool: the search opens its
   // list on focus, which a mouse click should not do over the pools it means to show.
+  // Changed on purpose 2026-10-31 (QA round 2 follow-ups, N57): a click or a tap on Change pool (`keep`) puts the focus on
+  // Keep this pool, the button in its place, as a search or finder not yet drawn does; it fell to the page's start when
+  // the button clicked went away.
   const root = useRef<HTMLDivElement>(null)
-  const focusNext = useRef<'search' | 'chosen' | null>(null)
+  const focusNext = useRef<'search' | 'chosen' | 'keep' | null>(null)
   useEffect(() => {
     const next = focusNext.current
     focusNext.current = null
     const here = root.current
     if (!here || next === null) return
+    const keep = here.querySelector<HTMLElement>('[data-keep-pool]')
     if (next === 'chosen') here.querySelector<HTMLElement>('[data-chosen-pool] button')?.focus()
-    else (here.querySelector<HTMLElement>('#create-token-search') ?? here.querySelector<HTMLElement>('[data-pool-finder] [role="radio"][tabindex="0"]'))?.focus()
+    else if (next === 'keep') keep?.focus()
+    else (here.querySelector<HTMLElement>('#create-token-search') ?? here.querySelector<HTMLElement>('[data-pool-finder] [role="radio"][tabindex="0"]') ?? keep)?.focus()
   }, [changing])
   const change = (event: MouseEvent<HTMLButtonElement>) => {
-    if (event.detail === 0) focusNext.current = 'search'
+    focusNext.current = event.detail === 0 ? 'search' : 'keep'
     setChanging(true)
   }
   return (
@@ -102,6 +107,7 @@ export function PoolStage({ chainId, gate, state, finderOnly, preselect = NO_LIN
                   focusNext.current = 'chosen'
                   setChanging(false)
                 }}
+                data-keep-pool=""
               >
                 {CREATE.pool.keep}
               </Button>

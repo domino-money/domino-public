@@ -131,6 +131,25 @@ function joined(old: PositionRowView, row: PositionRowView): PositionRowView {
   return { ...next, tokens, reading: { ...reading, quotedAt: quotedAt === null || !reading.local ? quotedAt : quotedSeen === null ? null : Math.floor(quotedSeen / 1000), quotedSeen, missing: listed.map((index) => row.reading!.missing?.[index] ?? null) } }
 }
 
+/** Where each network's rows stand in the list: Robinhood Chain, then Base, then Arbitrum One (any other after them). */
+const NETWORK_ORDER: Readonly<Record<number, number>> = { 4663: 0, 8453: 1, 42161: 2 }
+/** An NFT id as a number to compare; one that is not a whole number sorts after every one that is. */
+const idOf = (tokenId: string): bigint => (/^\d+$/.test(tokenId) ? BigInt(tokenId) : -1n)
+
+/**
+ * Added 2026-10-31 (QA round 2 follow-ups, R21): the collection in one order, newest NFT first on each network (a higher
+ * id is a later mint), Uniswap v4 before v3 on the same network. The site's own inventory already lists Robinhood Chain
+ * newest first (functions/_lib/walletPositions.ts); read-v6's rows were appended after it in read-v6's order, so the
+ * newest closes sat behind "Show 4 more". Neither inventory says when a position was closed, so the mint order is the
+ * one both share. Rows that compare equal keep the order they came in (a stable sort). Only the order changes.
+ */
+export function newestFirst(rows: readonly PositionRowView[]): PositionRowView[] {
+  return rows
+    .map((row) => ({ row, network: NETWORK_ORDER[row.chainId] ?? 3, id: idOf(row.tokenId) }))
+    .sort((a, b) => a.network - b.network || b.row.dex - a.row.dex || (a.id === b.id ? 0 : a.id < b.id ? 1 : -1))
+    .map(({ row }) => row)
+}
+
 export function positionCounts(rows: readonly PositionRowView[]) {
   return rows.reduce((counts, row) => { counts[row.tab]++; return counts }, { open: 0, closed: 0, pending: 0 })
 }

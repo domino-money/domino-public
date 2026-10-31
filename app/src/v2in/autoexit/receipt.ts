@@ -11,10 +11,13 @@ export function exitReceiptOutcome(item: AutoExit): { empty: boolean; title: str
     ...item.tariffs.flatMap((fee) => [fee.amount, fee.deferred]),
   ].some((amount) => BigInt(amount) > 0n)
   const empty = !withdrawn && !moved
+  // Changed on purpose 2026-10-31 (QA round 2 follow-ups, R25): the receipt of an Auto-exit that took the position out says
+  // it closed it, as the position's header ("Closed"), every card and the docs do; it said "Auto-exit: position #N
+  // withdrawn". Its Details keep "Withdrawn from the position" for the amounts.
   return {
     empty,
     title: empty ? `Auto-exit: nothing to withdraw from #${item.tokenId}`
-      : withdrawn ? `Auto-exit: position #${item.tokenId} withdrawn`
+      : withdrawn ? `Auto-exit closed position #${item.tokenId}`
         : `Auto-exit executed for position #${item.tokenId}`,
   }
 }

@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react'
+import { FEE_MEANING } from '../../components/explore/feeMeaning'
 import { TokenMark } from '../../components/TokenIcon'
 import { Button } from '../../components/ui'
 import { unreadToken } from '../../lib/read/project'
@@ -59,7 +60,8 @@ export function PoolChips({ chainId, dex, fee }: { chainId: V2ChainId; dex: Dex;
     <span className="flex flex-wrap items-center gap-1.5" data-pool-chips="" data-pool-dex={dex}>
       <span className="dm-chip shrink-0" data-chain-chip={chainId}>{v2Chain(chainId).name}</span>
       {dexChip && <span className="dm-chip shrink-0" data-dex-chip={dex} title={dexName(dex)}>Uniswap</span>}
-      <span className="dm-chip shrink-0" data-fee="">{`${feePercent(fee)} fee`}</span>
+      {/* Changed on purpose 2026-10-31 (QA round 2 follow-ups, Q28): what the fee is, on hover, as every other fee chip says it. */}
+      <span className="dm-chip shrink-0" data-fee="" title={FEE_MEANING}>{`${feePercent(fee)} fee`}</span>
     </span>
   )
 }

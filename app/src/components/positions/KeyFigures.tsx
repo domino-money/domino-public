@@ -14,7 +14,7 @@ import { rangeFacts, readablePrice, statusWords } from '../../lib/chart/priceFac
 import { APR_MISSING, aprText, positionApr, spanText } from '../../lib/positionApr'
 import { shownCardRange, shownCardTick, type RangeEnd } from '../../lib/read/screens/positions'
 import type { LiveCard } from '../../lib/walletCards'
-import { Amount, blockTitle } from './PositionFigures'
+import { Amount } from './PositionFigures'
 import { rangeWords, type CardPrice } from './PositionRange'
 import { cardUsd } from './visual/PortfolioSummary'
 import { basisOf, positive, rawPair, unitsText, usdgSide, valueShares } from './visual/value'
@@ -209,7 +209,7 @@ export interface KeyUsd {
  * figures, which come first; without one, the page's own rule (a pair with USDG at the pool's price), and with neither
  * the two token amounts, as before.
  */
-export function KeyFigures({ card, state, price, block, cached = false, workspace = false, usd = null }: { card: LiveCard; state: PositionState | null; price: CardPrice; block: number; cached?: boolean; workspace?: boolean; usd?: KeyUsd | null }) {
+export function KeyFigures({ card, state, price, cached = false, workspace = false, usd = null }: { card: LiveCard; state: PositionState | null; price: CardPrice; block: number; cached?: boolean; workspace?: boolean; usd?: KeyUsd | null }) {
   const ownPrincipal = cardUsd(card, state, 'principal')
   const ownFees = cardUsd(card, state, 'unsettledFees')
   // Each figure with what its title and its data attributes say of it: the one valuation's, else the page's own.
@@ -234,8 +234,10 @@ export function KeyFigures({ card, state, price, block, cached = false, workspac
   }, [workspace])
   // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no time under a figure that is not current ("as of
   // 13:05 UTC") and no reason under amounts with no dollar figure; data-usd-snapshot still marks a kept figure.
+  // Changed on purpose 2026-10-31 (QA round 2 follow-ups, R23; N16: no block numbers in the main tooltips): the strip has
+  // no title; hovering anywhere on it said "Read from chain at block N". `block` stays in the props for the callers.
   return (
-    <StatStrip layout="tiles" className="dm-pos-stats" title={blockTitle(block)} data-position-stats="" data-position-overview={workspace ? '' : undefined} data-valued={principal ? '' : undefined}>
+    <StatStrip layout="tiles" className="dm-pos-stats" data-position-stats="" data-position-overview={workspace ? '' : undefined} data-valued={principal ? '' : undefined}>
       <Stat
         label="Position value"
         info="What your position is worth now, at the pool’s price. Fees not included."

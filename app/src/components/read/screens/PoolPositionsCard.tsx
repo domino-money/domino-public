@@ -4,7 +4,7 @@ import { shortAddress } from '../../../lib/read/screens/identity'
 import type { PoolOption } from '../../../lib/read/screens/poolsList'
 import type { ScreenOutcome } from '../../../lib/read/screens/screenRead'
 import { Skeleton } from '../../ui'
-import { CurrencyHead, PairCells } from './PoolActivityCard'
+import { CurrencyHead, leadIndex, PairCells } from './PoolActivityCard'
 
 /** Rows shown before the rest fold away. */
 export const POSITION_ROWS = 12
@@ -115,7 +115,7 @@ export function PoolPositionsCard({ read, option, embedded = false }: { read: Sc
             <tr>
               <th scope="row">LP assets</th>
               {counted ? (
-                <PairCells pair={counted.lpAssets} />
+                <PairCells pair={counted.lpAssets} lead={leadIndex(option)} />
               ) : (
                 <>
                   <td>{cell(null)}</td>

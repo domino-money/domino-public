@@ -311,11 +311,15 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
           <p className="dm-flow-position" data-tone="neutral" data-review-automate-later="">
             <span>
               {pool && coversFullRange(state.range, pool.tickSpacing) ? CREATE.review.automateLaterFull : CREATE.review.automateLater}{' '}
-              <a className="underline" href={automateHref} target="_blank" rel="noopener noreferrer">
-                {CREATE.review.automateLink}
-                <span className="sr-only">{CREATE.page.newTab}</span>
-              </a>
-              .
+              {/* Changed on purpose 2026-10-31 (QA round 2 follow-ups, Q12): the link and its period on one line; the hidden
+                  new-tab words at the link's end gave the line a place to break before the period. */}
+              <span className="whitespace-nowrap">
+                <a className="underline" href={automateHref} target="_blank" rel="noopener noreferrer">
+                  {CREATE.review.automateLink}
+                  <span className="sr-only">{CREATE.page.newTab}</span>
+                </a>
+                .
+              </span>
             </span>
           </p>
         )}
@@ -397,7 +401,8 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
             <div>
               <dt>{CREATE.review.detailRows.contracts}</dt>
               <dd className="dm-flow-facts-tokens">
-                {pool.currencies.map((currency) => (
+                {/* Changed on purpose 2026-10-31 (QA round 2 follow-ups, Q24): in the pair's order, as the headline names it. */}
+                {(pair ? [pair.base, pair.quote] : pool.currencies).map((currency) => (
                   <span key={currency.address}>
                     <SymbolText token={currency} />{' '}
                     {currency.address === NATIVE_CURRENCY ? <span className="text-fg-subtle">{CREATE.review.detailRows.native}</span> : <Address value={currency.address} short />}

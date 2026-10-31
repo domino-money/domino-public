@@ -326,7 +326,9 @@ test('the basis of an estimate and the time of a figure that is not current are 
   assert.equal(poolEstimateWords('ETH', false, 71_600_020), 'Estimated from the pool price at block 71600020, converted with ETH’s qualified USD price. This is not a sale quote.');
   assert.equal(poolEstimateWords('USDG', true, 71_600_020), 'Estimated from the pool price at block 71600020, with USDG at $1. This is not a sale quote.');
   assert.equal(poolEstimateWords('ETH', false, null), 'Estimated from the pool price, converted with ETH’s qualified USD price. This is not a sale quote.');
-  assert.equal(usdTitleWords({ asOf: undefined, estimate: undefined, block: 9 }), 'Qualified valuation at block 9');
+  // Changed on purpose 2026-10-31 (QA round 2 follow-ups, R23; N16): a current figure at qualified prices has no title; it
+  // said "Qualified valuation at block 9". No block number in a figure's title.
+  assert.equal(usdTitleWords({ asOf: undefined, estimate: undefined, block: 9 }), undefined);
   assert.equal(usdTitleWords({ asOf: undefined, estimate: undefined, block: null }), undefined);
   assert.equal(usdTitleWords({ asOf: undefined, estimate: 'Estimated.', block: 9 }), 'Estimated.');
   // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): a figure that is not current names its basis and no time
@@ -361,7 +363,8 @@ test('an ETH / token position shows the same dollars on its own page as in its r
   assert.deepEqual([page.principalTitle, page.feesTitle, page.detail], [estimate, estimate, estimate], 'the basis, on each figure and for Details');
   // Fees held in ETH alone need no pool mark: that figure is at ETH's own qualified price, and its title says so.
   const ethOnly = robinhoodPageUsd({ ...pageOf(read), position: { ...pageOf(read).position, unclaimedFees: ['1000000000000000', '0'] } }, body, {}, createPositionValuations());
-  assert.deepEqual([ethOnly.fees, ethOnly.feesBasis, ethOnly.feesTitle, ethOnly.principalTitle], ['4.000000000000000000', 'qualified-prices', `Qualified valuation at block ${read.block}`, estimate]);
+  // Changed on purpose 2026-10-31 (QA round 2 follow-ups, R23): the qualified figure has no title (it named the block).
+  assert.deepEqual([ethOnly.fees, ethOnly.feesBasis, ethOnly.feesTitle, ethOnly.principalTitle], ['4.000000000000000000', 'qualified-prices', null, estimate]);
   // No newer portfolio answer for two minutes (every read failing): the same figures, saying their time.
   // Rewritten on purpose 2026-10-14 (package V1, review): the titles and Details were only "Last complete valuation,
   // from …", so the estimate lost its basis line exactly while it was also old. They say both now. The page's clock is
@@ -447,7 +450,8 @@ test('after Collect fees with the prices unreadable the row says $0.00 of fees n
   const page = robinhoodPageUsd(pageOf(read), after, {}, memory, after.servedAt * 1000);
   assert.deepEqual([page.principal, page.fees, page.saved, page.asOf, page.now], [row.valueUsd, '0.000000000000000000', true, `as of ${shortTime(body.servedAt)}`, { figure: 'fees', asOf: null }]);
   // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the kept figure has no title ("Last complete valuation, from …").
-  assert.deepEqual([page.principalTitle, page.feesTitle], [null, `Qualified valuation at block ${read.block}`]);
+  // Changed on purpose 2026-10-31 (QA round 2 follow-ups, R23): nor the current one at qualified prices (it named the block).
+  assert.deepEqual([page.principalTitle, page.feesTitle], [null, null]);
 });
 
 test('with no portfolio read (no wallet connected) the page keeps its own rule: a USDG pair at the pool’s price, any other pair in tokens, no words', () => {

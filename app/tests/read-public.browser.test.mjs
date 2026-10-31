@@ -417,6 +417,47 @@ test('a token outside the selected list opens from one stored overview and pool 
   await context.close()
 })
 
+// Added 2026-10-31 (QA round 2 follow-ups, N97): while the chart's own module loads, its stand-in rests the "Price of"
+// switch at the drawn switch's height, so Recent activity under the chart never drops when the chart lands (it was a 30px
+// pill against the 38px track, about 6px at the desktop's root). After the test above, which counts the edge's calls.
+test('the pool chart’s stand-in keeps the drawn price switch’s height, on a laptop and on a phone', { timeout: 30000 }, async () => {
+  const isChart = url => /\/assets\/PoolHistoryChart-[\w-]+\.js$/.test(new URL(url).pathname)
+  for (const width of [1280, 375]) {
+    const context = await browser.newContext({ viewport: { width, height: 900 } }), page = await context.newPage(), errors = []
+    let releaseChunk
+    const held = new Promise(resolve => { releaseChunk = resolve })
+    page.setDefaultTimeout(10000)
+    try {
+      page.on('pageerror', error => errors.push(error.message))
+      await context.route('**/*', async route => {
+        const url = route.request().url()
+        if (!url.startsWith(origin)) return route.abort()
+        if (isChart(url)) await held
+        return route.continue()
+      })
+      const login = await context.request.post(`${origin}/__beta/login`, { form: { password: PASSWORD }, headers: { Origin: origin }, maxRedirects: 0 })
+      assert.equal(login.status(), 303)
+      await page.goto(`${origin}/#/pool/${POOL}/${TOKEN}`)
+      const standIn = page.locator('[data-pool-page] [data-pool-history-loading] .dm-pool-chart-foot > .dm-pool-skel-switch')
+      await standIn.waitFor()
+      const rested = await standIn.evaluate(el => el.getBoundingClientRect().height)
+      releaseChunk()
+      // The history is held by this file's gateway, so the chart stays in its reading state, its real switch in the foot.
+      const drawn = page.locator('[data-pool-page] [data-pool-ratio-chart] .dm-pool-chart-foot > .dm-seg')
+      await drawn.waitFor()
+      const height = await drawn.evaluate(el => el.getBoundingClientRect().height)
+      assert.ok(height > 20, `${width}px: the drawn switch has its height (${height}px)`)
+      assert.ok(Math.abs(rested - height) <= 1, `${width}px: the stand-in's switch is ${rested}px, the drawn one ${height}px`)
+      assert.deepEqual(errors, [])
+    } finally {
+      releaseChunk()
+      await context.close()
+    }
+  }
+  releaseHistory?.()
+  releaseHistory = undefined
+})
+
 /**
  * POST arrivals at the edge within the gateway's per-client budget (backend ClientBudgets: a burst of five, 30 a minute).
  * Changed on purpose (2026-09-26, after review): the featured list's POST is answered at the edge, never by the gateway

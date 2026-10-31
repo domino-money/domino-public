@@ -28,7 +28,7 @@ import type { TokenDisplay } from '../read/types'
 import type { BudgetFields } from './budgets'
 import { CREATE } from './copy'
 import { amountText } from './amountText'
-import { rangeTakesOnly } from './pairAmount'
+import { pairedAmount, rangeTakesOnly } from './pairAmount'
 import { SLIPPAGE_DEFAULT_BPS, slippageBpsFrom, slippageWritten } from './slippage'
 
 export type Stage = 'token' | 'pool' | 'amount' | 'balance' | 'review'
@@ -107,6 +107,22 @@ export interface JourneyState {
   limits: DominoLimits
   /** Added 2026-10-06: the one other token the deposit is paid with (`PayWith`), or null: the pool's own tokens. */
   payWith: PayWith | null
+  /**
+   * Added 2026-10-31 (QA round 2 follow-ups, free-amounts; the owner: "tem que ser livre"): both amounts as the person
+   * typed them, once they typed over the one worked out for them (`OwnAmounts`); null while one amount is worked out from
+   * the other. `token` and `budget` stay the amount typed first; every plan reads the state through `effectiveAmounts`.
+   */
+  own: OwnAmounts | null
+}
+
+/**
+ * Both of a pool's amounts as the person typed them (free-amounts, 2026-10-31): `texts` in pool order, as typed, and
+ * `second`, the side typed after the other, where "Fill in for me" sits. The side typed first is `token`'s, and its text
+ * is `budget`.
+ */
+export interface OwnAmounts {
+  texts: readonly [string, string]
+  second: 0 | 1
 }
 
 export function initialState(): JourneyState {
@@ -122,6 +138,7 @@ export function initialState(): JourneyState {
     automation: 'none',
     limits: { ...DEFAULT_LIMITS },
     payWith: null,
+    own: null,
   }
 }
 
@@ -332,20 +349,23 @@ export function canContinue(stage: Stage, state: JourneyState, now: number): Che
       if (state.pool.feePips === DYNAMIC_FEE_PIPS) return fail(CREATE.pool.unsupportedDynamic)
       return OK
     case 'amount': {
-      if (!state.token || !state.pool) return fail(CREATE.pool.needPool)
-      const price = priceOf(state.pool, now)
+      // Free-amounts (2026-10-31): with both amounts typed, the one that limits the position (or the one whose figure is
+      // not usable yet) is the amount checked, as Review plans it.
+      const s = effectiveAmounts(state)
+      if (!s.token || !s.pool) return fail(CREATE.pool.needPool)
+      const price = priceOf(s.pool, now)
       if (!price || price.state !== 'usable') return fail(CREATE.amount.priceUnavailable)
       // Added 2026-10-06: paid with one other token (`PayWith`), its amount is the step's amount; the range and the
       // slippage as always. Which pool token an amount is typed in does not apply: the swap buys whatever the range takes.
-      const paid = state.payWith
-      const budget = paid ? validateBudget(paid.text, paid.token.decimals) : validateBudget(state.budget, candidateDecimals(state.token))
+      const paid = s.payWith
+      const budget = paid ? validateBudget(paid.text, paid.token.decimals) : validateBudget(s.budget, candidateDecimals(s.token))
       if (!budget.ok) return fail(budget.reason)
-      const range = validateRange(state.range, state.pool)
+      const range = validateRange(s.range, s.pool)
       if (!range.ok) return range
       // A range that takes one token alone takes its amount in that token (takesOnly; withRange moves the amount there).
-      const only = takesOnly(state)
-      if (!paid && only !== null && tokenAddress(state.pool.currencies[only]) !== state.token.key) return fail(CREATE.amount.pairUnused(state.pool.currencies[only].symbol ?? ''))
-      const slippage = validateSlippage(state.slippageBps)
+      const only = takesOnly(s)
+      if (!paid && only !== null && tokenAddress(s.pool.currencies[only]) !== s.token.key) return fail(CREATE.amount.pairUnused(s.pool.currencies[only].symbol ?? ''))
+      const slippage = validateSlippage(s.slippageBps)
       return slippage.ok ? OK : fail(slippage.reason)
     }
     case 'balance':
@@ -398,13 +418,15 @@ export function withToken(state: JourneyState, token: TokenCandidate | null): Jo
     range: pool ? state.range : null,
     budget: same ? state.budget : '',
     payWith: pool ? state.payWith : null,
+    // Free-amounts (2026-10-31): the person's two amounts stay only with the same token in the same pool.
+    own: same && pool ? state.own : null,
   }
 }
 
 /** A second asset only narrows the pool list; a chosen pool that does not hold it goes (and since 2026-10-06 its `payWith`). */
 export function withPaired(state: JourneyState, paired: TokenCandidate | null): JourneyState {
   const pool = state.pool && (!paired || poolHoldsToken(state.pool, paired)) ? state.pool : null
-  return { ...state, paired, pool, range: pool ? state.range : null, payWith: pool ? state.payWith : null }
+  return { ...state, paired, pool, range: pool ? state.range : null, payWith: pool ? state.payWith : null, own: pool ? state.own : null }
 }
 
 /**
@@ -428,7 +450,14 @@ function amountFollowsRange(state: JourneyState): JourneyState {
   if (only === null || !state.pool || !state.token || tokenAddress(state.pool.currencies[only]) === state.token.key) return state
   const taken = candidatesFromPool(state.pool)[only]
   if (taken.why !== null || taken.token.decimals === null) return state
-  return { ...state, token: taken, paired: state.paired && state.paired.key === taken.key ? null : state.paired, budget: '' }
+  const paired = state.paired && state.paired.key === taken.key ? null : state.paired
+  // Changed on purpose 2026-10-31 (QA round 2 follow-ups, free-amounts review): both figures the person's own stay as
+  // typed. The amount becomes their figure of the token the range takes; the other one, which buys nothing there, counts
+  // as the one typed second, where "Fill in for me" sits, and freeFit leaves all of it in the wallet. A range (or a price
+  // read again on Range) that takes both again picks the side that limits it, with nothing worked out over what they typed.
+  const own = state.own
+  if (own) return { ...state, token: taken, paired, budget: own.texts[only], own: { texts: own.texts, second: only === 0 ? 1 : 0 } }
+  return { ...state, token: taken, paired, budget: '' }
 }
 
 /**
@@ -438,10 +467,11 @@ function amountFollowsRange(state: JourneyState): JourneyState {
 export function withPool(state: JourneyState, pool: PoolOption | null, now: number): JourneyState {
   // The same pool read again: its range stays, and a price that moved past it may leave it taking one token alone.
   if (pool && state.pool && pool.key === state.pool.key) return amountFollowsRange({ ...state, pool })
-  // Another pool, or none: what it was paid with goes too (2026-10-06).
-  if (!pool) return { ...state, pool: null, range: null, payWith: null }
+  // Another pool, or none: what it was paid with goes too (2026-10-06), and so does a second amount typed in the old
+  // pool's other token (free-amounts, 2026-10-31).
+  if (!pool) return { ...state, pool: null, range: null, payWith: null, own: null }
   const price = poolPrice(pool, now)
-  return { ...state, pool, range: price.state === 'usable' ? presetFor(price, 'standard') : null, payWith: null }
+  return { ...state, pool, range: price.state === 'usable' ? presetFor(price, 'standard') : null, payWith: null, own: null }
 }
 
 export const withRange = (state: JourneyState, range: TickRange | null): JourneyState => amountFollowsRange({ ...state, range })
@@ -457,6 +487,137 @@ export const withPayWith = (state: JourneyState, payWith: PayWith | null): Journ
 export const withSlippage = (state: JourneyState, slippageBps: string): JourneyState => ({ ...state, slippageBps })
 export const withAutomation = (state: JourneyState, automation: Automation): JourneyState => ({ ...state, automation })
 export const withLimits = (state: JourneyState, limits: Partial<DominoLimits>): JourneyState => ({ ...state, limits: { ...state.limits, ...limits } })
+
+/* ---------------------------------------------------------------------------
+   Free amounts (2026-10-31, QA round 2 follow-ups; the owner: "se o usuário tiver os dois tokens, não precisa ser
+   autoajustar. Só se o usuário quiser. Tem que ser livre isso. Mas tem que ter a opção de preencher de forma automática")
+--------------------------------------------------------------------------- */
+
+/**
+ * What stays of a typed amount counts as nothing when it is at most one part in 100,000 of it: the six significant digits
+ * a worked-out figure is shown with (lib/format/amount.ts shortAmount), so the figure the field showed, typed back, fits.
+ */
+const FIT_PARTS = 100_000n
+
+/** Which of a pool's two currencies `key` is, or null. */
+function sideOf(pool: PoolOption, key: AddressKey): 0 | 1 | null {
+  const index = pool.currencies.findIndex((currency) => tokenAddress(currency) === key)
+  return index === 0 || index === 1 ? index : null
+}
+
+/** An amount typed in one of a pool's currencies, raw; null when that currency can't be read or the text is not an amount. */
+function ownRaw(pool: PoolOption, side: 0 | 1, text: string): bigint | null {
+  const candidate = candidatesFromPool(pool)[side]
+  if (candidate.why !== null) return null
+  const typed = validateBudget(text, candidate.token.decimals)
+  return typed.ok ? BigInt(typed.raw) : null
+}
+
+const withText = (texts: readonly [string, string], side: 0 | 1, text: string): readonly [string, string] => (side === 0 ? [text, texts[1]] : [texts[0], text])
+
+/** What the person's two amounts make of the position on this range at this price (`freeFit`). */
+export interface FreeFit {
+  /** The side whose amount limits the position: the range takes it whole, and of the other only what it pairs with it. */
+  limiting: 0 | 1
+  /** What the position takes of each token, raw, in pool order. */
+  used: readonly [bigint, bigint]
+  /** What stays in the wallet of the other token, raw; zero when the two fit (`FIT_PARTS`). */
+  left: bigint
+}
+
+/**
+ * The position the person's two amounts make (`own`): on this range at the pool's price, each amount allows some
+ * liquidity, and the one that allows less is the limit, used whole, with what the range pairs with it of the other
+ * (pairAmount.ts, the same exact arithmetic as the field worked out for them). The amount typed first is tried first, so
+ * where the other covers its pair the state every plan reads is the one the person typed first. A range that takes one
+ * token alone takes that token's amount whole and none of the other. Null unless both are amounts of tokens that can be
+ * read, on a range, at a price that can be used.
+ */
+export function freeFit(state: Pick<JourneyState, 'pool' | 'range' | 'own' | 'payWith'>): FreeFit | null {
+  const { pool, range, own } = state
+  if (!own || !pool || !range || state.payWith) return null
+  const a0 = ownRaw(pool, 0, own.texts[0])
+  const a1 = ownRaw(pool, 1, own.texts[1])
+  if (a0 === null || a1 === null) return null
+  const only = takesOnly({ pool, range })
+  if (only !== null) return only === 0 ? { limiting: 0, used: [a0, 0n], left: a1 } : { limiting: 1, used: [0n, a1], left: a0 }
+  const typed = [a0, a1] as const
+  const kept = (side: 0 | 1, used: bigint) => {
+    const rest = typed[side] > used ? typed[side] - used : 0n
+    return rest * FIT_PARTS <= typed[side] ? 0n : rest
+  }
+  const at = { sqrtPriceX96: pool.sqrtPriceX96, tickLower: range.lower, tickUpper: range.upper }
+  // The side whose whole amount the range takes, `limit`, and what it pairs with it of the other, or null.
+  const take = (limit: 0 | 1): FreeFit | null => {
+    const other: 0 | 1 = limit === 0 ? 1 : 0
+    const paired = pairedAmount({ ...at, independent: limit, amountRaw: typed[limit].toString() })
+    if (paired.kind !== 'amount') return null
+    const need = BigInt(paired.raw)
+    return { limiting: limit, used: limit === 0 ? [typed[0], need] : [need, typed[1]], left: kept(other, need) }
+  }
+  const second = own.second
+  const first: 0 | 1 = second === 0 ? 1 : 0
+  const fromFirst = take(first)
+  if (!fromFirst) return null
+  return fromFirst.used[second] <= typed[second] ? fromFirst : take(second)
+}
+
+/**
+ * The state every plan reads (free-amounts, 2026-10-31): with both amounts the person's own, `token` and `budget` become
+ * the side that limits the position (`freeFit`), so Review, Continue, the preview and Create position receive exactly the
+ * shape they always did: one amount, the other worked out from it. An amount that is not an amount yet is the one checked,
+ * so Continue says why (the first one's before the second one's). With one amount worked out, a token that can't be read,
+ * or paid with another token, the state as it is. `own` stays, so the step still draws both as typed. A price or a range
+ * that moves picks the side again.
+ */
+export function effectiveAmounts(state: JourneyState): JourneyState {
+  const { own, pool, token } = state
+  if (!own || !pool || !token || state.payWith) return state
+  const first = sideOf(pool, token.key)
+  const second = own.second
+  if (first === null || first === second) return state
+  const candidates = candidatesFromPool(pool)
+  if (candidates[second].why !== null || candidates[second].token.decimals === null) return state
+  const as = (side: 0 | 1): JourneyState => (side === first ? state : { ...state, token: candidates[side], budget: own.texts[side] })
+  if (ownRaw(pool, first, own.texts[first]) === null) return state
+  if (ownRaw(pool, second, own.texts[second]) === null) return as(second)
+  const fit = freeFit(state)
+  return fit ? as(fit.limiting) : state
+}
+
+/**
+ * Typed in the field of the token the amount started in (`token`; free-amounts, 2026-10-31): with both amounts the
+ * person's own, it stays theirs. Cleared, the other amount is the one typed, and this field is worked out from it again.
+ */
+export function withTypedAmount(state: JourneyState, text: string): JourneyState {
+  const { own, pool } = state
+  if (!own || !pool) return withBudget(state, text)
+  if (text.trim() === '') return { ...withToken(state, candidatesFromPool(pool)[own.second]), budget: own.texts[own.second] }
+  return { ...state, budget: text, own: { ...own, texts: withText(own.texts, own.second === 0 ? 1 : 0, text) } }
+}
+
+/**
+ * Typed in the other token's field (`candidate`; free-amounts, 2026-10-31). With nothing typed in the first one, it is
+ * the amount and the first is worked out from it, as before. Otherwise the figure becomes the person's own, as typed, and
+ * nothing is worked out any more. Cleared ("Fill in for me" clears it), it is worked out for them again.
+ *
+ * Changed on purpose 2026-10-31 (QA round 2 follow-ups, free-amounts review; the owner: "se o usuário tiver os dois
+ * tokens, não precisa ser autoajustar... tem que ter a opção de preencher de forma automática quando o usuário não tem o
+ * token"): `free` is false when the wallet was read holding nothing of one of the pool's two tokens (reviewPlan.ts
+ * lacksOne). Two figures of its own can't both come from it, so the field typed in is the amount and the other is worked
+ * out from it, as before free amounts: Max on the token it holds uses all of it again. Never for a token a range taking
+ * one token alone leaves out: as the amount it would buy nothing there.
+ */
+export function withOtherAmount(state: JourneyState, candidate: TokenCandidate, text: string, free = true): JourneyState {
+  const { pool, token } = state
+  const side = pool ? sideOf(pool, candidate.key) : null
+  const first = pool && token ? sideOf(pool, token.key) : null
+  if (side === null || first === null || side === first || state.budget.trim() === '') return withBudget(withToken(state, candidate), text)
+  if (text.trim() === '') return state.own ? { ...state, own: null } : state
+  const only = takesOnly(state)
+  if (!free && (only === null || only === side)) return withBudget(withToken(state, candidate), text)
+  return { ...state, own: { texts: side === 0 ? [text, state.budget] : [state.budget, text], second: side } }
+}
 
 /* ---------------------------------------------------------------------------
    The preview request and the creation gate

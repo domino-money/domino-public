@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, resolve } from 'node:path'
 import { test } from 'node:test'
@@ -435,4 +435,39 @@ test('the token search keeps its answers a minute and answers a longer query fro
   assert.equal(searchAnswers.keptSearch(source, 'abc', 1), null)
   searchAnswers.forgetSearches()
   assert.equal(searchAnswers.keptSearch(source, 'us', 1), null)
+})
+
+// Added 2026-10-31 (QA round 2 follow-ups): New position's step 1 and Review, in their source and copy. The browser suites
+// (finance-create, v2in-browser/journey) check the same on the pages.
+const sourceOf = (relative) => readFileSync(resolve(root, relative), 'utf8').replace(/\r\n/g, '\n')
+/** A file's code without its comments: what it draws, never what its notes quote. */
+const codeOf = (relative) => sourceOf(relative).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+const tsxUnder = (dir) => readdirSync(resolve(root, dir), { withFileTypes: true }).flatMap((entry) => entry.isDirectory() ? tsxUnder(`${dir}/${entry.name}`) : entry.name.endsWith('.tsx') ? [`${dir}/${entry.name}`] : [])
+
+test('Q12: Review names every automation the created view offers, with "Automate." kept whole on its line', () => {
+  const { CREATE } = load('src/lib/create/copy.ts')
+  assert.equal(CREATE.review.automateLater, 'You can add Auto-compound, Domino-compound or Auto-exit after the position is created, from')
+  assert.equal(CREATE.review.automateLaterFull, 'You can add Auto-compound after the position is created, from', 'the full range line as it was')
+  for (const file of ['src/components/create/StageReview.tsx', 'src/v2in/journey/ReviewStage.tsx']) {
+    assert.match(codeOf(file), /<span className="whitespace-nowrap">\s*<a className="underline" href=\{automateHref\}[^>]*>[\s\S]*?<\/a>\s*\.\s*<\/span>/, `${file}: the link and its period in one unbroken span`)
+  }
+})
+
+test('Q28: every fee chip says what the fee is in its title, the zap path’s PoolChips (the production Review’s) included', () => {
+  const chips = tsxUnder('src').flatMap((file) => [...codeOf(file).matchAll(/<span className="dm-chip[^"]*" data-fee=""[^>]*>/g)].map(([chip]) => [file, chip]))
+  assert.ok(chips.some(([file]) => file === 'src/v2in/journey/parts.tsx'), 'PoolChips is one of them')
+  for (const [file, chip] of chips) assert.match(chip, /title=\{FEE_MEANING\}/, file)
+})
+
+test('N102: New position’s search takes the search’s own placeholder, the words Markets shows', () => {
+  assert.doesNotMatch(codeOf('src/components/create/StageToken.tsx'), /placeholder=/, 'no placeholder of its own')
+  const search = codeOf('src/components/read/screens/TokenSearch.tsx')
+  assert.match(search, /placeholder=\{placeholder \?\? \(others \? SEARCH_EVERY_NETWORK : SEARCH_PLACEHOLDER\)\}/)
+  assert.match(search, /export const SEARCH_EVERY_NETWORK = 'Search a token on any network'/)
+  assert.doesNotMatch(search, /SEARCH_EVERY_NETWORK_UNDER_LABEL|Name or address, on any network/)
+})
+
+test('R20: a token read is heard by its name, never by a block number', () => {
+  for (const file of ['src/components/read/screens/TokenSearch.tsx', 'src/components/read/screens/TokenPicker.tsx']) assert.doesNotMatch(codeOf(file), /Read at block/, file)
+  assert.match(codeOf('src/components/read/screens/TokenSearch.tsx'), /const selectedWords = \(name: string\) => `\$\{name\} selected\.`/)
 })

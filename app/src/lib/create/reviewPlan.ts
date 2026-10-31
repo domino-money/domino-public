@@ -43,6 +43,17 @@ export interface ReviewPlan {
  */
 export const maxSpend = (raw: bigint, native: boolean): bigint => (!native ? raw : raw > REVIEW_GAS_RESERVE_WEI ? raw - REVIEW_GAS_RESERVE_WEI : 0n)
 
+/**
+ * Added 2026-10-31 (QA round 2 follow-ups, free-amounts review; the owner: "tem que ter a opção de preencher de forma
+ * automática quando o usuário não tem o token"): whether these raw balances (in pool order, as reviewPlan reads them) hold
+ * nothing Review can spend of one of the pool's two tokens (native ETH after its gas allowance). Balances not read yet,
+ * or a balance read without a figure, say nothing: false. Read by the amount step only (journey.ts withOtherAmount).
+ */
+export function lacksOne(pool: PoolOption, balances: readonly [string | null, string | null] | null): boolean {
+  if (!balances) return false
+  return balances.some((raw, index) => raw !== null && /^\d+$/.test(raw) && maxSpend(BigInt(raw), pool.currencies[index].address === NATIVE_CURRENCY) === 0n)
+}
+
 /** Whether this pool reports no liquidity (its TVL figure, attributed and zero) while `plan` swaps part of a one-token deposit in it. */
 export const swapsInEmptyPool = (pool: PoolOption, plan: DepositPlan | null): boolean =>
   plan !== null && plan.kind === 'swap' && plan.swap > 0n && pool.liquidity.state === 'attributed' && pool.liquidity.zero

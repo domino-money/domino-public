@@ -139,6 +139,9 @@ function WalletApps() {
  * A computer with no wallet extension (audit C4): where to get one. Fixed links, each in a new tab. Changed on purpose
  * 2026-10-30 (QA round 2, N4, N77): what to do next in plain words, naming the two wallets, and the way on for a phone or
  * a tablet; the lines are the sheet's captions, in one ink.
+ * Changed on purpose 2026-10-31 (QA round 2 follow-ups, R34): each link's name says it opens in a new tab, as every other
+ * link that leaves the app does (Footer.tsx, ExplorerAddress.tsx); a screen reader heard only "MetaMask" and "Rabby". An
+ * aria-label, so the sentence the eye reads stays as it is.
  */
 function GetAWallet() {
   return (
@@ -146,9 +149,9 @@ function GetAWallet() {
       <p className="dm-wd-cap text-fg-muted">{NO_BROWSER_WALLET}</p>
       <p className="dm-wallet-get dm-wd-cap text-fg-muted">
         {'Install '}
-        <a href="https://metamask.io/download/" target="_blank" rel="noopener noreferrer">MetaMask</a>
+        <a href="https://metamask.io/download/" target="_blank" rel="noopener noreferrer" aria-label="MetaMask (opens in a new tab)">MetaMask</a>
         {' or '}
-        <a href="https://rabby.io/" target="_blank" rel="noopener noreferrer">Rabby</a>
+        <a href="https://rabby.io/" target="_blank" rel="noopener noreferrer" aria-label="Rabby (opens in a new tab)">Rabby</a>
         {', then reload this page.'}
       </p>
       <p className="dm-wd-cap text-fg-muted">{NO_BROWSER_WALLET_PHONE}</p>

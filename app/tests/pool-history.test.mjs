@@ -301,6 +301,47 @@ test('the price switch shows only while the chart is read, once a line is drawn,
   assert.match(draw('zero', { key: keyOf('zero'), state: 'answer', data: history(), failed: false }), /data-switch="Price of"/, 'with a line drawn')
 })
 
+// Added 2026-10-31 (QA round 2 follow-ups, Q24 and R37): the "Price of" switch lists the two tokens in the order it is
+// handed them, the priced one first, so the pool page and the figures sheet, which both hand them in the order the pool's
+// name is written (PoolWorkspace, PoolFiguresDialog), read "PRIORS | USDG" under "PRIORS / USDG"; and the slider's
+// accessible name says the step it takes, a day on 30d, an hour otherwise.
+test('the price switch puts the priced token first, and the slider says whether it steps by hour or by day', () => {
+  const React = require('react'), { renderToStaticMarkup } = require('react-dom/server'), ts = require('typescript')
+  const { areaUnder, curveFor, linePath } = require('../.test-build/app/src/lib/chart/paths.js'), { percentChange } = require('../.test-build/app/src/lib/format/change.js')
+  const { timeTicks } = require('../.test-build/app/src/lib/chart/scale.js'), { axisLabel } = require('../.test-build/app/src/lib/format/time.js')
+  const code = ts.transpileModule(readFileSync(new URL('../src/components/read/screens/PoolHistoryChart.tsx', import.meta.url), 'utf8'),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText
+  const draw = ({ currencies, quote: quoteIndex, side, window = 'day', answer = null }) => {
+    const values = [side, window, answer, null]
+    let index = 0
+    const hooks = { useState: () => [values[index++], () => {}], useEffect() {}, useId: () => 'test' }
+    const mod = { exports: {} }, dependencies = { watchPublicHistory() {}, useLoadMilestone() {}, ratioGeometry, ratioText, ratioCandleText, areaUnder, curveFor, linePath, percentChange, timeTicks, axisLabel, plainClose: require('../.test-build/app/src/lib/read/marketPrice.js').plainClose, useNow: () => ({ wall: 2592000000 }),
+      Segmented: ({ label, items, value }) => React.createElement('span', { 'data-switch': label, 'data-value': value }, items.map((item) => React.createElement('b', { key: item.key, 'data-key': item.key }, item.label))),
+      Skeleton: () => null, PoolPriceChart: () => null, daySpan: () => null,
+      PoolTokenLabel: ({ token }) => React.createElement('span', null, token.symbol) }
+    new Function('require', 'module', 'exports', code)(name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? require(name) : dependencies, mod, mod.exports)
+    return renderToStaticMarkup(mod.exports.PoolHistoryChart({ source: {}, option: { key: poolId, currencies }, market: null, loading: false, quote: quoteIndex }))
+  }
+  const priceOf = (markup) => [...markup.slice(markup.indexOf('data-switch="Price of"')).matchAll(/<b data-key="(\w+)"><span>(\w+)<\/span><\/b>/g)].map(([, key, symbol]) => `${key}:${symbol}`)
+  // PRIORS/USDG as the pool page hands it (base, then quote, whatever the pool's own order): PRIORS first, and chosen.
+  const named = [{ address: currency, symbol: 'PRIORS' }, { address: quote, symbol: 'USDG' }]
+  assert.deepEqual(priceOf(draw({ currencies: named, quote: 1, side: 'zero' })), ['zero:PRIORS', 'one:USDG'])
+  assert.match(draw({ currencies: named, quote: 1, side: 'zero' }), /data-switch="Price of" data-value="zero"/, 'the priced token is the one chosen')
+  // Flipped, the order stays: the way back is where it was.
+  assert.deepEqual(priceOf(draw({ currencies: named, quote: 1, side: 'one' })), ['zero:PRIORS', 'one:USDG'])
+
+  const drawn = (window, resolutionSeconds) => {
+    const span = window === 'month' ? 2592000 : 86400
+    const data = history({ status: 'complete', reason: null, gaps: [], requestedWindow: { startTimestamp: 0, endTimestamp: span }, covered: [{ startTimestamp: 0, endTimestamp: span }],
+      resolutionSeconds, snapshot: { number: 100, hash: '0x' + 'b'.repeat(64), timestamp: span }, candles: [candle(0, '1'), candle(resolutionSeconds, '2'), candle(2 * resolutionSeconds, '3')] })
+    return draw({ currencies: named, quote: 1, side: 'zero', window, answer: { key: `${poolId}:${currency}:${window}`, state: 'answer', data, failed: false } })
+  }
+  assert.match(drawn('day', 3600), /role="slider" aria-label="Inspect the pool’s price by hour"/)
+  assert.match(drawn('week', 3600), /aria-label="Inspect the pool’s price by hour"/)
+  assert.match(drawn('month', 86400), /role="slider" aria-label="Inspect the pool’s price by day"/, '30d steps a day at a time')
+  assert.doesNotMatch(drawn('month', 86400), /by hour/)
+})
+
 // The popup shares the pool page's reader and address-based denomination; a live row replaces the opened snapshot.
 function figuresRenderer() {
   const React = require('react'), ts = require('typescript')

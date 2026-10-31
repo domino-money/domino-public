@@ -85,10 +85,21 @@ export function amountProblem(text: string): 'format' | 'large' | 'small' | null
   if (/^[-−]/.test(bare)) return 'small'
   if (/,\d{1,2}$/.test(bare) || /\.\d{3,}/.test(bare)) return 'format'
   const digits = bare.replace(/,/g, '')
+  // Changed on purpose 2026-10-31 (QA round 2 follow-ups, Q21): a number in e-notation ("1e309", "1e3") is said too: over
+  // the limit, or not written the way the field takes. It used to get the generic line.
+  if (/^\d*\.?\d+e[+-]?\d+$/i.test(digits)) return Number(digits) > AMOUNT_LIMIT ? 'large' : 'format'
   if (!/^\d+(\.\d*)?$/.test(digits)) return null
   const value = Number(digits)
   return value > AMOUNT_LIMIT ? 'large' : value > 0 ? null : 'small'
 }
+
+/**
+ * Whether typed text is a thousands group still being typed ("25,0" on the way to "25,000", "1,000,5"): whole groups of
+ * three after the first, then a comma and one or two digits. Added 2026-10-31 (QA round 2 follow-ups, Q21): "1.000,50"
+ * and "1000,50" are not (a dot, or more than three digits before the comma), so while the field is in focus they get the
+ * line that says how to write the amount, not the generic one.
+ */
+export const midThousands = (text: string) => /^\$?\s*\d{1,3}(,\d{3})*,\d{1,2}$/.test(text.trim())
 
 /**
  * What `amount` dollars could earn per day, month and year at the pool's yearly rate `aprPercent`, no compounding. The

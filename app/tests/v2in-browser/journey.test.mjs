@@ -29,6 +29,10 @@ const POOL_RH = { dex: 4, currency0: ZERO, currency1: USDG_RH, fee: 500, tickSpa
 const TICK = -199020;
 const SQRT = position.sqrtPriceAtTick(TICK);
 const now = () => Math.floor(Date.now() / 1000);
+/** What a pool's fee is, every fee chip's title (components/explore/feeMeaning.ts FEE_MEANING, QA round 2, Q28). */
+const FEE_MEANING = 'Traders pay this on every swap. People who add money to the pool, you included, share it. It is never taken from your deposit.';
+/** Waits until the element in focus matches `selector` (QA round 2 follow-ups, N57 and R18). */
+const focusedOn = (page, selector) => page.waitForFunction((css) => document.activeElement?.matches(css) ?? false, selector, { timeout: 10_000 });
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 /** Waits (in real time) until `check()` holds. */
 async function until(check, what, ms = 30_000) {
@@ -174,6 +178,15 @@ test('(c) Robinhood live fake-chain creation: review, exact approve and create o
     assert.equal(chain.chainId, 4663, 'switched to Robinhood Chain before anything of Robinhood Chain was read');
     assert.match(await chosen.innerText(), /ETH \/ USDG/);
     assert.match(await chosen.locator('[data-pool-chips]').innerText(), /Robinhood Chain\s*0\.05% fee/);
+    // Added 2026-10-31 (QA round 2 follow-ups, Q28): the zap path's fee chip says what the fee is on hover, as every fee chip.
+    assert.equal(await chosen.locator('[data-pool-chips] [data-fee]').getAttribute('title'), FEE_MEANING);
+    // Added 2026-10-31 (QA round 2 follow-ups, N57): Change pool by a click leaves the focus on Keep this pool, never on the
+    // page's start; Keep this pool brings the same pool back, the focus on its Change pool.
+    await chosen.locator('button').click();
+    await focusedOn(page, '[data-keep-pool]');
+    await zap.locator('[data-keep-pool]').click();
+    await chosen.waitFor();
+    await focusedOn(page, '[data-chosen-pool] button');
     await zap.locator('[data-zap-continue="pool"]').click();
     // Step 2: the standard width, on the pool's spacing, written as 1 ETH = … USDG.
     const range = zap.locator('[data-stage="range"]');
@@ -225,6 +238,18 @@ test('(c) Robinhood live fake-chain creation: review, exact approve and create o
     assert.equal(await review.locator('[data-wallet-step="approve"] .dm-flow-wstep-title > span').getAttribute('title'), 'Allow 1,000 USDG', 'every digit of the amount to allow in its title');
     assert.equal(await review.locator('.dm-flow-wstep-note').count(), 0, 'no line under a step before Create position runs');
     assert.equal(await review.locator('[data-v2-locked]').count(), 0);
+    // Added 2026-10-31 (QA round 2 follow-ups, Q28): the headline's fee chip says what the fee is on hover.
+    assert.equal(await review.locator('[data-review-headline] [data-fee]').getAttribute('title'), FEE_MEANING);
+    // Added 2026-10-31 (QA round 2 follow-ups, Q12): every automation the created view offers, "Automate." on one line.
+    const later = zap.locator('[data-review-automate-later]');
+    assert.match(await later.innerText(), /^You can add Auto-compound, Domino-compound or Auto-exit after the position is created, from Automate/);
+    assert.equal(await later.locator('.whitespace-nowrap a[target="_blank"]').count(), 1, 'the link inside the line kept whole');
+    assert.equal(await later.locator('.whitespace-nowrap').evaluate((node) => node.textContent), 'Automate (opens in a new tab).');
+    assert.equal(await later.locator('.whitespace-nowrap').evaluate((node) => {
+      const box = (text) => { const range = document.createRange(); range.selectNodeContents(text); return range.getBoundingClientRect(); };
+      const dot = [...node.childNodes].find((child) => child.nodeType === Node.TEXT_NODE && child.textContent === '.');
+      return dot !== undefined && Math.abs(box(dot).top - box(node.querySelector('a').firstChild).top) < 2;
+    }), true, 'the period on the link’s line');
     // Everything else under ONE Details, closed; the developer facts only as its data attributes.
     const details = review.locator('[data-review-details]');
     assert.equal(await details.getAttribute('open'), null, 'technical detail stays folded');
@@ -241,6 +266,8 @@ test('(c) Robinhood live fake-chain creation: review, exact approve and create o
     assert.match(await details.getAttribute('data-consent'), /^direct /);
     await page.screenshot({ path: join(shots(), 'journey-robinhood-live-review.png'), fullPage: true });
     await details.locator('summary').click();
+    // Added 2026-10-31 (QA round 2 follow-ups, Q24): the contracts in the pair's order, ETH then USDG, as the headline.
+    assert.deepEqual((await details.locator('[data-fact="details-tokens"] dd > span').allInnerTexts()).map((text) => text.toLowerCase()), ['eth (native)', USDG_RH]);
     assert.match(await details.locator('[data-fact="route-leg-0"]').innerText(), /500 USDG → ETH[\s\S]*Expected 0\.19 ETH[\s\S]*At least 0\.18905 ETH[\s\S]*Uniswap · 0\.05%/);
     assert.match(await details.locator('[data-fact="review-leftovers"]').innerText(), /6\.75 USDG/);
     assert.match(await details.locator('[data-fact="review-l1-fee"]').innerText(), /^L1 data fee\s+0 ETH$/, 'a measured zero, said as 0 (spec §2.4)');
@@ -2058,6 +2085,56 @@ test('(h) Base like Robinhood Chain: found by name with a pulse while Base is se
   } finally { await s.close(); }
 });
 
+// Added 2026-10-31 (QA round 2 follow-ups, R18 and N57): the rows by keyboard. An arrow moved to the next radio and
+// chose it at once, the list folded and the focus fell to the page's start; the arrows now move through the rows
+// (wrapping) without choosing, Space chooses the row in focus, and the focus lands on the chosen pool's Change pool.
+// Change pool by a click leaves the focus on Keep this pool; from the keyboard, on the search.
+test('(h4) Base’s rows by keyboard: the arrows move without choosing, Space chooses, and the focus is kept through Change pool', async () => {
+  const chain = createV2Chain({ chainId: 8453, timestamp: now() });
+  chain.switchTo(4663);
+  const read = createReadStub({ answer: robinhoodRead });
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [8453], contracts: { 8453: contractsFor(8453) }, connect: false,
+    routes: [(request, url) => read.handle(request, url) ?? undefined], chainReads: virtualReads(), dex: virtualDex,
+  });
+  try {
+    const page = s.page;
+    await page.locator('[data-create-journey]').waitFor();
+    await page.getByRole('combobox', { name: 'Search a token' }).fill('virtual protocol');
+    const hit = page.locator(`[data-token-network-option="8453:${VIRTUAL_BASE}"]`);
+    await hit.waitFor();
+    await page.locator('[data-token-search] .dm-flow-combo:not([data-searching])').waitFor();
+    await hit.click();
+    const pools = page.locator('[data-picker="pool"][data-picker-network="8453"]');
+    const radios = pools.locator('input[name="pool-option"]');
+    await radios.nth(2).waitFor({ timeout: 30_000 });
+    const keys = await pools.locator('li[data-pool-key]').evaluateAll((rows) => rows.map((row) => row.getAttribute('data-pool-key')));
+    const at = () => radios.evaluateAll((nodes) => nodes.indexOf(document.activeElement));
+    await radios.first().focus();
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown');
+    assert.equal(await at(), 2, 'two rows down');
+    assert.equal(await page.locator('[data-chosen-pool]').count(), 0, 'an arrow chooses nothing');
+    await page.keyboard.press('ArrowDown');
+    assert.equal(await at(), 0, 'past the last row, the first');
+    await page.keyboard.press('ArrowUp');
+    assert.equal(await at(), 2, 'and back up to the last');
+    assert.equal(await radios.evaluateAll((nodes) => nodes.filter((node) => node.checked).length), 0, 'still nothing chosen');
+    await page.keyboard.press('Space');
+    const chosen = page.locator('[data-chosen-pool]');
+    await chosen.waitFor();
+    assert.equal((await chosen.getAttribute('data-chosen-pool')).toLowerCase(), keys[2].toLowerCase(), 'the row in focus');
+    await focusedOn(page, '[data-chosen-pool] button');
+    await chosen.locator('button').click();
+    await focusedOn(page, '[data-keep-pool]');
+    await page.locator('[data-keep-pool]').click();
+    await focusedOn(page, '[data-chosen-pool] button');
+    await page.keyboard.press('Enter');
+    await focusedOn(page, '#create-token-search');
+    assert.equal(chain.sends.length, 0);
+  } finally { await s.close(); }
+});
+
 // Added 2026-10-06 (rugged97's delta of 6 Oct §4: "Com mais de 10 min, não aparece"): Base's rows show DEX Screener's
 // figures for ten minutes after they were read, never after. A minute before, VIRTUAL is asked about again, so a fresh
 // answer keeps the rows full past the ten minutes; once an answer brings nothing about the pools, their figures go at
@@ -2267,6 +2344,47 @@ test('(j) public discovery stays available while the plan route recovers quietly
     assert.deepEqual(s.planned, [], 'search and recovery never request a financial plan');
     assert.equal(chain.log.filter((method) => method === 'wallet_switchEthereumChain').length, 0, 'public discovery never moves the wallet');
   } finally { await s.close(); }
+});
+
+// Added 2026-10-31 (QA round 2 follow-ups, R10 and N102): step 1's Top pools are Robinhood Chain's list, so each pool names
+// its network from the first paint, on its fee's line; it waited for the other networks' answer, then pushed the fee down a
+// line. Once other networks are searched too, the search's placeholder is Markets' own, word for word.
+test('(j2) Top pools name Robinhood Chain from the first paint and stay put when the other networks answer; the search says what Markets says', async () => {
+  const chain = createV2Chain({ chainId: 8453, timestamp: now() });
+  chain.switchTo(4663);
+  const reads = createChainReads({ chainId: 8453, tokens: BASE_TOKENS });
+  const read = createReadStub({ answer: robinhoodRead });
+  // The networks' word is held until the rows have been measured.
+  let release = () => {};
+  const held = new Promise((done) => { release = done; });
+  const plan = async (request, url) => {
+    if (url.pathname !== '/api/position-plan/v1/capabilities') return undefined;
+    await held;
+    return new Response(JSON.stringify({ contractVersion: '1.0.0-rc.2', dataMode: 'live', enabledRoutes: ['plan'] }), { status: 200, headers: { 'Content-Type': 'application/json', 'X-Domino-Position-Plan-Contract': '1.0.0-rc.2' } });
+  };
+  const s = await openJourney(browser, chain, { dist: WALLET_V2_DIST, connect: false, routes: [plan, (request, url) => read.handle(request, url) ?? undefined], chainReads: reads, artwork: true });
+  try {
+    const page = s.page;
+    const top = page.locator('[data-top-pools]');
+    await top.waitFor();
+    const rows = () => top.locator('li[data-top-pool]').evaluateAll((items) => items.map((item) => {
+      const net = item.querySelector('.dm-flow-pool-net');
+      const fee = item.querySelector('[data-fee]').getBoundingClientRect();
+      const box = item.getBoundingClientRect();
+      return { network: net?.textContent ?? null, together: net !== null && Math.abs(net.getBoundingClientRect().top - fee.top) < 2, top: Math.round(box.top), height: Math.round(box.height) };
+    }));
+    const search = page.locator('#create-token-search');
+    assert.equal(await search.getAttribute('placeholder'), 'Name or address, like USDG', 'the other networks not answered yet');
+    const before = await rows();
+    assert.ok(before.length > 0, 'Top pools drawn');
+    assert.deepEqual(before.map((row) => [row.network, row.together]), before.map(() => ['Robinhood Chain', true]), 'each names its network, beside its fee');
+    release();
+    await page.waitForFunction(() => document.getElementById('create-token-search')?.getAttribute('placeholder') === 'Search a token on any network', undefined, { timeout: 30_000 });
+    assert.deepEqual(await rows(), before, 'nothing moved when the other networks answered');
+    // Markets' search, with the same networks searched, says the same.
+    await page.evaluate(() => { location.hash = '#/markets'; });
+    await page.waitForFunction(() => document.getElementById('markets-catalogue-token')?.getAttribute('placeholder') === 'Search a token on any network', undefined, { timeout: 30_000 });
+  } finally { release(); await s.close(); }
 });
 
 test('(k) a read that failed for the moment is asked again quietly: the name search while its list is open, the pools once before the wallet is ever asked to move', async () => {

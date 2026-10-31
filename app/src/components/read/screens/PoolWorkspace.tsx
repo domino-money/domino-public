@@ -425,7 +425,11 @@ export function PoolWorkspace({ source, option, onOption, actions, earnAction, p
     </div>
 
     <div className="dm-pool-a-chart dm-lit">
-      <PoolHistoryChart source={source} option={option} market={shown} loading={loading} quote={quoteIndex} onDay={onDay} />
+      {/* Changed on purpose 2026-10-31 (QA round 2 follow-ups, Q24): the chart is handed the two tokens in the order the
+          pool's name is written (base, then quote), as the figures sheet hands them (PoolFiguresDialog), so its "Price of"
+          switch reads "PRIORS | USDG" under "PRIORS / USDG"; a USDG-first pool read "USDG | PRIORS". It still opens on the
+          base priced in the quote, and reads exactly what it read. */}
+      <PoolHistoryChart source={source} option={{ key: option.key, currencies: [base, quote] }} market={shown} loading={loading} quote={1} onDay={onDay} />
     </div>
 
     {usable && <div className="dm-pool-a-earn dm-lit">
@@ -460,9 +464,10 @@ export function PoolWorkspace({ source, option, onOption, actions, earnAction, p
           <dd className="dm-pool-kv-id"><Address value={option.key} /><CopyButton value={option.key} label="Copy pool id" /></dd>
         </div>
         {/* QA round 2, Q34: the chain's own ETH has no contract; its zero address is named for what it is. N24 (the
-            owner's yes): a token's contract opens on the pool's network's explorer; the pool id stays unlinked. */}
-        <div><dt><PoolTokenLabel token={currency0} /></dt><dd className="text-fg-muted">{currency0.address === NATIVE_CURRENCY ? <>Native ETH (<Address value={currency0.address} short />)</> : <ExplorerAddress address={currency0.address} chainId={base.chainId}><SymbolText token={currency0} /></ExplorerAddress>}</dd></div>
-        <div><dt><PoolTokenLabel token={currency1} /></dt><dd className="text-fg-muted">{currency1.address === NATIVE_CURRENCY ? <>Native ETH (<Address value={currency1.address} short />)</> : <ExplorerAddress address={currency1.address} chainId={base.chainId}><SymbolText token={currency1} /></ExplorerAddress>}</dd></div>
+            owner's yes): a token's contract opens on the pool's network's explorer; the pool id stays unlinked.
+            Changed on purpose 2026-10-31 (QA round 2 follow-ups, Q24): the two tokens in the order the pool's name is
+            written (base, then quote), as the title above; a USDG-first pool listed USDG first here. */}
+        {[base, quote].map((token) => <div key={token.address}><dt><PoolTokenLabel token={token} /></dt><dd className="text-fg-muted">{token.address === NATIVE_CURRENCY ? <>Native ETH (<Address value={token.address} short />)</> : <ExplorerAddress address={token.address} chainId={base.chainId}><SymbolText token={token} /></ExplorerAddress>}</dd></div>)}
         {/* QA round 2, N72 (the owner's option b): a fixed fee off Uniswap's usual tiers says so here, inside the closed
             details only, with no version named. */}
         <div><dt>Fee</dt><dd data-fee-tier={fee === 'Dynamic fee' ? undefined : STANDARD_FEE_PIPS.has(option.feePips) ? 'standard' : 'non-standard'}>{fee === 'Dynamic fee' ? fee : `${fee} · fixed${STANDARD_FEE_PIPS.has(option.feePips) ? '' : ' · non-standard'}`}</dd></div>
@@ -494,9 +499,11 @@ export function PoolWorkspace({ source, option, onOption, actions, earnAction, p
             : loading ? <Skeleton className="ml-auto h-4 w-24" /> : <FigureDash />}</dd>
         </div>
         <div>
-          {/* Changed 2026-10-01 (audit I1): what was checked is the pool, never its tokens; "Verified" read as vetted tokens. */}
+          {/* Changed 2026-10-01 (audit I1): what was checked is the pool, never its tokens; "Verified" read as vetted tokens.
+              Changed on purpose 2026-10-31 (QA round 2 follow-ups, Q34): the title names the pool's own network; it said
+              "Robinhood Chain" on Base and Arbitrum One pools too. */}
           <dt>Pool read</dt>
-          <dd title="The pool was read on Robinhood Chain and matches its id. Its tokens are not checked or endorsed.">
+          <dd title={`The pool was read on ${network} and matches its id. Its tokens are not checked or endorsed.`}>
             On chain at block {blockText(option.block)} · {option.kind === 'stored' ? 'stored on-chain observation' : option.kind === 'discovery' ? 'found by provider discovery' : `from the catalogue (${option.catalogue?.source === 'initialize_event' ? 'initialize event' : 'verified observation'} at block ${option.catalogue ? blockText(option.catalogue.block) : ''})`}
             {option.requestedById && ' · asked for by id'}
           </dd>

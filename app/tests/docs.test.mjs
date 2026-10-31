@@ -445,7 +445,9 @@ test('the wallet, pools, fees, markets, new position, positions, risks and what 
     'A quote: for New position, and for Add liquidity, Change range or a withdrawal in one token on a position’s page.',
     'Bringing funds from another network.',
     // Changed on purpose 2026-10-30 (QA round 2, N26): the list's name on Positions, and Your automation's section title.
-    'What older automation did, in Automated positions and Receipts on Positions.',
+    // Changed on purpose 2026-10-31 (QA round 2 follow-ups, N26): Positions shows Receipts and no Automated positions card
+    // (Positions.tsx: the recovery aside, which shows only for an orphaned recovery, and Receipts).
+    'What older automation did, in Receipts on Positions.',
   ]);
   assert.match(sectionText(wallet, 'what-needs-sign-in'), /Public pages need no sign-in, and neither does a step without a quote, such as collecting fees, closing a position, or setting up automation or Auto-exit\./);
   assert.match(readText(join(APP, 'src/v2/plan/httpTransport.ts')), /throw new Error\('session_required'\)/, 'a quote is refused without a session');
@@ -489,12 +491,19 @@ test('the wallet, pools, fees, markets, new position, positions, risks and what 
   const poolPage = textOf(page('pool-page'));
   // Changed on purpose (2026-09-27, round 6, the pool page for beginners): the page leads with what the pool earns, its
   // chart is its own swaps' price, the estimate and the typical range are new, and everything technical is in Details.
-  assert.match(poolPage, /one sentence on what the pool is and what it earns, then its APR, 24h volume, TVL and price/);
+  // Changed on purpose 2026-10-31 (QA round 2 follow-ups, R48): the page has no lead sentence (PoolWorkspace.tsx: the
+  // pair, its network and fee chip, then the key figures), and its sections carry the page's own names.
+  assert.match(poolPage, /opens with the pair, its network and fee, then its APR, 24h volume, TVL and pool price, with 24h fees where Domino history provides them/);
+  assert.doesNotMatch(poolPage, /one sentence on what the pool/);
+  assert.match(poolPage, /Choosing a price range, closed until opened, draws the band New position starts on against the pool’s price\./);
+  assert.doesNotMatch(poolPage, /Price range|(?<!Technical )Details/, 'the old names');
   // Changed on purpose (2026-09-28, round 6 review): the estimate is a share of the pool's fees, not the APR applied
   // to the amount alone, and a pool Domino can't open positions in has neither card.
   assert.match(poolPage, /Estimate your earnings works out your share of the pool’s recent fees for an amount you type\./);
   assert.match(poolPage, /A pool Domino can’t open positions in says why instead\./);
-  assert.match(poolPage, /Details, closed until opened, lists the pool id, tokens, fees, tick spacing, hooks, where the figures come from and the block the pool was verified at\./);
+  assert.match(poolPage, /Technical details, closed until opened, lists the network, pool id, tokens, fees, tick spacing, hooks, where the figures come from and the block the pool was verified at\./);
+  assert.equal(page('pool-page').sections.find((section) => section.id === 'pool-details').title, 'Technical details', 'the id stays, so links still land');
+  for (const words of ['>Choosing a price range<', '>Technical details<', '<dt>Network</dt>']) assert.ok(readText(join(APP, 'src/components/read/screens/PoolWorkspace.tsx')).includes(words), `the pool page says ${words}`);
   assert.match(poolPage, /Create a position opens the same four steps of New position as anywhere else, with this pool already chosen\./, 'one flow, wherever it starts (point 8)');
   assert.doesNotMatch(poolPage, /hourly USD price and volume|Plan a range|hourly candles/);
 
@@ -687,6 +696,22 @@ test('the V2 pages: Manage a position, Bring funds from another network, Auto-ex
   assert.match(sectionText(yours, 'waiting-fees'), /Withdraw to wallet sends them to your wallet any time, whatever its state, with no Domino fee\./);
   // Changed on purpose 2026-10-30 (QA round 2, N26): in plain words; the version's name is for Contracts.
   assert.match(sectionText(yours, 'domino-v1'), /Automation from Domino’s first contracts ends when the new one starts, with no migration/);
+  // Changed on purpose 2026-10-31 (QA round 2 follow-ups, N26): whole sentences, and no Automated positions card on
+  // Positions (Positions.tsx shows the recovery aside and Receipts); the privacy table's row of that name stays.
+  assert.match(sectionText(yours, 'one-position'), /creates a contract for that one position: your automation, made for your wallet alone\. Only your wallet controls it\./);
+  assert.match(sectionText(yours, 'its-card'), /The mode and status button at the top of your position opens its controls, and its Activity shows completed actions\./);
+  assert.match(sectionText(yours, 'waiting-fees'), /If a token can’t be sent to your wallet, choose Send to another address you own\./);
+  assert.ok(src('v2in/automate/VaultDialog.tsx').includes("const ELSEWHERE = 'Send to another address you own'"), 'the button the docs name');
+  assert.match(sectionText(page('non-custodial'), 'pause-revoke-withdraw'), /none waits on Domino’s service\. They are on the position’s page\./);
+  for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /links there|in Automated positions on Positions|Automated positions and Receipts|Send to another address you own appears|Made for your wallet alone/, entry.slug);
+  // Changed on purpose 2026-10-31 (QA round 2 follow-ups, N49): Collect fees and the other changes stop compounding
+  // (v2in/position/constants.ts ROOT_PAUSE_COPY); Auto-exit pauses only when its approval moves (EXIT_PAUSE_COPY).
+  assert.match(sectionText(page('earned-fees'), 'what-fees-do-next'), /With Auto-compound or Domino-compound, collecting a position’s fees, or any other change to it, stops that automation until you turn it back on\./);
+  const stops = sectionText(yours, 'when-it-stops');
+  assert.match(stops, /With Auto-compound or Domino-compound, changing the position, moving it or approving another app stops automation until you turn it back on\./);
+  assert.match(stops, /Auto-exit pauses only when its approval changes; Approve again ends the pause\./);
+  assert.match(src('v2in/position/constants.ts'), /EXIT_REARM_COPY = 'Approve again'/);
+  for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /Collecting a position’s fees, or any other change to it, stops its automation|automation stops for it until/, entry.slug);
 });
 
 // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): ROADMAP's pill, "Starts paused", described Domino
@@ -880,7 +905,8 @@ test('round 6: "added back" everywhere, no Settings, and the docs describe the r
   // Point 3: the simulator in plain words. Point 7: Plan a range left the pool page, and its typical range took the place.
   const ranges = page('ranges');
   assert.match(sectionText(ranges, 'try-a-range'), /range simulator on Home lets you move the price and see, in plain words, whether a position earns fees and what it holds\./);
-  assert.match(sectionText(ranges, 'try-a-range'), /On a pool’s page, Price range draws the band New position starts on against that pool’s price\. Nothing is saved or sent\./);
+  // Changed on purpose 2026-10-31 (QA round 2 follow-ups, R48): the card's name on the pool's page.
+  assert.match(sectionText(ranges, 'try-a-range'), /On a pool’s page, Choosing a price range draws the band New position starts on against that pool’s price\. Nothing is saved or sent\./);
   assert.ok(linksOf(ranges).some((link) => link.to === '#/#ranges'), 'the simulator is linked where it lives');
   for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /Plan a range/, entry.slug);
   // Points 8 and 9: one New position wherever it starts, its steps in plain words, and slippage under Advanced.
@@ -892,8 +918,16 @@ test('round 6: "added back" everywhere, no Settings, and the docs describe the r
   // 2026-10-30 (QA round 2): New position's widths in the step's words (a Full range width came and went the same day).
   assert.match(sectionText(create, 'step-range'), /Closer and Wider are ready-made ranges around the pool’s price; Custom takes your own lowest and highest price\./);
   assert.match(sectionText(create, 'step-amount'), /Under Advanced, slippage tolerance is how far the price may move before a step stops\. It starts at 0\.5%; choose 0\.1% to 5%\./);
+  // Added 2026-10-31 (QA round 2 follow-ups, free-amounts, and triage R9): the amount step as the screen has it: one amount
+  // typed and the other filled in, both typed by someone who holds both, Fill in for me, and a swap or another token only
+  // when short of one. The four steps say the step's own lead.
+  assert.match(sectionText(create, 'step-amount'), /Type an amount in one token and the other fills in to fit your range\. Hold both\? Type your own amount in each: the position takes as much as both allow, and the rest stays in your wallet\. Fill in for me works out the second amount again\./);
+  assert.doesNotMatch(sectionText(create, 'step-amount'), /either token, or both|Another token/);
+  assert.ok(sectionText(create, 'four-steps').includes(CREATE.step.amount.lead), 'the four steps say the amount step’s own lead');
+  assert.ok(sectionText(create, 'step-amount').includes(CREATE.amount.fillIn), 'the button by its own label');
   // Point 7: technical facts live in Details on a pool's page, which Pools and fee tiers says of the protocol fee too.
-  assert.match(sectionText(page('pools'), 'fee-tiers'), /A pool’s page shows it in Details\./);
+  // Changed on purpose 2026-10-31 (QA round 2 follow-ups, R48): the section's name on the pool's page.
+  assert.match(sectionText(page('pools'), 'fee-tiers'), /A pool’s page shows it in Technical details\./);
   // 2026-09-28 (review): round 5's plain words for what makes a pool's id stay. Tick spacing is first explained on the
   // next page, Price ranges, so it is not named here.
   assert.match(sectionText(page('pools'), 'pool-identity'), /pools by their id, which comes from the two tokens, the fee and the pool’s other settings\./);
@@ -951,7 +985,12 @@ test('titles are short, a summary is one line ending in a period, and every page
     // to it; measured at 464).
     // Changed on purpose 2026-10-30 (QA round 2, N73): 460 for New position (measured at 454 with a fourth width, Full
     // range, which came and went the same day; the page is shorter without it).
-    const budget = entry.slug === 'glossary' ? 720 : entry.slug === 'non-custodial' ? 580 : entry.slug === 'manage-position' ? 470 : entry.slug === 'your-automation' ? 465 : entry.slug === 'new-position' ? 460 : entry.slug === 'domino-compound' || entry.slug === 'positions' ? 480 : 450;
+    // Changed on purpose 2026-10-31 (QA round 2 follow-ups, N49): 475 for Your automation (When it stops says what pauses
+    // compounding and what pauses Auto-exit apart, as Manage a position does; N26 took 7 words out; measured at 472).
+    // Changed on purpose 2026-10-31 (QA round 2 follow-ups, free-amounts, and triage R9): 485 for New position, whose
+    // amount step now says what the screen does (one amount filled in, or both typed, Fill in for me, a swap or another
+    // token only when short of one); measured at 484 after its review (Fill in for me "works out the second amount again").
+    const budget = entry.slug === 'glossary' ? 720 : entry.slug === 'non-custodial' ? 580 : entry.slug === 'manage-position' ? 470 : entry.slug === 'your-automation' ? 475 : entry.slug === 'new-position' ? 485 : entry.slug === 'domino-compound' || entry.slug === 'positions' ? 480 : 450;
     assert.ok(words <= budget, `${entry.slug} has ${words} words`);
   }
 });
@@ -982,8 +1021,11 @@ test('the docs source stays inside its budget in the entry bundle', (t) => {
   // networks; measured at 32,151 bytes.
   // Changed on purpose 2026-10-30 (QA round 2, review): 32,200 -> 32,300 for the site-down section's explorers and Your
   // automation's link to it; measured at 32,211 bytes.
-  t.diagnostic(`src/lib/docs: ${files.length} files, ${Buffer.byteLength(text)} bytes, ${size} bytes gzip (budget 32300)`);
-  assert.ok(size <= 32_300, `the docs source is ${size} bytes gzip, over the 32,300 byte budget`);
+  // Changed on purpose 2026-10-31 (QA round 2 follow-ups: N26, N49, R48, and New position's amount step with both
+  // amounts typed and Fill in for me, free-amounts and R9): 32,300 -> 32,500 for the corrected sentences and the comments
+  // that date them; measured at 32,464 bytes.
+  t.diagnostic(`src/lib/docs: ${files.length} files, ${Buffer.byteLength(text)} bytes, ${size} bytes gzip (budget 32500)`);
+  assert.ok(size <= 32_500, `the docs source is ${size} bytes gzip, over the 32,500 byte budget`);
 });
 
 // ---------------------------------------------------------------------------

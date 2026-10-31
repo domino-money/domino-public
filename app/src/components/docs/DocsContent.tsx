@@ -34,19 +34,25 @@ const ROBIN_ETHERSCAN = 'https://robin.etherscan.io'
 function ExplorerLinks({ name, address, chains, domino }: { name: string; address: string; chains: readonly DocChain[]; domino: boolean }) {
   return (
     <span className="dm-docs-addr-links">
-      {chains.map((chain) => (
-        <a
-          key={chain}
-          href={`${domino && chain === 4663 ? ROBIN_ETHERSCAN : EXPLORERS[chain].host}/address/${address}`}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="dm-docs-link"
-          aria-label={`${name} on ${EXPLORERS[chain].name} (opens in a new tab)`}
-          data-docs-explorer={chain}
-        >
-          {EXPLORERS[chain].name}
-        </a>
-      ))}
+      {chains.map((chain) => {
+        const etherscan = domino && chain === 4663
+        // Changed on purpose 2026-10-31 (QA round 2 follow-ups, R4): a link opening Robin Etherscan says so, as
+        // Non-custodial names it; "Robinhood explorer" stays the name of Blockscout there.
+        const label = etherscan ? 'Robin Etherscan' : EXPLORERS[chain].name
+        return (
+          <a
+            key={chain}
+            href={`${etherscan ? ROBIN_ETHERSCAN : EXPLORERS[chain].host}/address/${address}`}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="dm-docs-link"
+            aria-label={`${name} on ${label} (opens in a new tab)`}
+            data-docs-explorer={chain}
+          >
+            {label}
+          </a>
+        )
+      })}
     </span>
   )
 }

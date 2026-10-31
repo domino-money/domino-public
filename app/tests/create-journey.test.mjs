@@ -1043,11 +1043,22 @@ test('the amount step asks for a wallet once, and the swapped panel keeps the pa
   const map = amounts.slice(amounts.indexOf('order.map('), amounts.indexOf('{disconnected && ('));
   assert.ok(map.length > 0, 'the panels are drawn by the one map');
   assert.doesNotMatch(map, /connectForBalance/, 'not inside each panel');
-  assert.match(amounts, /footer=\{\s*disconnected \? null :/);
+  // Changed on purpose 2026-10-31 (QA round 2 follow-ups, free-amounts): with no wallet a panel's foot holds only "Fill in
+  // for me", once both amounts are typed; never the connect line.
+  assert.match(amounts, /footer=\{\s*disconnected \? \(fillIn \? <div className="dm-flow-balance">\{fillIn\}<\/div> : null\) :/);
   assert.doesNotMatch(amounts, /swap\.receive/, 'the other panel never shows what the swap brings');
   // Added 2026-09-28 (round 6 review): only a derived panel is quieted; the typed one never is (finance.browser drives it).
-  assert.match(amounts, /const quiet = swapped !== null && swapped !== independent \? swapped : null/);
+  // Changed on purpose 2026-10-31 (free-amounts): with both amounts typed by the person, neither panel is quieted.
+  assert.match(amounts, /const quiet = !own && swapped !== null && swapped !== independent \? swapped : null/);
   assert.match(amounts, /data-plan-side=\{side === quiet \? 'swapped' : undefined\}/);
+  // Added 2026-10-31 (free-amounts review): "Fill in for me" is Max's own small well, after Max in the panel's foot (so on
+  // a phone it wraps alone and Max stays by its balance), named with its token; the line under the panels says "stays in
+  // your wallet" only of a wallet read holding that figure, and waits while the balances are being read.
+  assert.match(amounts, /variant="secondary"\s+size="sm"\s+data-pair-fill=\{side\}/);
+  assert.match(amounts, /data-pair-max=\{side\}[\s\S]*?<\/Button>\s*\)\}\s*\{fillIn\}\s*<\/div>/);
+  assert.match(amounts, /\{CREATE\.amount\.fillIn\}[\s\S]{0,200}?<span className="sr-only">\s*\{' \('\}\s*<bdi>\{currency\.symbol\}<\/bdi>\)\s*<\/span>/);
+  assert.match(amounts, /\(disconnected \|\| balances\.status === 'ready'\) \? fit : null/);
+  assert.match(amounts, /\{leftHeld \? 'stays in your wallet\.' : 'isn’t used\.'\}/);
 });
 
 // Added 2026-10-30 (QA round 2, final review create-1, journey-3): Amount's "How it works" links (the docs' amount step, and
@@ -1145,4 +1156,213 @@ test('a range that takes one token alone: the amount moves to that token, and th
   // No buy or sell word, and no new mode, anywhere in the flow's copy.
   for (const text of allCreateStrings()) assert.doesNotMatch(text, /\b(buy|sell|buying|selling)\b/i, text);
   assert.equal(CREATE.amount.earnsInRange, 'Earns once the price is in range');
+});
+
+// ---- Free amounts (2026-10-31, QA round 2 follow-ups; the owner: "se o usuário tiver os dois tokens, não precisa ser
+// autoajustar. Só se o usuário quiser. Tem que ser livre isso. Mas tem que ter a opção de preencher de forma automática").
+// One amount typed fills in the other, as before; a figure typed over the filled-in one is the person's own and stays;
+// the plan takes the side that allows less liquidity, in the shape every consumer always read. ----
+
+const { pairedAmount } = require('../.test-build/app/src/lib/create/pairAmount.js');
+const { formatUnits } = require('../.test-build/app/src/lib/read/decimal.js');
+const { shortAmount } = require('../.test-build/app/src/lib/format/amount.js');
+
+/** Both tokens with 18 decimals, so a figure reads the same in either. */
+const EVEN = pool({ currencies: [token(addr('1'), 18, 'ONE'), token(addr('2'), 18, 'TWO')] });
+const ONE18 = candidate(addr('1'), 18, {}, 'ONE');
+const TWO18 = candidate(addr('2'), 18, {}, 'TWO');
+const units = (raw) => formatUnits(String(raw), 18).text.replace(/,/g, '');
+const pairFor = (state, side, raw) => BigInt(pairedAmount({ sqrtPriceX96: state.pool.sqrtPriceX96, tickLower: state.range.lower, tickUpper: state.range.upper, independent: side, amountRaw: String(raw) }).raw);
+
+/** At the amount stage of EVEN's standard range, 1 ONE typed first. */
+function typedOne(poolOption = EVEN) {
+  let s = journey.next(journey.withToken(journey.initialState(), ONE18), NOW);
+  s = journey.next(journey.withPool(s, poolOption, NOW), NOW);
+  return journey.withTypedAmount(s, '1');
+}
+
+test('free amounts: one amount fills in the other until the person types over it; then both stay, and the plan takes the side that limits it', () => {
+  const s = typedOne();
+  assert.equal(s.own, null, 'one amount typed: the other is worked out');
+  assert.equal(journey.effectiveAmounts(s), s, 'nothing to pick: the state as it is, the same object');
+  assert.equal(journey.freeFit(s), null);
+  const need = pairFor(s, 0, 10n ** 18n);
+  assert.ok(need > 0n, 'the range pairs some TWO with 1 ONE');
+
+  // More TWO than 1 ONE pairs with: ONE limits; the range uses 1 ONE and its pair, and the rest of TWO stays.
+  const more = journey.withOtherAmount(s, TWO18, units(need * 2n));
+  assert.deepEqual(more.own, { texts: ['1', units(need * 2n)], second: 1 });
+  assert.deepEqual([more.token.key, more.budget], [addr('1'), '1'], 'the amount typed first stays the state’s amount');
+  assert.deepEqual(journey.freeFit(more), { limiting: 0, used: [10n ** 18n, need], left: need });
+  const moreFor = journey.effectiveAmounts(more);
+  assert.deepEqual([moreFor.token.key, moreFor.budget], [addr('1'), '1']);
+  assert.deepEqual(moreFor.own, more.own, 'both figures still travel, for the step to draw');
+
+  // Less TWO than 1 ONE pairs with: TWO limits; the state every plan reads is that TWO amount.
+  const less = journey.withOtherAmount(s, TWO18, units(need / 2n));
+  const lessFit = journey.freeFit(less);
+  assert.equal(lessFit.limiting, 1);
+  assert.equal(lessFit.used[1], need / 2n);
+  assert.equal(lessFit.used[0], pairFor(s, 1, need / 2n), 'of ONE, what the range pairs with that TWO, as the field would work it out');
+  assert.equal(lessFit.left, 10n ** 18n - lessFit.used[0]);
+  const lessFor = journey.effectiveAmounts(less);
+  assert.deepEqual([lessFor.token.key, lessFor.budget], [addr('2'), units(need / 2n)]);
+  assert.deepEqual(journey.canContinue('amount', less, NOW), { ok: true });
+  // Review reads exactly that shape: TWO is the amount, and ONE is worked out from it.
+  const { reviewPlan } = require('../.test-build/app/src/lib/create/reviewPlan.js');
+  const planned = reviewPlan(lessFor, null);
+  assert.equal(planned.independent, 1);
+  assert.deepEqual(planned.need, lessFit.used);
+  assert.deepEqual(journey.previewRequest(lessFor).request.independentToken, addr('2'));
+  assert.equal(journey.previewRequest(lessFor).request.amountRaw, String(need / 2n));
+  // Applied again, nothing changes.
+  assert.deepEqual(journey.effectiveAmounts(lessFor), lessFor);
+
+  // The exact pair, and the figure the field showed (six significant digits, cut), both fit: nothing stays.
+  assert.equal(journey.freeFit(journey.withOtherAmount(s, TWO18, units(need))).left, 0n);
+  const shown = shortAmount(units(need)).short;
+  assert.ok(shown.length < units(need).length, `the shown figure is cut: ${shown}`);
+  assert.equal(journey.freeFit(journey.withOtherAmount(s, TWO18, shown)).left, 0n, 'typed back, the shown figure fits');
+
+  // Typed the other way round (TWO first, then ONE): the same rule, from the side typed first.
+  const two = journey.withOtherAmount(journey.withTypedAmount(s, ''), TWO18, '1');
+  assert.deepEqual([two.token.key, two.budget, two.own], [addr('2'), '1', null], 'the first figure cleared: TWO typed in an empty step is the amount');
+  const needOne = pairFor(two, 1, 10n ** 18n);
+  const plenty = journey.withOtherAmount(two, ONE18, units(needOne * 3n));
+  assert.deepEqual(plenty.own, { texts: [units(needOne * 3n), '1'], second: 0 });
+  assert.deepEqual(journey.freeFit(plenty), { limiting: 1, used: [needOne, 10n ** 18n], left: needOne * 2n });
+  assert.equal(journey.effectiveAmounts(plenty), plenty, 'TWO, typed first, limits: the state as typed, the same object');
+  const scarce = journey.withOtherAmount(two, ONE18, units(needOne / 4n));
+  assert.deepEqual(journey.freeFit(scarce).limiting, 0);
+  assert.deepEqual([journey.effectiveAmounts(scarce).token.key, journey.effectiveAmounts(scarce).budget], [addr('1'), units(needOne / 4n)]);
+});
+
+test('free amounts: typing, clearing and “Fill in for me” move between the two modes as the owner asked', () => {
+  const s = typedOne();
+  // Nothing typed yet: typing in the other row makes it the amount, and the first row is worked out from it (as before).
+  const fresh = journey.next(journey.withPool(journey.next(journey.withToken(journey.initialState(), ONE18), NOW), EVEN, NOW), NOW);
+  const flipped = journey.withOtherAmount(fresh, TWO18, '5');
+  assert.deepEqual([flipped.token.key, flipped.budget, flipped.own], [addr('2'), '5', null]);
+
+  const both = journey.withOtherAmount(s, TWO18, '0.4');
+  // The first figure typed again stays the person's, and so does the second.
+  const edited = journey.withTypedAmount(both, '2');
+  assert.deepEqual([edited.budget, edited.own], ['2', { texts: ['2', '0.4'], second: 1 }]);
+  const second = journey.withOtherAmount(edited, TWO18, '0.7');
+  assert.deepEqual(second.own, { texts: ['2', '0.7'], second: 1 });
+  // "Fill in for me" clears the second figure: it is worked out from the first again.
+  const filled = journey.withOtherAmount(second, TWO18, '');
+  assert.deepEqual([filled.token.key, filled.budget, filled.own], [addr('1'), '2', null]);
+  // Clearing the first figure instead: the second is the amount, and the first is worked out from it.
+  const cleared = journey.withTypedAmount(second, '');
+  assert.deepEqual([cleared.token.key, cleared.budget, cleared.own], [addr('2'), '0.7', null]);
+  // With one amount worked out, clearing the typed one empties it, as before.
+  assert.deepEqual([journey.withTypedAmount(s, '').budget, journey.withTypedAmount(s, '').own], ['', null]);
+
+  // A figure that is not an amount yet holds Continue with its own words; the first one's before the second one's.
+  assert.deepEqual(journey.canContinue('amount', journey.withOtherAmount(s, TWO18, '1,5'), NOW), { ok: false, reason: CREATE.amount.decimalComma });
+  assert.deepEqual(journey.canContinue('amount', journey.withOtherAmount(s, TWO18, '0'), NOW), { ok: false, reason: CREATE.amount.zero });
+  assert.deepEqual(journey.canContinue('amount', journey.withTypedAmount(both, 'abc'), NOW), { ok: false, reason: CREATE.amount.format });
+  assert.equal(journey.freeFit(journey.withOtherAmount(s, TWO18, '1,5')), null);
+
+  // Another token or pool drops the second figure; the same token keeps both; Back and forth keep both.
+  assert.equal(journey.withToken(both, OTHER).own, null);
+  assert.deepEqual(journey.withToken(both, ONE18).own, both.own);
+  assert.equal(journey.withPool(both, pool({ key: id('b'), currencies: EVEN.currencies }), NOW).own, null);
+  assert.deepEqual(journey.withPool(both, { ...EVEN, block: 701 }, NOW).own, both.own, 'the same pool read again keeps them');
+  assert.deepEqual(journey.back(journey.back(journey.next(journey.next(both, NOW), NOW))).own, both.own);
+  // Paid with another token, the pool's two figures wait for the way back, and nothing is picked from them.
+  const paying = journey.withPayWith(both, { token: token(addr('7'), 18, 'ETH'), text: '1' });
+  assert.equal(journey.effectiveAmounts(paying), paying);
+  assert.equal(journey.freeFit(paying), null);
+});
+
+test('free amounts: the price or the range moving picks the side again; a range taking one token alone takes that one whole', () => {
+  const s = typedOne();
+  const need = pairFor(s, 0, 10n ** 18n);
+  // Just more TWO than 1 ONE pairs with at this price: ONE limits. A price that makes 1 ONE pair with more TWO than
+  // that hands the limit to TWO, with nothing typed again (a background read, withFreshPool).
+  const near = journey.withOtherAmount(s, TWO18, units(need + need / 50n));
+  assert.equal(journey.freeFit(near).limiting, 0);
+  const moved = journey.withFreshPool(near, { ...near.pool, sqrtPriceX96: String((BigInt(SQRT_ONE) * 1010n) / 1000n), block: 701 });
+  assert.equal(moved.own, near.own, 'a read never changes what was typed');
+  assert.ok(pairFor(moved, 0, 10n ** 18n) > need + need / 50n, 'at the new price 1 ONE pairs with more TWO than typed');
+  assert.equal(journey.freeFit(moved).limiting, 1);
+  assert.equal(journey.effectiveAmounts(moved).token.key, addr('2'));
+
+  // A background move past the range (the typed figures kept): the range takes ONE alone, whole, and all of TWO stays;
+  // or TWO alone, and the state is that TWO amount.
+  const aboveRead = { ...near, range: { lower: 60, upper: 600 } };
+  assert.equal(journey.takesOnly(aboveRead), 0);
+  assert.deepEqual(journey.freeFit(aboveRead), { limiting: 0, used: [10n ** 18n, 0n], left: need + need / 50n });
+  const belowRead = { ...near, range: { lower: -600, upper: -60 } };
+  assert.deepEqual(journey.freeFit(belowRead), { limiting: 1, used: [0n, need + need / 50n], left: 10n ** 18n });
+  assert.deepEqual([journey.effectiveAmounts(belowRead).token.key, journey.effectiveAmounts(belowRead).budget], [addr('2'), units(need + need / 50n)]);
+  assert.deepEqual(journey.canContinue('amount', belowRead, NOW), { ok: true });
+
+  // The person choosing such a range: the amount follows it (as before), their figure of the token it takes; and
+  // since the review of 2026-10-31 both figures stay as typed (Range's price read again goes through here too).
+  const above = journey.withRange(near, { lower: 60, upper: 600 });
+  assert.deepEqual([above.token.key, above.budget, above.own], [addr('1'), '1', near.own], 'ONE alone: the amount stays, and so do both figures');
+  assert.deepEqual(journey.freeFit(above), { limiting: 0, used: [10n ** 18n, 0n], left: need + need / 50n }, 'all of TWO stays');
+  assert.equal(journey.effectiveAmounts(above).token.key, addr('1'));
+  assert.deepEqual(journey.canContinue('amount', above, NOW), { ok: true });
+  const below = journey.withRange(near, { lower: -600, upper: -60 });
+  assert.deepEqual([below.token.key, below.budget], [addr('2'), units(need + need / 50n)], 'TWO alone: the TWO they typed is the amount');
+  assert.deepEqual(below.own, { texts: near.own.texts, second: 0 }, 'both figures kept; ONE, which buys nothing there, counts as typed second');
+  assert.equal(journey.effectiveAmounts(below), below, 'the state as it is: TWO is the amount');
+  assert.deepEqual(journey.canContinue('amount', below, NOW), { ok: true });
+  // Typing either figure there keeps both the person's own; "Fill in for me" on ONE leaves the TWO amount alone.
+  assert.deepEqual(journey.withTypedAmount(below, '3').own, { texts: [near.own.texts[0], '3'], second: 0 });
+  assert.deepEqual(journey.withOtherAmount(below, ONE18, '2').own, { texts: ['2', near.own.texts[1]], second: 0 });
+  const refilled = journey.withOtherAmount(below, ONE18, '');
+  assert.deepEqual([refilled.token.key, refilled.budget, refilled.own], [addr('2'), units(need + need / 50n), null]);
+  // A range that takes both again: nothing is worked out over either figure, and the side that limits is picked again.
+  const back = journey.withRange(below, near.range);
+  assert.deepEqual(back.own.texts, near.own.texts);
+  assert.equal(journey.freeFit(back).limiting, 0, 'ONE limits, as before the range moved');
+  assert.deepEqual([journey.effectiveAmounts(back).token.key, journey.effectiveAmounts(back).budget], [addr('1'), '1']);
+  // A price read again on Range that leaves the range taking one token alone keeps both too (withPool, the same pool).
+  const readAgain = journey.withPool({ ...near, range: { lower: -600, upper: -60 } }, { ...near.pool, block: 701 }, NOW);
+  assert.deepEqual(readAgain.own.texts, near.own.texts);
+});
+
+test('free amounts: a wallet read holding none of one token types the way it always did; both figures stay free otherwise', () => {
+  const { lacksOne, REVIEW_GAS_RESERVE_WEI } = require('../.test-build/app/src/lib/create/reviewPlan.js');
+  const s = typedOne();
+  // Unknown or unreadable balances say nothing; a zero says the token is missing; native ETH counts after its gas allowance.
+  assert.equal(lacksOne(EVEN, null), false);
+  assert.equal(lacksOne(EVEN, [null, '0']), true);
+  assert.equal(lacksOne(EVEN, ['5', null]), false);
+  assert.equal(lacksOne(EVEN, ['5', '7']), false);
+  assert.equal(lacksOne(EVEN, ['0', '7']), true);
+  const withEth = pool({ currencies: [token(ZERO, 18, 'ETH'), token(addr('2'), 18, 'TWO')] });
+  assert.equal(lacksOne(withEth, [String(REVIEW_GAS_RESERVE_WEI), '7']), true, 'only the gas allowance: nothing to spend');
+  assert.equal(lacksOne(withEth, [String(REVIEW_GAS_RESERVE_WEI + 1n), '7']), false);
+
+  // Holding none of one: the figure typed over the worked-out one is the amount, and the first is worked out from it (as
+  // before free amounts); Max on the token it holds therefore uses all of it.
+  const asAmount = journey.withOtherAmount(s, TWO18, '12000', false);
+  assert.deepEqual([asAmount.token.key, asAmount.budget, asAmount.own], [addr('2'), '12000', null]);
+  // A figure already the person's own goes the same way; clearing it ("Fill in for me") still works it out from the first.
+  const both = journey.withOtherAmount(s, TWO18, '0.4');
+  assert.deepEqual([journey.withOtherAmount(both, TWO18, '0.5', false).token.key, journey.withOtherAmount(both, TWO18, '0.5', false).own], [addr('2'), null]);
+  const filled = journey.withOtherAmount(both, TWO18, '', false);
+  assert.deepEqual([filled.token.key, filled.budget, filled.own], [addr('1'), '1', null]);
+  // Free (holding both, or not read yet): the figure stays the person's own, as before.
+  assert.deepEqual(journey.withOtherAmount(s, TWO18, '0.4', true).own, { texts: ['1', '0.4'], second: 1 });
+  // A range that takes one token alone: a figure of the token it leaves out is never made the amount.
+  const below = journey.withRange(both, { lower: -600, upper: -60 });
+  assert.deepEqual(journey.withOtherAmount(below, ONE18, '2', false).own, { texts: ['2', '0.4'], second: 0 });
+});
+
+test('free amounts: a token whose decimals can’t be read takes no figure of its own, and nothing is picked from one', () => {
+  const blind = pool({ currencies: [token(addr('1'), 18, 'ONE'), token(addr('2'), null, 'TWO')] });
+  const s = typedOne(blind);
+  assert.equal(journey.candidatesFromPool(blind)[1].token.decimals, null);
+  // Its field is closed on the step; a state that still carries a figure for it is read as one amount worked out.
+  const forced = { ...s, own: { texts: ['1', '5'], second: 1 } };
+  assert.equal(journey.effectiveAmounts(forced), forced);
+  assert.equal(journey.freeFit(forced), null);
+  assert.deepEqual(journey.canContinue('amount', forced, NOW), journey.canContinue('amount', s, NOW));
 });

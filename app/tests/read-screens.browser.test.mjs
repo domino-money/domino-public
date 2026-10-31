@@ -1183,7 +1183,9 @@ test('the pool page reads its figures, Domino’s 24h history and its chain acti
   const activity = await page.locator('[data-activity-amounts]').evaluate((table) => Array.from(table.querySelectorAll('tr'), (tr) => Array.from(tr.children, (cell) => cell.textContent.trim())));
   // Changed on purpose 2026-10-01 (integration pass 3, after audit E7): an amount under a millionth of a token reads as one
   // (lib/read/screens/figures.ts DUST), its every digit kept for the cell's title.
-  assert.deepEqual(activity, [['Figure', 'ETH', 'TOKEN'], ['Turnover (24h)', '0.0000289269', '1,635,670'], ['LP fees (24h)', '<0.000001', '300'], ['LP assets', '<0.000001', '20,025,853']]);
+  // Changed on purpose 2026-10-31 (QA round 2 follow-ups, Q24): the columns in the order the pool's name is written,
+  // "TOKEN / ETH", each amount with its own token.
+  assert.deepEqual(activity, [['Figure', 'TOKEN', 'ETH'], ['Turnover (24h)', '1,635,670', '0.0000289269'], ['LP fees (24h)', '300', '<0.000001'], ['LP assets', '20,025,853', '<0.000001']]);
   assert.doesNotMatch(await page.locator('[data-pool-activity]').innerText(), /\$|APR/);
 
   // G14: the protocol fee per direction, and Domino's APR where the fixed "unavailable" line was.

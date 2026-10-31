@@ -398,7 +398,10 @@ test('an ETH / token position shows dollars on Robinhood Chain’s own page: the
     assert.match(await value.getAttribute('title'), /^Estimated from the pool price at block \d+, converted with ETH’s qualified USD price\. This is not a sale quote\.$/);
     // The fees are in ETH alone: at ETH's own qualified price, no pool mark to say.
     assert.equal(await fees.getAttribute('data-usd-basis'), 'qualified-prices');
-    assert.match(await fees.getAttribute('title'), /^Qualified valuation at block \d+$/);
+    // Changed on purpose 2026-10-31 (QA round 2 follow-ups, R23; N16): no title on the qualified figure (it named the block),
+    // and none on the strip ("Read at block N").
+    assert.equal(await fees.getAttribute('title'), null);
+    assert.equal(await detail.locator('[data-position-stats]').getAttribute('title'), null);
     assert.equal(await detail.locator('[data-usd-as-of], [data-usd-why], [data-usd-snapshot]').count(), 0, 'a current figure says no time and needs no reason');
     assert.doesNotMatch(await detail.innerText(), /USD unavailable/i);
     const details = detail.locator('[data-position-details]');

@@ -81,7 +81,8 @@ export const NON_CUSTODIAL: DocPage = {
             { label: 'Turn off Auto-exit', value: 'You', note: 'Ends it for good.' },
           ],
         },
-        p('Each is a transaction your wallet signs, with no Domino fee, and none waits on Domino’s service. They are on the position’s page, and in Automated positions on Positions.'),
+        // Changed on purpose 2026-10-31 (QA round 2 follow-ups, N26): no Automated positions card on Positions.
+        p('Each is a transaction your wallet signs, with no Domino fee, and none waits on Domino’s service. They are on the position’s page.'),
         p(doc('Signing in', 'wallet', 'sign-in'), ' grants none of them.'),
       ],
     },
