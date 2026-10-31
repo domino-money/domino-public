@@ -10,7 +10,7 @@ import { visibleAmountQuality } from './valueReadiness'
 import type { PositionState } from '../../lib/fees/types'
 import { formatUsdFloor } from '../../lib/format/usd'
 import { shortDate, shortTime } from '../../lib/format/time'
-import { readablePrice } from '../../lib/chart/priceFacts'
+import { rangeFacts, readablePrice, statusWords } from '../../lib/chart/priceFacts'
 import { APR_MISSING, aprText, positionApr, spanText } from '../../lib/positionApr'
 import { shownCardRange, shownCardTick, type RangeEnd } from '../../lib/read/screens/positions'
 import type { LiveCard } from '../../lib/walletCards'
@@ -59,7 +59,7 @@ function FigureDetail({ active, label, children }: { active: boolean; label: str
  * start, read at a past block when the history has none a day old (lib/fees/pastReads.ts); the line's title says from
  * when and which block.
  */
-function YourApr({ tokenId, compact = false }: { tokenId: string; compact?: boolean }) {
+function YourApr({ tokenId, compact = false, closed = false }: { tokenId: string; compact?: boolean; closed?: boolean }) {
   const fees = useFeeHistory(tokenId)
   // Asks for the 24H start while the tile is shown (no read when the history has one, or for a saved copy); no fills.
   usePastReads(tokenId, '24h', false)
@@ -78,7 +78,9 @@ function YourApr({ tokenId, compact = false }: { tokenId: string; compact?: bool
   // the position", which is the position's own state. A saved copy's rate said "Last available history" and "Through …
   // · not current" to a screen reader, and its title that it was not a current rate.
   let sub: ReactNode = null
-  if (fees.phase === 'idle' || fees.phase === 'loading') {
+  // (QA round 2, N45) Never a skeleton for a closed position: its history may never settle (a close the ledger does not
+  // hold), and the grey bar stayed forever. The dash until a rate can be said; the rate itself is unchanged (D9).
+  if ((fees.phase === 'idle' || fees.phase === 'loading') && !closed) {
     figure = <Skeleton className="dm-pos-skel-fig" />
   } else if (rates && !rates.all.ok) sub = rates.all.reason === 'empty' ? APR_MISSING.empty : null
   else if (rates?.all.ok) {
@@ -149,6 +151,10 @@ function RangeLine({ price, card, cached = false }: { price: CardPrice; card: Li
   const share = usable ? (shownCardTick(usable) - ticks.lower) / Math.max(1, ticks.upper - ticks.lower) : null
   const at = share === null ? null : share < 0 ? 0.015 : share > 1 ? 0.985 : 0.05 + 0.9 * share
   const live = !cached && card.hasLiquidity ? card.inRange : null
+  // (QA round 2, N68) In range, the Price range card's own status words say when the price is close to an end and what
+  // happens past it (lib/chart/priceFacts.ts statusWords `move`); the bar's state line says the same to a screen reader.
+  const facts = live ? rangeFacts(card, usable) : null
+  const near = facts && facts.where === 'inside' ? statusWords(facts).move : null
   return (
     <div className="dm-pos-span" data-stat="range" data-full-range={fullRange ? '' : undefined} data-ember-rest={at !== null && live !== null ? undefined : ''}>
       {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a kept read is drawn as it is, never "Last known range". */}
@@ -163,7 +169,7 @@ function RangeLine({ price, card, cached = false }: { price: CardPrice; card: Li
       </span>
       {live !== null && (
         <span className="sr-only" data-in={String(live)}>
-          {live ? 'In range: earning fees' : 'Out of range: not earning fees'}
+          {live ? `In range: earning fees${near ? `. ${near}` : ''}` : 'Out of range: not earning fees'}
         </span>
       )}
     </div>
@@ -281,7 +287,7 @@ export function KeyFigures({ card, state, price, block, cached = false, workspac
           )
         ) : <Amounts card={card} which="unsettledFees" />}
       </Stat>
-      <YourApr tokenId={card.tokenId} compact={workspace} />
+      <YourApr tokenId={card.tokenId} compact={workspace} closed={!card.hasLiquidity} />
       <Stat
         // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): never "Last known price".
         label="Current price"

@@ -1,5 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { agedMarket, feeLabel, presentMetric, type Market, type Metric } from '../../../lib/markets'
+import { FEE_VENUE, feeWords } from '../../../lib/format/fee'
+import { networkName } from '../../../lib/networkName'
 import { useFeatured } from '../../../lib/read/featuredSource'
 import { pricePair } from '../../../lib/read/orientation'
 import { poolAprPresentation } from '../../../lib/read/poolAprPresentation'
@@ -12,6 +14,7 @@ import { useDialog } from '../../../lib/useDialog'
 import { MetricCell } from '../../explore/MetricCell'
 import { IconClose } from '../../icons'
 import { TokenMarkPair } from '../../TokenIcon'
+import { FEE_MEANING } from '../../explore/feeMeaning'
 import { FigureDash, IconButton, Skeleton } from '../../ui'
 import { TokenLabel } from '../TokenLabel'
 import { FallbackApr } from './FallbackApr'
@@ -32,11 +35,19 @@ export function figuresHistoryOption(market: Market): PoolHistoryOption | null {
 const sourceName = (metric: Metric): string | null => {
   if (metric.source === 'GeckoTerminal') return 'GeckoTerminal'
   if (metric.source === 'DexScreener') return 'DEX Screener'
-  return metric.state === 'qualified' ? 'Domino history' : null
+  return metric.state === 'qualified' ? OWN_HISTORY : null
 }
 
-/** The selected pool stays live and shares the pool page's cached, automatically refreshed price history. */
-export function PoolFiguresDialog({ market: opened, onClose }: { market: Market; onClose: () => void }) {
+/** Domino's own history's name in the sources line: never said to be unchecked by Domino. */
+const OWN_HISTORY = 'Domino history'
+
+/**
+ * The selected pool stays live and shares the pool page's cached, automatically refreshed price history. `action` is the
+ * caller's way onward (QA round 2, Q19: the row's own link to the pool page, "Open pool"): the sheet ends with it, the
+ * decision a phone makes here. New position stays on the pool page, behind its own checks. Links are the caller's: a
+ * read screen draws none of its own (tests/screens.test.mjs).
+ */
+export function PoolFiguresDialog({ market: opened, action, onClose }: { market: Market; action?: ReactNode; onClose: () => void }) {
   const source = useReadSource()
   const { state } = useMarkets()
   const featured = useFeatured()
@@ -51,7 +62,12 @@ export function PoolFiguresDialog({ market: opened, onClose }: { market: Market;
   const option = figuresHistoryOption(market)
   const apr = poolAprPresentation(market, now)
   const coming = market.figuresPending === true
-  const sources = [...new Set([sourceName(market.tvlUsd), sourceName(market.volume24hUsd)].filter(Boolean))].join(', ')
+  // QA round 2, N38: what the figures' hover titles say, where a tap and the keyboard reach it (this sheet's Details): a
+  // market data provider's figures are not checked by Domino; Domino's own history is named first, and never so.
+  const names = [...new Set([sourceName(market.tvlUsd), sourceName(market.volume24hUsd)].filter((name): name is string => name !== null))]
+  const providers = names.filter((name) => name !== OWN_HISTORY)
+  const sources = [...names.filter((name) => name === OWN_HISTORY), ...(providers.length ? [`${providers.join(' and ')}, not checked by Domino`] : [])].join('; ')
+  const network = networkName(market.tokens.base.chainId)
   const loading = (label: string, data: Record<`data-${string}`, string>) => <span className="inline-flex" {...data}>
     <Skeleton className="h-4 w-16" /><span className="sr-only">{label} loading</span>
   </span>
@@ -62,7 +78,8 @@ export function PoolFiguresDialog({ market: opened, onClose }: { market: Market;
         <TokenMarkPair base={pair.base} quote={pair.quote} size={36} ring="var(--surface-2)" />
         <div className="min-w-0">
           <h2 id="pool-figures-title" ref={heading} tabIndex={-1} className="dm-dialog-title outline-none"><TokenLabel token={pair.base} /> / <TokenLabel token={pair.quote} /></h2>
-          <p className="dm-pool-figures-venue">Uniswap · {feeLabel(market)}</p>
+          {/* QA round 2, Q23 and Q28: the pool's network beside the exchange, and the fee as every chip writes it. */}
+          <p className="dm-pool-figures-venue">{FEE_VENUE} · <span data-chain-chip={market.tokens.base.chainId}>{network}</span> · <span title={FEE_MEANING}>{feeWords(feeLabel(market))}</span></p>
         </div>
       </header>
       <IconButton label="Close" icon={<IconClose />} variant="ghost" size="sm" className="dm-dialog-close" onClick={onClose} />
@@ -86,12 +103,15 @@ export function PoolFiguresDialog({ market: opened, onClose }: { market: Market;
       <details className="dm-details dm-pool-figures-details" data-figures-sources="">
         <summary tabIndex={0}>Details</summary>
         <dl className="dm-pool-figures-facts">
-          <div><dt>Network</dt><dd>Robinhood Chain</dd></div>
-          <div><dt>Pool fee</dt><dd>{feeLabel(market)}</dd></div>
+          <div><dt>Network</dt><dd>{network}</dd></div>
+          {/* Changed on purpose 2026-10-30 (QA round 2, final review read-1, Q28): what the fee is, in words under it, where a
+              tap and the keyboard reach it; the header's hover title alone reached neither. */}
+          <div><dt>Pool fee</dt><dd>{feeLabel(market)}</dd><dd className="dm-pool-figures-fact-note" data-fee-meaning="">{FEE_MEANING}</dd></div>
           {(apr.qualified || apr.fallback || apr.estimate.text !== null) && <div><dt>APR basis</dt><dd>{apr.qualified ? 'Verified fees over 24h' : 'Recent pool activity'}</dd></div>}
           {sources && <div><dt>Data sources</dt><dd>{sources}</dd></div>}
         </dl>
       </details>
+      {action && <div className="dm-pool-figures-foot">{action}</div>}
     </div>
   </div>
 }

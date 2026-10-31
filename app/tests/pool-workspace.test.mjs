@@ -29,6 +29,8 @@ const parts = Object.fromEntries([
   'PoolEarnings', 'PoolRangeGuide', 'PoolAutomation', 'PoolActivitySummary',
   // 2026-10-01 (audit V1): an estimate standing in for the read service's.
   'FallbackApr',
+  // 2026-10-30 (QA round 2, N24): a contract's address in Technical details, linked to its explorer (checked for real below).
+  'ExplorerAddress',
 ].map((name) => [name, stub(name)]))
 
 // Deterministic effect harness around the actual component source. It models
@@ -111,6 +113,14 @@ function load(name, dependencies, expose = '') {
     // tab's name (audit E11), which a page here sets nowhere.
     ...real('src/lib/format/fee.ts'), ...real('src/lib/format/apr.ts'), useRouteTitle: () => undefined, useTabTitle: () => undefined,
     quoteIndex: require('../.test-build/app/src/lib/read/orientation.js').quoteIndex,
+    // 2026-10-30 (QA round 2): the network's name on every pool (Q23), the real table; the fee chip's title (Q28); and the
+    // Markets rows a token page already holds (N10), none here unless a test says so.
+    networkName: require('../.test-build/app/src/lib/networkName.js').networkName, FEE_MEANING: 'What the fee is.', useKnownMarkets: () => null,
+    // 2026-10-30 (QA round 2, final review read-1): the pool page's fee segment is the button of its (i) tip; here a button
+    // with the tip's words as data (InfoTip's own behaviour is the shell's).
+    InfoTip: function InfoTip({ label, text, children }) { return React.createElement('button', { type: 'button', 'aria-label': label, 'data-info-tip': text }, children) },
+    // 2026-10-30 (QA round 2, N8): New position's list takes the figures Markets shows; none held here unless a test says so.
+    useKnownMarketFigures: () => null,
     ...dependencies,
   }
   new Function('require', 'module', 'exports', code)((name) => name === 'react' ? hooks : name === 'react/jsx-runtime' ? require(name) : common, mod, mod.exports)
@@ -593,6 +603,19 @@ test('provider attribution is visible text rather than a hover-only title, and t
   host.unmount()
 })
 
+// Added 2026-10-30 (QA round 2, final review read-1, Q28): what the pool fee is opens from the chip's fee segment, in the
+// (i) tip the key figures use (N38), which a tap or the keyboard opens; a hover title alone reached neither. The chip
+// keeps its short text.
+test('the chip’s fee segment opens what the fee is in its tip, a button a tap or the keyboard reaches, with no hover title', () => {
+  const fixture = workspace(); const host = mount(fixture.PoolWorkspace, fixture.props)
+  const tips = elements(host.tree, (node) => node.type?.name === 'InfoTip')
+  assert.deepEqual(tips.filter((tip) => tip.props.text === 'What the fee is.').map((tip) => tip.props.label), ['About the 0.3% fee'])
+  const markup = renderToStaticMarkup(host.tree)
+  assert.match(markup, /<span class="dm-chip"><span class="dm-fee-venue">Uniswap<\/span><span class="dm-fee-sep"> · <\/span><span class="dm-fee-venue dm-fee-net" data-chain-chip="4663">Robinhood Chain<\/span><span class="dm-fee-sep"> · <\/span><button type="button" aria-label="About the 0\.3% fee" data-info-tip="What the fee is\.">\s*<span class="dm-fee-value">0\.3% fee<\/span><\/button><\/span>/)
+  assert.doesNotMatch(markup, /title="What the fee is\."/, 'no hover title beside the tip')
+  host.unmount()
+})
+
 // --- the pool page: which token verifies which pool, and a late answer never lands ---
 
 function poolPage(hash, dependencies = {}) {
@@ -665,7 +688,9 @@ test('a pool outside the six is verified with the token its link names, and is n
     withToken.verifications[0].resolve({ failure: null, option: null, restarted: false }); await flush(); host.render()
     assert.equal(part(host, 'PoolWorkspace'), undefined)
     const empty = part(host, 'EmptyState')
-    assert.match(empty.props.title, /could not be verified/)
+    // Changed on purpose 2026-10-30 (QA round 2, N101): plain words, no ids and no "pools route".
+    assert.match(empty.props.title, /We couldn’t find this pool/)
+    assert.doesNotMatch(String(empty.props.body), /pools route|0x/)
     assert.deepEqual(elements(empty.props.action, (node) => node.type === parts.LinkButton).map((node) => node.props.href), ['#/markets'], 'the way back to Markets, and no Verify again')
     assert.equal(elements(empty.props.action, (node) => node.type === Container).length, 0)
     host.unmount()
@@ -709,7 +734,9 @@ test('a verification with no answer leaves the page’s dashes, no reason in a t
     assert.doesNotMatch(markup.replace(/<[^>]+>/g, ''), /Hourly candles|GeckoTerminal|market data provider/i, 'no caption under the chart heading')
     // Changed on purpose (2026-09-27, round 6): the resting chart's title says where its prices come from in plain words.
     // changed on purpose 2026-10-15 (pack 7, owner: no status notices): the chart's dash has no reason in its title.
-    assert.match(markup, /<div class="dm-pool-plot dm-dots-chart mt-4" title="Prices from swaps on Robinhood Chain\."><div class="dm-pool-plot-empty"><span class="text-fg-subtle">—<\/span>/)
+    // Changed on purpose 2026-10-30 (QA round 2 review, N16): no source caption as the plot's title, as the drawn chart has none.
+    assert.match(markup, /<div class="dm-pool-plot dm-dots-chart mt-4"><div class="dm-pool-plot-empty"><span class="text-fg-subtle">—<\/span>/)
+    assert.doesNotMatch(markup, /Prices from swaps on Robinhood Chain/)
     assert.deepEqual(asks.map(({ outcome, attempt }) => [outcome.state, attempt]), [['busy', 0]])
     assert.equal(verifications.length, 1)
     asks[0].resolve(true); await flush(); host.render()
@@ -921,7 +948,8 @@ test('a live window says the span it actually covered and never calls it a day (
 
   // The stored window is unchanged: it really is the last 24 hours.
   const stored = markupText(renderToStaticMarkup(React.createElement(PoolActivityCard, { read: okRead('pool-activity', 'pool-activity.success'), option: fixturePool() })))
-  assert.match(stored, /Swaps \(24h\) 4 Pool age Older than 24 h Window 24 h covered/)
+  // Changed on purpose 2026-10-30 (QA round 2, N34): "24h", as every other screen writes it.
+  assert.match(stored, /Swaps \(24h\) 4 Pool age Older than 24h Window 24h covered/)
   assert.doesNotMatch(stored, /data-activity-live|activity index/)
 })
 
@@ -936,9 +964,12 @@ test('G11: the activity card shows the 24h turnover, the LP fees and the LP asse
   assert.deepEqual(rowCells(html, 'lp-assets'), ['<span class="tnum" title="0.000000001012536287">&lt;0.000001</span>', '<span class="tnum" title="20,025,853.294226">20,025,853</span>'])
   const text = markupText(html)
   assert.match(text, /Swaps \(24h\) 4/)
-  assert.match(text, /Pool age Older than 24 h/)
-  assert.match(text, /Window 24 h covered/)
-  assert.match(text, /Blocks covered 10 to 700/)
+  assert.match(text, /Pool age Older than 24h/)
+  assert.match(text, /Window 24h covered/)
+  // Changed on purpose 2026-10-30 (QA round 2, Q13): a stored window counts from the pool's first indexed block, so it is
+  // "Blocks indexed", in grouped digits; a live window keeps "Blocks covered" (above).
+  assert.match(text, /Blocks indexed 10 to 700/)
+  assert.doesNotMatch(text, /Blocks covered/)
   assert.match(text, /ETH TOKEN/, 'the columns are the pool’s tokens, in its order')
   assert.doesNotMatch(text, /\$|APR|USD|stale|Retry|again/i)
   assert.doesNotMatch(html, /money-wait|dm-inset/)
@@ -956,7 +987,7 @@ test('G11: the activity card shows the 24h turnover, the LP fees and the LP asse
   assert.doesNotMatch(stale, /<section[^>]*title=/)
   assert.doesNotMatch(stale, /Stale: indexed/)
   assert.doesNotMatch(markupText(stale), /stale/i)
-  assert.match(markupText(stale), /Swaps \(24h\) 4 Pool age Older than 24 h Window 24 h covered/)
+  assert.match(markupText(stale), /Swaps \(24h\) 4 Pool age Older than 24h Window 24h covered/)
 
   // Fees and positions not reconciled: dashes (changed on purpose 2026-10-15, pack 7, owner: no status notices: with no
   // "Unavailable: <reason>" title).
@@ -1004,7 +1035,7 @@ test('G11: activity far behind the chain is never the last 24 hours: past 15 min
   assert.match(months, /data-pool-activity="unavailable" data-activity-reason="activity_stale">/)
   const text = markupText(months)
   assert.equal(text.replace(/[^—]/g, '').length, 10, 'every figure is a dash, the table’s amounts included')
-  assert.doesNotMatch(text, /Older than 24 h|24 h covered|observed|\b4\b|10 to 700|0\.0000289269|1,635,670|stale|behind/i, 'no count, window, pool age, blocks or amount from it, and nothing said on the card')
+  assert.doesNotMatch(text, /Older than 24 ?h|24 ?h covered|observed|\b4\b|10 to 700|0\.0000289269|1,635,670|stale|behind/i, 'no count, window, pool age, blocks or amount from it, and nothing said on the card')
   assert.match(months, /<p role="status" class="sr-only"><\/p>/, 'the live region says nothing')
   assert.doesNotMatch(months, /Stale: indexed|behind the chain head/, 'no title says how far behind')
   assert.equal([...months.matchAll(/<span class="text-fg-subtle">—<\/span>/g)].length, 10, 'ten dashes, none with a title')
@@ -1074,7 +1105,7 @@ test('G12: positions in this pool: counts, LP assets in token units, and each po
 })
 
 // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): with no estimate the dash has no title at all.
-test('G14: the detailed estimate lists its inputs and takes its title from its own limitations; with no estimate it is a neutral dash with no title', () => {
+test('G14: the detailed estimate lists its inputs and carries the plain estimate title; with no estimate it is a neutral dash with no title', () => {
   const { PoolAprEstimate } = real('src/components/read/screens/PoolAprEstimate.tsx')
   const producer = (name) => v2.assertResponse('pool-market', JSON.parse(readFileSync(resolve(root, `../api-contracts/read-v2/fixtures/producer/pool-market.${name}.json`), 'utf8')))
   const observed = (estimate) => ({ data: estimate, receivedAt: 0, receivedMonotonic: 0 })
@@ -1082,9 +1113,11 @@ test('G14: the detailed estimate lists its inputs and takes its title from its o
   const html = renderToStaticMarkup(React.createElement(PoolAprEstimate, { observation: observed(producer('available').estimate), now, detailed: true }))
   const inputs = [...html.matchAll(/<dt>(.*?)<\/dt><dd[^>]*>(.*?)<\/dd>/g)].map(([, dt, dd]) => [dt, dd])
   assert.deepEqual(inputs.slice(0, 5), [['LP fee', '0.30%'], ['Protocol fee', 'None'], ['24h volume, provider-reported', '$1.0K'], ['TVL, provider-reported', '$10.0K'], ['Method', '365 × LP fee × (1 − protocol fee) × 24h volume ÷ TVL']])
-  assert.match(html, /title="From a market data provider’s reported 24h volume and TVL, not reconciled\. The provider’s update time is unknown\. Current TVL, not time-weighted\. Assumes the current fixed LP fee for the whole 24h volume\. The protocol fee’s effect is not reconciled\. Full-day coverage is not proven\. Excludes rewards, gas, service fees and price changes\. Pool estimate, not position APR or APY\. Not a return forecast or a recommendation\." data-apr-figure="">11\.0% est\. APR/)
+  // Changed on purpose 2026-10-30 (QA round 2, N105/Q29): the figure's title is one plain sentence, not the payload's nine limitations.
+  assert.match(html, /title="Estimate from the last 24 hours of trading fees\. Your earnings depend on your price range\." data-apr-figure="">11\.0% est\. APR/)
   // Changed on purpose 2026-10-01 (audit E21): the figure by the one APR rule; the exact estimate stays in the inputs.
-  assert.match(html, /<dt>Exact estimate<\/dt><dd class="tnum break-all text-fg-muted">10\.95%<\/dd>/)
+  // Changed on purpose 2026-10-30 (QA round 2, Q34): to four decimals, the read service's whole figure in its title.
+  assert.match(html, /<dt>Precise estimate<\/dt><dd class="tnum text-fg-muted" title="10\.95[0-9]*%">10\.95%<\/dd>/)
 
   const protocolFee = producer('protocol-fee').estimate
   const protocol = renderToStaticMarkup(React.createElement(PoolAprEstimate, { observation: observed(protocolFee), now, detailed: true }))
@@ -1166,12 +1199,152 @@ function picker(props = {}) {
     hintsWithin,
     usablePoolsRequest: real('src/lib/read/screens/poolsList.ts').usablePoolsRequest,
     projectPoolsView: real('src/lib/read/screens/poolsList.ts').projectPoolsView,
+    // 2026-10-30 (QA round 2, N10): the Markets rows the page already holds fill the figures the route did not report.
+    withMarketFigures: real('src/lib/read/screens/poolsList.ts').withMarketFigures,
     rowApr: real('src/lib/read/screens/rowApr.ts').rowApr, rowAprReasonText: real('src/lib/read/screens/rowApr.ts').rowAprReasonText,
   })
   const host = mount(PoolPicker, { source: { transport: 'bridge' }, token: TOKEN_1, paired: null, pending: null, onPending() {}, catalogue: false, compact: true, ...props })
   return { host, reads, asks, hinted }
 }
 const pickerLine = (host) => elements(host.tree, (node) => node.props?.['data-pools-unavailable'] !== undefined)[0]
+
+// Added 2026-10-30 (QA round 2, N10): ETH/USDG read "TVL — 24h volume — APR —" and sat last in New position while Markets
+// showed its figures. Changed on purpose 2026-10-30 (QA round 2, N8: one pool, one set of figures on every screen): each
+// figure Markets shows replaces the route's (it used to fill only the missing ones), its APR rides along, and the list
+// is in TVL order again; a pool Markets shows nothing for keeps the route's, and nothing changes without figures.
+test('New position’s list takes the figures Markets shows for a pool, APR included, and orders by TVL again', () => {
+  const lists = real('src/lib/read/screens/poolsList.ts')
+  const bare = { ...option('a'), liquidity: { state: 'unavailable', provider: 'dexscreener', reason: 'no_provider_figures' }, volume: { state: 'unavailable', provider: 'dexscreener', reason: 'no_provider_figures' } }
+  const figured = { ...option('b'), liquidity: { state: 'attributed', value: '$5.0K', raw: '5000', zero: false, provider: 'dexscreener', retrievedAt: 1, cacheAgeSeconds: null }, volume: { state: 'not_reported', provider: 'dexscreener' } }
+  const unknown = { ...option('c'), liquidity: { state: 'attributed', value: '$1.0K', raw: '1000', zero: false, provider: 'dexscreener', retrievedAt: 1, cacheAgeSeconds: null }, volume: { state: 'not_reported', provider: 'dexscreener' } }
+  const options = [figured, bare]
+  assert.equal(lists.withMarketFigures(options, null), options, 'no rows held: the same list')
+  assert.equal(lists.withMarketFigures(options, new Map()), options)
+  assert.equal(lists.withMarketFigures([unknown], new Map([[id('c'), { liquidity: null, volume: null, apr: null }]]))[0], unknown, 'Markets shows nothing for it: the route’s row as it was')
+  const figures = new Map([
+    [id('a'), { liquidity: lists.marketFigure({ value: '2100000', state: 'provider', source: 'GeckoTerminal', asOf: 7 }), volume: lists.marketFigure({ value: '4400000', state: 'provider', source: 'GeckoTerminal', asOf: 7 }), apr: { digits: '38.8', estimate: true } }],
+    [id('b'), { liquidity: lists.marketFigure({ value: '9', state: 'provider', source: 'GeckoTerminal' }), volume: lists.marketFigure({ value: '3', state: 'stale', source: 'DexScreener' }), apr: null }],
+  ])
+  const filled = lists.withMarketFigures(options, figures)
+  assert.deepEqual(filled.map((entry) => entry.key), [id('a'), id('b')], 'the larger TVL first')
+  assert.deepEqual([filled[0].liquidity.state, filled[0].liquidity.value, filled[0].liquidity.provider], ['attributed', '$2.1M', 'geckoterminal'])
+  assert.deepEqual([filled[1].liquidity.value, filled[1].liquidity.provider], ['$9.00', 'geckoterminal'], 'Markets’ figure, not the route’s $5.0K')
+  assert.deepEqual([filled[1].volume.state, filled[1].volume.provider], ['attributed_stale', 'dexscreener'], 'with its own provider')
+  // The APR Markets shows is the row's, and the preview's (optionAprText); without one, the row's own estimate or nothing.
+  assert.deepEqual(filled[0].marketApr, { digits: '38.8', estimate: true })
+  assert.equal(lists.optionAprText(filled[0]), '38.8% est.')
+  assert.equal(filled[1].marketApr, undefined)
+  assert.equal(lists.optionAprText({ ...filled[0], marketApr: { digits: '41.2', estimate: false } }), '41.2%', 'Domino’s own history has no "est."')
+  assert.equal(lists.optionAprText(bare), null, 'no figures, no estimate')
+  // Domino's own history has no provider to name here: not taken. A stand-in is, under the provider it names (N8).
+  assert.equal(lists.marketFigure({ value: '1', state: 'qualified' }), null)
+  assert.deepEqual([lists.marketFigure({ value: '1', state: 'stale', source: 'GeckoTerminal', fallback: 'kept', asOf: 5 }).state, lists.marketFigure({ value: '1', state: 'provider', source: 'DexScreener', fallback: 'dexscreener' }).provider], ['attributed_stale', 'dexscreener'])
+  assert.equal(lists.marketFigure({ value: null, state: 'unavailable', source: 'GeckoTerminal' }), null)
+})
+
+// Added 2026-10-30 (QA round 2, N8): the APR a Markets row shows, chosen as its cell chooses, in the tile's own digits.
+test('the APR Markets shows for a row: Domino’s history, else the current estimate in its own rounding, else the stand-in, else none', () => {
+  const lists = real('src/lib/read/screens/poolsList.ts')
+  const now = { wall: 0 }
+  const none = { value: null, state: 'unavailable' }
+  const estimate = (percent) => ({ data: { status: 'available', feeAprEstimate24hPercent: percent, reasons: [], provenance: { effectiveMarketAgeSeconds: 0, snapshotAgeSeconds: 0, maxStaleSeconds: 600, freshForSeconds: 60, snapshotFreshForSeconds: 60 } }, receivedAt: 0 })
+  assert.deepEqual(lists.marketApr({ feeAprPercent: { value: '41.24', state: 'qualified' }, feeAprEstimate: estimate('38.849999') }, now), { digits: '41.2', estimate: false })
+  // The read service's decimal rounded once, as the tile rounds it: 38.8, never a second rounding's 38.9.
+  assert.deepEqual(lists.marketApr({ feeAprPercent: none, feeAprEstimate: estimate('38.849999') }, now), { digits: '38.8', estimate: true })
+  assert.deepEqual(lists.marketApr({ feeAprPercent: none, feeAprEstimate: { data: null, receivedAt: 0 }, aprFallback: { percent: '12.34', basis: 'dexscreener' } }, now), { digits: '12.3', estimate: true })
+  assert.equal(lists.marketApr({ feeAprPercent: none, feeAprEstimate: { data: null, receivedAt: 0 } }, now), null)
+})
+
+// Added 2026-10-30 (QA round 2, N8 review): what New position takes for a pool is what the Markets table draws for it. A
+// refused figure stood in for by what is at hand (useFallbackRows), then aged on the same clock (MarketsTable's Row), and
+// from that its TVL, 24h volume and APR; a pool chosen from a link takes the same (withKnownMarket, the preview card's).
+test('New position takes the figures the Markets table draws: stand-ins first, then aged, Domino’s history APR, and a linked pool too', () => {
+  const lists = real('src/lib/read/screens/poolsList.ts')
+  const markets = real('src/lib/markets.ts')
+  const fallback = real('src/lib/read/figureFallback.ts')
+  const now = { wall: 1_001_000 }
+  const fresh = { block: 700, market: { status: 'available', receivedAt: now.wall, ageSeconds: 0, cacheAgeSeconds: 0, freshForSeconds: 60 } }
+  const old = { block: 700, market: { status: 'available', receivedAt: 0, ageSeconds: 0, cacheAgeSeconds: 0, freshForSeconds: 60 } }
+  const none = { value: null, state: 'unavailable' }
+  const refused = { value: null, state: 'unavailable', reason: 'provider_rate_limited' }
+  const pool = { tokens: { base: token('1'), quote: token('2') }, feePips: 3000, integration: 'hookless_fixed_fee', protocolFeeRaw: 0, hooks: addr('0'), feeAprPercent: none, feeAprEstimate: { data: null, receivedAt: 0, reason: 'estimate_not_enabled' } }
+  // (a) refused by the provider, DEX Screener's answer at hand; (b) a provider figure past its freshness; (c) Domino's history.
+  const rows = [
+    { ...pool, poolId: `0x${'A'.repeat(64)}`, tvlUsd: refused, volume24hUsd: refused, provenance: fresh },
+    { ...pool, poolId: id('b'), tvlUsd: { value: '9000', state: 'provider', source: 'GeckoTerminal', asOf: 900 }, volume24hUsd: { value: '300', state: 'provider', source: 'GeckoTerminal', asOf: 900 }, provenance: old },
+    { ...pool, poolId: id('c'), tvlUsd: { value: '5', state: 'qualified' }, volume24hUsd: { value: '1', state: 'qualified' }, feeAprPercent: { value: '41.24', state: 'qualified' }, provenance: fresh },
+  ]
+  const atHand = { [id('a')]: { dex: { liquidityUsd: '2100000', volume24hUsd: '4400000', retrievedAt: 990 } } }
+  const fallbackInputs = (poolId, _entries, at) => ({ kept: null, dex: null, selection: null, ...atHand[poolId.toLowerCase()], now: at })
+  const known = load('src/lib/read/screens/knownMarkets.ts', {
+    agedMarket: markets.agedMarket, needsFallback: fallback.needsFallback, withFallback: fallback.withFallback, fallbackInputs,
+    marketApr: lists.marketApr, marketFigure: lists.marketFigure, withMarketFigures: lists.withMarketFigures,
+  })
+  assert.equal(known.knownMarketFigures(null, now), null)
+  assert.equal(known.knownMarketFigures([], now), null)
+  const figures = known.knownMarketFigures(rows, now)
+  assert.deepEqual([...figures.keys()], [id('a'), id('b'), id('c')], 'by pool id, lowercase')
+  // Each one exactly what the table draws: useFallbackRows' row, aged as Row ages it.
+  for (const row of rows) {
+    const drawn = markets.agedMarket(fallback.needsFallback(row, now) ? fallback.withFallback(row, fallbackInputs(row.poolId, null, now)) : row, now)
+    assert.deepEqual(figures.get(row.poolId.toLowerCase()), { liquidity: lists.marketFigure(drawn.tvlUsd), volume: lists.marketFigure(drawn.volume24hUsd), apr: lists.marketApr(drawn, now) })
+  }
+  const [a, b, c] = [id('a'), id('b'), id('c')].map((key) => figures.get(key))
+  assert.deepEqual([a.liquidity.state, a.liquidity.value, a.liquidity.provider, a.volume.value], ['attributed', '$2.1M', 'dexscreener', '$4.4M'], 'DEX Screener’s answer stands in')
+  assert.equal(a.apr.estimate, true, 'its estimate from those figures, as the table’s')
+  assert.deepEqual([b.liquidity.state, b.liquidity.value, b.apr], ['attributed_stale', '$9.0K', null], 'aged on the table’s clock')
+  assert.deepEqual([c.liquidity, c.volume, c.apr], [null, null, { digits: '41.2', estimate: false }], 'Domino’s history: its APR, no provider figure to take')
+  // A pool chosen from a link carries the pools route's figures and no Markets APR: it takes Markets' as the list does.
+  const route = { state: 'attributed', value: '$5.0K', raw: '5000', zero: false, provider: 'dexscreener', retrievedAt: 1, cacheAgeSeconds: null }
+  const linked = (letter, extra = {}) => ({ ...option(letter), liquidity: route, volume: route, ...extra })
+  const first = known.withKnownMarket(linked('a'), rows, now)
+  assert.deepEqual([first.liquidity.value, first.volume.value, first.marketApr], ['$2.1M', '$4.4M', a.apr])
+  assert.equal(lists.optionAprText(first), `${a.apr.digits}% est.`, 'the card’s APR is the list row’s and Markets’')
+  const history = known.withKnownMarket(linked('c'), rows, now)
+  assert.deepEqual([history.liquidity, lists.optionAprText(history)], [route, '41.2%'], 'the route’s TVL stays where Markets shows its own history')
+  // An APR Markets no longer shows is not kept from an earlier merge; a pool it does not hold, or no rows, is left as it is.
+  const again = known.withKnownMarket(linked('b', { marketApr: { digits: '9.9', estimate: true } }), rows, now)
+  assert.deepEqual([again.liquidity.value, 'marketApr' in again], ['$9.0K', false])
+  const other = linked('d')
+  assert.equal(known.withKnownMarket(other, rows, now), other)
+  assert.equal(known.withKnownMarket(other, null, now), other)
+})
+
+// Added 2026-10-30 (QA round 2, N8, pass 3 review): New position's preview card, drawn for real, for a pool chosen from a
+// link (the pools route's TVL, no Markets APR) while the page holds that pool's Markets row: the card writes the TVL and
+// APR its list row writes (withKnownMarket, optionAprText). Without the row it keeps the route's own figures.
+test('New position’s preview card writes the TVL and APR of the pool’s list row when the page holds its Markets row', () => {
+  const { PositionPreview } = real('src/components/create/PositionPreview.tsx')
+  const { MarketsContext } = real('src/lib/read/useMarkets.ts')
+  const { initialState } = real('src/lib/create/journey.ts')
+  const known = real('src/lib/read/screens/knownMarkets.ts')
+  const lists = real('src/lib/read/screens/poolsList.ts')
+  const { readNow } = real('src/lib/markets.ts')
+  const at = Date.now()
+  const figure = (value) => ({ value, state: 'provider', source: 'GeckoTerminal', asOf: Math.floor(at / 1000) })
+  const marketRow = {
+    poolId: id('a'), tokens: { base: token('1'), quote: token('2') }, feePips: 3000, integration: 'hookless_fixed_fee', protocolFeeRaw: 0, hooks: addr('0'),
+    tvlUsd: figure('2100000'), volume24hUsd: figure('4400000'), feeAprPercent: { value: '41.24', state: 'qualified' },
+    feeAprEstimate: { data: null, receivedAt: 0, reason: 'estimate_not_enabled' },
+    provenance: { block: 700, market: { status: 'available', receivedAt: at, ageSeconds: 0, cacheAgeSeconds: 0, freshForSeconds: 600 } },
+  }
+  const route = { state: 'attributed', value: '$5.0K', raw: '5000', zero: false, provider: 'dexscreener', retrievedAt: 1, cacheAgeSeconds: null }
+  const linked = { ...option('a'), liquidity: route, volume: route }
+  const state = { ...initialState(), stage: 'pool', pool: linked }
+  const card = (provider) => {
+    const preview = React.createElement(PositionPreview, { state, preview: null, price: null, balances: { status: 'idle', balances: null }, step: 'pool' })
+    const html = renderToStaticMarkup(provider ? React.createElement(MarketsContext.Provider, { value: provider }, preview) : preview)
+    const stat = (label) => new RegExp(`<dt>${label}</dt><dd[^>]*>(.*?)</dd>`, 's').exec(html)?.[1].replace(/<[^>]+>/g, '') ?? null
+    return { tvl: stat('In this pool'), apr: stat('Pool fee rate, yearly') }
+  }
+  const ready = { phase: 'ready', result: { markets: [marketRow] } }
+  const held = card({ kind: 'bridge', getSnapshot: () => ready, subscribe: () => () => undefined, ensure: () => undefined, refresh: () => undefined })
+  const listRow = known.withKnownMarket(linked, [marketRow], readNow())
+  assert.deepEqual(held, { tvl: listRow.liquidity.value, apr: lists.optionAprText(listRow) }, 'the list row’s figures')
+  assert.deepEqual(held, { tvl: '$2.1M', apr: '41.2%' })
+  // No Markets rows held (a page opened straight from the link): the route's own TVL and the row's own estimate.
+  assert.deepEqual(card(null), { tvl: '$5.0K', apr: lists.optionAprText(linked) })
+})
 const failed = (s) => ({ route: 'pools', provenance: { transport: 'bridge', contract: null, receivedAt: 0, attempts: 1 }, ...s })
 
 // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the line's title no longer carries the failed read's words.
@@ -1232,6 +1405,91 @@ test('the pool picker’s quiet re-asks belong to its token: a new token starts 
   reads.at(-1).resolve(busy); await flush(); host.render()
   assert.equal(asks.at(-1).attempt, 0, 'the new token is asked again from its first wait')
   host.unmount()
+})
+
+/** Quiet waits a test runs by hand: each is the screen's whenVisibleAfter(ms, run). */
+function quietWaits() {
+  const waits = []
+  return { waits, whenVisibleAfter: (ms, run) => { const wait = { ms, run, cancelled: false }; waits.push(wait); return () => { wait.cancelled = true } } }
+}
+const READ_AGAIN_MS = [2_000, 5_000, 15_000, 30_000]
+
+// Added 2026-10-30 (QA round 2 review, the owner's rule: no "unavailable" line on a read surface): a Base or Arbitrum One
+// token page's pools list that did not read said "Pool search on Base is unavailable right now." and was never read again.
+test('a Base or Arbitrum One token page’s pools that did not read rest and are read again quietly, then say there are none to show; New position’s list keeps its line', async () => {
+  hooks.useSyncExternalStore ??= (_subscribe, snapshot) => snapshot()
+  const { waits, whenVisibleAfter } = quietWaits()
+  const { NetworkPoolPicker } = load('PoolPicker', {
+    whenVisibleAfter, useWalletIdentity: () => ({ kind: 'disconnected' }), readNow: () => ({ wall: 1001000, monotonic: 0 }),
+    COPY: real('src/lib/read/screens/copy.ts').COPY, networkRows: () => [], figuresShownUntil: () => null,
+  })
+  const reads = []
+  const read = () => { const pending = deferred(); reads.push(pending); return pending.promise }
+  const failed = { kind: 'failed', code: 'network_search_unavailable', reason: 'Pool search on Base is unavailable right now.' }
+  const resting = (host) => elements(host.tree, (node) => node.type?.name === 'RestingCreateRows').length > 0
+  const host = mount(NetworkPoolPicker, { read, network: 'Base', pending: null, onPending() {}, browse: true, onOpen() {} })
+  for (const [attempt, ms] of READ_AGAIN_MS.entries()) {
+    reads.at(-1).resolve(failed); await flush(); host.render()
+    assert.equal(pickerLine(host), undefined, 'nothing said while it will be read again')
+    assert.ok(resting(host), 'its rows rest meanwhile')
+    assert.doesNotMatch(renderToStaticMarkup(host.tree).replace(/<[^>]+>/g, ' '), /unavailable/i, 'no words about it, not even to assistive technology (the code stays as data)')
+    assert.equal(waits.at(-1).ms, ms)
+    waits.at(-1).run(); host.render()
+    assert.equal(reads.length, attempt + 2, 'read again, on its own')
+  }
+  reads.at(-1).resolve(failed); await flush(); host.render()
+  const line = pickerLine(host)
+  assert.equal(line.props.children, 'No pools to show for this token.', 'after its last wait, the Robinhood Chain list’s line')
+  assert.equal(line.props['data-pools-unavailable'], 'network_search_unavailable', 'the code, for data')
+  assert.equal(resting(host), false)
+  assert.equal(waits.length, READ_AGAIN_MS.length, 'not read again after that')
+  host.unmount()
+
+  // A failure a later read cannot clear (the token's decimals) is not read again; New position's list keeps its line.
+  const stuck = mount(NetworkPoolPicker, { read, network: 'Base', pending: null, onPending() {}, browse: true, onOpen() {} })
+  reads.at(-1).resolve({ kind: 'failed', code: 'token_decimals_unknown', reason: 'Decimals unknown.' }); await flush(); stuck.render()
+  assert.equal(pickerLine(stuck).props.children, 'No pools to show for this token.')
+  assert.equal(waits.length, READ_AGAIN_MS.length)
+  stuck.unmount()
+  const create = mount(NetworkPoolPicker, { read, network: 'Base', pending: null, onPending() {} })
+  reads.at(-1).resolve({ kind: 'failed', code: 'connect_wallet', reason: 'Connect a wallet to see pools on Base.' }); await flush(); create.render()
+  assert.equal(pickerLine(create).props.children, 'Connect a wallet to see pools on Base.', 'the person’s to act on, in New position')
+  assert.equal(waits.length, READ_AGAIN_MS.length, 'New position’s list is asked once')
+  create.unmount()
+})
+
+// Added 2026-10-30 (QA round 2 review): the Base and Arbitrum One token page rests while its token is read or read again
+// (it showed nothing under its title), and says what to do once its quiet re-asks are spent; never Try again.
+test('a Base or Arbitrum One token page rests while its token is read again, then says to reload; a closed network rests blank', async () => {
+  const { waits, whenVisibleAfter } = quietWaits()
+  const { NetworkTokenExplorer } = load('NetworkTokenExplorer', { whenVisibleAfter, Display: Container, NetworkPoolPicker: stub('NetworkPoolPicker') })
+  const resolves = []
+  const others = { name: () => 'Base', tokens: () => [], resolve: () => { const pending = deferred(); resolves.push(pending); return pending.promise }, pools: () => new Promise(() => {}) }
+  const props = { location: { chainId: 8453, token: addr('c') }, others, checking: false, navigation: null, actions: () => null }
+  const skeletons = (host) => elements(host.tree, (node) => node.type === parts.Skeleton).length
+  const words = (host) => renderToStaticMarkup(React.createElement(Container, null, host.tree)).replace(/<[^>]+>/g, ' ')
+  const host = mount(NetworkTokenExplorer, props)
+  assert.equal(skeletons(host), 1, 'resting while the token is read')
+  const failed = { ok: false, code: 'network_search_unavailable', reason: 'Pool search on Base is unavailable right now.' }
+  for (const [attempt, ms] of READ_AGAIN_MS.entries()) {
+    resolves.at(-1).resolve(failed); await flush(); host.render()
+    assert.equal(skeletons(host), 1, 'still resting while it waits to be read again')
+    assert.doesNotMatch(words(host), /unavailable|Try again|Reload/i)
+    assert.equal(waits.at(-1).ms, ms)
+    waits.at(-1).run(); host.render()
+    assert.equal(resolves.length, attempt + 2)
+  }
+  resolves.at(-1).resolve(failed); await flush(); host.render()
+  assert.equal(skeletons(host), 0)
+  assert.match(words(host), /Reload the page to see this token’s pools\./, 'the Robinhood Chain token page’s words')
+  assert.doesNotMatch(words(host), /unavailable|Try again/i)
+  host.unmount()
+
+  const closed = mount(NetworkTokenExplorer, { ...props, others: null })
+  assert.equal(skeletons(closed), 0, 'nothing will come on a closed network')
+  assert.doesNotMatch(words(closed), /unavailable|Reload|Pool discovery/i)
+  assert.equal(elements(closed.tree, (node) => node.props?.['data-network-token-state'] === 'closed').length, 1, 'the state, as data')
+  closed.unmount()
 })
 
 // Added 2026-09-24 (owner): New position's first step lists only pools Domino can open a position in, largest TVL
@@ -1604,6 +1862,13 @@ test('network token routes keep identical addresses on different chains distinct
   }
   assert.equal(routes.parseMarketsNetworkHash(routes.marketsHref(token)), null, 'legacy links stay home-only')
   assert.equal(routes.parseNewNetworkHash(routes.newPositionHref(id('a'), token)), null)
+  // Added 2026-10-30 (QA round 2, N5): a token page's pool row proposes its pool to New position, as a hint of a pool id's
+  // shape only (lowercase), never on Markets' own route.
+  const proposed = routes.newNetworkHref(8453, token, id('B'))
+  assert.equal(proposed, `#/new/network/8453/${token}/${id('B')}`)
+  assert.deepEqual(routes.parseNewNetworkHash(proposed), { chainId: 8453, token, pool: id('b') })
+  assert.equal(routes.parseMarketsNetworkHash(`#/markets/network/8453/${token}/${id('b')}`), null, 'Markets takes no pool')
+  assert.equal(routes.parseNewNetworkHash(`#/new/network/8453/${token}/${id('b')}/extra`), null)
 })
 
 // Added 2026-09-20. OverviewResponse.acquisitionAccepted is the producer saying
@@ -1641,7 +1906,9 @@ test('a refused acquisition is data, never words, and asked about less often, no
 
 // Added 2026-10-15 (pack 7 review): a failed read with no pool to show is not left blank: main's line, the failure's title,
 // stays on screen (a gate to pass, or a read asked again on its own a minute later), and no table pretends it is empty.
-test('a failed token read with no pools keeps main’s line: its title, never a blank section', async () => {
+// Changed on purpose 2026-10-30 (QA round 2, the owner's rule): a read asked again on its own rests as loading with no
+// words; one that is not asked again (a gate) says what to do.
+test('a failed token read with no pools rests as loading while it is asked again, and a gate says what to do', async () => {
   for (const [outcome, again] of [
     [{ state: 'unavailable', route: 'overview', cause: { kind: 'network' }, retryable: true }, 60_000],
     [{ state: 'gate_required', route: 'overview' }, null],
@@ -1658,8 +1925,14 @@ test('a failed token read with no pools keeps main’s line: its title, never a 
     reads[0].resolve({ ...outcome, provenance: { transport: 'bridge', contract: null, receivedAt: 0, attempts: 1 } });
     await flush(); host.render();
     const markup = renderToStaticMarkup(host.tree);
-    // The failure's title (failureText(outcome, 'pools').title), on screen, not for assistive technology only.
-    assert.match(markup, /<p role="status" class="mt-3 text-caption text-fg-muted">[^<]+<\/p>/, `${outcome.state}: the line on screen`);
+    // Changed on purpose 2026-10-30 (QA round 2, the owner's rule: no "unavailable" notices): a read asked again on its own
+    // rests as loading and says nothing on screen; one that is not asked again (a gate) says what to do, on screen.
+    if (again === null) assert.match(markup, /<p role="status" class="mt-3 text-caption text-fg-muted">Reload the page to see this token’s pools\.<\/p>/, `${outcome.state}: the line on screen`);
+    else {
+      assert.doesNotMatch(markup, /<p role="status" class="mt-3 text-caption text-fg-muted">/, `${outcome.state}: nothing said on screen`);
+      assert.ok(elements(host.tree, (node) => node.type === parts.Skeleton).length > 0, `${outcome.state}: it rests as loading`);
+    }
+    assert.doesNotMatch(markup, /unavailable|couldn’t|could not/i, `${outcome.state}: no words about the read`);
     assert.equal(part(host, 'MarketsTable'), undefined, `${outcome.state}: no empty table`);
     assert.equal(waits[0]?.ms ?? null, again, `${outcome.state}: asked again on its own as main`);
     host.unmount();
@@ -1699,6 +1972,11 @@ test('round 6: plain words: prices in USDG where the pool holds it, a yearly rat
   // the figure its tile shows: one decimal under 100%, whole from there.
   assert.deepEqual([100.35, 32.13, 2.16, 0.05, 1234.5, 0, 99.96].map(plain.aboutPercent), ['100%', '32.1%', '2.2%', 'less than 0.1%', '1,235%', '0%', '100%'])
   assert.deepEqual(['1,000', '$250.5', ' 10 000 ', '0', '-5', 'abc', '1e3', '10000000000'].map(plain.parseAmount), [1000, 250.5, 10000, null, null, null, null, null])
+  // Added 2026-10-30 (QA round 2, Q21): a decimal comma is never read as a thousands comma ("1000,50" was 100050, "1,5" was
+  // 15), and what is wrong with text that is not an amount is said where it can be.
+  assert.deepEqual(['1000,50', '1,5', '1,000,5', '1,000.50', '1,000,000'].map(plain.parseAmount), [null, null, null, 1000.5, 1000000])
+  assert.deepEqual(['99999999999999999999999', '1000000001', '1.000,50', '1000,50', '1.000', '10.125', '-5', '0', '1,000', 'abc', '1e309', ''].map(plain.amountProblem),
+    ['large', 'large', 'format', 'format', 'format', 'format', 'small', 'small', null, null, null, null])
   const month = plain.earnings(1000, 100.35)
   assert.equal(plain.usdText(month.month), '$83.63')
   assert.equal(plain.usdText(month.year), '$1,004', 'whole dollars from $1,000')
@@ -1747,6 +2025,8 @@ test('round 6: the earnings estimate says a month, a year and a day at the pool�
   assert.match(ready, /\$1,004 a year · \$2\.75 a day/)
   assert.match(ready, /At the pool’s recent rate, about 100% a year\./)
   assert.match(ready, /Fees are earned only inside your range/)
+  // Added 2026-10-30 (QA round 2, Q8 and N55): the note says what the figure leaves out, and the figure is unchanged (D9).
+  assert.match(ready, /a price move can cost more than the fees earn\. Network fees to open and close are extra\./)
   const disclosure = renderToStaticMarkup(React.createElement(PoolEarnings, { apr: 100.35, tvl: null, loading: false }))
   assert.match(disclosure, /<details class="dm-pool-disclosure" data-pool-earnings-basis="">/, 'secondary estimates stay in a closed disclosure')
   assert.doesNotMatch(disclosure, /<details[^>]+open/)
@@ -1755,7 +2035,14 @@ test('round 6: the earnings estimate says a month, a year and a day at the pool�
   const shared = text({ apr: 181.25, tvl: 13_400, loading: false })
   assert.match(shared, /You could earn about \$140\.55 a month/, '$1,000 in a $13.4K pool: 1.8125 × 13,400 × 1,000 / 14,400')
   assert.match(shared, /\$1,687 a year/)
-  assert.match(shared, /At the pool’s recent rate, about 181% a year, shared with the \$13\.4K already in the pool\./)
+  // Changed on purpose 2026-10-30 (QA round 2, N35): the rate the typed amount itself could earn, so the figures add up:
+  // $1,687 a year on $1,000 is about 169%, beside the pool's own 181%.
+  assert.match(shared, /At the pool’s recent rate, about 181% a year\. Your \$1,000 joins the \$13\.4K already in the pool, so it could earn about 169% a year\./)
+  // Added 2026-10-30 (QA round 2, N8): with the APR tile's own digits the sentence says exactly the tile's figure (the tile
+  // reads 38.8 from "38.849999"; the number alone would round to 38.9), and the amounts are worked out as before (D9).
+  assert.match(text({ apr: 38.85, aprDigits: '38.8', tvl: null, loading: false }), /At the pool’s recent rate, about 38\.8% a year\./)
+  assert.match(text({ apr: 38.85, tvl: null, loading: false }), /about 38\.9% a year\./, 'without them, the number rounded by the same rule')
+  assert.match(text({ apr: 0.04, aprDigits: '<0.1', tvl: null, loading: false }), /about less than 0\.1% a year\./)
   // changed on purpose 2026-10-15 (pack 7, owner: no status notices): a kept rate reads as the recent rate; `saved` stays as data.
   assert.match(text({ apr: 100, tvl: null, loading: false, saved: true }), /At the pool’s recent rate/)
   assert.doesNotMatch(text({ apr: 100, tvl: null, loading: false, saved: true }), /saved rate/)
@@ -1799,9 +2086,10 @@ test('what Domino can do in a pool: the four V2 choices link their own docs and 
   const text = yes.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
   assert.match(yes, /data-pool-automation="available"/)
   assert.match(text, /New position No automation fee Fees wait in the position until you collect them\./)
-  assert.match(text, /Auto-exit 0\.2% if it closes/)
-  assert.match(text, /Auto-compound 2% of fees Fees go back into the same position\./)
-  assert.match(text, /Domino-compound 4% of fees Fees can fund the next range one step higher\./)
+  // Changed on purpose 2026-10-30 (QA round 2, Q1): every fee in Automate's own words, Auto-exit's on the position's value.
+  assert.match(text, /Auto-exit 0\.2% of the position’s value, only if it closes Closes it at the end of its range/)
+  assert.match(text, /Auto-compound 2% of the earned fees it uses, each time Fees go back into the same position\./)
+  assert.match(text, /Domino-compound 4% of the earned fees it uses, each time Fees can fund the next range one step higher\./)
   assert.deepEqual([...yes.matchAll(/href="([^"]+)"/g)].map(([, href]) => href), ['#/docs/new-position', '#/docs/auto-exit', '#/docs/auto-compound', '#/docs/domino-compound'])
   const no = renderToStaticMarkup(React.createElement(PoolAutomation, { usable: false, why: 'it runs extra code on every swap (hooks)' }))
   assert.match(no, /data-pool-automation="unavailable"/)
@@ -1871,7 +2159,13 @@ test('the compact pool page gives the estimate the pool’s own rate without rep
   fixture.reads[0].resolve(ok()); await flush(); host.render()
   assert.equal(elements(host.tree, (node) => node.props?.['data-pool-intro'] === '').length, 0, 'the pair and its figures do not repeat an introductory paragraph')
   assert.equal(part(host, 'PoolEarnings').props.apr, 100.349999941681629604)
+  // QA round 2, N8: and the digits its APR tile shows (the estimate's own text in this harness), for the sentence.
+  assert.equal(part(host, 'PoolEarnings').props.aprDigits, '100.349999941681629604')
   assert.equal(part(host, 'PoolAutomation').props.usable, true)
+  // QA round 2, N72 and N24: a standard fixed fee says so as data only; the tokens' addresses are explorer links.
+  const feeRow = elements(host.tree, (node) => node.type === 'dd' && node.props?.['data-fee-tier'] !== undefined)[0]
+  assert.deepEqual([feeRow.props['data-fee-tier'], feeRow.props.children], ['standard', '0.3% · fixed'])
+  assert.equal(elements(host.tree, (node) => node.type === parts.ExplorerAddress).length, 2, 'both tokens; no hooks, so no hooks link')
   assert.equal(part(host, 'PoolHistoryChart').props.quote, 1, 'the chart opens on the page’s direction')
   assert.equal(typeof part(host, 'PoolHistoryChart').props.onDay, 'function')
   const details = elements(host.tree, (node) => node.props?.['data-pool-details'] === '')[0]
@@ -1906,6 +2200,26 @@ test('the compact pool page gives the estimate the pool’s own rate without rep
   assert.equal(usable.tree.props.className, 'dm-pool-layout')
   assert.doesNotMatch(visibleText(usable), /Not estimated/)
   usable.unmount()
+})
+
+// Added 2026-10-30 (QA round 2, N72, the owner's option b, and N24, the owner's yes): inside the closed Technical details
+// only, a fixed fee off Uniswap's usual tiers says so (no version named), and each contract opens on its network's
+// explorer in a new tab, named by its full address, what it is and where it opens. The pool id stays unlinked.
+test('Technical details: a fixed fee off the usual tiers reads non-standard, and contracts open on their network’s explorer', () => {
+  const fixture = workspace({ option: { ...option('a'), fee: '0.269%', feePips: 2690, hooks: addr('9') } })
+  const host = mount(fixture.PoolWorkspace, fixture.props)
+  const feeRow = elements(host.tree, (node) => node.type === 'dd' && node.props?.['data-fee-tier'] !== undefined)[0]
+  assert.deepEqual([feeRow.props['data-fee-tier'], feeRow.props.children], ['non-standard', '0.269% · fixed · non-standard'])
+  assert.deepEqual(elements(host.tree, (node) => node.type === parts.ExplorerAddress).map((node) => [node.props.address, node.props.chainId]), [[addr('1'), 4663], [addr('2'), 4663], [addr('9'), 4663]])
+  host.unmount()
+  const { ExplorerAddress } = real('src/components/pool/ExplorerAddress.tsx')
+  const link = (chainId, address = addr('a')) => renderToStaticMarkup(React.createElement(ExplorerAddress, { address, chainId }, 'TOKEN'))
+  assert.match(link(4663), new RegExp(`^<a href="https://robinhoodchain\\.blockscout\\.com/address/${addr('a')}" target="_blank" rel="noreferrer noopener" class="dm-pool-kv-link" data-pool-explorer="4663">`))
+  assert.match(link(4663).replace(/<[^>]+>/g, ''), new RegExp(`${addr('a')}, TOKEN on Robinhood explorer \\(opens in a new tab\\)$`))
+  assert.match(link(8453), /href="https:\/\/basescan\.org\/address\/0xa{40}"/)
+  assert.match(link(42161), /href="https:\/\/arbiscan\.io\/address\/0xa{40}"/)
+  assert.doesNotMatch(link(1), /<a /, 'a network with no explorer here: the address alone')
+  assert.doesNotMatch(link(4663, 'javascript:alert(1)'), /<a /, 'never a link from anything but a contract address')
 })
 
 test('retained figures keep their source and qualification without update notices; missing and verified zero remain distinct', async () => {
@@ -1944,6 +2258,10 @@ test('round 6: the pool page’s button is “Create a position”, into the sam
     verifications[0].resolve({ failure: null, option: option('a'), restarted: false }); await flush(); host.render()
     const [button] = elements(part(host, 'PoolWorkspace').props.actions, (node) => node.type === parts.LinkButton)
     assert.deepEqual([button.props.children, button.props.href], ['Create a position', `#/new/${id('a')}`])
+    // Added 2026-10-30 (QA round 2, N84, the owner's yes): the same way in again under the estimate (one-column page only,
+    // v4-pool.css), outlined, behind the same checks.
+    const [again] = elements(part(host, 'PoolWorkspace').props.earnAction, (node) => node.type === parts.LinkButton)
+    assert.deepEqual([again.props.children, again.props.href, again.props.variant], ['Create a position', `#/new/${id('a')}`, 'outline'])
   } finally { host.unmount(); globalThis.window = previous }
 })
 
@@ -2108,6 +2426,7 @@ test('I1 and B2: a pool with a token that passes for USDG, or one the list withd
     look.verifications[0].resolve({ failure: null, option: fake, restarted: false }); await flush(); host.render()
     let workspace = part(host, 'PoolWorkspace')
     assert.equal(workspace.props.actions, undefined, 'no Create a position')
+    assert.equal(workspace.props.earnAction, undefined, 'nor under the estimate')
     assert.match(renderToStaticMarkup(workspace.props.notice), /data-pool-warning="lookalike"[^>]*>This isn’t the USDG Domino uses\. Adding money to this pool can lose it\./)
     host.unmount()
 

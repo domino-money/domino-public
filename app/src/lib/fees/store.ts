@@ -11,6 +11,9 @@
  *   again, fresh). Folded with the newest state into the view (foldLedger): verified when exact, Fees ready to collect
  *   only otherwise. A ledger still being read (`reading`) is asked again in a moment; one that could not be read is asked
  *   again after 2, 10, 30, 60 and 120 s (RETRY_MS), only while the page is visible, the card keeping what it shows.
+ * - 2026-10-30 (QA round 2, N45 a): a ledger still `reading` after MAX_READING answers in a row, or one whose fresh read
+ *   for the newest state still does not hold its settlement, shows Fees ready to collect only (`why: 'unseen'`), never
+ *   a skeleton for the visit; a history already drawn stays.
  * - The Positions list shares state and ledger reads with the detail, at its slower visible-list interval.
  * - A position's page records each valid state read in a bounded live series (readings.ts); hourly samples are persisted. Since
  *   2026-10-02 every ledger answer records its own state too (the list's only for a position whose page this browser
@@ -31,7 +34,7 @@ import { wakeDue } from '../wake'
 import { HISTORY_MAX_AGE_MS, savedHistoryMatches, type HistoryCache } from './historyCache'
 import { agreement, foldLedger, ledgerMint, type LedgerRead } from './ledger'
 import type { Reading, Readings } from './readings'
-import type { FeeHistoryView, FeesReason, FeesScope, LedgerMintHint, LedgerResponse, PositionState, RelayAnswer, StatePositionOk, StateResponse } from './types'
+import type { FeeHistoryView, FeesReason, FeesScope, LedgerMintHint, LedgerResponse, PositionMint, PositionState, RelayAnswer, StatePositionOk, StateResponse } from './types'
 
 export interface StoreDeps {
   historyCache?: HistoryCache
@@ -269,6 +272,19 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
   // --- the view ----------------------------------------------------------------
 
   /**
+   * 2026-10-30 (QA round 2, N45 a): Fees ready to collect only, as for a settlement Domino's reads cannot see (`unseen`),
+   * where the card would otherwise wait for the visit. A history already drawn (verified, a saved copy, a ledger's own
+   * settlements) stays; a view with none (waiting, unread, or a failed read's unclaimed figure) takes it.
+   */
+  function unseen(e: Entry, state: PositionState, mintedAt: PositionMint | undefined): void {
+    const view = e.view
+    const bare = view.phase === 'idle' || view.phase === 'unavailable' || view.phase === 'loading' || (view.phase === 'unclaimed-only' && (view.reason === 'rpc_unavailable' || view.why === 'unseen'))
+    if (!bare) return
+    if (view.phase === 'unclaimed-only' && view.why === 'unseen' && view.state === state && view.mintedAt?.block === mintedAt?.block) return
+    setView(e, { phase: 'unclaimed-only', state, reason: 'not_exact', why: 'unseen', ...(mintedAt ? { mintedAt } : {}) })
+  }
+
+  /**
    * The view `e`'s state and ledger make now, or a fresh ledger asked for when the state shows a settlement the ledger does
    * not hold (what the card shows meanwhile stays).
    */
@@ -287,6 +303,13 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     // Still being read: what it shows so far waits (the store asks again in a moment).
     if (ledger.position.why === 'reading') {
       const mintedAt = ledgerMint(ledger.position.mint, state)
+      // Changed on purpose 2026-10-30 (QA round 2, N45 a): still `reading` after MAX_READING answers in a row (the
+      // retry ladder asks on), the card stops waiting for it: Fees ready to collect only, as for a settlement Domino's
+      // reads cannot see. It was a skeleton for the visit, in the Fees card and the list's APR.
+      if (e.reading > MAX_READING) {
+        unseen(e, state, mintedAt)
+        return
+      }
       if (e.view.phase === 'idle' || e.view.phase === 'unavailable' || (e.view.phase === 'loading' && (e.view.state !== state || e.view.mintedAt?.block !== mintedAt?.block || e.view.mintedAt?.sqrtPriceX96 !== mintedAt?.sqrtPriceX96))) setView(e, { phase: 'loading', state, ...(mintedAt ? { mintedAt } : {}) })
       return
     }
@@ -296,6 +319,13 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
       if (e.read.block > ledger.block && e.freshFor < e.read.block) {
         e.freshFor = e.read.block
         askLedger(e, true)
+      }
+      // Changed on purpose 2026-10-30 (QA round 2, N45 a): the fresh ledger for this state answered and still does not
+      // hold the settlement (a close by Auto-exit or a vault, say): Fees ready to collect only, instead of a skeleton for
+      // the visit. A history already drawn stays, as before; a newer state asks once more.
+      if (e.freshFor >= e.read.block && !e.asking && !e.ledgerFreshPending) {
+        unseen(e, state, ledgerMint(ledger.position.mint, state))
+        return
       }
       if (e.view.phase === 'idle' || e.view.phase === 'unavailable') setView(e, { phase: 'loading', state })
       return
@@ -311,8 +341,14 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
 
   /** Asks `e`'s ledger with the next batch (eight ids a request), unless one is on its way or waits for its retry. */
   function askLedger(e: Entry, fresh = false): void {
-    if (e.asking && fresh) e.ledgerFreshPending = true
+    // A fresh question while a read is on its way, or while a retry waits (fixed 2026-10-30 after review: it was dropped
+    // then, and the retry asked a ledger that may predate the state), is asked when that read answers or the retry fires.
+    if ((e.asking || e.retry) && fresh) e.ledgerFreshPending = true
     if (e.asking || e.retry || e.settled || historyRefs(e) === 0) return
+    if (e.ledgerFreshPending) {
+      e.ledgerFreshPending = false
+      fresh = true
+    }
     e.asking = true
     // 2026-10-02 (review of the rules, finding 11): a list's row has no state until its ledger answers (the list asks no
     // /state), so it was idle, a dash, all the while: it is being read.
@@ -348,11 +384,8 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
                 const one = entries.get(id)
                 if (one && one.ledgerEpoch === epochs.get(id)) {
                   ledgerAnswered(one, answer)
-                  if (one.ledgerFreshPending) {
-                    one.ledgerFreshPending = false
-                    // A transient failure keeps its Retry-After; the retry will use the newest state.
-                    if (!one.retry) askLedger(one, true)
-                  }
+                  // A transient failure keeps its Retry-After: the retry asks fresh (askLedger), with the newest state.
+                  if (one.ledgerFreshPending && !one.retry) askLedger(one, true)
                 }
               }
             })

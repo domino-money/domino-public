@@ -16,14 +16,23 @@ const ELYSIUM_LINKED = typeof location !== 'undefined' && sectionLinked(location
 
 /**
  * The product's three places, in the header's nav pill and at the top of the
- * phone menu. A pool page belongs to Markets, the new-position flow to
- * Positions, and the wallet flows to Automate, so those stay lit inside them.
- * Home and the docs light nothing.
+ * phone menu. A pool page belongs to Markets and the wallet flows to Automate,
+ * so those stay lit inside them. Home, the docs and the new-position flow light
+ * nothing; the menu's own New position marks itself there. Changed on purpose
+ * 2026-10-30 (QA round 2, Q25): the flow lit Positions, which read as a jump to
+ * a list the person may not have when they came from Markets.
  */
 export const PRIMARY_NAV: ReadonlyArray<{ label: string; href: string; icon: ComponentType<IconProps>; pages: readonly Page[] }> = [
   { label: 'Markets', href: marketsHref(), icon: IconMarkets, pages: ['markets', 'pool'] },
-  { label: 'Positions', href: positionsHref, icon: IconPositions, pages: ['positions', 'new'] },
+  { label: 'Positions', href: positionsHref, icon: IconPositions, pages: ['positions'] },
   { label: 'Automate', href: automateHref, icon: IconAutomate, pages: ['automate', 'setup', 'sequence'] },
+]
+
+/** The guides, under the same names and to the same places in the menu and the footer (components/Footer.tsx). */
+export const GUIDES: ReadonlyArray<{ label: string; href: string; icon: ComponentType<IconProps> }> = [
+  { label: 'How it works', href: '#/#learn', icon: IconInfo },
+  { label: 'Price ranges', href: '#/#ranges', icon: IconRange },
+  { label: 'Risks', href: docsHref('risks'), icon: IconShield },
 ]
 
 /**
@@ -35,8 +44,12 @@ export const PRIMARY_NAV: ReadonlyArray<{ label: string; href: string; icon: Com
  * 2026-09-27 (the owner's round 6, point 6): Settings is gone. Docs takes its
  * place beside New position, since the docs say what Settings said, and an old
  * `#/settings` link opens them. The book is the docs' mark now, so How it
- * works wears the info mark and What Domino does not do the shield Home's own
- * limits card wears.
+ * works wears the info mark and Risks the shield Home's own limits card wears.
+ *
+ * Changed on purpose 2026-10-30 (QA round 2, Q16): the guides carry the footer's
+ * names and go where the footer's go, "Price ranges" as the docs and Home name
+ * them, and Risks opens the docs' Risks page, which its name promised (Home's
+ * section is titled "Stay informed").
  */
 export function HeaderMenu({ page }: { page: Page }) {
   const items: MenuEntry[] = [
@@ -54,9 +67,7 @@ export function HeaderMenu({ page }: { page: Page }) {
     ...(ELYSIUM_LINKED ? [{ kind: 'link', href: `#/${ELYSIUM_KEY}`, label: ELYSIUM_NAME, icon: <IconCoins />, current: page === 'elysium' } as const] : []),
     { kind: 'separator' },
     { kind: 'heading', label: 'Guides' },
-    { kind: 'link', href: '#/#learn', label: 'How it works', icon: <IconInfo /> },
-    { kind: 'link', href: '#/#ranges', label: 'Ranges explained', icon: <IconRange /> },
-    { kind: 'link', href: '#/#limits', label: 'What Domino does not do', icon: <IconShield /> },
+    ...GUIDES.map(({ label, href, icon: Icon }): MenuEntry => ({ kind: 'link', href, label, icon: <Icon /> })),
   ]
   // Two drawn glyphs (V4), both rendered and switched by CSS: three dots from 768px (the nav carries the places), which
   // spread while open, and three bars below, which turn into a cross while open. Decorative; the button's name is Menu.

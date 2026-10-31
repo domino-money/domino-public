@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { PortfolioResponse } from 'api-contracts/read-v6/types'
 import { NoPositionsArt } from '../../components/automate-v4/SeqPlateArt'
-import { Button, EmptyState, LinkButton, Skeleton } from '../../components/ui'
+import { newPositionHref } from '../../components/explore/routes'
+import { IconPlus } from '../../components/icons'
+import { EmptyState, LinkButton, Skeleton } from '../../components/ui'
 import { useCreatedPositions, useKeyedLatest } from '../lists/hooks'
 import { OWN_PORTFOLIO } from '../lists/source'
 import { gateOpen, useGate } from './gate'
 import { setupIntent, setupKey } from './intent'
 import { SetupFlow, type SetupGates } from './SetupFlow'
-import { setupPositions, setupRetryDelay } from './setupPositions'
+import { setupPositions, setupRetryDelay, setupWaiting, useSetupWaitOver } from './setupPositions'
 
 /** V2 setup reads the connected wallet's V2 portfolio, independently of the inactive V1 catalogue and release. */
 export default function SetupEntry({ owner, intent }: {
@@ -30,6 +32,7 @@ export default function SetupEntry({ owner, intent }: {
   const list = useMemo(() => body ? setupPositions(body, owner) : null, [body, owner])
   const [attempt, setAttempt] = useState(0)
   const [waitExpired, setWaitExpired] = useState(false)
+  const waitOver = useSetupWaitOver()
   const created = creations.find(item => own.position && item.chainId === own.position.chainId && item.dex === own.position.dex && item.tokenId === own.position.tokenId.toString())
   const waitingForIndex = held === null && created !== undefined && !waitExpired
   const delay = held === null && body ? setupRetryDelay(body, owner, own.position, attempt) : null
@@ -46,7 +49,6 @@ export default function SetupEntry({ owner, intent }: {
     return () => window.clearTimeout(timer)
   }, [delay, waitingForIndex, wallet, attempt])
   const updating = waitingForIndex || delay !== null
-  const retry = <Button type="button" variant="outline" size="sm" onClick={() => OWN_PORTFOLIO.again(wallet)}>Try again</Button>
   if (pending || (gateOpen(gate) && answer === null) || updating) return (
     <div className="dm-card dm-acct-block dm-seq-loading" aria-busy="true" data-v2in-setup="reading" data-sequence-positions="loading">
       {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the loading rows also while the position is
@@ -56,24 +58,37 @@ export default function SetupEntry({ owner, intent }: {
     </div>
   )
   if (!gateOpen(gate)) return <p className="dm-acct-block text-body text-fg-muted" data-v2in-setup="unavailable">Automation isn’t available right now.</p>
-  if (!body || !list || (list.incomplete && !list.positions.length)) return (
-    <div className="dm-acct-block" data-sequence-positions="failed">
-      <p className="text-body text-fg-muted">Your positions couldn’t be checked right now.</p>
-      {retry}
+  // Changed on purpose 2026-10-30 (QA round 2, the owner's rule: missing information stays out of sight, and reads are asked
+  // again silently): a portfolio not read yet keeps the loading rows while ../lists/source.ts asks again by itself (after a
+  // failure with backoff); it said "Your positions couldn’t be checked right now." with Try again. The marker stays. An
+  // answer that came back but leaves a network behind (or is cut short) with nothing to offer shows the plate below at once,
+  // never endless loading rows: the same source asks again (30 s), and the list replaces the plate when that network is in.
+  // Changed on purpose 2026-10-30 (QA round 2, final review shell-1): but an NFT of the wallet on an open network that could
+  // not be judged (its network or its reading not fresh yet) keeps the loading rows: the plate would tell its owner there is
+  // no position and offer a second deposit. The same 30 s re-ask replaces the rows with the list; after two minutes
+  // (SETUP_WAIT_MS) the plate is said all the same, as read-v6 can keep an NFT unjudged for good.
+  const positions = list ? list.positions.filter((position) => gateOpen(gates[position.chainId])) : []
+  if (!body || !list || (!waitOver && setupWaiting(body, owner, positions.length, (chainId) => gateOpen(gates[chainId])))) return (
+    <div className="dm-card dm-acct-block dm-seq-loading" aria-busy="true" data-sequence-positions="failed">
+      {[0, 1, 2].map((row) => <Skeleton key={row} className="dm-seq-loading-row" />)}
     </div>
   )
-  const positions = list.positions.filter((position) => gateOpen(gates[position.chainId]))
   const wanted = own.position ? setupKey(own.position) : null
   const missing = wanted !== null && !positions.some((position) => position.key === wanted)
+  // Changed on purpose 2026-10-30 (QA round 2, the owner's decision on N13): with nothing to set up, the plate says a position
+  // comes first and offers New position beside View positions (no dead end); the button its sentence names leads. Try again
+  // went with the rule above: the position asked for is read again by itself (setupRetryDelay), and positions not read yet
+  // stay out of the list.
+  const newPosition = (variant: 'primary' | 'outline') => <LinkButton href={newPositionHref()} variant={variant} size="lg" data-sequence-new-position=""><IconPlus />New position</LinkButton>
+  const viewPositions = (variant: 'primary' | 'outline') => <LinkButton href="#/positions" variant={variant} size="lg">View positions</LinkButton>
   if (!positions.length) return (
     <EmptyState plate icon={<NoPositionsArt />} className="dm-acct-block dm-lit" data-sequence-positions="empty"
       title="No positions available for setup"
-      body={missing ? 'This position isn’t available for a new automation. Check its status in Positions.' : 'Check your positions to see their current status and automation.'}
-      action={<><LinkButton href="#/positions" variant="primary" size="lg">View positions</LinkButton>{missing && retry}</>} />
+      body={missing ? 'This position isn’t available for a new automation. Check its status in Positions.' : 'Open a new position, then come back to automate it.'}
+      action={missing ? <>{viewPositions('primary')}{newPosition('outline')}</> : <>{newPosition('primary')}{viewPositions('outline')}</>} />
   )
   return <>
-    {missing && <p className="dm-acct-note" role="status" data-sequence-position-missing="">This position isn’t available for a new automation. Choose another position below. {retry}</p>}
-    {list.incomplete && <p className="dm-acct-note" role="status">Some positions couldn’t be checked. {retry}</p>}
+    {missing && <p className="dm-acct-note" role="status" data-sequence-position-missing="">This position isn’t available for a new automation. Choose another position below.</p>}
     <SetupFlow positions={positions} portfolio={body} intent={own} gates={gates} exitGates={exitGates} onHold={setHeld} />
   </>
 }

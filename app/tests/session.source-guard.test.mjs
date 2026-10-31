@@ -152,7 +152,13 @@ test('session and wallet code never touches browser storage, but for the wallet 
 test('wallet-provided names and icons never become a URL or an image', () => {
   const files = inside('components/wallet/');
   assert.deepEqual(hits(files, /\.icon\b/), [], 'the EIP-6963 icon is untrusted and must not be used');
-  assert.deepEqual(hits(files, /\b(src|href)=\{/), []);
+  // Changed on purpose 2026-10-30 (QA round 2, N56): the one built link is the wallet apps' (WalletSessionDialog.tsx
+  // WalletApps): each wallet's fixed link, on the fixed site, followed by the open route only when it passes the access
+  // gate's own pattern (tests/wallet-compat.test.mjs checks the hosts and the pattern). No wallet-provided value is in it.
+  assert.deepEqual(hits(files, /\b(src|href)=\{/), ['components/wallet/WalletSessionDialog.tsx']);
+  const dialog = files.find((f) => f.path === 'components/wallet/WalletSessionDialog.tsx').code;
+  assert.deepEqual([...dialog.matchAll(/\b(?:src|href)=\{([^}]*)\}/g)].map((m) => m[1]), ['href'], 'only the wallet apps\' links');
+  assert.match(dialog, /\{apps\.map\(\(\[id, name, href\]\) => \(/);
 });
 
 test('only session/contract.ts imports the session package at runtime; everything else imports types', () => {

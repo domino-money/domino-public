@@ -25,9 +25,12 @@
   .dm-v3-market-search .dm-flow-combo-input { height: 3.375rem; padding: 0 1rem 0 2.625rem; border: 0; border-radius: 0.875rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--lip); font-size: 0.9375rem; font-weight: 500; transition: box-shadow 0.2s var(--e-std), background-color 0.2s var(--e-std); }
   .dm-v3-market-search .dm-flow-combo-input::placeholder { color: var(--subtle); font-weight: 400; }
   .dm-v3-market-search .dm-flow-combo-input:hover { box-shadow: inset 0 0 0 1px var(--strong); }
-  .dm-v3-market-search .dm-flow-combo-input:is(:focus, :focus-visible) { outline: none; background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong), 0 0 0 0.25rem var(--v4-tan-halo); }
+  /* QA round 2, N88 (the owner's decision): every typed field's focus ring is 2px, in the ring colour; invalid, in red. */
+  .dm-v3-market-search .dm-flow-combo-input:is(:focus, :focus-visible) { outline: none; background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 2px var(--ring), 0 0 0 0.25rem var(--v4-tan-halo); }
   .dm-v3-market-search .dm-flow-combo-input[aria-invalid="true"] { background: rgb(244 96 122 / 0.04); box-shadow: inset 0 0 0 1px rgb(244 96 122 / 0.5); }
-  .dm-v3-market-search .dm-flow-combo-input[aria-invalid="true"]:is(:focus, :focus-visible) { box-shadow: inset 0 0 0 1px rgb(244 96 122 / 0.6), 0 0 0 0.25rem rgb(244 96 122 / 0.1); }
+  .dm-v3-market-search .dm-flow-combo-input[aria-invalid="true"]:is(:focus, :focus-visible) { box-shadow: inset 0 0 0 2px rgb(244 96 122 / 0.6), 0 0 0 0.25rem rgb(244 96 122 / 0.1); }
+  /* QA round 2, Q27: typed text at 16px on a phone or a touch screen, so iOS never zooms into the search. */
+  @media (max-width: 767px), (pointer: coarse) { .dm-v3-market-search .dm-flow-combo-input { font-size: 1rem; } }
   /* The error line with its dot, the hint that answers on hover. Same words. */
   .dm-v3-market-search .dm-error { display: flex; align-items: center; gap: 0.5625rem; margin: 0.625rem 0.25rem 0; font-size: 0.8125rem; line-height: 1.4; color: var(--out); }
   .dm-v3-market-search .dm-error::before { content: ''; flex: none; width: 0.375rem; height: 0.375rem; border-radius: 50%; background: var(--out); box-shadow: 0 0 0 0.1875rem rgb(244 96 122 / 0.16); }
@@ -148,6 +151,8 @@
   [data-markets] .dm-mkt-table :is(.dm-fee-venue, .dm-fee-value) { display: inline-block; padding: 0.125rem 0.4375rem; background: var(--v4-w055); line-height: normal; white-space: nowrap; vertical-align: top; }
   [data-markets] .dm-mkt-table .dm-fee-venue { margin-right: 0.125rem; border-radius: 0.375rem 0.125rem 0.125rem 0.375rem; }
   [data-markets] .dm-mkt-table .dm-fee-value { border-radius: 0.125rem 0.375rem 0.375rem 0.125rem; }
+  /* QA round 2, Q23: the network, the tag's middle segment (the token page's .dm-mkt-tags middle), square on both sides. */
+  [data-markets] .dm-mkt-table .dm-fee-net { border-radius: 0.125rem; }
   /* The separator stays inline text between the two segments, at no size: innerText and the name keep " · ". */
   [data-markets] .dm-mkt-table .dm-fee-sep { display: inline; font-size: 0; }
   [data-markets] .dm-mkt-table .dm-mkt-venue.dm-mkt-flag { position: relative; z-index: 1; display: inline-flex; align-items: center; width: fit-content; min-height: 1.25rem; margin: 0; padding: 0 0.5rem; border-radius: 0.375rem; background: rgb(244 96 122 / 0.1); font-size: 0.75rem; line-height: 1.25rem; font-weight: 400; color: #f58a9c; cursor: help; }
@@ -200,7 +205,14 @@
   [data-markets] .dm-mkt-asset .dm-listbox { gap: 0; }
   /* The stored token page's band: TVL and APR carry the 22px info circle (token.html), its glyph 14px, faint, warming
      under the pointer. Generated content only: the trigger's text and name are unchanged. */
-  [data-markets] [data-stored-token] .dm-mkt-table thead .dm-info-tip-trigger { position: relative; display: inline-flex; align-items: center; gap: 0.25rem; cursor: help; }
+  [data-markets] [data-stored-token] .dm-mkt-table thead .dm-info-tip-trigger { position: relative; display: inline-flex; align-items: center; gap: 0.25rem; min-height: calc(1.5rem / var(--vwk)); cursor: help; }
+  /* QA round 2, N17: at least 24 CSS px to point at, 44 on a touch screen; the glyph stays as drawn (its ::before and
+     ::after are the circle and the mark, so the trigger's own box is what grows). */
+  @media (pointer: coarse) { [data-markets] [data-stored-token] .dm-mkt-table thead .dm-info-tip-trigger { min-height: calc(2.75rem / var(--vwk)); } }
+  /* The Markets table's own TVL and APR tips draw no glyph, so they take the shared transparent layer the site's other tips
+     have (v4-foundation.css, N17): 24 CSS px to point at, 44 on a touch screen, the header row as drawn. */
+  [data-markets] .dm-mkt-table thead .dm-info-tip-trigger:not([data-stored-token] *)::after { content: ''; position: absolute; left: 50%; top: 50%; width: max(100%, calc(1.5rem / var(--vwk))); height: max(100%, calc(1.5rem / var(--vwk))); translate: -50% -50%; }
+  @media (pointer: coarse) { [data-markets] .dm-mkt-table thead .dm-info-tip-trigger:not([data-stored-token] *)::after { width: max(100%, calc(2.75rem / var(--vwk))); height: max(100%, calc(2.75rem / var(--vwk))); } }
   [data-markets] [data-stored-token] .dm-mkt-table thead .dm-info-tip-trigger::before { content: ''; position: absolute; right: 0; top: 50%; width: 1.375rem; height: 1.375rem; margin-top: -0.6875rem; border-radius: 50%; background: transparent; transition: background-color 0.18s var(--e-std); }
   [data-markets] [data-stored-token] .dm-mkt-table thead .dm-info-tip-trigger::after { content: ''; flex: none; width: 1.375rem; height: 1.375rem; background: var(--faint); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round'%3E%3Ccircle cx='8' cy='8' r='6'/%3E%3Cpath d='M8 7.25V11'/%3E%3Ccircle cx='8' cy='5' r='.85' fill='%23000' stroke='none'/%3E%3C/svg%3E") center / 0.875rem 0.875rem no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round'%3E%3Ccircle cx='8' cy='8' r='6'/%3E%3Cpath d='M8 7.25V11'/%3E%3Ccircle cx='8' cy='5' r='.85' fill='%23000' stroke='none'/%3E%3C/svg%3E") center / 0.875rem 0.875rem no-repeat; transition: background-color 0.18s var(--e-std), scale 0.3s var(--e-enter); }
   [data-markets] [data-stored-token] .dm-mkt-table thead .dm-info-tip-trigger:is(:hover, :focus-visible)::before { background: var(--v4-w06); }
@@ -232,6 +244,11 @@
     [data-markets] .dm-mkt-table a.dm-mkt-pool.dm-mkt-name { width: auto; }
     [data-markets] .dm-mkt-table .dm-fee-venue { display: inline-block; }
     [data-markets] .dm-mkt-table :is(.dm-fee-venue, .dm-fee-value) { margin-block: 1px; padding: 0.125rem 0.375rem; }
+    /* QA round 2, Q26: the figures button's 44px touch area (the coarse ::after, 5px around the 34px button) stays inside
+       the table: the end cell keeps 5px on its right, so the scroller has nothing to scroll and the button clears the
+       card's edge. */
+    [data-markets] .dm-mkt-table .dm-mkt-end { width: 2.75rem; }
+    [data-markets] .dm-mkt-table .dm-table :is(th, td).dm-mkt-end { padding-inline: 0 0.3125rem; }
   }
   @media (max-width: 479px) {
     [data-markets] .dm-mkt-filters { flex-basis: 100%; }
@@ -357,8 +374,11 @@
   [data-markets] .dm-v3-market-featured .dm-mkt-arrows { gap: 0.5rem; }
   [data-markets] .dm-v3-market-featured .dm-mkt-arrows .dm-icon-btn { width: 2.5rem; height: 2.5rem; min-height: 0; border-radius: 50%; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); color: var(--fg); opacity: 1; transition: background-color 0.18s var(--e-std), box-shadow 0.2s var(--e-std), color 0.18s var(--e-std), opacity 0.2s var(--e-std), scale 0.1s var(--e-press); }
   [data-markets] .dm-v3-market-featured .dm-mkt-arrows .dm-icon-btn > svg { transition: translate 0.25s var(--e-enter); }
-  [data-markets] .dm-v3-market-featured .dm-mkt-arrows .dm-icon-btn:not(:disabled):hover { background: var(--v4-w06); box-shadow: inset 0 0 0 1px var(--lip); color: var(--fg); }
-  [data-markets] .dm-v3-market-featured .dm-mkt-arrows .dm-icon-btn:disabled { background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); color: var(--fg); opacity: 0.35; }
+  [data-markets] .dm-v3-market-featured .dm-mkt-arrows .dm-icon-btn:not(:disabled):not([aria-disabled="true"]):hover { background: var(--v4-w06); box-shadow: inset 0 0 0 1px var(--lip); color: var(--fg); }
+  /* QA round 2, N86: an arrow at the rail's end is aria-disabled, never disabled, so it keeps the keyboard's focus (a
+     disabled button dropped it to the page); it looks the same either way. */
+  [data-markets] .dm-v3-market-featured .dm-mkt-arrows .dm-icon-btn:is(:disabled, [aria-disabled="true"]) { background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); color: var(--fg); opacity: 0.35; cursor: default; }
+  [data-markets] .dm-v3-market-featured .dm-mkt-arrows .dm-icon-btn[aria-disabled="true"]:active { scale: none; }
 
   @media (min-width: 768px) and (max-width: 1023px) {
     [data-markets] .dm-v3-market-featured .dm-mkt-rail { grid-auto-columns: calc((100% - 1rem) / 2); }
@@ -450,6 +470,12 @@
   [data-pool-figures-dialog] .dm-pool-figures-metrics dd .text-money-in { color: var(--in); }
   /* Details: a row with the foundation's plus; the facts as rows with inset hairlines. */
   [data-pool-figures-dialog] .dm-pool-figures-details { margin-top: 0; padding-top: 0.3125rem; border: 0; background: linear-gradient(var(--line), var(--line)) 0.875rem 0 / calc(100% - 1.75rem) 1px no-repeat; }
+  /* QA round 2, Q19: the sheet's way to the pool page, its one button across the sheet (the action sheets' 54px foot,
+     v4-sheets.css .dm-pa-foot). Sticky: the phone's sheet fills its 88dvh and scrolls, and the button stays in reach; its
+     shadow fills the sheet's bottom padding under it (as tall as a Face ID phone's safe area, shell.css), so nothing
+     scrolls through that strip. */
+  [data-pool-figures-dialog] .dm-pool-figures-foot { position: sticky; bottom: 0; z-index: 1; display: grid; padding: 0.75rem 0.25rem 0; background: var(--card); box-shadow: 0 max(1.5rem, env(safe-area-inset-bottom)) 0 var(--card); }
+  [data-pool-figures-dialog] .dm-pool-figures-foot > .dm-btn { width: 100%; height: 3.375rem; min-height: 0; border-radius: 0.875rem; font-size: 0.96875rem; }
   /* On each open the head's words and the three figures tick in (fg-tick). */
   [data-pool-figures-dialog] :is(.dm-pool-figures-head > .min-w-0, .dm-pool-figures-metrics) { animation: dm-v4-mkt-tick 0.35s var(--e-enter) backwards; }
   /* The close (40px) in the head row, centred on it: about 33px from the sheet's top and 18px from its right. */
@@ -474,6 +500,8 @@
   [data-pool-figures-dialog] .dm-pool-figures-facts > div:last-child { box-shadow: none; }
   [data-pool-figures-dialog] .dm-pool-figures-facts dt { font-size: 0.84375rem; color: var(--subtle); }
   [data-pool-figures-dialog] .dm-pool-figures-facts dd { font-weight: 500; color: var(--fg); }
+  /* QA round 2, final review read-1 (Q28): what the pool fee is, under its row's figure, in the quiet voice of a note. */
+  [data-pool-figures-dialog] .dm-pool-figures-facts .dm-pool-figures-fact-note { padding-bottom: 0.125rem; font-size: 0.8125rem; line-height: 1.5; font-weight: 400; color: var(--subtle); }
   @media (max-width: 639px) {
     [data-pool-figures-dialog] .dm-pool-figures-head { padding: 0.5rem 3rem 1rem 0.5rem; }
     [data-pool-figures-dialog] .dm-pool-figures-head .dm-dialog-title { font-size: 1.75rem; }
@@ -572,6 +600,9 @@
   [data-markets] .dm-mkt-found .dm-mkt-option-head [data-fee] { height: 1.625rem; padding: 0 0.625rem; border-radius: 0.5rem; background: var(--v4-w055); font-size: 0.78125rem; color: var(--muted); }
   [data-markets] .dm-mkt-found .dm-mkt-option-head > .i-chev-r { box-sizing: content-box; margin-left: auto; padding: 0.625rem; border-radius: 50%; color: var(--faint); }
   [data-markets] .dm-mkt-found .dm-mkt-option-head:hover > .i-chev-r { color: var(--fg); background: var(--v4-w06); }
+  /* QA round 2, N5 (the owner's yes): a Base or Arbitrum One token page's pool row opens New position on that network
+     with the pool proposed, so its head is a way in (v3-market-surfaces.css had made the read-only row look inert). */
+  [data-markets] [data-network-token-view] button.dm-mkt-option-head { cursor: pointer; }
   [data-markets] .dm-mkt-found .dm-mkt-option:not([data-pool-key]) > .dm-mkt-option-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 10.625rem)); gap: 1.5rem; padding: 0 1.375rem 0.5rem 5.25rem; }
   [data-markets] .dm-mkt-found .dm-mkt-option-note { padding: 0 1.375rem 0.375rem 5.25rem; font-size: 0.8125rem; line-height: 1.4; color: var(--muted); }
   [data-markets] .dm-mkt-found .dm-mkt-coverage { border-radius: 1rem; box-shadow: none; }
@@ -702,9 +733,9 @@
     [data-markets] .dm-v3-market-featured .dm-mkt-card:hover .dm-mkt-pair > [aria-hidden="true"] > :first-child { scale: 1.06; }
     [data-markets] .dm-v3-market-featured .dm-mkt-card:hover .dm-mkt-pair > [aria-hidden="true"] > :last-child { translate: 0.25rem 0; scale: 1.06; }
     [data-markets] .dm-v3-market-featured .dm-mkt-card:hover .dm-mkt-card-open { translate: 0.125rem -0.125rem; }
-    [data-markets] .dm-v3-market-featured .dm-mkt-arrows .dm-icon-btn:not(:disabled):hover > svg { translate: 0.125rem 0; }
-    [data-markets] .dm-v3-market-featured .dm-mkt-arrows .dm-icon-btn:first-child:not(:disabled):hover > svg { translate: -0.125rem 0; }
-    [data-markets] .dm-v3-market-featured .dm-mkt-arrows .dm-icon-btn:not(:disabled):active { scale: 0.94; }
+    [data-markets] .dm-v3-market-featured .dm-mkt-arrows .dm-icon-btn:not(:disabled):not([aria-disabled="true"]):hover > svg { translate: 0.125rem 0; }
+    [data-markets] .dm-v3-market-featured .dm-mkt-arrows .dm-icon-btn:first-child:not(:disabled):not([aria-disabled="true"]):hover > svg { translate: -0.125rem 0; }
+    [data-markets] .dm-v3-market-featured .dm-mkt-arrows .dm-icon-btn:not(:disabled):not([aria-disabled="true"]):active { scale: 0.94; }
     [data-markets] .dm-mkt-guide > summary:active { scale: 0.997; }
     [data-pool-figures-dialog] .dm-pool-figures-head:hover > :first-child > :last-child { translate: 0.1875rem 0; }
   }

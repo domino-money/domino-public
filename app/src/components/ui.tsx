@@ -216,16 +216,16 @@ export function LiveDot({ lit = false, className }: { lit?: boolean; className?:
 
 const BADGES = {
   estimate: { tone: 'neutral', text: 'est.' },
-  stale: { tone: 'wait', text: 'stale' },
   'in-range': { tone: 'in', text: 'In range' },
   'out-of-range': { tone: 'out', text: 'Out of range' },
 } as const
 
 /**
- * A fixed-wording state pill. There is no "live" badge: freshness is always
- * "retrieved N s ago" or "stale". Places with pinned strings keep their own Pill text.
+ * A fixed-wording state pill. Places with pinned strings keep their own Pill text. Changed on purpose 2026-10-30 (QA
+ * round 2, SWEEP; rule 3): no "stale" badge any more (its one user, v2in/lists/parts.tsx StaleBadge, is gone), and no
+ * "live" one: how fresh a figure is is never said on screen.
  */
-export function Badge({ kind, ...rest }: { kind: 'estimate' | 'stale' | 'in-range' | 'out-of-range' } & Omit<HTMLAttributes<HTMLSpanElement>, 'children'>) {
+export function Badge({ kind, ...rest }: { kind: 'estimate' | 'in-range' | 'out-of-range' } & Omit<HTMLAttributes<HTMLSpanElement>, 'children'>) {
   const badge = BADGES[kind]
   return (
     <Pill {...rest} tone={badge.tone} dot={kind === 'in-range' || kind === 'out-of-range'}>
@@ -480,6 +480,22 @@ export function Segmented<T extends string>({
   className?: string
 }) {
   const { track, thumb } = useThumb(items.findIndex((item) => item.key === value))
+  // The WAI-ARIA radio group (2026-10-30, QA round 2, N87): one Tab stop, the chosen option (or the first that can be
+  // chosen while none is), and the arrow keys, Home and End choose among the options that can be chosen, as a click
+  // does, the way New position's range presets already move (create/RangeStep.tsx). An arrow moves on from the focused
+  // option, so with none chosen yet the first press goes to the second option, not to the one already focused.
+  const enabled = items.filter((item) => !item.disabled)
+  const stop = enabled.some((item) => item.key === value) ? value : enabled[0]?.key
+  const arrows = (event: ReactKeyboardEvent<HTMLButtonElement>, from: T) => {
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key) || enabled.length === 0) return
+    event.preventDefault()
+    const at = Math.max(0, enabled.findIndex((item) => item.key === from))
+    const back = event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+    const index = event.key === 'Home' ? 0 : event.key === 'End' ? enabled.length - 1 : (at + (back ? -1 : 1) + enabled.length) % enabled.length
+    const next = enabled[index]
+    if (next.key !== value) onChange(next.key)
+    track.current?.querySelectorAll<HTMLButtonElement>('[data-seg-item]')[items.indexOf(next)]?.focus()
+  }
   return (
     <div ref={track} role="radiogroup" aria-label={label} className={segClass(size, stretch, className)}>
       <span ref={thumb} aria-hidden="true" className="dm-seg-thumb" />
@@ -492,8 +508,10 @@ export function Segmented<T extends string>({
             role="radio"
             aria-checked={active}
             disabled={item.disabled}
+            tabIndex={item.key === stop ? 0 : -1}
             data-seg-item=""
             onClick={() => onChange(item.key)}
+            onKeyDown={(event) => arrows(event, item.key)}
             className="dm-seg-item"
           >
             {item.label}

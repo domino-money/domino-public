@@ -310,7 +310,8 @@ test('the unified collection follows external closure on reconnect, retains it t
     await s.page.locator(`[data-v2-position-row="${rowKey('7')}"] [data-position-status="closed"]`).waitFor();
     const closed = s.page.locator(`[data-v2-position-row="${rowKey('7')}"]`);
     assert.match(await closed.locator('[data-cell="fees"]').innerText(), /0\.0012 USDG/, 'external closure does not hide uncollected fees');
-    assert.ok(await closed.locator('[data-cell="principal"]').evaluate(cell => cell.closest('.dm-own-empty-figure')?.getBoundingClientRect().height <= 1), 'known empty principal becomes a history row');
+    // Changed on purpose 2026-10-30 (QA round 2, N45): the known empty principal is not drawn at all (it was hidden for the eye only).
+    assert.equal(await closed.locator('[data-cell="principal"]').count(), 0, 'known empty principal becomes a history row');
     failure = true;
     // Changed on purpose 2026-10-14 (incident 2026-10-13, design 2.5, package Q1): the page's wake rounds are at least 10 s
     // apart (src/lib/wake.ts WAKE_GAP_MS), so the second reconnect waits for a round of its own.
@@ -931,10 +932,20 @@ test('a first targeted price read that is rate limited recovers on a later visib
   let attempts = 0, warmed = false, limited, releaseLimit;
   const firstAttempt = new Promise(resolve => { limited = resolve; });
   const limitReply = new Promise(resolve => { releaseLimit = resolve; });
-  const s = await scenario({ hooks: LIVE, refresh: true, readV6: async (method, route) => {
+  // Changed on purpose 2026-10-30 (flaky: 1 run in 3 to 5 locally, once in CI): the 429 said Retry-After '120', which
+  // the app drops (src/v2/read/v6.ts retryAfterSeconds keeps 1 to 60, all the read Worker relays), so only the token's
+  // one-minute cooldown held the second attempt, and the poll the first 60_001 ms jump fired started it at once:
+  // `attempts` was still 1 only because that request had not reached this server yet. The second jump then often came
+  // while it was on the wire and fired its 22 s deadline on the page's clock (see READS_IN_FLIGHT): a second failure, a
+  // 120 s backoff, and no poll within the 30 s wait. The Retry-After is now '60', the most the stack carries, so this
+  // case runs the page's whole Retry-After path (one longer than the cooldown is tests/v2/price-recovery.test.mjs's);
+  // the first jump is one portfolio period, inside it, and no jump comes while a read is in flight. Here the Retry-After
+  // ends with the cooldown (both 60 s), so this case cannot tell the two apart; that the longer of them wins is the unit
+  // test's to prove.
+  const s = await scenario({ hooks: LIVE, refresh: true, init: READS_IN_FLIGHT, readV6: async (method, route) => {
     if (route === 'capabilities') return { status: 200, body: { ...CAPABILITIES, enabledReads: [...CAPABILITIES.enabledReads, 'chain-pools'] }, contract: true };
     if (route === 'chain-pools') {
-      if (++attempts === 1) { limited(); await limitReply; return { status: 429, body: { error: 'read_capacity_busy' }, retryAfter: '120', contract: true }; }
+      if (++attempts === 1) { limited(); await limitReply; return { status: 429, body: { error: 'read_capacity_busy' }, retryAfter: '60', contract: true }; }
       warmed = true; return { status: 200, body: pools, contract: true };
     }
     return { status: 200, body: route === 'portfolio' ? warmed ? ready : missing : activityOf({ wallet: OWNER }).body, contract: true };
@@ -945,11 +956,18 @@ test('a first targeted price read that is rate limited recovers on a later visib
     await firstAttempt;
     const response = s.page.waitForResponse(response => response.url().endsWith('/api/read/v6/chain-pools') && response.status() === 429);
     releaseLimit(); await (await response).finished();
-    await s.page.clock.fastForward(60_001);
+    await readsAnswered(s.page);
+    // Half way through the Retry-After: the list's own poll reads the portfolio, still without the price, and a wake follows.
+    const poll = s.page.waitForResponse(response => response.url().endsWith('/api/read/v6/portfolio'));
+    await s.page.clock.fastForward(PORTFOLIO_PERIOD_MS + 1);
+    await (await poll).finished();
+    await readsAnswered(s.page);
     await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
-    assert.equal(attempts, 1, 'the one-minute token cooldown cannot override the longer reader Retry-After');
+    await readsAnswered(s.page);
+    assert.equal(attempts, 1, 'neither a poll nor a wake asks the token again within the reader’s Retry-After');
     assert.equal(await row.locator('[data-usd="principal"]').getAttribute('data-usd-basis'), 'pool-price', 'the qualified recovery cannot finish during the rate-limit window');
-    await s.page.clock.fastForward(60_001);
+    // Past the Retry-After: the next poll asks the token again, and no later jump can cut that read or its reread short.
+    await s.page.clock.fastForward(PORTFOLIO_PERIOD_MS + 1);
     await row.locator('[data-usd="principal"][data-usd-basis="qualified-prices"]').waitFor();
     assert.equal(await row.locator('[data-usd="principal"]').textContent(), '$1,001.03');
     assert.equal(await row.locator('[data-usd="fees"]').textContent(), '$0.11');
@@ -1243,6 +1261,34 @@ test('live: one collection merges both inventories and counts only positions wit
       await s.page.setViewportSize({ width: 1320, height: 1000 });
     }
     await s.page.locator('main').screenshot({ path: join(shots(), 'v2-lists-live.png') });
+  } finally {
+    releasePortfolio();
+    await s.close();
+  }
+});
+
+// Added 2026-10-30 (QA round 2, N63): while the inventories are on their way the tabs count nothing ("Open 0 · Closed 0"
+// said for seconds that there was nothing) and the status line says nothing; the counts come with the first rows.
+test('live: the Open and Closed tabs carry no count until the inventories answer', async () => {
+  const own = about('portfolio', fixture('portfolio.json'), OWNER);
+  let releasePortfolio;
+  const portfolioReady = new Promise(resolveReady => { releasePortfolio = resolveReady; });
+  const respond = routeOn((route) => ({ status: 200, body: route === 'portfolio' ? own : about('activity', fixture('activity.json'), OWNER) }));
+  // No V1 NFT, so no row can be drawn before the held portfolio answers.
+  const s = await scenario({ hooks: LIVE, chainOptions: { positions: [] }, readV6: async (method, route, body) => {
+    if (method === 'POST' && route === 'portfolio') await portfolioReady;
+    return respond(method, route, body);
+  } });
+  try {
+    // The site's own (V1) inventory answers at once with nothing, so the section already says "ready"; the held portfolio
+    // keeps the list on its loading rows.
+    await s.page.locator('.dm-own-collection [data-owned-loading]').waitFor({ state: 'attached', timeout: 15_000 });
+    await s.page.waitForTimeout(500);
+    assert.deepEqual(await tabs(s.page), ['Open', 'Closed'], 'no count while nothing is known');
+    assert.equal(await s.page.locator('[data-owned-status]').textContent(), '', 'the status line says nothing yet');
+    releasePortfolio();
+    await s.page.getByRole('tab', { name: /^Open \d/ }).waitFor({ timeout: 15_000 });
+    assert.match(await s.page.locator('[data-owned-status]').textContent(), /^\d+ open and \d+ closed positions\.$/);
   } finally {
     releasePortfolio();
     await s.close();
@@ -1624,8 +1670,10 @@ test('compact Open and Closed rows resolve real token artwork by identity and re
     await closed.waitFor();
     assert.equal(await closed.locator('.dm-own-closed-caption').innerText(), 'View history');
     assert.equal(await closed.locator('[data-cell="apr"]').count(), 0);
-    assert.match(await closed.innerText(), /0 PONS[\s\S]*0 USDG/, 'measured zero amounts remain accessible');
-    assert.ok(await closed.locator('.dm-own-figs').evaluate(node => node.getBoundingClientRect().height <= 1), 'known zeroes do not occupy visible columns');
+    // Changed on purpose 2026-10-30 (QA round 2, N45): a closed row with nothing left draws no zero figures at all (they were
+    // read to a screen reader on every closed row); one that holds fees still shows them.
+    assert.doesNotMatch(await closed.innerText(), /Value|Fees to collect/, 'no zero figures on a closed row');
+    assert.equal(await closed.locator('.dm-own-figs').count(), 0, 'known zeroes are not drawn');
     assert.match(await fees.locator('[data-cell="fees"]').innerText(), /1 USDG/, 'uncollected fees on a closed NFT stay visible');
     assert.ok(await fees.locator('[data-cell="fees"]').evaluate(node => node.getBoundingClientRect().height > 1));
     assert.equal(askedArtwork.filter(url => url.endsWith(`/robinhood/${pons}`)).length, 1, 'all open/closed NFTs share one bounded lookup for the same chain/address');

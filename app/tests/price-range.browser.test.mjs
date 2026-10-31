@@ -198,7 +198,9 @@ test('the owner’s cases in words and figures: tiny prices with their zeros cou
       closed: { chip: /^0\.0₆\d+$/, move: null },
       tiny: { chip: /^0\.0₆71\d+$/, move: null },
       micro: { chip: /^0\.0₁₁3\d+$/, move: null },
-      huge: { chip: /^120,3\d\d$/, move: null },
+      // Changed on purpose 2026-10-30 (QA round 2, N2, one price format): from 1,000 up the key figures write two decimals
+      // ("120,344.72"; it was "120,344"), and the chip writes the price as they do.
+      huge: { chip: /^120,3\d\d\.\d\d$/, move: null },
       giant: { chip: /^2\.\d+B$/, move: null },
       under: { chip: /^0\.0025\d*$/, move: /^It must rise 5\d% to come back into your range\.$/ },
       over: { chip: /^0\.0025\d*$/, move: /^It must fall 2\d% to come back into your range\.$/ },

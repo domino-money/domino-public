@@ -102,6 +102,8 @@ function MarketsList({ onToken, others, onNetwork }: { onToken: (candidate: Toke
   const known = knownTokens({ catalogue: catalogueTokens(featured.source === 'bundled' ? featured.entries : [...featured.entries, ...SELECTED_POOL_CATALOGUE]), candidates: [] })
   const ranked = __DOMINO_POOL_SET__ === 'selected' && featured.source === 'server'
   const filtered = asset !== null
+  // The count beside the title while a filter is set and something matches (QA round 2, N89).
+  const counted = filtered && count !== null && count.shown > 0 ? count : null
   const clear = () => setAsset(null)
 
   const empty = (
@@ -125,8 +127,10 @@ function MarketsList({ onToken, others, onNetwork }: { onToken: (candidate: Toke
     <>
       <header className="dm-v3-market-heading animate-rise">
         <Title />
+        {/* Changed on purpose 2026-10-30 (QA round 2, N102 and N33): the search's own label and placeholder, as in New
+            position; where the other networks are searched too, "Search a token on any network". */}
         <div ref={catalogueSearch} className="dm-v3-market-search" data-catalogue-search="">
-          {source && <TokenSearch source={source} known={known} onFound={onToken} id="markets-catalogue-token" label="Token name or address" placeholder="Search token or address" home={others?.home} others={others?.tokens} othersSearch={others?.search} onOther={others ? onNetwork : undefined} />}
+          {source && <TokenSearch source={source} known={known} onFound={onToken} id="markets-catalogue-token" home={others?.home} others={others?.tokens} othersSearch={others?.search} onOther={others ? onNetwork : undefined} />}
         </div>
       </header>
       <section className="dm-v3-market-featured animate-rise" style={rise(1)} aria-label="Featured pool charts">
@@ -139,13 +143,18 @@ function MarketsList({ onToken, others, onNetwork }: { onToken: (candidate: Toke
             title={featuredTitle(ranked ? 'server' : 'bundled')}
             className="dm-mkt-pools-head"
             aside={
-              filtered && count && count.shown > 0 ? (
-                <span className="tnum" role="status">
-                  {count.shown} of {count.total}
+              counted ? (
+                <span className="tnum" aria-hidden="true">
+                  {counted.shown} of {counted.total}
                 </span>
               ) : undefined
             }
           />
+          {/* QA round 2, N89: the count's live region is always there, so it is heard when the filter changes, and it says
+              of what ("Showing 1 of 6 pools"); the "1 of 6" on screen is unchanged and silent. */}
+          <span className="sr-only" role="status" data-pools-count="">
+            {counted ? `Showing ${counted.shown} of ${counted.total} pools` : ''}
+          </span>
           <FilterBar asset={asset} onAsset={setAsset} />
         </div>
         <div className="dm-mkt-pools-table">
@@ -280,6 +289,9 @@ function ExploreBody({ others = null, checkingNetworks = false }: { others?: Oth
       location={networkLocation} others={others} checking={checkingNetworks} initial={networkHandoff}
       navigation={<a href={marketsHref()} className="dm-mkt-back"><IconChevronLeft size={14} />Markets</a>}
       actions={(token) => <LinkButton href={newNetworkHref(networkLocation.chainId, token.address)} data-network-new-position="">New position</LinkButton>}
+      // QA round 2, N5 (the owner's yes): a pool row opens New position on this network with that pool proposed; New
+      // position checks the proposal against its own read of the network's pools.
+      openPool={(token, option) => { window.location.hash = newNetworkHref(networkLocation.chainId, token.address, option.key).slice(1) }}
     /></PageShell>
   }
 
@@ -313,7 +325,8 @@ function ExploreBody({ others = null, checkingNetworks = false }: { others?: Oth
       {source && storedReads === 'enabled' && searchedKey && <StoredTokenExplorer key={searchedKey} source={source} token={searchedKey} />}
       {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no "Loading token data…" while the check
           runs. The access failure below is kept on purpose: it blocks the page and says what to do. */}
-      {source && storedReads === 'failed' && <p className="mt-6 text-body text-fg-muted" role="status">Token data is unavailable. Reload to reconnect.</p>}
+      {/* Changed on purpose 2026-10-30 (QA round 2, the owner's rule: no "unavailable" notices): what to do, alone. */}
+      {source && storedReads === 'failed' && <p className="mt-6 text-body text-fg-muted" role="status">Reload the page to see this token’s pools.</p>}
       {source && storedReads === 'legacy' && (
         <div className="mt-6 animate-rise" style={rise(2)}>
           <TokenLookup

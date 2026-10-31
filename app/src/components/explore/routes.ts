@@ -79,21 +79,33 @@ export const marketsHref: typeof exploreHref = exploreHref
 export interface NetworkTokenLocation {
   chainId: 8453 | 42161
   token: string
+  /**
+   * QA round 2, N5: New position's pool proposed by a token page's row (`#/new/network/<chain>/<token>/<pool>`), lowercase.
+   * A hint only, never trusted: New position chooses it only when that network's own pools read lists exactly that pool.
+   * Present only on a New position link that carries one.
+   */
+  pool?: string
 }
 
 function networkLocation(hash: string, page: 'markets' | 'new'): NetworkTokenLocation | null {
   const { segments } = hashParts(hash)
-  const [route = '', network = '', chain = '', token = ''] = segments
-  if (route !== page || network !== 'network' || segments.length !== 4 || !ADDRESS.test(token)) return null
+  const [route = '', network = '', chain = '', token = '', pool = ''] = segments
+  // Changed on purpose 2026-10-30 (QA round 2, N5): New position's link may carry a fifth segment, a pool id's shape only;
+  // anything else after the token is still no route.
+  const proposed = page === 'new' && segments.length === 5 && POOL_ID.test(pool)
+  if (route !== page || network !== 'network' || (segments.length !== 4 && !proposed) || !ADDRESS.test(token)) return null
   if (chain !== '8453' && chain !== '42161') return null
-  return { chainId: Number(chain) as NetworkTokenLocation['chainId'], token }
+  return { chainId: Number(chain) as NetworkTokenLocation['chainId'], token, ...(proposed ? { pool: pool.toLowerCase() } : {}) }
 }
 
 export const parseMarketsNetworkHash = (hash: string): NetworkTokenLocation | null => networkLocation(hash, 'markets')
 export const parseNewNetworkHash = (hash: string): NetworkTokenLocation | null => networkLocation(hash, 'new')
 export const marketsNetworkHref = (chainId: NetworkTokenLocation['chainId'], token: string) => `#/markets/network/${chainId}/${token}`
-/** Handoff is a token, never a trusted pool selection; New position reads its metadata and pools on the named network again. */
-export const newNetworkHref = (chainId: NetworkTokenLocation['chainId'], token: string) => `#/new/network/${chainId}/${token}`
+/**
+ * Handoff is a token, never a trusted pool selection; New position reads its metadata and pools on the named network again.
+ * `pool` (QA round 2, N5): the pool a token page's row proposes, a hint New position checks against its own read.
+ */
+export const newNetworkHref = (chainId: NetworkTokenLocation['chainId'], token: string, pool: string | null = null) => `#/new/network/${chainId}/${token}${pool ? `/${pool}` : ''}`
 
 export const poolHref = (poolId: string, token: string | null = null) => (token ? `#/pool/${poolId}/${token}` : `#/pool/${poolId}`)
 

@@ -18,6 +18,15 @@ interface Subject {
 }
 
 const PROBLEM: typeof ADDRESS_PROBLEM = { ...ADDRESS_PROBLEM, empty: 'Enter a public address.' }
+/**
+ * The View address form's own words (QA round 2, N100): whatever is wrong with typed text that is not an address, it says
+ * so in one sentence, rather than one rule at a time ("Remove the spaces.", then "Only 0–9 and a–f…"). An empty field and
+ * a pasted line break keep their own lines. A link's address keeps PROBLEM's exact rules above.
+ */
+const NOT_AN_ADDRESS = 'That isn’t a valid address. An address is 0x followed by 40 characters, 0–9 and a–f.'
+const FORM_PROBLEM: typeof ADDRESS_PROBLEM = { ...PROBLEM, whitespace: NOT_AN_ADDRESS, prefix: NOT_AN_ADDRESS, hex: NOT_AN_ADDRESS, length: NOT_AN_ADDRESS }
+/** Spaces and tabs at the ends of typed or pasted text (N100); anything inside, and any line break, is still refused. */
+const trimEnds = (text: string) => text.replace(/^[ \t]+|[ \t]+$/g, '')
 
 /**
  * Goes to another link without leaving the page. A new history entry, so Back
@@ -35,9 +44,9 @@ function AddressForm({ id, onView, className, inert }: { id: string; onView: (wi
   const inputId = `${id}-input`
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    const parsed = parseAddressInput(text)
+    const parsed = parseAddressInput(trimEnds(text))
     if (!parsed.ok) {
-      setProblem(PROBLEM[parsed.reason])
+      setProblem(FORM_PROBLEM[parsed.reason])
       return
     }
     setProblem(null)
@@ -54,7 +63,7 @@ function AddressForm({ id, onView, className, inert }: { id: string; onView: (wi
         value={text}
         onChange={(event) => setText(event.target.value)}
         placeholder="Public address, 0x…"
-        title="Sent exactly as typed; a checksum is not required. Viewing an address proves nothing about who controls it."
+        title="Spaces at the ends are removed. Viewing an address proves nothing about who controls it."
         aria-describedby={problem ? `${id}-error` : undefined}
         aria-invalid={problem ? true : undefined}
       />
@@ -181,7 +190,7 @@ export default function PortfolioBody({ identity, onLinked }: { identity: Wallet
         </>
       ) : (
         <div className="dm-acct-rail-empty" data-empty="portfolio">
-          <p className="dm-acct-rail-text">Connect a wallet in the header to see its tokens, or view any public address.</p>
+          <p className="dm-acct-rail-text">Connect a wallet to see its tokens, or view any public address.</p>
           {linkProblem && (
             <p role="alert" className="dm-error" data-link-problem="">
               The address in this link can’t be used: {linkProblem}

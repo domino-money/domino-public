@@ -199,7 +199,9 @@ test('Robinhood keeps its complete action row when the wallet is on Base or Arbi
       const actions = s.page.locator('[data-position-detail] .dm-pos-actions[data-position-actions]');
       await actions.locator('[data-position-action="close"]').waitFor();
       await actions.locator('[data-position-v2-action="exit"]').waitFor();
-      assert.deepEqual(await actions.locator('button').allInnerTexts(), ['Collect fees', 'Add liquidity', 'Change range', 'Withdraw', 'Close position']);
+      // Changed on purpose 2026-10-30 (QA round 2, N68): the row's own actions, whenever Auto-exit's "Auto-exit · Off"
+      // (src/v2in/automate/PositionAutomation.tsx) has joined it; test (h) asserts that button.
+      assert.deepEqual(await actions.locator('button:not([data-automation-exit-entry])').allInnerTexts(), ['Collect fees', 'Add liquidity', 'Change range', 'Withdraw', 'Close position']);
       for (const button of await actions.locator('button').all()) assert.equal(await button.isVisible(), true);
       assert.equal(s.chain.log.includes('wallet_switchEthereumChain'), false, 'viewing or checking approval never switches the wallet');
       assert.deepEqual(s.chain.sends, []);
@@ -223,7 +225,10 @@ test('(h) V1\'s own page in preview: V1\'s actions row keeps its own actions and
     const more = actions.locator('[data-position-v2-actions="preview"] [data-position-v2-more]');
     await more.waitFor({ timeout: 30_000 });
     // Changed on purpose 2026-10-06 (the owner's point 5): the protection is named Auto-exit.
-    assert.deepEqual(await actions.locator('button').allInnerTexts(), ['Collect fees', 'Add liquidity', 'Change range', 'Withdraw', 'Close position']);
+    // Changed on purpose 2026-10-30 (QA round 2, N68, the owner's yes): a plain position the wallet holds has the
+    // prototype's "Auto-exit · Off" after Set up automation (a link, so not listed here); it opens Auto-exit's own dialog.
+    await actions.locator('[data-automation-exit-entry]').waitFor({ timeout: 30_000 });
+    assert.deepEqual(await actions.locator('button').allInnerTexts(), ['Collect fees', 'Add liquidity', 'Change range', 'Withdraw', 'Auto-exit · Off', 'Close position']);
     assert.deepEqual([await more.getAttribute('aria-label'), await more.getAttribute('role')], ['Position actions', 'group']);
     assert.equal(await actions.locator('[data-position-v2-action]').count(), 3, 'liquidity actions stay separate from automation');
     for (const button of await actions.locator('button').all()) assert.equal(await button.isVisible(), true);

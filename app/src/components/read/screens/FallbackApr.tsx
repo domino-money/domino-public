@@ -1,7 +1,6 @@
 import type { FallbackApr as Fallback } from '../../../lib/markets'
-import { ESTIMATE_SCOPE } from '../../../lib/read/aprEstimate'
 import { aprDigits } from '../../../lib/format/apr'
-import { fallbackTitle } from '../../explore/MetricCell'
+import { ESTIMATE_SCOPE } from '../../../lib/read/aprEstimate'
 import { cx } from '../../ui'
 
 /**
@@ -23,10 +22,12 @@ export function FallbackApr({ apr, compact = false }: { apr: Fallback; compact?:
   if (text === null) return null
   return (
     <span data-apr-estimate="fallback" data-figure-source={apr.basis}>
-      {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): its title is its basis and scope only, no
-          longer when it was observed nor "Not current. Shown because the usual market data provider did not answer
-          this time." (MetricCell fallbackTitle). */}
-      <span className={cx('tnum whitespace-nowrap', compact ? 'font-medium text-money-in' : 'text-fg')} title={`${fallbackTitle(apr.basis, 'estimate')} ${ESTIMATE_SCOPE}`}>
+      {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no longer when it was observed nor "Not
+          current. Shown because the usual market data provider did not answer this time." (MetricCell fallbackTitle).
+          Changed on purpose 2026-10-30 (QA round 2, N105/Q29): the one plain sentence every "est." figure has
+          (ESTIMATE_SCOPE); it began with its basis, e.g. "Worked out the read service’s way (fixed LP fee × 24h volume ÷
+          TVL × 365) from DEX Screener’s figures.". The basis stays as data (data-figure-source). */}
+      <span className={cx('tnum whitespace-nowrap', compact ? 'font-medium text-money-in' : 'text-fg')} title={ESTIMATE_SCOPE}>
         {/* V4: a compact figure's "est." is quieter and smaller than the figure (.apr i, .stat-q); the words stay the same. */}
         {compact ? <>{`${text}% `}<span className="dm-apr-est">est.</span></> : `${text}% est. APR`}
       </span>

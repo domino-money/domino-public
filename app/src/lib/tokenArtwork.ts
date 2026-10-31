@@ -420,6 +420,16 @@ export function createTokenArtworkResolver(options: Options = {}) {
           queue.shift()?.()
           return
         }
+        // Answered while it waited for a slot (a seed: the token search's batch, the Wallet card's prices, another
+        // token's body): nothing to ask. Added 2026-10-30 (QA round 2, N6).
+        const seeded = cache.get(key)
+        if (seeded && seeded.expires > now()) {
+          pending.delete(key)
+          required.delete(key)
+          done(seeded.value)
+          queue.shift()?.()
+          return
+        }
         active++
         void artworkOf(chainId, address.toLowerCase()).then((found) => {
           remember(key, found ?? null, found === undefined)
@@ -520,6 +530,31 @@ export function createTokenArtworkResolver(options: Options = {}) {
   }
 
   /**
+   * Our edge's per-token `tokens` answer for up to PRICE_BATCH Robinhood Chain tokens, in GETs of EDGE_BATCH, and nothing
+   * else: no provider fallback, no seed, no listener, no state given up. Null when this build has no edge, when our edge
+   * is resting for these reads (its per-token path or Robinhood Chain's artwork reads gave no answer lately, or a 429
+   * asked to wait), or when no GET answered. Added 2026-10-30 (QA round 2, N6): the token search asks it once for its
+   * hits (lib/read/dexFigures.ts settleSearchHits), so a look-alike with no pair costs no token-pairs GET of its own.
+   */
+  async function edgeTokens(addresses: readonly string[], signal?: AbortSignal): Promise<Map<string, EdgeTokenPairs> | null> {
+    const list = [...new Set(addresses.map((address) => address.toLowerCase()))].filter((address) => ADDRESS.test(address) && !/^0x0{40}$/.test(address)).sort().slice(0, PRICE_BATCH)
+    if (list.length === 0 || signal?.aborted || edge2 === null || now() < edge2DownUntil || !edgeUp('robinhood') || cooling(true)) return null
+    const parts: string[][] = []
+    for (let i = 0; i < list.length; i += EDGE_BATCH) parts.push(list.slice(i, i + EDGE_BATCH))
+    const answers = await Promise.all(parts.map((part) => get(`${edge2}tokens/${part.join(',')}`, EDGE_TIMEOUT, signal, true)))
+    if (signal?.aborted) return null
+    const out = new Map<string, EdgeTokenPairs>()
+    let heard = false
+    for (const [index, answer] of answers.entries()) {
+      const answered = answer === null ? null : edgeTokenPairs(answer.body, parts[index], wall())
+      if (!answered) continue
+      heard = true
+      for (const [address, own] of answered) out.set(address, own)
+    }
+    return heard ? out : null
+  }
+
+  /**
    * Artwork a `tokens` reply already answered for a token: its one safe image,
    * or none (null) when the token is the base of a pair there and has no image.
    * Found artwork is never replaced by a none.
@@ -585,7 +620,7 @@ export function createTokenArtworkResolver(options: Options = {}) {
     }
   }
 
-  return { resolve, pairs, tokenPrices, seed, peek, onPairs, observe, rejectImage: (chainId: number, address: string) => {
+  return { resolve, pairs, tokenPrices, edgeTokens, seed, peek, onPairs, observe, rejectImage: (chainId: number, address: string) => {
     const key = tokenArtworkKey(chainId, address)
     if (key) remember(key, null, true, true)
   } }

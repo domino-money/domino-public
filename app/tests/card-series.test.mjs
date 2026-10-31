@@ -168,7 +168,10 @@ test('a card coming back keeps its answer’s rhythm, and one whose answer stand
   assert.equal(keptWaitMs(provider(refused('provider_unavailable')), NOW), 59_000, 'a refusal that can pass: a minute from when it came')
   assert.equal(keptWaitMs(provider(refused('provider_currency_or_pool_mismatch')), NOW), null)
   assert.equal(keptWaitMs(provider({ status: 'not_requested', reason: null, data: null, cache: null }), NOW), null, 'the bridge fixture’s answer: final, never asked again on return')
-  assert.equal(keptWaitMs(chain(), NOW), 30_000, 'a chain series keeps its minute')
+  // Changed on purpose 2026-10-30 (QA round 2, N104): a chain card asks every five minutes, was every minute.
+  assert.equal(keptWaitMs(chain(), NOW), 270_000, 'a chain series keeps its five minutes')
+  // Added 2026-10-30 (N104 review): a history still being built keeps the minute.
+  assert.equal(keptWaitMs(chain(history({ status: 'not_built', reason: 'history_acquisition_pending', snapshot: null, covered: [], gaps: [], candles: [] })), NOW), 30_000, 'a history still being built keeps its minute')
   assert.equal(keptWaitMs(chain(history(), { receivedAt: NOW.wall - 600_000 }), NOW), 0, 'one kept from an earlier visit is asked for at once')
   const failed = { ...chain(), data: null, failure: 'Busy. Later', code: 'busy', receivedAt: NOW.wall - 10_000 }
   assert.equal(keptWaitMs({ ...failed, retryAfterMs: 60_000 }, NOW), 50_000, 'a failure that can pass: its own wait from when it came')
@@ -179,7 +182,8 @@ test('a card coming back keeps its answer’s rhythm, and one whose answer stand
 // Review of 2026-09-24: mergeAnswer kept the series' own time and dropped the failure's, so a card that came back five
 // seconds after a busy refresh read at once, into a service that had asked for time, on every return.
 test('a failed refresh over a kept series carries its own time and wait, and a card coming back waits it out', () => {
-  const good = chain(history(), { receivedAt: NOW.wall - 65_000, receivedMonotonic: NOW.monotonic - 65_000 })
+  // Changed 2026-10-30 (QA round 2, N104): the series is five minutes and five seconds old, past a chain card's five minutes.
+  const good = chain(history(), { receivedAt: NOW.wall - 305_000, receivedMonotonic: NOW.monotonic - 305_000 })
   const busy = { ...chain(), data: null, failure: 'Busy. Later', code: 'busy', receivedAt: NOW.wall - 4_000, receivedMonotonic: NOW.monotonic - 4_000, retryAfterMs: 60_000 }
   const merged = mergeAnswer(good, busy)
   assert.deepEqual(merged.data, history(), 'the series stays')
@@ -422,10 +426,12 @@ test('a capabilities check that failed in passing decides nothing: asked again q
   assert.deepEqual(seen, ['none'])
 })
 
-test('a chain card draws what the tab kept at once, reads its 24h hourly history, and asks again a minute after each answer', async () => {
+// Changed on purpose 2026-10-30 (QA round 2, N104): five minutes after each answer, up to a quarter later at random (the
+// virtual clock draws 0.5: 337.5 s), was a minute.
+test('a chain card draws what the tab kept at once, reads its 24h hourly history, and asks again five minutes after each answer', async () => {
   const clock = virtualClock(), controller = new AbortController(), answers = []
   const cache = emptyCache()
-  cache.put(chain(history({ candles: [ratioCandle(5, '1'), ratioCandle(4, '2')] }), { receivedAt: END * 1000 - 60_000 }))
+  cache.put(chain(history({ candles: [ratioCandle(5, '1'), ratioCandle(4, '2')] }), { receivedAt: END * 1000 - 300_000 }))
   const source = fakeSource(() => okHistory())
   const running = watchCard(source, cardAsk(market(), 'chain'), (answer) => answers.push(answer), { signal: controller.signal, clock, page: null, cache })
   assert.equal(answers.length, 0, 'nothing lands inside the caller’s own effect')
@@ -434,22 +440,45 @@ test('a chain card draws what the tab kept at once, reads its 24h hourly history
   assert.deepEqual(source.reads.map(({ route, request }) => ({ route, request })), [{ route: 'history', request: { poolId: POOL, currency: addr('1'), windowSeconds: 86400, resolutionSeconds: 3600 } }])
   assert.equal(answers[1].data.candles.length, 3, 'then its own answer')
   assert.equal(cache.get(KEY, NOW).data.candles.length, 3, 'which the tab keeps')
-  await clock.advance(59_000)
+  await clock.advance(337_499)
   assert.equal(source.reads.length, 1)
-  await clock.advance(1_000)
-  assert.equal(source.reads.length, 2, 'a minute after an answer')
+  await clock.advance(1)
+  assert.equal(source.reads.length, 2, 'five minutes after an answer, spread by the jitter')
   controller.abort(); await running
   await clock.advance(600_000)
   assert.equal(source.reads.length, 2, 'nothing after the card is gone')
 })
 
-test('a chain card coming back within its minute draws what it had and reads when the minute is up', async () => {
+// Added 2026-10-30 (N104 review): a history still being built is asked again at the minute, so the card's line comes as
+// soon as the build its first request started is done; once it can be drawn, the five minutes and their jitter apply.
+test('a chain card whose history is still being built asks again a minute later, and every five minutes once it can be drawn', async () => {
+  const clock = virtualClock(), controller = new AbortController(), answers = []
+  const building = history({ status: 'not_built', reason: 'history_acquisition_pending', snapshot: null, covered: [], gaps: [], candles: [] })
+  const answer = (data) => ({ ...okHistory(data), provenance: { ...okHistory().provenance, receivedMonotonic: clock.monotonic() } })
+  const source = fakeSource((_route, _request, count) => answer(count === 1 ? building : history()))
+  const running = watchCard(source, cardAsk(market(), 'chain'), (event) => answers.push(event), { signal: controller.signal, clock, page: null, cache: emptyCache() })
+  await clock.advance(0)
+  assert.equal(source.reads.length, 1)
+  assert.equal(answers.at(-1).data.status, 'not_built')
+  await clock.advance(59_999)
+  assert.equal(source.reads.length, 1)
+  await clock.advance(1)
+  assert.equal(source.reads.length, 2, 'a minute after the build was started')
+  assert.equal(answers.at(-1).data.status, 'available')
+  await clock.advance(337_499)
+  assert.equal(source.reads.length, 2)
+  await clock.advance(1)
+  assert.equal(source.reads.length, 3, 'then five minutes after the drawable answer, spread by the jitter')
+  controller.abort(); await running
+})
+
+test('a chain card coming back within its five minutes draws what it had and reads when they are up', async () => {
   const clock = virtualClock(), controller = new AbortController(), answers = []
   const cache = emptyCache()
   cache.put(chain(history(), { receivedAt: END * 1000 - 20_000 }))
   const source = fakeSource(() => okHistory())
   const running = watchCard(source, cardAsk(market(), 'chain'), (answer) => answers.push(answer), { signal: controller.signal, clock, page: null, cache })
-  await clock.advance(39_000)
+  await clock.advance(279_000)
   assert.equal(answers.length, 1, 'the kept line at once')
   assert.equal(source.reads.length, 0)
   await clock.advance(1_000)
@@ -503,11 +532,12 @@ test('a legacy card whose kept candles are still drawn waits for them to expire 
   controller.abort(); await running
 })
 
-test('a chain card coming back after a failed refresh keeps the failure’s wait, not only the series’ minute', async () => {
+test('a chain card coming back after a failed refresh keeps the failure’s wait, not only the series’ five minutes', async () => {
   const clock = virtualClock(), controller = new AbortController(), answers = []
   const cache = emptyCache()
-  // A good answer 65 s ago, then the minute refresh came back busy 4 s ago (at least a minute before asking again).
-  cache.put(chain(history(), { receivedAt: END * 1000 - 65_000, receivedMonotonic: -65_000 }))
+  // A good answer 290 s ago, then the five-minute refresh came back busy 4 s ago (at least a minute before asking again).
+  // Changed 2026-10-30 (QA round 2, N104): the series was 65 s old under the one-minute rhythm.
+  cache.put(chain(history(), { receivedAt: END * 1000 - 290_000, receivedMonotonic: -290_000 }))
   cache.put({ ...chain(), data: null, failure: 'Busy. Later', code: 'busy', receivedAt: END * 1000 - 4_000, receivedMonotonic: -4_000, retryAfterMs: 60_000 })
   const source = fakeSource(() => okHistory())
   const running = watchCard(source, cardAsk(market(), 'chain'), (answer) => answers.push(answer), { signal: controller.signal, clock, page: null, cache })
@@ -630,6 +660,8 @@ function cardModule() {
     // 2026-10-01 (audit E21): the card names its pair as its price is written, and its fee as every chip writes it.
     ...require('../.test-build/app/src/lib/read/orientation.js'), ...require('../.test-build/app/src/lib/format/fee.js'),
     unreadToken: (address) => ({ address }), poolHref: (id) => `#/pool/${id}`,
+    // 2026-10-30 (QA round 2): the pool's network under the pair (Q23), and what its fee is, in the fee's title (Q28).
+    ...require('../.test-build/app/src/lib/networkName.js'), FEE_MEANING: 'What the fee is.',
     // 2026-09-25 (r3 charts): the stub also shows the tone the card gives its line, and whether it draws the level.
     PriceLineSvg: (props) => React.createElement('svg', { 'data-price-line': '', 'data-tone': props.tone, 'data-level': props.level ? '' : undefined, title: props.title }),
     VolumeBarsSvg: (props) => React.createElement('svg', { 'data-volume-bars': '', title: props.title }),
@@ -673,7 +705,8 @@ test('each series draws something in the plot: a line with its caption, the 24h 
 test('the line takes the direction of the change the card shows at rest, and no direction without one', () => {
   const { renderToStaticMarkup } = require('react-dom/server')
   const MarketCard = cardModule()
-  const draw = (candles) => renderToStaticMarkup(MarketCard({ listing: { poolId: POOL, market: market() }, index: 0, now: NOW,
+  // Changed on purpose 2026-10-30 (QA round 2, N9): a row with no pool price of its own, so the card rests on its last close.
+  const draw = (candles) => renderToStaticMarkup(MarketCard({ listing: { poolId: POOL, market: market({ poolState: undefined }) }, index: 0, now: NOW,
     series: pickSeries({ market: market(), settled: true, answer: chain(history({ candles })), expecting: false, now: NOW }) }))
   const down = draw([ratioCandle(24, '2701.25'), ratioCandle(2, '2695'), ratioCandle(1, '2689.5', false)])
   assert.match(down, /data-tone="down"/)
@@ -692,12 +725,66 @@ test('the line takes the direction of the change the card shows at rest, and no 
 
 // Added 2026-09-27 (r6/marketsdata, the owner: prices plain for beginners wherever pools are listed): the card's price
 // row writes its close as the table writes a price, whole units from 10,000 ("84,367", not "84,367.4").
+// Changed on purpose 2026-10-30 (QA round 2, N2, one price format): the table writes a price as the pool page does, so
+// two decimals from 1,000 ("84,367.40").
 test('the card writes its latest close as the table writes a price', () => {
   const { renderToStaticMarkup } = require('react-dom/server')
   const MarketCard = cardModule()
-  const draw = (candles) => renderToStaticMarkup(MarketCard({ listing: { poolId: POOL, market: market() }, index: 0, now: NOW,
+  // Changed on purpose 2026-10-30 (QA round 2, N9): a row with no pool price of its own, so the card rests on its last close.
+  const draw = (candles) => renderToStaticMarkup(MarketCard({ listing: { poolId: POOL, market: market({ poolState: undefined }) }, index: 0, now: NOW,
     series: pickSeries({ market: market(), settled: true, answer: chain(history({ candles })), expecting: false, now: NOW }) }))
-  assert.match(draw([ratioCandle(24, '84100.9'), ratioCandle(1, '84367.4', false)]), /class="dm-mkt-card-close dm-fig-lg">84,367<\/span>/)
+  assert.match(draw([ratioCandle(24, '84100.9'), ratioCandle(1, '84367.4', false)]), /class="dm-mkt-card-close dm-fig-lg">84,367\.40<\/span>/)
   assert.match(draw([ratioCandle(24, '2689.5'), ratioCandle(1, '2701.25', false)]), /class="dm-mkt-card-close dm-fig-lg">2,701.25<\/span>/)
   assert.match(draw([ratioCandle(24, '0.57'), ratioCandle(1, '0.573917', false)]), /class="dm-mkt-card-close dm-fig-lg">0.5739<\/span>/)
+})
+
+// Added 2026-10-30 (QA round 2, N9): at rest the card writes the pool's own price, the one its table row writes, never an
+// hour's close beside a different figure in the table; its change and its line's colour measure to that price.
+test('at rest the card writes the pool price its table row writes, and measures its change to it', () => {
+  const { renderToStaticMarkup } = require('react-dom/server')
+  const MarketCard = cardModule()
+  const { marketPoolPrice } = require('../.test-build/app/src/lib/read/marketPrice.js')
+  // The row's pool state is tick 0 between two 18-decimal tokens: 1 AAA = 1.00 BBB, as the table writes it (N2: the pool
+  // page's digits, 2026-10-30).
+  const row = market()
+  assert.equal(marketPoolPrice(row, NOW).text, '1.00')
+  const draw = (candles) => renderToStaticMarkup(MarketCard({ listing: { poolId: POOL, market: row }, index: 0, now: NOW,
+    series: pickSeries({ market: row, settled: true, answer: chain(history({ candles })), expecting: false, now: NOW }) }))
+  const above = draw([ratioCandle(24, '0.9'), ratioCandle(1, '0.95', false)])
+  assert.match(above, /data-card-price="pool" class="dm-mkt-card-close dm-fig-lg">1\.00<\/span>/)
+  assert.match(above, /class="dm-delta dm-mkt-card-delta" data-sign="1"/, 'from the first close, 0.9, to the pool price, 1')
+  assert.match(above, /data-tone="up"/)
+  // The first close above the pool price: the change and the line's colour both read down, whatever the last close said.
+  const below = draw([ratioCandle(24, '1.2'), ratioCandle(1, '1.3', false)])
+  assert.match(below, /class="dm-delta dm-mkt-card-delta" data-sign="-1"/)
+  assert.match(below, /data-tone="down"/)
+  // A row priced the other way round from the line is not used: the card rests on its last close.
+  const flipped = renderToStaticMarkup(MarketCard({ listing: { poolId: POOL, market: market({ tokens: { base: token('2', 'BBB'), quote: token('1', 'AAA') }, poolState: { ...row.poolState, currency0: addr('2'), currency1: addr('1') } }) }, index: 0, now: NOW,
+    series: pickSeries({ market: row, settled: true, answer: chain(history({ candles: [ratioCandle(24, '2689.5'), ratioCandle(1, '2701.25', false)] })), expecting: false, now: NOW }) }))
+  assert.match(flipped, /data-card-price="close" class="dm-mkt-card-close dm-fig-lg">2,701.25<\/span>/)
+  // Its network under the pair, in the app's one name for it.
+  assert.match(above, /<span data-chain-chip="4663">Robinhood Chain<\/span> · <span title="What the fee is\.">0\.30% fee<\/span>/)
+})
+
+// Added 2026-10-30 (QA round 2, final review read-4): the change and the line's colour measure to the pool price unrounded
+// (`exact`), never to the four significant digits the card writes below 1. A pool at the tick nearest 0.00012914 whose
+// first close was 0.00012914 has not moved: a flat 0.00%, not a red "▼ 0.03%" (0.00012914 against "0.0001291").
+test('a pool that did not move reads a flat 0.00% and a flat line, measured to its unrounded price, never to the digits written', () => {
+  const { renderToStaticMarkup } = require('react-dom/server')
+  const MarketCard = cardModule()
+  const { marketPoolPrice } = require('../.test-build/app/src/lib/read/marketPrice.js')
+  const { percentChange } = require('../.test-build/app/src/lib/format/change.js')
+  const { sqrtPriceAtTick } = require('../.test-build/app/src/lib/read/screens/poolRange.js')
+  const tick = -89551
+  const row = market({ poolState: { ...market().poolState, tick, sqrtPriceX96: sqrtPriceAtTick(tick).toString() } })
+  const price = marketPoolPrice(row, NOW)
+  assert.equal(price.text, '0.0001291')
+  assert.match(price.exact, /^0\.000129134988938\d*$/, 'a plain decimal, never an exponent')
+  assert.deepEqual(percentChange('0.00012914', price.text), { sign: -1, text: '0.03%' }, 'what the written digits read')
+  assert.deepEqual(percentChange('0.00012914', price.exact), { sign: 0, text: '0.00%' })
+  const flat = renderToStaticMarkup(MarketCard({ listing: { poolId: POOL, market: row }, index: 0, now: NOW,
+    series: pickSeries({ market: row, settled: true, answer: chain(history({ candles: [ratioCandle(24, '0.00012914'), ratioCandle(1, '0.00012914', false)] })), expecting: false, now: NOW }) }))
+  assert.match(flat, /data-card-price="pool" class="dm-mkt-card-close dm-fig-lg">0\.0001291<\/span>/)
+  assert.match(flat, /class="dm-delta dm-mkt-card-delta" data-sign="0"[^>]*>[\s\S]*?0\.00%/)
+  assert.match(flat, /data-tone="flat"/)
 })

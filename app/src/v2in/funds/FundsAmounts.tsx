@@ -2,6 +2,8 @@ import { useMemo, useState, useSyncExternalStore } from 'react'
 import { crosschainSessionAccess } from '../../finance/v2/http'
 import type { PairBalancesState } from '../../components/create/usePairBalances'
 import { rawBalances, usdOf } from '../../components/create/valuation'
+import { docsHref } from '../../components/explore/routes'
+import { CREATE } from '../../lib/create/copy'
 import { paymentEstimate, preferredPayment } from '../../lib/create/payFunding'
 import { wholeFromOther } from '../../lib/create/depositPlan'
 import { takesOnly, type JourneyState, type PayWith } from '../../lib/create/journey'
@@ -13,6 +15,7 @@ import { useWalletIdentity } from '../../lib/walletIdentity'
 import { isV2ChainId } from '../../v2/chains'
 import type { V2ChainId } from '../../v2/types'
 import { BringFunds } from './BringFunds'
+import { FUNDS_TEXT } from './copy'
 import { fundsPage } from './live'
 import { useS2Gate } from './useS2Gate'
 import { amountRawOf, keptAmount, lackingTokens, payLacks } from './model'
@@ -111,6 +114,23 @@ export default function FundsAmounts({
 
   return (
     <>
+      {wallet === null && gate?.mode === 'live' && (
+        // QA round 2, N22 (2026-10-30): with no wallet, the one quiet line the landing and the docs promise, said only while
+        // bringing funds from another network is open here (the S2 gate live: under `preview` the offer is locked, so it
+        // would promise what a connected wallet then cannot do), with the docs' page one link away. Its review: the link is
+        // "How it works" as everywhere, and named after its own page for a screen reader (the amount step's line above has
+        // its own "How it works", to the docs' amount step). Changed on purpose 2026-10-30 (QA round 2, final review
+        // create-1, journey-3): in a new tab, so the choices already made stay (a same-tab link left New position); and the
+        // name a screen reader or voice control uses starts with the visible words, its page and the new tab hidden after
+        // them, never an aria-label that drops them (WCAG 2.5.3).
+        <p className="dm-hint" data-funds-connect="">
+          {CREATE.amount.connectOtherNetwork}{' '}
+          <a className="underline" href={docsHref('bring-funds')} target="_blank" rel="noopener noreferrer" data-funds-docs="">
+            {CREATE.amount.connectOneTokenLink}
+            <span className="sr-only">{`: ${FUNDS_TEXT.howBringingWorks}${CREATE.page.newTab}`}</span>
+          </a>
+        </p>
+      )}
       {tracking !== trackingKey && showPayment && alternative && <PayLine facts={alternative} pair={pool.currencies} onPay={choosePayment} />}
       {gate && gate.mode !== 'off' && wallet !== null && (
         <BringFunds

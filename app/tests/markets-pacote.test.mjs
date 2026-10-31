@@ -195,6 +195,47 @@ test('DEX Screener: the store keeps the newest figures, gives none past ten minu
   assert.equal(dex.subjectOf(['0x0000000000000000000000000000000000000000', USDG]), '0x0000000000000000000000000000000000000000', 'ETH/USDG: native ether, as the provider names it');
 });
 
+// Added 2026-10-30 (QA round 2, N6): the token search settles its look-alikes with no pair in one batch, exactly as their
+// own token-pairs body ([]) would, and leaves every other hit to its mark's own read.
+test('N6: a search hit the batch lists no pair for says No liquidity found and has no artwork; any other hit, a missing one or a failed batch is never taken for zero', async () => {
+  const at = NOW * 1000;
+  const store = dex.createDexStore(async () => null, () => at);
+  const held = new Map();
+  const asked = [];
+  let answer = null;
+  const artwork = {
+    edgeTokens: async (list) => { asked.push(list); return answer; },
+    peek: (_chain, address) => held.get(address),
+    seed: (_chain, address, image) => { if (!(image === null && held.get(address))) held.set(address, image); },
+  };
+  const deps = { artwork, store };
+  const empty = `0x${'e'.repeat(40)}`;
+  const liquid = UFG;
+  const missing = `0x${'9'.repeat(40)}`;
+  const known = USDG;
+  const pictured = WETH;
+  store.take(known, [{ chainId: 'robinhood', baseToken: { address: known }, quoteToken: { address: UFG }, liquidity: { usd: 5 } }], at);
+  held.set(pictured, 'https://cdn.dexscreener.com/cms/images/abcdefghijklmnop?width=64&height=64&quality=85&format=auto');
+  answer = new Map([[empty, { pairs: [], retrievedAt: at - 2_000 }], [liquid, { pairs: [{ chainId: 'robinhood', baseToken: { address: liquid }, quoteToken: { address: USDG }, liquidity: { usd: 40200 } }], retrievedAt: at }]]);
+  await dex.settleSearchHits([empty, liquid, missing, known, pictured, empty.toUpperCase().replace('0X', '0x'), '0x0000000000000000000000000000000000000000'], undefined, deps);
+  assert.deepEqual(asked, [[empty, liquid, missing]], 'one batch, only for hits nothing is known of yet');
+  assert.deepEqual(store.token(empty), { address: empty, liquidityUsd: 0, pools: 0, retrievedAt: NOW - 2 }, 'No liquidity found, dated by the edge’s retrieval');
+  assert.equal(held.get(empty), null, 'no artwork, so its mark asks nothing');
+  assert.equal(store.token(liquid), null, 'a hit with a pair is its mark’s to read: the trimmed batch never feeds a total');
+  assert.equal(held.has(liquid), false, 'nor its artwork');
+  assert.equal(store.token(missing), null, 'a hit the batch did not answer is not zero');
+  // A failed batch (null) settles nothing; an aborted search settles nothing.
+  const store2 = dex.createDexStore(async () => null, () => at);
+  answer = null;
+  await dex.settleSearchHits([empty], undefined, { artwork: { ...artwork, peek: () => undefined }, store: store2 });
+  assert.equal(store2.token(empty), null);
+  const stopped = new AbortController();
+  stopped.abort();
+  asked.length = 0;
+  await dex.settleSearchHits([missing], stopped.signal, deps);
+  assert.deepEqual(asked, [], 'nothing asked for a search already gone');
+});
+
 // Added 2026-10-06 (the owner's point 3: Base's and Arbitrum One's pools in New position with TVL, 24h volume and APR
 // "like Robinhood Chain"). Shapes as DEX Screener answered for VIRTUAL on Base and ARB on Arbitrum One that day: Uniswap
 // v4 pools by their 32-byte id, v3 pools by their address (labelled v3 on Base, unlabelled on Arbitrum One), other
@@ -488,10 +529,14 @@ test('A22: a capabilities answer past its time is used at once for a route it li
   assert.equal(gets.length, 3);
 });
 
-test('the edge’s age dates an answer by when the edge received it; anything but a plain whole number of ms within 15 minutes is no age', () => {
+// Changed on purpose 2026-10-30 (launch capacity, item 4): within an hour, the featured list's stand-in at the edge
+// (functions/_lib/featuredEdge.ts ERROR_SECONDS), no longer 15 minutes.
+test('the edge’s age dates an answer by when the edge received it; anything but a plain whole number of ms within an hour is no age', () => {
   assert.equal(edgeAgeOf('8123'), 8123);
   assert.equal(edgeAgeOf('0'), 0);
-  for (const bad of [null, '-1', '1.5', '1e3', '900001', 'abc', '']) assert.equal(edgeAgeOf(bad), undefined, String(bad));
+  assert.equal(edgeAgeOf('900001'), 900_001, 'a stand-in kept past 15 minutes');
+  assert.equal(edgeAgeOf('3600000'), 3_600_000);
+  for (const bad of [null, '-1', '1.5', '1e3', '3600001', 'abc', '']) assert.equal(edgeAgeOf(bad), undefined, String(bad));
 });
 
 // ---------------------------------------------------------------------------

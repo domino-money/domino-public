@@ -16,6 +16,12 @@
  * received it. The chart counts a snapshot older than two minutes as stale; a minute at the most keeps every chart as it
  * was. Before, the fifth and sixth Markets cards waited 4 to 6 s for the per-visitor budget behind misses.
  *
+ * Added 2026-10-30 (launch capacity study, item 4): stale-if-error. Past its minute and up to HISTORY_ERROR_SECONDS, a
+ * kept built history is no longer served at once, but it stands in for the gateway's answer when that is a failure (a
+ * 408, a 429, a 5xx; publicEdge.ts), or none within HISTORY_ERROR_WAIT_MS, so a VM or tunnel outage, or a slow VM,
+ * leaves the chart that was there, dated, rather than none. One not built yet (kept briefly) never stands in: it lapses
+ * at HISTORY_SECONDS as before.
+ *
  * The runtime comes in as `contract`, so this module compiles for node --test without it; functions/api/read/v3/
  * history.ts hands in the real one.
  */
@@ -38,6 +44,15 @@ export const HISTORY_PATH = '/api/read/v3/history'
 export const HISTORY_SECONDS = 20
 /** How long a kept history is served at all, refreshed behind once HISTORY_SECONDS old (A14, 2026-10-01). Below the chart's two minutes. */
 export const HISTORY_STALE_SECONDS = 60
+/** (2026-10-30) How long a kept built history stands in for a failure of the gateway's (stale-if-error), in all. */
+export const HISTORY_ERROR_SECONDS = 15 * 60
+/**
+ * (2026-10-30, review) The longest a request whose kept history is past HISTORY_STALE_SECONDS waits for the gateway before
+ * that history stands in for it (publicEdge.ts `errorWaitMs`; no extra upstream request, and the answer, when it comes,
+ * is kept behind). Without it a slow VM held the chart for the read Worker's own 20 s. The stale-while-revalidate minute
+ * is untouched: a history younger than HISTORY_STALE_SECONDS is served at once, as before.
+ */
+export const HISTORY_ERROR_WAIT_MS = 1_000
 
 interface Asked { poolId: string; currency: string; windowSeconds?: number; resolutionSeconds?: number }
 
@@ -77,5 +92,7 @@ export function answerHistory(request: Request, env: BridgeEnv, rt: HistoryRunti
     brief: (text) => statusOf(text) !== 'available',
     freshSeconds: HISTORY_SECONDS,
     staleSeconds: HISTORY_STALE_SECONDS,
+    errorSeconds: HISTORY_ERROR_SECONDS,
+    errorWaitMs: HISTORY_ERROR_WAIT_MS,
   })
 }

@@ -106,7 +106,8 @@ export function otherChainsFor(gates: JourneyGates | null, { walletFallback = tr
     return { code: said.code, reason: said.copy }
   }
   const unavailable = (chainId: number) => ({ code: 'network_unavailable', reason: JOURNEY.pool.networkClosed(nameOf(chainId) ?? 'this network') })
-  const unread = (chainId: number) => ({ code: 'network_search_unavailable', reason: `Pool search on ${nameOf(chainId) ?? 'this network'} is unavailable right now.` })
+  // Changed on purpose 2026-10-30 (QA round 2, SWEEP): the way on, never "Pool search on … is unavailable right now."
+  const unread = (chainId: number) => ({ code: 'network_search_unavailable', reason: JOURNEY.pool.poolsAgain(nameOf(chainId) ?? 'this network') })
 
   /**
    * One of the service's chain reads while its route serves. Changed on purpose 2026-10-06: a failure says whether it may

@@ -6,10 +6,10 @@ import { overviewRows } from '../../../lib/read/publicOverview'
 import { candidateFromToken } from '../../../lib/read/screens/tokens'
 import { askAgainLater, readWithin, type ScreenOutcome } from '../../../lib/read/screens/screenRead'
 import { whenVisibleAfter } from '../../../lib/read/screens/quietRead'
-import { failureText } from '../../../lib/read/screens/copy'
 import { hintsWithin } from '../../../lib/read/screens/poolHints'
 import { usablePoolsRequest } from '../../../lib/read/screens/poolsList'
 import { featuredPoolIds } from '../../../lib/read/screens/featuredPools'
+import { useKnownMarkets } from '../../../lib/read/screens/knownMarkets'
 import { tokenWarning, warningText } from '../../../lib/read/screens/lookalike'
 import { addressKey } from '../../../lib/read/screens/identity'
 import { discoveryRows, mergeTokenPools, splitFlagged } from '../../../lib/read/tokenPools'
@@ -57,6 +57,9 @@ function useDiscoveredPools(source: ReadSource, token: string): Market[] {
 }
 
 const NONE: Market[] = []
+
+/** The read's answers that are not asked again on their own: they need the person (a gate to pass, a reload). */
+const STOPPED: readonly string[] = ['gate_required', 'gate_unavailable', 'access_required', 'disabled', 'not_connected', 'incompatible', 'invalid']
 
 /** One bounded page at a time. Storage acquisition survives leaving the page;
  * this consumer only refreshes visible observations and never waits for full
@@ -113,7 +116,7 @@ export function StoredTokenExplorer({ source, token }: { source: ReadSource; tok
       // acquisitionAccepted false, its capacity ceiling — asking harder is
       // exactly wrong: it cannot start until the ceiling drains, so back off and
       // let it.
-      const stop = ['gate_required', 'gate_unavailable', 'access_required', 'disabled', 'not_connected', 'incompatible', 'invalid'].includes(read.state)
+      const stop = STOPPED.includes(read.state)
       const busy = read.state === 'ok' && (read.data.tokens.some((entry) => entry.acquisition.status === 'pending') || read.data.pools.some((entry) => entry.acquisition.status === 'pending'))
       const refused = read.state === 'ok' && read.data.acquisitionAccepted === false
       const after = read.state !== 'ok' ? 60_000 : busy ? (refused ? 30_000 : 5_000) : 60_000
@@ -129,7 +132,17 @@ export function StoredTokenExplorer({ source, token }: { source: ReadSource; tok
   // Today's Top pools that hold the token come first (B6), then the largest by liquidity; DEX Screener's figure orders a
   // pool whose own figures the provider refused.
   const listed = useMemo(() => featuredPoolIds(addressKey(token), null, featured.entries), [token, featured.entries])
-  const merged = useMemo(() => mergeTokenPools(stored, firstPage ? discovered : NONE, { listed, liquidity: (poolId) => dexStore.pool(poolId)?.liquidityUsd ?? null }), [stored, discovered, firstPage, listed])
+  // QA round 2, N10: a pool of today's list the token's stored page does not hold takes the row Markets already shows for
+  // it (read before, never here), ahead of the pools route's row without figures: the token's own row first, then the
+  // Markets row, then the route's.
+  const known = useKnownMarkets()
+  const listedRows = useMemo(() => {
+    if (!firstPage || !known || listed.length === 0) return NONE
+    const held = new Set(stored.map((row) => row.poolId))
+    const wanted = new Set(listed.map((poolId) => poolId.toLowerCase()))
+    return known.filter((row) => wanted.has(row.poolId) && !held.has(row.poolId))
+  }, [firstPage, known, listed, stored])
+  const merged = useMemo(() => mergeTokenPools(listedRows.length ? [...stored, ...listedRows] : stored, firstPage ? discovered : NONE, { listed, liquidity: (poolId) => dexStore.pool(poolId)?.liquidityUsd ?? null }), [stored, listedRows, discovered, firstPage, listed])
   const split = useMemo(() => splitFlagged(merged), [merged])
   const rows = showAll ? merged : split.shown
   // The flagged pools Show all brings in rise into place (V4 token.html); none while they are folded away.
@@ -147,16 +160,19 @@ export function StoredTokenExplorer({ source, token }: { source: ReadSource; tok
   // is not "collecting": nothing is collecting, and saying so forever is a lie
   // a person cannot act on. Same words the history chart already uses.
   const atCapacity = pending === true && value?.data.acquisitionAccepted === false
-  const failure = outcome && outcome.state !== 'ok' && outcome.state !== 'aborted' ? failureText(outcome, 'pools').title : null
-  const loading = !value && !failure && merged.length === 0
+  // Changed on purpose 2026-10-30 (QA round 2, the owner's rule: no "unavailable" notices; missing data rests as loading
+  // and is asked again quietly): a read that failed and is asked again on its own rests as loading, saying nothing (it
+  // used to print the failure's title, e.g. "Pool data unavailable"); one that is not asked again says what to do.
+  const stopped = !!outcome && STOPPED.includes(outcome.state)
+  const loading = !value && !stopped && merged.length === 0
   // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the line under the token no longer says how the
   // reads went: gone are the failed read's title (e.g. "Pool data unavailable"), "Domino’s data service is busy, so only
   // the pools already stored are shown.", "Collecting figures for N pools. The rest are below." and "Collecting data.
   // Available figures are shown below." A token that could not be verified still says so (a caution before adding
   // money), and "Reading pools…" stays for assistive technology only, beside the loading bubble.
-  // (2026-10-15, pack 7 review): a failed read with no pool to show keeps main's line, its title (a gate to pass, or a read
-  // asked again on its own after a minute): the section is otherwise blank, with nothing the person could act on.
-  const said = failure && merged.length === 0 ? failure : selected?.acquisition.status === 'rejected' ? 'This token could not be verified.' : loading ? 'Reading pools…' : ''
+  // (2026-10-15, pack 7 review): a failed read with no pool to show kept main's line, its title. Changed on purpose
+  // 2026-10-30 (above): only a read that is not asked again keeps a line, and it says what to do.
+  const said = stopped && merged.length === 0 ? 'Reload the page to see this token’s pools.' : selected?.acquisition.status === 'rejected' ? 'This token could not be verified.' : loading ? 'Reading pools…' : ''
 
   return (
     <section className="mt-6 grid gap-4 dm-lit" aria-labelledby="stored-token-title" data-stored-token={token} data-acquisition={atCapacity ? 'at_capacity' : pending ? 'pending' : 'settled'} data-pools-merged={merged.length} data-pools-discovered={discovered.length} ref={holdRise}>
@@ -166,7 +182,7 @@ export function StoredTokenExplorer({ source, token }: { source: ReadSource; tok
         <h2 id="stored-token-title" className="dm-title" title="Pools stored for this token, and the ones a market data provider lists for it, each checked on Robinhood Chain. The list does not imply complete chain history.">{candidate ? <SymbolText token={candidate.token} /> : 'Token data'}</h2>
         <p className="mt-2 text-caption text-fg-muted"><Address value={token} /></p>
         {warning && <p role="alert" className="dm-pool-warning mt-3" data-token-warning={warning.kind}>{warningText(warning, 'token')}</p>}
-        {!value && !failure && <Skeleton className="mt-3 h-5 w-48" />}
+        {!value && !stopped && <Skeleton className="mt-3 h-5 w-48" />}
         <p role="status" className={said && !loading ? 'mt-3 text-caption text-fg-muted' : 'sr-only'}>{said}</p>
       </Card>
       {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): while the token's pools are still being

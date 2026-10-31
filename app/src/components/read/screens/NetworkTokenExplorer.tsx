@@ -1,15 +1,23 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { NetworkResolved, NetworkToken, OtherChains } from '../../../lib/create/otherChains'
+import type { PoolOption } from '../../../lib/read/screens/poolsList'
 import type { TokenDisplay } from '../../../lib/read/types'
 import type { NetworkTokenLocation } from '../../explore/routes'
+import { whenVisibleAfter } from '../../../lib/read/screens/quietRead'
 import { TokenMark } from '../../TokenIcon'
-import { Button, Card, Display } from '../../ui'
+import { Card, Display, Skeleton } from '../../ui'
 import { Address } from './Address'
 import { NetworkPoolPicker } from './PoolPicker'
 import { SymbolText } from './SymbolText'
 
+/**
+ * How long the token page waits before it reads a token again that did not read (QA round 2, the owner's rule of
+ * 2026-10-30: no "temporarily unavailable" and no Try again on a read surface): a few quiet re-asks, then it rests.
+ */
+const READ_AGAIN_MS = [2_000, 5_000, 15_000, 30_000] as const
+
 /** A chain-qualified read view. Its parent supplies navigation and actions for the verified token. */
-export function NetworkTokenExplorer({ location, others, checking, initial = null, navigation, actions }: {
+export function NetworkTokenExplorer({ location, others, checking, initial = null, navigation, actions, openPool }: {
   location: NetworkTokenLocation
   others: OtherChains | null
   /** Whether the other networks are still being checked. Since 2026-10-15 (pack 7) nothing is said meanwhile ("Loading token data…" is gone). */
@@ -17,6 +25,8 @@ export function NetworkTokenExplorer({ location, others, checking, initial = nul
   initial?: NetworkToken | null
   navigation: ReactNode
   actions: (token: TokenDisplay) => ReactNode
+  /** QA round 2, N5: what opening one of the token's pools does (the caller's: New position on this network, the pool proposed). */
+  openPool?: (token: TokenDisplay, option: PoolOption) => void
 }) {
   const { chainId, token: wire } = location
   const address = wire.toLowerCase()
@@ -45,7 +55,18 @@ export function NetworkTokenExplorer({ location, others, checking, initial = nul
     return () => controller.abort()
   }, [others, network, chainId, address, identity, initial, attempt])
   const token = result?.ok ? result.token : null
-  const retry = () => { setAnswer(null); setAttempt((value) => value + 1) }
+  // A token that did not read is read again on its own, quietly and a few times, while the page is visible; an answer
+  // about another token (identity_mismatch) is not asked again.
+  const failedCode = result && !result.ok ? result.code : null
+  useEffect(() => {
+    if (failedCode === null || failedCode === 'identity_mismatch' || attempt >= READ_AGAIN_MS.length) return
+    return whenVisibleAfter(READ_AGAIN_MS[attempt], () => { setAnswer(null); setAttempt((value) => value + 1) })
+  }, [failedCode, attempt])
+  // Still read, or waiting to be read again; `spent`: a token that did not read after its last quiet re-ask. An answer
+  // about another token, and an origin where the network is closed, rest blank.
+  const asked = !!others && !!network && failedCode !== 'identity_mismatch'
+  const spent = asked && failedCode !== null && attempt >= READ_AGAIN_MS.length
+  const resting = checking || (asked && !spent)
 
   return (
     <div data-network-token-view={chainId}>
@@ -67,18 +88,20 @@ export function NetworkTokenExplorer({ location, others, checking, initial = nul
         {token && actions(token)}
       </header>
       {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no "Loading token data…" while the token is
-          read (the status line stays, empty). Kept on purpose: a failure that blocks the page, with its Try again, and
-          "Pool discovery is unavailable on this network." on an origin where the network is closed (a feature gate). */}
-      {!token && <div className="mt-6 grid justify-items-start gap-3">
-        <p role="status" className="text-body text-fg-muted">
-          {checking || (others && network && result === null) ? '' : result && !result.ok ? result.reason : 'Pool discovery is unavailable on this network.'}
-        </p>
-        {result && !result.ok && <Button variant="outline" size="sm" onClick={retry}>Try again</Button>}
-      </div>}
+          read (the status line stays, empty). Changed on purpose 2026-10-30 (QA round 2, the owner's rule: missing data
+          stays out of sight, no Try again on a read surface): a token that did not read is read again on its own
+          (READ_AGAIN_MS) and says nothing; gone are its reason on screen ("Token details are temporarily unavailable.",
+          "Token details could not be verified on this network."), the Try again button and "Pool discovery is
+          unavailable on this network." on an origin where the network is closed. The state stays as data. */}
+      {!token && <p role="status" className="sr-only" data-network-token-state={checking ? 'checking' : failedCode ?? (others && network ? 'reading' : 'closed')} />}
+      {/* QA round 2 review: while the token is read, or read again, the page rests (as the Robinhood Chain token page does,
+          StoredTokenExplorer); once its quiet re-asks are spent it says what to do, in the Robinhood Chain page's words. */}
+      {!token && resting && <Skeleton className="mt-6 h-5 w-48" />}
+      {!token && spent && <p className="mt-6 text-body text-fg-muted" data-network-token-spent="">Reload the page to see this token’s pools.</p>}
       {token && others && <section className="dm-mkt-found animate-rise" aria-labelledby="network-found-pools-title" data-found-pools="">
         <h2 id="network-found-pools-title" className="dm-title">Pools</h2>
         <Card className="mt-3 p-2 dm-lit">
-          <NetworkPoolPicker key={`${chainId}:${address}:${attempt}`} read={(signal) => others.pools(token, signal)} network={network} pending={null} onPending={() => undefined} browse />
+          <NetworkPoolPicker key={`${chainId}:${address}:${attempt}`} read={(signal) => others.pools(token, signal)} network={network} pending={null} onPending={() => undefined} browse onOpen={openPool ? (option) => openPool(token, option) : undefined} />
         </Card>
       </section>}
     </div>

@@ -30,8 +30,12 @@ export interface PoolPrices {
    * Changed on purpose 2026-10-06 (the review of rugged97's #379: it waited for a read of other networks' holdings): the
    * answer comes as soon as the pool's network's own read is in; `later` hears the offer again when a read that answers
    * after it changes it, and replaces that answer (useKeyedRead).
+   * Changed on purpose 2026-10-30 (launch capacity, item 9a, its review): `background` is true for the journey's read
+   * again on Amount's tick, where an implementation may reuse what it already read for this visit (Ethereum's and OP
+   * Mainnet's holdings); false or left out for the first read and every deliberate read again (funds arrived, Review's
+   * re-reads), which ask everything again.
    */
-  pay: (pool: PoolOption, owner: string, signal: AbortSignal, later: (facts: PayFacts | null) => void, selected?: TokenDisplay | null) => Promise<PayFacts | null>
+  pay: (pool: PoolOption, owner: string, signal: AbortSignal, later: (facts: PayFacts | null) => void, selected?: TokenDisplay | null, background?: boolean) => Promise<PayFacts | null>
 }
 
 /** An observed payment asset and its qualified price. Null balances remain unknown, never zero. */
@@ -64,14 +68,22 @@ export const usePoolPrices = (): PoolPrices | null => useContext(PoolPricesConte
  * `read` is the one of the last draw.
  * Changed on purpose 2026-10-06 (the review of rugged97's #379): what `read` hands `later` (a read that answered after
  * the first changed it) replaces its answer for the same key, whichever of the two arrives first.
+ * Changed on purpose 2026-10-30 (launch capacity, item 9a): `everyMs` is optional. Without it nothing is read on a timer
+ * or on focus: a new `revision` asks again, keeping the key's answer until the new one is in. Its review: and a new
+ * `tick` (the caller's one tick) asks again in the background, without cutting short a read already out (it is then left
+ * to finish, and the tick asks nothing). `read` hears whether it is such a background read (a timer's, a focus' or a
+ * tick's) or the first read of a key or `revision`.
  */
-export function useKeyedRead<T>(key: string | null, read: (signal: AbortSignal, later: (value: T) => void) => Promise<T>, refresh?: { everyMs: number; revision: number; reconcile?: (previous: T | undefined, next: T) => T; onError?: (previous: T | undefined) => T }): T | undefined {
+export function useKeyedRead<T>(key: string | null, read: (signal: AbortSignal, later: (value: T) => void, background: boolean) => Promise<T>, refresh?: { everyMs?: number; revision: number; tick?: number; reconcile?: (previous: T | undefined, next: T) => T; onError?: (previous: T | undefined) => T }): T | undefined {
   const [got, setGot] = useState<{ key: string; value: T } | null>(null)
   const latest = useRef(read)
   const reconcile = useRef(refresh?.reconcile)
   const unavailable = useRef(refresh?.onError)
   const refreshMs = refresh?.everyMs
   const refreshRevision = refresh?.revision
+  const refreshTick = refresh?.tick ?? 0
+  // The running effect's ask, for the caller's tick.
+  const asker = useRef<((background: boolean) => void) | null>(null)
   useEffect(() => {
     latest.current = read
     reconcile.current = refresh?.reconcile
@@ -87,7 +99,7 @@ export function useKeyedRead<T>(key: string | null, read: (signal: AbortSignal, 
       const merge = reconcile.current
       if (!controller.signal.aborted) setGot((previous) => ({ key, value: merge ? merge(previous?.key === key ? previous.value : undefined, value) : value }))
     }
-    const ask = () => {
+    const ask = (background: boolean) => {
       if (busy || controller.signal.aborted || (refreshMs !== undefined && document.hidden) || Date.now() - last < 10_000) return
       busy = true
       last = Date.now()
@@ -97,25 +109,32 @@ export function useKeyedRead<T>(key: string | null, read: (signal: AbortSignal, 
       void latest.current(controller.signal, (value) => {
         replaced = true
         publish(value)
-      }).then((value) => { if (!replaced) publish(value) }, () => {
+      }, background).then((value) => { if (!replaced) publish(value) }, () => {
         const retain = unavailable.current
         if (!replaced && !controller.signal.aborted && mine === generation && retain) {
           setGot((previous) => ({ key, value: retain(previous?.key === key ? previous.value : undefined) }))
         }
       }).finally(() => { busy = false })
     }
-    ask()
-    const timer = refreshMs !== undefined ? setInterval(ask, refreshMs) : null
+    const again = () => ask(true)
+    asker.current = ask
+    ask(false)
+    const timer = refreshMs !== undefined ? setInterval(again, refreshMs) : null
     if (refreshMs !== undefined) {
-      window.addEventListener('focus', ask)
-      document.addEventListener('visibilitychange', ask)
+      window.addEventListener('focus', again)
+      document.addEventListener('visibilitychange', again)
     }
     return () => {
+      if (asker.current === ask) asker.current = null
       controller.abort()
       if (timer !== null) clearInterval(timer)
-      window.removeEventListener('focus', ask)
-      document.removeEventListener('visibilitychange', ask)
+      window.removeEventListener('focus', again)
+      document.removeEventListener('visibilitychange', again)
     }
   }, [key, refreshMs, refreshRevision])
+  // Declared after the effect above, so a tick drawn with a new key or revision finds that read already out and asks nothing.
+  useEffect(() => {
+    if (refreshTick > 0) asker.current?.(true)
+  }, [refreshTick])
   return got !== null && got.key === key ? got.value : undefined
 }

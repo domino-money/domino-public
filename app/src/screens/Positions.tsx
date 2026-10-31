@@ -9,6 +9,7 @@ import { IconChevronLeft, IconWallet } from '../components/icons'
 import type { DepositsSlot, OwnedPositionsProps } from '../components/positions/OwnedPositions'
 import { PendingRows, PendingSummary } from '../components/positions/PositionRow'
 import { AutomationFrame } from '../components/positions/visual/AutomationFrame'
+import { positionsListHref, rememberPositionsList } from '../components/positions/listHref'
 import { PositionSkeleton } from '../components/positions/visual/PositionSkeleton'
 import { Button, Chip, Display, EmptyState, LinkButton, PageShell } from '../components/ui'
 import { MANAGED_LINE, NO_SIGN_IN_BOTH, automationLayout, sameShows, type CardShows } from '../lib/automationCards'
@@ -288,7 +289,7 @@ function ReceiptsPage() {
 /**
  * A short introduction to both modes. Actual automation status belongs to each position. Changed on purpose 2026-10-06
  * (the integration review, ux #9): in a build that carries V2, Auto-exit too, by its own name and line, so Automate's
- * "Choose a position" lands where Auto-exit is named (each position's own page turns it on). V4 (2026-10-17, the
+ * "Set up Auto-exit" lands where Auto-exit is named (each position's own page turns it on). V4 (2026-10-17, the
  * approved positions.html): each function is a row that opens Automate, with its round chevron, lit on hover and focus,
  * as the approved card draws it; its words and markers are unchanged.
  */
@@ -335,7 +336,7 @@ function AutomationCard() {
                 <p className="dm-acct-auto-name">
                   <span>{AUTO_EXIT_FEATURE.name}</span>
                 </p>
-                <p className="dm-acct-auto-text">Close at the range limit</p>
+                <p className="dm-acct-auto-text">Close at the end of your range</p>
               </div>
               <span aria-hidden="true" className="dm-acct-auto-chev" />
             </a>
@@ -387,6 +388,8 @@ function PositionsList() {
   // then told by the Wallet card, which follows View address, Use the connected wallet and the browser's Back.
   const [linked, setLinked] = useState<string | null>(linkedAddress)
   const viewing = linked !== null && !(identity.kind === 'connected' && identity.address.toLowerCase() === linked)
+  // (QA round 2, N62) A position opened from here goes back to this list: the viewed address's, or the wallet's own.
+  useEffect(() => rememberPositionsList(viewing ? linked : null), [viewing, linked])
   // Your positions shows its own filled action (Connect wallet, or New position when there is none yet): the title row's
   // New position steps back to secondary then, so one filled button leads the screen (§0.6).
   const [listEmpty, setListEmpty] = useState(false)
@@ -497,7 +500,7 @@ function ListWaiting() {
 function DetailWaiting() {
   return (
     <PageShell>
-      <a href="#/positions" className="dm-pos-back">
+      <a href={positionsListHref()} className="dm-pos-back">
         <IconChevronLeft size={16} />
         Positions
       </a>

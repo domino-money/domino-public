@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { Figure } from '../../components/positions/Figure'
 import { TokenMark, TokenMarkPair } from '../../components/TokenIcon'
 import { IconChevronRight } from '../../components/icons'
-import { Badge, Pill, Skeleton } from '../../components/ui'
+import { Pill, Skeleton } from '../../components/ui'
 import type { RowApr } from '../../components/positions/listApr'
 import { usdAsOf, type AmountShown, type PositionRowView, type TokenName } from './model'
 import { markOf } from '../position/marks'
@@ -80,15 +80,8 @@ export function DexBadge({ name, dex }: { name: string; dex: 3 | 4 }) {
   )
 }
 
-/** V1's stale badge, with how old what is shown is. */
-export function StaleBadge({ age }: { age: string }) {
-  return (
-    <span className="inline-flex flex-wrap items-center gap-x-1.5" data-v2-stale={age}>
-      <Badge kind="stale" />
-      <span className="text-[0.75rem] leading-4 text-fg-subtle">{age}</span>
-    </span>
-  )
-}
+// Removed on purpose 2026-10-30 (QA round 2, SWEEP; rule 3): `StaleBadge`, V1's stale badge (the visible word "stale" and
+// how old what is shown is). Nothing drew it any more; a row says it only as its data (`data-v2-stale`, below).
 
 /** A row's state, as V1's PositionStatus draws it, plus a position the index could not read. */
 function RowStatus({ row }: { row: PositionRowView }) {
@@ -249,16 +242,18 @@ export function V2PositionRow({ row, apr = null, late = false }: { row: Position
             ].filter(Boolean).join(' · ')}</span>}
           </span>
         </span>
-        <span className={closed && ((emptyValue && emptyFees) || burned) ? 'dm-own-figs dm-own-empty-figure' : 'dm-own-figs'}>
-          <span className={emptyValue || burned ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Amounts amounts={row.value} which="principal" label="Value" usd={row.valueUsd} asOf={valueAsOf} reason={row.usdReason} basis={row.valueUsdBasis} poolTitle={row.usdPoolTitle} /></span>
-          <span className={emptyFees || burned ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Amounts amounts={row.fees} which="fees" label="Fees to collect" usd={row.feesUsd} asOf={feesAsOf} reason={row.usdReason} basis={row.feesUsdBasis} poolTitle={row.usdPoolTitle} /></span>
+        {/* (QA round 2, N45) A closed row draws no zero Value or Fees to collect at all: hidden for the eye only, every closed
+            row still read "Value $0.00 · Fees to collect $0.00" to a screen reader. A closed row that holds dust shows it. */}
+        {!((emptyValue && emptyFees) || burned) && <span className="dm-own-figs">
+          {!emptyValue && <span className="dm-own-figure-slot"><Amounts amounts={row.value} which="principal" label="Value" usd={row.valueUsd} asOf={valueAsOf} reason={row.usdReason} basis={row.valueUsdBasis} poolTitle={row.usdPoolTitle} /></span>}
+          {!emptyFees && <span className="dm-own-figure-slot"><Amounts amounts={row.fees} which="fees" label="Fees to collect" usd={row.feesUsd} asOf={feesAsOf} reason={row.usdReason} basis={row.feesUsdBasis} poolTitle={row.usdPoolTitle} /></span>}
           {!closed && <span className="dm-own-cell" data-cell="apr" data-apr={apr?.kind === 'rate' ? 'ready' : apr?.kind ?? 'none'}>
             <span className="dm-own-label">Your APR</span>
             {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a kept rate's title said "Last verified position
                 history. Updating automatically.", and the dash's why it is a dash ("… is not available yet"); a dash is a dash now. */}
             {apr?.kind === 'loading' ? <Skeleton className="dm-collection-apr-loading" /> : apr?.kind === 'rate' ? <span className="dm-own-fig" title="Annualized fees earned by this position since it opened.">{apr.text}</span> : <span className="dm-own-dash">—</span>}
           </span>}
-        </span>
+        </span>}
         {closed && <span className="dm-own-closed-caption">View history</span>}
         <span className="dm-own-chev">
           <IconChevronRight size={16} />

@@ -1,21 +1,28 @@
-import { Fragment } from 'react'
+import { Fragment, useState } from 'react'
 import { CREATE } from '../../lib/create/copy'
 import { candidatesFromPool, candidateDecimals, takesOnly, validateBudget, type JourneyState, type PayWith } from '../../lib/create/journey'
+import { groupedAmount } from '../../lib/create/amountText'
 import { pairedAmount } from '../../lib/create/pairAmount'
 import type { PayFacts } from '../../lib/create/poolPrices'
+import { networkFiguresAt } from '../../lib/create/otherChains'
 import { maxSpend, reviewPlan } from '../../lib/create/reviewPlan'
 import { shortAmount } from '../../lib/format/amount'
+import { formatUsdFloor } from '../../lib/format/usd'
 import { formatUnits } from '../../lib/read/decimal'
 import { NATIVE_CURRENCY } from '../../lib/read/screens/identity'
+import { useMarketOption } from '../../lib/read/screens/knownMarkets'
 import type { TokenCandidate } from '../../lib/read/screens/tokens'
+import { useNow } from '../../lib/read/useNow'
+import { docsHref } from '../explore/routes'
 import { SymbolText } from '../read/screens/SymbolText'
 import { AmountText, UsdText } from '../figures'
 import { IconPlus } from '../icons'
+import { Figure } from '../positions/Figure'
 import { TokenMark } from '../TokenIcon'
-import { Button } from '../ui'
+import { Button, FigureDash } from '../ui'
 import { AmountField } from './fields'
 import type { PairBalancesState } from './usePairBalances'
-import { heldAmounts, rawBalances, usdAt, usdOfSide } from './valuation'
+import { heldAmounts, poolSizeLine, rawBalances, reportedTvl, usdAt, usdOfSide } from './valuation'
 
 /** A raw amount in whole tokens, grouped as the read writes it; the raw digits when the decimals are unknown. */
 const unitsOf = (raw: bigint | string, decimals: number | null) => {
@@ -26,6 +33,7 @@ const unitsOf = (raw: bigint | string, decimals: number | null) => {
 /**
  * A figure the page works out, as it sits in a field the person may type over: six significant digits at most
  * (lib/format/amount.ts) and no thousands separator, which would not be an amount. The exact figure is Review's.
+ * QA round 2, N75: drawn grouped while nobody types in its field (groupedAmount below), as typed once someone does.
  */
 const fieldText = (text: string) => shortAmount(text).short.replace(/,/g, '')
 
@@ -72,7 +80,22 @@ export function PairedAmounts({
   /** Added 2026-10-06: pay with one other token, or with the pool's own again (null). */
   onPayWith?: (payWith: PayWith | null) => void
 }) {
+  // QA round 2, Q4 (2026-10-30): the panel typed in first, and kept first for this pool, so the panels never swap places
+  // under the person when they type in the other one (that makes it the typed one). Set once per pool, as render state.
+  const [first, setFirst] = useState<{ pool: string; side: 0 | 1 } | null>(null)
+  // The page's clock as the journey reads it (read once): how long another network's TVL may be shown (N51 below).
+  const now = useNow(false).wall
+  // QA round 2, N75 (2026-10-30): the field being typed in, by its id. Every other field shows its amount with thousands
+  // separators ("12,500.5", lib/create/amountText.ts groupedAmount); the one being typed in shows it as typed, so the caret
+  // never jumps. Display only: the amount kept, checked and sent is the text as typed. On focus the field takes the text as
+  // typed at once, before the browser places the caret or selects the text, so a selection is of that text and the draw
+  // that follows changes nothing in it.
+  const [editing, setEditing] = useState<string | null>(null)
+  const shownAs = (id: string, text: string) => (editing === id ? text : groupedAmount(text))
   const pool = state.pool
+  // QA round 2, N8 (pass 3): the pool's TVL as its preview card and Markets show it, for the share sentence below only
+  // (display, never an amount); nothing is asked.
+  const marketPool = useMarketOption(pool)
   if (!pool) return null
   // No wallet: one line under both panels asks for one, instead of the same line in each (round 6, 2026-09-28: less on screen).
   const disconnected = balances.status === 'disconnected'
@@ -111,13 +134,14 @@ export function PairedAmounts({
               value={text}
               onChange={(event) => onPayWith({ token, text: event.target.value })}
               error={text !== '' && !typed.ok ? typed.reason : null}
-              usd={usdPaid !== null ? <UsdText value={usdPaid} /> : undefined}
+              usd={usdPaid !== null ? <UsdText value={usdPaid} floor /> : undefined}
               footer={
                 disconnected ? null : (
                   <div className="dm-flow-balance" data-pair-balance={pay === undefined ? 'loading' : 'ready'}>
                     <p className="dm-flow-balance-line">
-                      <span className="text-fg-subtle">{pay === undefined ? CREATE.amount.pairReading : facts?.raw == null ? CREATE.amount.pairNone : CREATE.amount.balanceAt(null)}</span>{' '}
-                      {facts?.raw != null && <bdi className="tnum text-fg">{unitsOf(facts.raw, token.decimals)}</bdi>}
+                      <span className="text-fg-subtle">{pay === undefined ? CREATE.amount.pairReading : CREATE.amount.balanceAt(null)}</span>{' '}
+                      {/* A balance that could not be read is the figure dash, never a sentence (QA round 2 sweep). */}
+                      {pay !== undefined && <bdi className={facts?.raw != null ? 'tnum text-fg' : 'tnum text-fg-subtle'}>{facts?.raw != null ? unitsOf(facts.raw, token.decimals) : CREATE.page.notChosen}</bdi>}
                     </p>
                     {spend > 0n && (
                       <Button type="button" variant="secondary" size="sm" data-pair-max="pay" onClick={() => onPayWith({ token, text: unitsOf(spend, token.decimals).replace(/,/g, '') })}>
@@ -139,6 +163,8 @@ export function PairedAmounts({
   }
   const choices = candidatesFromPool(pool)
   const independent = pool.currencies.findIndex((currency) => currency.address === state.token?.key)
+  if ((independent === 0 || independent === 1) && first?.pool !== pool.key) setFirst({ pool: pool.key, side: independent })
+  const order: readonly (0 | 1)[] = (first?.pool === pool.key ? first.side : independent) === 1 ? [1, 0] : [0, 1]
   const decimals = state.token ? candidateDecimals(state.token) : null
   const budget = validateBudget(state.budget, decimals)
 
@@ -178,7 +204,8 @@ export function PairedAmounts({
   const otherText = (index: 0 | 1): { value: string; note: string | null } => {
     const currency = pool.currencies[index]
     if (!other) return { value: '', note: null }
-    if (other.kind === 'unknown') return { value: '', note: CREATE.amount.pairUnknown }
+    // Nothing to show is an empty field, never a sentence about it (QA round 2 sweep).
+    if (other.kind === 'unknown') return { value: '', note: null }
     if (other.kind === 'unused') {
       const kept = pool.currencies[other.only]
       return { value: '', note: CREATE.amount.pairUnused(kept.symbol ?? '') }
@@ -192,14 +219,22 @@ export function PairedAmounts({
   const short = plan !== null && plan.kind === 'short'
   const shortId = 'create-amount-short'
 
+  // QA round 2, N51 and Q20 (2026-10-30): the deposit beside the pool's reported TVL (another network's only while it may
+  // be shown), said in plain words under the total: its share from about 10%, or a second look when it is more than the
+  // whole pool. Never a warning colour, never a block: a thin pool can take a large deposit.
+  const tvl = reportedTvl(networkFiguresAt(marketPool ?? pool, Math.floor(now / 1000)))
+  const sizeLine = poolSizeLine(tvl, total)
+  const sizeId = 'create-amount-size'
+  const describedBy = [short ? shortId : null, sizeLine ? sizeId : null].filter(Boolean).join(' ')
+
   // Each amount's raw units, for its USD line: the typed one once it is a real amount, the other once the range pairs one with it.
   const rawOf = (side: 0 | 1): string | null => (side === independent ? (budget.ok ? budget.raw : null) : other && other.kind === 'amount' ? other.raw : null)
 
   return (
     <div className="dm-flow-stack">
       <div className="dm-flow-pair" data-paired-amounts={independent === -1 ? 'none' : String(independent)}>
-        {pool.currencies.map((currency, index) => {
-          const side = index as 0 | 1
+        {order.map((side, position) => {
+          const currency = pool.currencies[side]
           // A range that takes one token alone asks for that token's amount only.
           // A background price move may leave the typed token outside the range. Keep that input visible
           // until the person changes it; hiding it would look as though their amount had been cleared.
@@ -208,7 +243,10 @@ export function PairedAmounts({
           const choice = choices[side]
           const unreadable = choice.why !== null || choice.token.decimals === null
           const shown = mine ? { value: state.budget, note: null } : otherText(side)
+          const fieldId = `create-amount-${side}`
           const balance = balances.balances?.[side] ?? null
+          // A figure only for a balance read as a number (lib/read/pagers.ts amountFact: a value, or zero).
+          const readable = balance?.fact && (balance.fact.state === 'value' || balance.fact.state === 'zero') ? balance.fact.text : null
           // Max leaves native ETH's gas allowance in the wallet (maxSpend), so Review never finds it short of what Max typed.
           const spend = balance?.raw && /^\d+$/.test(balance.raw) ? maxSpend(BigInt(balance.raw), currency.address === NATIVE_CURRENCY) : 0n
           const fill = spend > 0n ? unitsOf(spend, currency.decimals).replace(/,/g, '') : null
@@ -217,7 +255,7 @@ export function PairedAmounts({
           return (
             <Fragment key={currency.address}>
               {/* Between the two panels, as the swap form joins its two: decoration only. */}
-              {index === 1 && only === null && (
+              {position === 1 && only === null && (
                 <span aria-hidden="true" className="dm-flow-link">
                   <IconPlus size={16} />
                 </span>
@@ -225,7 +263,7 @@ export function PairedAmounts({
               <div className="dm-flow-pair-row" data-pair-side={side} data-pair-role={mine ? 'typed' : 'derived'} data-plan-side={side === quiet ? 'swapped' : undefined}>
                 <span className="dm-flow-pair-caption" aria-hidden="true">{mine ? CREATE.amount.entered : CREATE.amount.paired}</span>
                 <AmountField
-                  id={`create-amount-${side}`}
+                  id={fieldId}
                   label={<SymbolText token={currency} />}
                   labelHidden
                   unit={
@@ -236,25 +274,29 @@ export function PairedAmounts({
                   }
                   inputMode="decimal"
                   placeholder="0"
-                  value={shown.value}
+                  value={shownAs(fieldId, shown.value)}
+                  onFocus={(event) => {
+                    const input = event.currentTarget
+                    if (input.value !== shown.value) input.value = shown.value
+                    setEditing(fieldId)
+                  }}
+                  onBlur={() => setEditing((was) => (was === fieldId ? null : was))}
                   disabled={unreadable}
                   onChange={(event) => (mine ? onBudget(event.target.value) : onDeposit(choice, event.target.value))}
                   error={mine && state.budget !== '' && !budget.ok ? budget.reason : unreadable ? CREATE.amount.pairUnreadable : null}
-                  {...(mine && short ? { 'aria-invalid': true, 'aria-describedby': shortId } : {})}
-                  usd={usd !== null ? <UsdText value={usd} /> : undefined}
+                  {...(mine && short ? { 'aria-invalid': true } : {})}
+                  {...(mine && describedBy ? { 'aria-describedby': describedBy } : {})}
+                  usd={usd !== null ? <UsdText value={usd} floor /> : undefined}
                   below={shown.note ? <p className="dm-hint">{shown.note}</p> : null}
                   footer={
                     disconnected ? null : (
-                      <div className="dm-flow-balance" data-pair-balance={balances.status}>
+                      <div className="dm-flow-balance" data-pair-balance={balances.status} data-pair-refreshing={balances.refreshing ? '' : undefined}>
                         <p className="dm-flow-balance-line">
-                          <span className="text-fg-subtle">
-                            {balances.status !== 'ready'
-                              ? CREATE.amount.pairReading
-                              : balance?.fact
-                                ? CREATE.amount.balanceAt(null)
-                                : CREATE.amount.pairNone}
-                          </span>{' '}
-                          {balances.status === 'ready' && balance?.fact && <bdi className="tnum text-fg">{balance.fact.text}</bdi>}
+                          <span className="text-fg-subtle">{balances.status !== 'ready' ? CREATE.amount.pairReading : CREATE.amount.balanceAt(null)}</span>{' '}
+                          {/* A balance that could not be read is the figure dash, never a sentence (QA round 2 sweep), and so is
+                              one read without its decimals ("Unavailable", "… (raw units, decimals unknown)"), as the Wallet
+                              card shows both. */}
+                          {balances.status === 'ready' && <bdi className={readable ? 'tnum text-fg' : 'tnum text-fg-subtle'}>{readable ?? <FigureDash />}</bdi>}
                         </p>
                         {fill !== null && !unreadable && (
                           <Button type="button" variant="secondary" size="sm" data-pair-max={side} onClick={() => (mine ? onBudget(fill) : onDeposit(choice, fill))}>
@@ -274,14 +316,40 @@ export function PairedAmounts({
         <div className="dm-flow-deposit-total" data-amount-total={total !== null ? 'valued' : 'unavailable'}>
           <div className="dm-flow-deposit-total-head">
             <span>{CREATE.amount.total}</span>
-            <strong className="tnum">{total !== null ? <UsdText value={total} /> : CREATE.amount.totalUnavailable}</strong>
+            {/* QA round 2 (2026-10-30): a figure with no value is the figure dash (sweep), and a long one breaks only between its
+                digit groups, never inside one (Q20, ../positions/Figure.tsx). */}
+            {/* QA round 2, N2 (d): under a cent it reads "<$0.01", as Review's total does. */}
+            <strong className="tnum">{total !== null ? <Figure text={formatUsdFloor(total)} /> : CREATE.page.notChosen}</strong>
           </div>
-          <p>{held.estimate ? CREATE.amount.totalSwapNote : held.only !== null ? CREATE.amount.totalOneNote : CREATE.amount.totalNote}</p>
+          <p>
+            {held.estimate ? CREATE.amount.totalSwapNote : held.only !== null ? CREATE.amount.totalOneNote : CREATE.amount.totalNote}
+            {sizeLine && (
+              <>
+                {' '}
+                <span id={sizeId} data-amount-size={sizeLine === CREATE.amount.beyondPool ? 'beyond' : 'share'}>
+                  {sizeLine}
+                </span>
+              </>
+            )}
+          </p>
         </div>
       )}
       {disconnected && (
         <p className="dm-hint" data-pair-balance="disconnected">
+          {/* QA round 2, N22: with no wallet, the one line also says a wallet with one of the two tokens is enough, with the
+              docs' amount step one quiet link away (its review). Changed on purpose 2026-10-30 (QA round 2, final review
+              create-1): in a new tab, so the pool, range and amount already chosen are still here after reading it (a
+              same-tab link left New position, and Back started an empty flow); a screen reader hears where it opens. */}
           {CREATE.amount.connectForBalance}
+          {only === null && (
+            <>
+              {` ${CREATE.amount.connectOneToken} `}
+              <a className="underline" href={docsHref('new-position', 'step-amount')} target="_blank" rel="noopener noreferrer" data-pair-docs="">
+                {CREATE.amount.connectOneTokenLink}
+                <span className="sr-only">{CREATE.page.newTab}</span>
+              </a>
+            </>
+          )}
         </p>
       )}
       {/* One line under the panels, only when the wallet changes the plan: part of one token swapped, or not enough. */}

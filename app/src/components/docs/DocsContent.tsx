@@ -2,7 +2,8 @@ import { Fragment, type CSSProperties } from 'react'
 import { shotSrc } from '../../lib/docs/blocks'
 import { docGroupOf, tocOf } from '../../lib/docs/registry'
 import { SHOTS, type Shot } from '../../lib/docs/shots'
-import type { Block, DocPage, DocSection, Inline } from '../../lib/docs/types'
+import type { Block, DocChain, DocPage, DocSection, Inline } from '../../lib/docs/types'
+import { ROBINHOOD_EXPLORER } from '../../config/chainIdentity'
 import { RoadmapPill } from '../automate/RoadmapPill'
 import { docsHref } from '../explore/routes'
 import { IconInfo } from '../icons'
@@ -15,6 +16,40 @@ import { rem } from '../../lib/rootScale'
 
 /** The docs' phone width, where a picture's phone shot is served (docs.css draws the page for a phone below 640 px). */
 const PHONE_MEDIA = '(max-width: 639px)'
+
+/**
+ * Where an address row opens (2026-10-30, QA round 2, the owner's decision on N24: a small explorer link beside each
+ * address on Contracts). Links only, a person's own click, never a read: the hosts are v2/explorers.ts's, kept here so the
+ * docs chunk does not carry V2's chain profiles. Domino's own contracts open Robin Etherscan on Robinhood Chain, whose
+ * Blockscout shows them as bytecode; every other address opens Blockscout there.
+ */
+const EXPLORERS: Readonly<Record<DocChain, { name: string; host: string }>> = {
+  4663: { name: 'Robinhood explorer', host: ROBINHOOD_EXPLORER },
+  8453: { name: 'Basescan', host: 'https://basescan.org' },
+  42161: { name: 'Arbiscan', host: 'https://arbiscan.io' },
+}
+const ROBIN_ETHERSCAN = 'https://robin.etherscan.io'
+
+/** `name`: the row's contract name, with its role where two rows of the block share a name (two DominoV2VaultFactory rows open different addresses). */
+function ExplorerLinks({ name, address, chains, domino }: { name: string; address: string; chains: readonly DocChain[]; domino: boolean }) {
+  return (
+    <span className="dm-docs-addr-links">
+      {chains.map((chain) => (
+        <a
+          key={chain}
+          href={`${domino && chain === 4663 ? ROBIN_ETHERSCAN : EXPLORERS[chain].host}/address/${address}`}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="dm-docs-link"
+          aria-label={`${name} on ${EXPLORERS[chain].name} (opens in a new tab)`}
+          data-docs-explorer={chain}
+        >
+          {EXPLORERS[chain].name}
+        </a>
+      ))}
+    </span>
+  )
+}
 
 /** Inline text: words, bold words, code-like words and links inside this app. */
 function Text({ parts }: { parts: readonly Inline[] }) {
@@ -103,7 +138,8 @@ function BlockView({ block }: { block: Block }) {
           ))}
         </dl>
       )
-    case 'addresses':
+    case 'addresses': {
+      const shared = new Set(block.rows.map((row) => row.label).filter((label, index, labels) => labels.indexOf(label) !== index))
       return (
         <div className="dm-card dm-docs-addresses">
           <KeyValueList>
@@ -114,6 +150,7 @@ function BlockView({ block }: { block: Block }) {
                   <>
                     <span className="dm-docs-addr-name">{row.label}</span>
                     <span className="dm-docs-addr-role">{row.role}</span>
+                    {row.chains && row.chains.length > 0 && <ExplorerLinks name={shared.has(row.label) ? `${row.label}, ${row.role},` : row.label} address={row.address} chains={row.chains} domino={row.domino === true} />}
                   </>
                 }
                 mono
@@ -125,6 +162,7 @@ function BlockView({ block }: { block: Block }) {
           </KeyValueList>
         </div>
       )
+    }
     case 'split':
       return (
         <div className="dm-docs-split">

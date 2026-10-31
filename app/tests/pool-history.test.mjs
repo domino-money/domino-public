@@ -222,7 +222,7 @@ test('rendered ratio chart names its denomination, real coverage and exact value
   // 2026-09-24 (V2 final polish): the time axis adds interior ticks with timeTicks (lib/chart/scale.ts) labelled by
   // axisLabel (lib/format/time.ts); numbers only, and the hook set and the 5-useState order are unchanged.
   const { timeTicks } = require('../.test-build/app/src/lib/chart/scale.js'), { axisLabel } = require('../.test-build/app/src/lib/format/time.js')
-  const mod = { exports: {} }, dependencies = { watchPublicHistory() {}, useLoadMilestone() {}, ratioGeometry, ratioText, ratioCandleText, areaUnder, curveFor, linePath, percentChange, timeTicks, axisLabel, useNow: () => ({ wall: 86400000 }),
+  const mod = { exports: {} }, dependencies = { watchPublicHistory() {}, useLoadMilestone() {}, ratioGeometry, ratioText, ratioCandleText, areaUnder, curveFor, linePath, percentChange, timeTicks, axisLabel, plainClose: require('../.test-build/app/src/lib/read/marketPrice.js').plainClose, useNow: () => ({ wall: 86400000 }),
     Segmented: () => null, Skeleton: () => null, PoolPriceChart: () => null, daySpan: () => null,
     PoolTokenLabel: ({ token }) => React.createElement('span', null, token.symbol), Address: ({ value }) => React.createElement('span', null, value) }
   new Function('require', 'module', 'exports', code)(name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? require(name) : dependencies, mod, mod.exports)
@@ -231,9 +231,41 @@ test('rendered ratio chart names its denomination, real coverage and exact value
   assert.match(markup, /quote_per_base/)
   assert.match(markup, /QUOTE<\/span> for 1 <span>BASE/)
   assert.match(markup, /Some hours are missing: they are shaded\./)
-  assert.match(markup, /Prices from swaps on Robinhood Chain\./)
+  // Changed on purpose 2026-10-30 (QA round 2, N16): the header's price has no title (it read the raw close, "Prices from
+  // swaps on Robinhood Chain." and "Verified through block N."), and the slider says the hour in the screen's own figures.
+  assert.doesNotMatch(markup, /Prices from swaps on Robinhood Chain|Verified through block|complete interval|partial interval/)
   assert.match(markup, /role="slider"/)
-  assert.match(markup, /close 3/)
+  // N2 (2026-10-30, one price format): the screen writes a price of 1 or more with two decimals at least, as the pool page.
+  assert.match(markup, /aria-valuetext="\d{2}-\d{2} \d{2}:\d{2} UTC, close 3\.00 QUOTE, high 3\.00, low 3\.00, \d+ swaps?"/)
+})
+
+// Added 2026-10-30 (QA round 2, final review read-4): at rest the header writes the pool's own price (N9) and measures its
+// change to that price unrounded, never to the four significant digits written below 1: a pool at the tick nearest
+// 0.00012914 whose first close was 0.00012914 has not moved, so it reads a flat 0.00% (against "0.0001291" it read a red
+// 0.03%).
+test('at rest the header’s change is measured to the pool price unrounded: a pool that did not move reads a flat 0.00%', () => {
+  const React = require('react'), { renderToStaticMarkup } = require('react-dom/server'), ts = require('typescript')
+  const { sqrtPriceAtTick } = require('../.test-build/app/src/lib/read/screens/poolRange.js')
+  const { marketPoolPrice, plainClose } = require('../.test-build/app/src/lib/read/marketPrice.js')
+  const { areaUnder, curveFor, linePath } = require('../.test-build/app/src/lib/chart/paths.js'), { percentChange } = require('../.test-build/app/src/lib/format/change.js')
+  const { timeTicks } = require('../.test-build/app/src/lib/chart/scale.js'), { axisLabel } = require('../.test-build/app/src/lib/format/time.js')
+  const code = ts.transpileModule(readFileSync(new URL('../src/components/read/screens/PoolHistoryChart.tsx', import.meta.url), 'utf8'),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText
+  const tick = -89551
+  const market = { poolState: { sqrtPriceX96: sqrtPriceAtTick(tick).toString(), tick, tickSpacing: 1, block: 100, currency0: currency, currency1: quote },
+    tokens: { base: { address: currency, symbol: 'BASE', decimals: 18, readStatus: 'available' }, quote: { address: quote, symbol: 'QUOTE', decimals: 18, readStatus: 'available' } } }
+  const data = history({ status: 'complete', reason: null, gaps: [], covered: [{ startTimestamp: 0, endTimestamp: 86400 }], candles: [candle(0, '0.00012914'), candle(3600, '0.00012914')] })
+  const values = ['zero', 'day', { key: `${poolId}:${currency}:day`, state: 'answer', data, failed: false }, null]
+  let index = 0
+  const hooks = { useState: () => [values[index++], () => {}], useEffect() {}, useId: () => 'test' }
+  const mod = { exports: {} }, dependencies = { watchPublicHistory() {}, useLoadMilestone() {}, ratioGeometry, ratioText, ratioCandleText, areaUnder, curveFor, linePath, percentChange, timeTicks, axisLabel, plainClose, marketPoolPrice, useNow: () => ({ wall: 86400000 }),
+    Segmented: () => null, Skeleton: () => null, PoolPriceChart: () => null, daySpan: () => null,
+    PoolTokenLabel: ({ token }) => React.createElement('span', null, token.symbol), Address: ({ value }) => React.createElement('span', null, value) }
+  new Function('require', 'module', 'exports', code)(name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? require(name) : dependencies, mod, mod.exports)
+  const markup = renderToStaticMarkup(mod.exports.PoolHistoryChart({ source: {}, option: { key: poolId, currencies: [{ address: currency, symbol: 'BASE' }, { address: quote, symbol: 'QUOTE' }] }, market, loading: false }))
+  assert.equal(marketPoolPrice(market, { wall: 0 }).text, '0.0001291')
+  assert.match(markup, /data-chart-price="pool">0\.0001291<\/p>/)
+  assert.match(markup, /<span class="dm-delta dm-delta--md" data-sign="0" data-variant="text"><span class="dm-delta-arrow" aria-hidden="true"><\/span>0\.00%<\/span>/)
 })
 
 // 2026-09-27 (round 6, finishing the pool page): nothing half-configured under an empty chart. With nothing drawn in the
@@ -250,7 +282,7 @@ test('the price switch shows only while the chart is read, once a line is drawn,
     const values = [side, 'day', answer, null]
     let index = 0
     const hooks = { useState: () => [values[index++], () => {}], useEffect() {}, useId: () => 'test' }
-    const mod = { exports: {} }, dependencies = { watchPublicHistory() {}, useLoadMilestone() {}, ratioGeometry, ratioText, ratioCandleText, areaUnder, curveFor, linePath, percentChange, timeTicks, axisLabel, useNow: () => ({ wall: 86400000 }),
+    const mod = { exports: {} }, dependencies = { watchPublicHistory() {}, useLoadMilestone() {}, ratioGeometry, ratioText, ratioCandleText, areaUnder, curveFor, linePath, percentChange, timeTicks, axisLabel, plainClose: require('../.test-build/app/src/lib/read/marketPrice.js').plainClose, useNow: () => ({ wall: 86400000 }),
       Segmented: ({ label }) => React.createElement('span', { 'data-switch': label }), Skeleton: () => null, PoolPriceChart: () => null, daySpan: () => null,
       PoolTokenLabel: ({ token }) => React.createElement('span', null, token.symbol) }
     new Function('require', 'module', 'exports', code)(name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? require(name) : dependencies, mod, mod.exports)
@@ -298,11 +330,13 @@ function figuresRenderer() {
     FigureDash: ({ reason }) => React.createElement('span', { title: reason }, '—'),
     IconButton: ({ label, onClick }) => React.createElement('button', { 'aria-label': label, onClick }),
     Skeleton: () => null, PoolAprEstimate: () => React.createElement('span', null, '—'), FallbackApr: () => null,
-    PoolHistoryChart: props => (chart = props, React.createElement('section', { 'data-shared-history': '' }, 'Price history')) }
+    PoolHistoryChart: props => (chart = props, React.createElement('section', { 'data-shared-history': '' }, 'Price history')),
+    // 2026-10-30 (QA round 2): the fee as every chip writes it and what it is (Q28), and the network's name (Q23).
+    ...require('../.test-build/app/src/lib/networkName.js'), FEE_VENUE: 'Uniswap', feeWords: (fee) => `${fee} fee`, FEE_MEANING: 'What the fee is.' }
   const module = load(transpile('../src/components/read/screens/PoolFiguresDialog.tsx'), dependencies)
-  return { ...module, render(opened, current = null, readSource = {}) {
+  return { ...module, render(opened, current = null, readSource = {}, action = undefined) {
     live = current; source = readSource; chart = null
-    const markup = renderToStaticMarkup(module.PoolFiguresDialog({ market: opened, onClose() {} }))
+    const markup = renderToStaticMarkup(module.PoolFiguresDialog({ market: opened, onClose() {}, action }))
     return { markup, chart }
   } }
 }
@@ -327,6 +361,18 @@ test('the compact figures popup uses the live selected row and opens the shared 
   assert.ok(markup.indexOf('data-shared-history') < markup.indexOf('<details'), 'the chart is visible on open')
   assert.match(markup, /<summary tabindex="0">Details<\/summary>/, 'Details participates in the dialog focus trap')
   assert.equal(chart.market, current, 'the chart receives the live market rather than the opening snapshot')
+  // Added 2026-10-30 (QA round 2, Q19): the caller's way onward ends the sheet, after Details; none without one.
+  assert.doesNotMatch(markup, /dm-pool-figures-foot/)
+  const opened2 = screen.render(opened, current, source, require('react').createElement('a', { 'data-pool-figures-open': '' }, 'Open pool')).markup
+  assert.match(opened2, /<\/details><div class="dm-pool-figures-foot"><a data-pool-figures-open="">Open pool<\/a><\/div>/)
+})
+
+// Added 2026-10-30 (QA round 2, final review read-1, Q28): Details says what the pool fee is in words, under the fee, where
+// a tap and the keyboard reach it (the header's hover title reaches neither).
+test('the popup’s Details say what the pool fee is in words, under the fee', () => {
+  const { markup } = figuresRenderer().render(figuresMarket())
+  assert.match(markup, /<div><dt>Pool fee<\/dt><dd>0\.30%<\/dd><dd class="dm-pool-figures-fact-note" data-fee-meaning="">What the fee is\.<\/dd><\/div>/)
+  assert.ok(markup.indexOf('data-fee-meaning') > markup.indexOf('<details'), 'inside the collapsed Details, never on the sheet’s face')
 })
 
 test('the popup keeps missing, pending and observed zero figures distinct', () => {

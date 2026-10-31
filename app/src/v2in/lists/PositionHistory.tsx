@@ -87,8 +87,12 @@ export default function PositionHistory({ wallet, position, events = NO_EVENTS, 
       </ReceiptRow> : <li key={row.id} data-position-ledger-transaction={row.settlements[0].tx}><FeesActivity events={row.settlements} bare automatic={automatic ?? undefined} /></li>)}
     </ol>}
     {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): nothing while a page is on its way (it said "Loading activity…"). */}
-    {visible.length + immediate.length === 0 && live && !history.error && history.answer && !history.loading && <p className="dm-rcpt-note" role="status">{history.more ? 'No matching activity in the loaded pages.' : 'No activity found in the available history.'}</p>}
-    {(hidden || (live && history.more)) && <div className="dm-activity-footer"><Button variant="ghost" size="sm" disabled={history.loading && !hidden}
+    {/* (QA round 2, SWEEP) Said only once the whole history is in, in the Receipts card's words; with more to read, Show
+        more alone (it said "No matching activity in the loaded pages.", or "No activity found in the available history."). */}
+    {visible.length + immediate.length === 0 && live && !history.error && history.answer && !history.loading && !history.more && <p className="dm-rcpt-note" role="status">No activity yet.</p>}
+    {/* (QA round 2, N67) Show more pages the wallet's whole history, so once this position's own creation is listed nothing
+        older can be its own: the button goes (it stayed, and a click added nothing). Without that row, as before. */}
+    {(hidden || (live && history.more && !mint)) && <div className="dm-activity-footer"><Button variant="ghost" size="sm" disabled={history.loading && !hidden}
       onClick={() => { setPage({ scope, shown: shown + 10 }); if (total <= shown + 10) history.moreRows() }}>{history.loading && !hidden ? 'Loading more…' : 'Show more'}</Button></div>}
     {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): it said "Some automation events may not yet be linked to this position." */}
     {live && history.answer && contextLimited(portfolio) && <span hidden data-position-history-partial="" />}

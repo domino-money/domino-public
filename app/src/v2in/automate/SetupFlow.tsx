@@ -59,7 +59,7 @@ const MODES: readonly { key: SetupMode; title: string; line: string; fee: string
   { key: 'compound', title: CREATE.automation.options.compound.title, line: CREATE.automation.options.compound.line, fee: automationFeeText(1) },
   { key: 'domino', title: CREATE.automation.options.domino.title, line: CREATE.automation.options.domino.line, fee: automationFeeText(2) },
   // Changed on purpose 2026-10-06 (the owner's point 5): Auto-exit, by rugged97's name for it.
-  { key: 'protection', title: 'Auto-exit', line: 'Domino closes this position at the end of its range and sends the tokens to your wallet. 0.2% only if it closes.', fee: null },
+  { key: 'protection', title: 'Auto-exit', line: 'Domino closes this position at the end of its range and sends the tokens to your wallet. 0.2% of the position’s value, only if it closes.', fee: null },
 ]
 
 /** The picker position's pool in canonical currency order. */
@@ -356,7 +356,7 @@ function PositionSetup({ positions, portfolio, intent, position, onSelect, gate,
                   </Button>
                 ))}
               </div>
-              {chosen && <p className="dm-seq-hint">{mode === 'protection' ? "Earned fees stay in your position. Domino doesn't reinvest them." : 'The service fee applies once to earned fees used. Your original deposit is not charged.'}</p>}
+              {chosen && <p className="dm-seq-hint">{mode === 'protection' ? "Earned fees stay in your position. Domino doesn't reinvest them." : 'The service fee is taken from the earned fees automation uses, each time. Your original deposit is not charged.'}</p>}
             </fieldset>
           )}
           {/* V4 (the approved sequence.html .st.ghost.g3): step 3's number waits under step 2 until a mode is chosen. Drawn by
@@ -376,7 +376,7 @@ function PositionSetup({ positions, portfolio, intent, position, onSelect, gate,
           {usable && compounding && !exitHeld && (
             <fieldset disabled={busy} className="dm-acct-fieldset" data-state={consent ? 'done' : 'current'}>
               {legend(3, consent, 'Limits')}
-              <LimitsFields form={settings} onChange={(next) => { setSettings(next); setConsent(false); setReviewing(false) }} problems={check.ok ? [] : check.problems} dex={dex} disabled={busy} />
+              <LimitsFields form={settings} onChange={(next) => { setSettings(next); setConsent(false); setReviewing(false) }} problems={check.ok ? [] : check.problems} disabled={busy} />
               {consentText && (
                 <label className="dm-acct-check dm-seq-consent">
                   <input type="checkbox" checked={consent} onChange={(event) => { setConsent(event.target.checked); setReviewing(false) }} data-v2in-consent="" />
@@ -436,7 +436,8 @@ function PositionSetup({ positions, portfolio, intent, position, onSelect, gate,
               <dl className="dm-auto-review-facts">
                 <div><dt>Position</dt><dd>#{usable?.tokenId}</dd></div>
                 <div><dt>Automation</dt><dd>{chosen?.title}</dd></div>
-                <div><dt>Service fee</dt><dd>{chosen?.fee} of earned fees used, once</dd></div>
+                {/* Changed on purpose 2026-10-30 (QA round 2, the owner's Q1): Automate's words, "each time" ("once" read as one charge). */}
+                <div><dt>Service fee</dt><dd>{chosen?.fee} of the earned fees it uses, each time</dd></div>
                 {settings.mode === 2 && <div><dt>Maximum positions</dt><dd>{check.policy.maxPositions}, including this one</dd></div>}
                 <div><dt>Swap slippage limit</dt><dd>{bpsText(check.limits.maxSlippageBps)}% on top of the pool fee</dd></div>
                 <div><dt>Price gap limit</dt><dd>{bpsText(check.limits.maxPriceImpactBps)}% from the reference price</dd></div>

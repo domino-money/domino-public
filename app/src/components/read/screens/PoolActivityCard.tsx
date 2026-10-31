@@ -104,7 +104,8 @@ export function PoolActivityCard({ read, option, now, embedded = false }: { read
   // rather than labelling hours as a day.
   const windowSeconds = view?.windowSeconds ?? DAY_SECONDS
   const span = windowSeconds === DAY_SECONDS ? '24h' : duration(windowSeconds)
-  const spanText = span === '24h' ? '24 h' : span
+  // Changed on purpose 2026-10-30 (QA round 2, N34): "24h" as every other screen writes it, never "24 h".
+  const spanText = span
   const Heading = embedded ? 'h3' : 'h2'
   const blank = (
     <>
@@ -122,7 +123,10 @@ export function PoolActivityCard({ read, option, now, embedded = false }: { read
         <div><dt>Swaps ({span})</dt><dd>{fact(view && view.swaps.toLocaleString('en-US'))}</dd></div>
         <div><dt>Pool age</dt><dd>{fact(view && (view.age ? duration(view.age.seconds) : `Older than ${spanText}`))}</dd></div>
         <div><dt>Window</dt><dd>{fact(view && (view.window === 'covered' ? `${spanText} covered` : `${duration(view.observedSeconds)} observed`))}</dd></div>
-        <div><dt>Blocks covered</dt><dd>{fact(view && `${view.coveredFromBlock} to ${view.block}`)}</dd></div>
+        {/* Changed on purpose 2026-10-30 (QA round 2, Q13): a stored window counts from the pool's first indexed block, its
+            initialize, not from the 24h window's start, so it is named "Blocks indexed"; a live window's start is the
+            window's own, "Blocks covered". Block numbers grouped in thousands, as every figure. */}
+        <div><dt>{view && !view.live ? 'Blocks indexed' : 'Blocks covered'}</dt><dd>{fact(view && `${view.coveredFromBlock.toLocaleString('en-US')} to ${view.block.toLocaleString('en-US')}`)}</dd></div>
       </dl>
       {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the note under a live window ("This pool is
           not in the activity index yet. … its positions are unavailable until indexing catches up.") is gone; the labels

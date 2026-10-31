@@ -1,18 +1,26 @@
 import { useState } from 'react'
 import { SlippagePresets } from '../../components/create/SlippagePresets'
 import { CREATE } from '../../lib/create/copy'
-import { SLIPPAGE_MARKS, SLIPPAGE_STEPS, slippageFromPercent, slippageIndex, slippageMark, slippagePercent, slippageValue, slippageWritten } from '../../lib/create/slippage'
+import { SLIPPAGE_MARKS, SLIPPAGE_STEPS, slippageBpsFrom, slippageFromPercent, slippageIndex, slippageMark, slippagePercent, slippageValue, slippageWritten } from '../../lib/create/slippage'
 import { JOURNEY_HIGH_SLIPPAGE_COPY, JOURNEY_SLIPPAGE_WARNING_ABOVE_BPS } from './constants'
 
 /**
  * The slippage tolerance on Domino's new contracts, in today's control (components/create/SlippageSlider.tsx: the presets,
  * the track and the exact box, one value in whole basis points, 0.1% to 5%), with the owner's decision #2 for the zap:
  * 0.5% by default, and above 2% the proposed warning, "High slippage: you may receive noticeably less than quoted."
+ *
+ * Changed on purpose 2026-10-30 (QA round 2, N28, as today's control): a percentage the box refuses is kept as no
+ * tolerance at all (''), so Continue holds with its reason (./model/state.ts canContinue) instead of going on with the
+ * last good value unseen; the presets and the track keep drawing that last good value meanwhile. On a wide screen the
+ * track is not drawn (N103, styles/v4-newposition.css: the presets and the box only); a phone keeps it.
  */
 export function SlippageControl({ bps, onSlippage }: { bps: string; onSlippage: (text: string) => void }) {
-  const [draft, setDraft] = useState<{ bps: string; text: string } | null>(null)
-  const value = slippageValue(bps)
-  const typed = draft?.bps === bps ? draft.text : slippagePercent(value)
+  // The percentage while it is being typed, against the value it was typed for, and the last good value, which the
+  // presets and the track go on drawing.
+  const [draft, setDraft] = useState<{ bps: string; text: string; last: number } | null>(null)
+  const kept = slippageBpsFrom(bps)
+  const value = kept ?? (draft?.bps === bps ? draft.last : slippageValue(bps))
+  const typed = draft?.bps === bps ? draft.text : kept === null ? '' : slippagePercent(kept)
   const exact = slippageFromPercent(typed)
   const last = SLIPPAGE_STEPS.length - 1
   const at = (position: number) => `${(position * 100) / last}%`
@@ -22,8 +30,9 @@ export function SlippageControl({ bps, onSlippage }: { bps: string; onSlippage: 
   }
   const type = (text: string) => {
     const next = slippageFromPercent(text)
-    setDraft({ bps: next === null ? bps : String(next), text })
-    if (next !== null) onSlippage(String(next))
+    const nextBps = next === null ? '' : String(next)
+    setDraft({ bps: nextBps, text, last: next ?? value })
+    onSlippage(nextBps)
   }
   const hintId = 'zap-slippage-exact-hint'
   const errorId = 'zap-slippage-exact-error'
@@ -34,11 +43,11 @@ export function SlippageControl({ bps, onSlippage }: { bps: string; onSlippage: 
           {CREATE.amount.slippageLabel}
         </label>
         <span className="dm-flow-slip-value dm-fig-sm" data-slippage-percent="">
-          {slippageWritten(value)}
+          {kept === null ? CREATE.page.notChosen : slippageWritten(kept)}
         </span>
       </div>
       <div className="dm-flow-slip-line">
-        <SlippagePresets value={value} onChoose={change} label={CREATE.amount.slippagePresets} />
+        <SlippagePresets value={kept} onChoose={change} label={CREATE.amount.slippagePresets} />
         <div className="dm-flow-slip-rail">
           <span aria-hidden="true" className="dm-flow-slip-track">
             <span className="dm-flow-slip-fill" style={{ width: at(slippageIndex(value)) }} />
@@ -102,7 +111,7 @@ export function SlippageControl({ bps, onSlippage }: { bps: string; onSlippage: 
           {CREATE.amount.slippageExactInvalid}
         </p>
       )}
-      {value > JOURNEY_SLIPPAGE_WARNING_ABOVE_BPS && (
+      {kept !== null && kept > JOURNEY_SLIPPAGE_WARNING_ABOVE_BPS && (
         <p role="status" className="dm-flow-slip-warn" data-slippage-warning="">
           {JOURNEY_HIGH_SLIPPAGE_COPY}
         </p>

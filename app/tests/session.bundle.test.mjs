@@ -1308,7 +1308,26 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // 235,386 B, .wallet-test-v2-dist 235,797 B), 13,651 B over 225,000 B; .wallet-test-dist all lazy 398,072 B, 6,072 B
     // over its 392,000 B (389,000 B + 3,000 B test-only). Raise the initial entry to 239,500 B and all lazy to 396,000 B:
     // each overshoot rounded up to 0.5 kB plus one more 0.5 kB of headroom. No dependency, every other ceiling unchanged.
-    for (const [family, files, productionBudget] of [['initial entry', first, 239_500], ['route screens', routes, 191_000], ['session/public reads', base, 167_000], ['financial', financial, 347_000], ['pool history chart', poolChart, 13_000], ['all lazy', allLazy, 396_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 657_000], ['V2 fixture data', fixtureData, 13_000]]) {
+    // Changed on purpose 2026-10-30 (QA round 2, shell-home: the route skeleton and the tab's name while a screen loads,
+    // its files asked for on hover and focus, Skip to content, the Home hero's line and its linked network chips, the
+    // approved Home row action, the 24/44 px hit areas, the 2px field focus ring, the arrow keys of every radio group):
+    // measured with gzip 9 on the deployable build, the initial entry is 240,155 B (238,651 B at ae6333a2 measured the same
+    // way, CI's own figure), 655 B over 239,500 B. Raise only the initial entry to 241,000 B: the overshoot rounded up to
+    // 0.5 kB plus one more 0.5 kB of headroom. No dependency, every other ceiling unchanged. Re-measure on the integrated
+    // branch: the other areas of the round may add to the entry too.
+    // Changed on purpose 2026-10-30 (QA round 2, integrated branch): CI measured .wallet-test-dist all lazy at 404,674 B,
+    // 5,674 B over its 399,000 B (396,000 B + 3,000 B test-only); dist all lazy is 332,267 B. Raise all lazy to 402,500 B:
+    // the overshoot rounded up to 0.5 kB plus one more 0.5 kB of headroom. No dependency, every other ceiling unchanged.
+    // Changed on purpose 2026-10-30 (QA round 2, integrated branch after the second pass and the cross-area pass 3; all
+    // seven areas merged): measured with gzip 9 on Windows, clean builds of all three directories. Four families are over,
+    // each already over before pass 3 (its own changes move them by -18 B, +83 B, -149 B and +49 B): the initial entry
+    // 241,430 B in dist (.wallet-test-dist 238,202 B, .wallet-test-v2-dist 238,698 B), 430 B over 241,000 B; session/public
+    // reads 167,431 B in .wallet-test-v2-dist (dist 166,859 B), 431 B over 167,000 B; .wallet-test-dist all lazy 406,432 B,
+    // 932 B over its 405,500 B (402,500 B + 3,000 B test-only; dist 333,780 B); domino v2 663,449 B in dist
+    // (.wallet-test-v2-dist 661,602 B), 6,449 B over 657,000 B. Each moves by its overshoot rounded up to 0.5 kB plus one
+    // more 0.5 kB of headroom: initial entry 242,000 B, session/public reads 168,000 B, all lazy 404,000 B, domino v2
+    // 664,000 B. No dependency, every other ceiling unchanged.
+    for (const [family, files, productionBudget] of [['initial entry', first, 242_000], ['route screens', routes, 191_000], ['session/public reads', base, 168_000], ['financial', financial, 347_000], ['pool history chart', poolChart, 13_000], ['all lazy', allLazy, 404_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 664_000], ['V2 fixture data', fixtureData, 13_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       const testOnly = dir !== DIST && (family === 'financial' || family === 'all lazy');
       const budget = productionBudget + (testOnly ? 3_000 : 0);

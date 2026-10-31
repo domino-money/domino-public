@@ -256,7 +256,8 @@ for (const changed of [false, true]) test(`a wallet ${changed ? 'replacement wit
 test('Automate leads with New position above three desktop choices, stacks on mobile, and preserves native art without playback controls', async () => {
   const s = await scenario({ width: 1320, height: 960 }, '#/automate');
   try {
-    await s.page.getByRole('link', { name: 'Choose a position', exact: true }).waitFor();
+    // Changed on purpose 2026-10-30 (QA round 2, Q33): Auto-exit's way in is named as its siblings, Set up Auto-exit.
+    await s.page.getByRole('link', { name: 'Set up Auto-exit', exact: true }).waitFor();
     const cards = s.page.locator('[data-automation-card]');
     assert.equal(await cards.count(), 4);
     const slugs = ['new-position', 'auto-compound', 'domino-compound', 'auto-exit'];
@@ -278,7 +279,7 @@ test('Automate leads with New position above three desktop choices, stacks on mo
     assert.equal(await exit.locator('.as-boundary').count(), 1, 'the price reaches the range boundary');
     assert.equal(await exit.locator('.as-wallet').count(), 1);
     assert.equal(await exit.locator('.as-wallet-token').count(), 2, 'both tokens return to the wallet');
-    assert.match(await exit.innerText(), /Price reaches your limit[\s\S]*Position closes[\s\S]*Your wallet/);
+    assert.match(await exit.innerText(), /Price reaches range end[\s\S]*Position closes[\s\S]*Your wallet/);
     assert.equal(await s.page.getByRole('button', { name: /Replay|Pause/ }).count(), 0);
     for (const width of [1320, 390, 320]) {
       await s.page.setViewportSize({ width, height: 960 });

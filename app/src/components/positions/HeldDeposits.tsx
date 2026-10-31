@@ -3,7 +3,7 @@ import type { Hex } from 'viem'
 import { suggestGasBudget } from '../../finance/gas'
 import { readRelease } from '../../finance/release'
 import { saveSetupProfile, savedSetupProfile } from '../../finance/recoveryProfile'
-import { createSetupClient, deploymentFrom } from '../../finance/setup'
+import { createSetupClient, deploymentFrom, type SetupDeployment } from '../../finance/setup'
 import { setupWallet } from '../../finance/wallet'
 import { errorCode, financeErrorText } from '../../finance/words'
 import { useWalletIdentity, walletKey } from '../../lib/walletIdentity'
@@ -59,6 +59,46 @@ const OPERATION = /^0x[0-9a-f]{64}$/
 const RAW = /^(0|[1-9][0-9]{0,77})$/
 const PROGRESS: Partial<Record<Stage, string>> = { wallet: 'Confirm in your wallet…', chain: 'Waiting for the network', done: 'Refunded to your wallet' }
 const readSetupRelease = () => readRelease('/api/setup/v1/release', (value) => deploymentFrom(value))
+/**
+ * (QA round 2, HELD-REFUND, 2026-10-30) The V1 setup deployment this build ships for refunds, as finance/reservesLive.ts
+ * ships the sequence's for withdrawing fee reserves (finance/pin.ts SEQUENCE_RECOVERY_RECORD): the release published on
+ * 2026-09-21 (docs/deployments/v1-robinhood-mainnet-2026-09-21/setup-release.json), which expired on 2026-10-21. Since
+ * then a wallet with no profile saved in its browser could not refund a held deposit at all. It is the last resort, after
+ * the published release and the saved profile; parsed as strictly as the release at any age and marked expired, as a
+ * saved profile is, so it can only read and cancel: the setup contract and the position manager must be the build's pins
+ * (finance/setup.ts deploymentFrom), and the setup contract's code and getters are checked on chain before the refund is
+ * offered to the wallet (setup.ts verify, recovery). The refund is the same cancel(operationId), unchanged. Test builds:
+ * only a record a test injects (window.__dominoSetupRecoveryRecord), so no other test's refund meets one.
+ */
+const SETUP_RECOVERY_RECORD = {
+  contractVersion: '1.0.0-rc.1',
+  chainId: 4663,
+  available: true,
+  deployment: {
+    setup: '0x676f449fcfcd0f5ce4c7a1db2d98c7d6565dd37a',
+    setupCodeHash: '0x3d634de8bfa34c5d3ef1231f066b9ad11960d828062d2ef0f7bb13d2ad206c50',
+    poolManager: '0x8366a39cc670b4001a1121b8f6a443a643e40951',
+    positionManager: '0x58daec3116aae6d93017baaea7749052e8a04fa7',
+    stateView: '0xf3334192d15450cdd385c8b70e03f9a6bd9e673b',
+    poolManagerCodeHash: '0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626',
+    positionManagerCodeHash: '0xc873e135dc9aaec88489cfbad146b4cb49d6a32e0d80326377784b7ba17670b2',
+    stateViewCodeHash: '0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6',
+    feeRecipient: '0x1488c84dafc03f7f4c4fb986f83ba99fd530c6f4',
+    feeBps: 65,
+    tariffVersion: '1',
+    expiresAt: 1792609290,
+  },
+} as const
+function shippedSetupProfile(): SetupDeployment | null {
+  const value: unknown = __DOMINO_TEST_HOOKS__ ? (window as { __dominoSetupRecoveryRecord?: unknown }).__dominoSetupRecoveryRecord : SETUP_RECOVERY_RECORD
+  if (value === undefined) return null
+  try {
+    const parsed = deploymentFrom(value, 0)
+    return parsed ? { ...parsed, expiresAt: 0 } : null
+  } catch {
+    return null
+  }
+}
 /** Release reads that may answer at the next press: the network, a timeout, a route not answering yet. */
 const PASSING_RELEASE: ReadonlySet<string> = new Set(['network', 'timeout', 'route_missing'])
 /** Neither a published release nor a saved profile: why the refund cannot be prepared here, in words that stay true. */
@@ -138,8 +178,9 @@ export default function HeldDeposits({ owner, deposits, onChanged, onBusy }: Hel
     let sent = false
     try {
       const live = await readSetupRelease()
-      // A refund needs no published release: without one, the profile this browser saved, checked on chain the same way.
-      const deployment = live.kind === 'available' ? live.deployment : savedSetupProfile()
+      // A refund needs no published release: without one, the profile this browser saved, else the one this build ships
+      // (HELD-REFUND), each checked on chain the same way.
+      const deployment = live.kind === 'available' ? live.deployment : (savedSetupProfile() ?? shippedSetupProfile())
       if (deployment === null) {
         if (alive()) mark(id, { stage: 'failed', notice: releaseNotice(live.kind === 'unavailable' ? live.reason : 'release_not_available') })
         return

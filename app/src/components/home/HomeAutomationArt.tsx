@@ -77,7 +77,7 @@ export function HomeAutomationArt({ kind }: { kind: HomeAutomationKind }) {
       <circle className="as-price-end" cx="181" cy="144" r="4" />
       <circle className="as-price-halo" cx="181" cy="144" r="10" />
       <Tile face={face} edge={edge} x={65} y={90} small />
-      <text className="as-label as-label-accent" x="117" y="65">Price reaches your limit</text>
+      <text className="as-label as-label-accent" x="117" y="65">Price reaches range end</text>
       <path className="as-flow-guide" d="M185 134C205 73 283 71 290 137" />
       <g className="as-wallet" transform="translate(243 134)">
         <rect x="10" y="-12" width="57" height="24" rx="6" className="as-wallet-card" />

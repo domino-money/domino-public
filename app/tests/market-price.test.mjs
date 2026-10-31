@@ -8,6 +8,7 @@ const { PRICE_STALE_MS, sqrtPriceAtTick } = require('../.test-build/app/src/lib/
 const { retainAsStale } = require('../.test-build/app/src/lib/read/marketsProvider.js');
 const { projectMarketRow } = require('../.test-build/app/src/lib/read/project.js');
 const { formatUsdPrice } = require('../.test-build/app/src/lib/read/decimal.js');
+const { tickPriceText } = require('../.test-build/app/src/lib/read/screens/positions.js');
 
 // The WETH/USDG pool as read on 2026-09-13: WETH is currency0 (18 decimals), USDG currency1 (6 decimals).
 const WETH = '0x0bd7d308f8e1639fab988df18a8011f41eacad73';
@@ -77,8 +78,9 @@ test('the price reads the way a person reads one: in USDG when the pool holds it
     assert.equal(plainBase(market), price.base.address, 'the card asks for the same way round');
     return `1 ${price.base.symbol} = ${price.text} ${price.quote.symbol}`;
   };
-  // USDG is currency0 of cbBTC's pool: the chain's ratio is 0.0000118530 cbBTC per USDG.
-  assert.equal(said(-67381, [USDG, 'USDG', 6], [CBBTC, 'cbBTC', 8]), '1 cbBTC = 84,367 USDG');
+  // USDG is currency0 of cbBTC's pool: the chain's ratio is 0.0000118530 cbBTC per USDG. Two decimals from 1,000 (N2,
+  // 2026-10-30: the pool page's digits).
+  assert.equal(said(-67381, [USDG, 'USDG', 6], [CBBTC, 'cbBTC', 8]), '1 cbBTC = 84,367.14 USDG');
   assert.equal(said(-281877, [PONS, 'PONS', 18], [USDG, 'USDG', 6]), '1 PONS = 0.5739 USDG');
   assert.equal(said(4, [USDG, 'USDG', 6], [U, 'U', 6]), '1 U = 0.9996 USDG');
   // A token worth less than a cent is still priced in USDG.
@@ -93,9 +95,12 @@ test('the price reads the way a person reads one: in USDG when the pool holds it
   assert.equal(plainBase({ ...row(), poolState: undefined }), null, 'no price, no side');
 });
 
-test('an amount is whole from 10,000, six significant digits from 1 and four below; past a plain number it is not written', () => {
-  assert.deepEqual([84367.14, 10_000, 9_999.994, 2492.184, 1.0004, 1, 0.573917, 0.0123456].map(plainAmount), ['84,367', '10,000', '9,999.99', '2,492.18', '1.0004', '1', '0.5739', '0.01235']);
-  assert.equal(plainAmount(999_999_999_999_999), '999,999,999,999,999');
+// Changed on purpose 2026-10-30 (QA round 2, N2, one price format): from 1 up, the pool page's digits (positions.ts
+// priceDigits): exactly two decimals from 1,000 to a billion, at least two from 1, six significant digits from a billion.
+// It was whole from 10,000 and six significant digits from 1, so Markets read "3,411.8" beside the pool page's "3,411.80".
+test('an amount is written as the pool page writes a price from 1 up, four significant digits below; past a plain number it is not written', () => {
+  assert.deepEqual([84367.14, 10_000, 9_999.994, 2492.184, 1.0004, 1, 0.573917, 0.0123456].map(plainAmount), ['84,367.14', '10,000.00', '9,999.99', '2,492.18', '1.0004', '1.00', '0.5739', '0.01235']);
+  assert.equal(plainAmount(994_018_123_456), '994,018,000,000');
   assert.equal(plainAmount(1e15), null);
   // Added 2026-09-28 (one-sided): under 10^−15, the ceiling's mirror, it is not written either.
   assert.equal(plainAmount(1e-12), '0.000000000001');
@@ -103,6 +108,12 @@ test('an amount is whole from 10,000, six significant digits from 1 and four bel
   assert.equal(plainAmount(9.9e-16), null);
   assert.equal(plainAmount(0), null);
   assert.equal(plainAmount(Number.NaN), null);
+  // One pool, one price: a price with a trailing zero reads the same on Markets as in its Pool price and range.
+  for (const tick of [-194970, -201005]) {
+    const price = marketPoolPrice(row({ tick }), at(0));
+    assert.equal(price.text, tickPriceText(tick, 18, 6).replace(/^≈/, ''), `tick ${tick}`);
+  }
+  assert.equal(marketPoolPrice(row({ tick: -194970 }), at(0)).text, '3,411.80');
 });
 
 test('the projection carries the verified pool’s state, and the package fixture reads 1 ETH = 1,000,000,000,000 TOKEN', () => {
@@ -250,4 +261,21 @@ test('a price between two ticks reads as the pool page and New position read it'
   const price = marketPoolPrice(row({ sqrtPriceX96: inside.toString() }), at(0));
   assert.equal(price.state, 'usable');
   assert.equal(price.text, tickPriceText(TICK, 18, 6).replace(/^≈/, ''));
+});
+
+// Added 2026-10-30 (QA round 2, final review read-4): beside the written price, the same price unrounded, for measuring a
+// change to it (a card's badge and line, the pool page's chart header): a plain decimal with no grouping and never an
+// exponent (parseScaled refuses one), at either end of what a price writes.
+test('a usable price carries its value unrounded as a plain decimal, never grouped, never an exponent', () => {
+  const { parseScaled } = require('../.test-build/app/src/lib/format/decimal.js');
+  const price = marketPoolPrice(row(), at(0));
+  assert.equal(price.text, '2,492.18');
+  assert.match(price.exact, /^2492\.\d{6,}$/, 'no grouping, every digit');
+  assert.equal(Number(price.exact).toFixed(2), '2492.18', 'the figure the text rounds');
+  assert.equal(Number(price.exact), Math.pow(1.0001, TICK) * 10 ** 12, 'every digit the number holds');
+  for (const tick of [-345000, -276000, 0, 276000, 345000]) {
+    const { text, exact } = marketPoolPrice(row({ tick, base: token(WETH, 'A', 6), quote: token(USDG, 'B', 6) }), at(0));
+    assert.match(exact, /^\d+(\.\d+)?$/, `tick ${tick}: ${exact} beside ${text}`);
+    assert.ok(parseScaled(exact), `tick ${tick}: ${exact} is a decimal the change can read`);
+  }
 });

@@ -11,8 +11,9 @@ export function ModeSummary({ mode, title, fee }: { mode: keyof typeof PURPOSE; 
     <span className="dm-mode-copy">
       <span className="dm-mode-name">{title}</span>
       <span className="dm-mode-purpose">{PURPOSE[mode]}</span>
-      {/* V4 (2026-10-16): the figure in its own <b> for the ink (approved .mc b); the words are unchanged. */}
-      <span className="dm-mode-cost">{fee ? <><b>{fee}</b> of the earned fees it uses</> : <><b>0.2%</b> of its value, only if it closes</>}</span>
+      {/* V4 (2026-10-16): the figure in its own <b> for the ink (approved .mc b). Changed on purpose 2026-10-30 (QA round 2,
+          the owner's Q1): Automate's one wording for each fee. */}
+      <span className="dm-mode-cost">{fee ? <><b>{fee}</b> of the earned fees it uses, each time</> : <><b>0.2%</b> of the position’s value, only if it closes</>}</span>
     </span>
   )
 }

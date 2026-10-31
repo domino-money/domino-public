@@ -1,5 +1,4 @@
 import { useId } from 'react'
-import { FigureDash } from '../../components/ui'
 import { VAULT_UI_MAX_PRICE_GAP_BPS, VAULT_UI_MAX_SLIPPAGE_BPS } from './constants'
 import { bandWarning, bpsText, floorExample, intervalWords, observationAgeWords, PROBLEM_FIELD, SETTINGS_PROBLEM_TEXT, type VaultSettingsForm } from './form'
 
@@ -32,11 +31,10 @@ const HELP: Readonly<Record<Editable, string>> = {
   maxPriceGapPercent: 'Automation waits when the pool price differs from the reference price by more than this.',
 }
 
-export function LimitsFields({ form, onChange, problems, dex, disabled }: {
+export function LimitsFields({ form, onChange, problems, disabled }: {
   form: VaultSettingsForm
   onChange: (next: VaultSettingsForm) => void
   problems: readonly string[]
-  dex: 3 | 4
   disabled?: boolean
 }) {
   const fieldId = useId()
@@ -57,9 +55,6 @@ export function LimitsFields({ form, onChange, problems, dex, disabled }: {
     </div>
   )
   const warning = bandWarning(form.maxPriceGapPercent)
-  const distanceReason = dex === 3
-    ? "The reference price Domino's automation uses on Uniswap v3 pools isn't published yet, so the distance can't be shown."
-    : "The reference price for Uniswap v4 pools can't be read by this page yet, so the distance can't be shown."
   return (
     <>
       {form.mode === 2 && <div className="dm-acct-fields" data-domino-settings="">{(['upsidePercent', 'maxPositions'] as const).map((name) => field(name))}</div>}
@@ -80,9 +75,9 @@ export function LimitsFields({ form, onChange, problems, dex, disabled }: {
           <p className="dm-seq-hint" data-fixed-age={String(form.observationAgeSeconds)}>{observationAgeWords(form.observationAgeSeconds)}.</p>
           <p className="dm-seq-hint" data-fixed-interval={String(form.minimumIntervalSeconds)}>{intervalWords(form.minimumIntervalSeconds)}</p>
           {problemFor('fixed') && <p className="dm-seq-limit-why">{problemFor('fixed')}</p>}
-          <p className="dm-seq-hint" data-band-distance="unavailable">
-            How far the pool price is from the reference price right now: <FigureDash reason={distanceReason} />
-          </p>
+          {/* Removed on purpose 2026-10-30 (QA round 2, the owner's rule: missing information stays out of sight): the line
+              "How far the pool price is from the reference price right now", which no read fills on either pool kind, so it
+              only ever showed a dash and why it could not be shown. */}
         </div>
       </details>
     </>

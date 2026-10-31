@@ -38,6 +38,11 @@ export const JOURNEY = {
      * address is not (./model/chainReads.ts lookalikeOf): listed with this line, never chosen. Today's search says the same.
      */
     lookalike: (main: string) => `Not the ${main} Domino uses`,
+    /**
+     * Added 2026-10-30 (QA round 2, SWEEP): a token's pools on another network that its read could not bring, after its
+     * own quiet re-asks; the way on, never "Pool search on Base is unavailable right now."
+     */
+    poolsAgain: (network: string) => `Search for this token again to see its pools on ${network}.`,
     change: 'Change pool',
     readAt: (block: string) => `Read at block ${block}`,
     /** Robinhood Chain, while its listed pools keep today's steps: a pool today's journey cannot open. */
@@ -75,7 +80,8 @@ export const JOURNEY = {
     invalid: 'Enter a number, like 100 or 0.5.',
     rawUnits: 'raw units',
     ethDirect: 'Paying with ETH needs a direct transaction.',
-    slippageInvalid: 'Choose between 0.1% and 5%.',
+    // Changed on purpose 2026-10-30 (QA round 2, N28): the owner's steps' own sentence (lib/create/copy.ts amount.slippageInvalid).
+    slippageInvalid: 'Choose a slippage tolerance from 0.1% to 5% under Advanced.',
   },
   review: {
     /**
@@ -99,6 +105,13 @@ export const JOURNEY = {
     fee: 'Domino fee',
     feeBase: (swapped: string) => `0.65% of ${swapped} swapped`,
     noFee: 'No Domino fee',
+    /**
+     * Added 2026-10-30 (QA round 2, Q5: Review's cost before Connect wallet): the fee line's value while no quote can say
+     * the figure yet (no wallet, not signed in, a wallet short of the amount), beside the `fee` label as every other fee
+     * line ("Domino fee: None unless…"). The docs' own rule (lib/docs/pages/using.ts, "Create position"), never a bare
+     * "none": before the wallet is read nobody knows whether a swap is needed.
+     */
+    feeBefore: 'None unless a swap is needed, then 0.65% of the amount swapped',
     smaller: (percent: string) => `If the price moves within your slippage, your position can be up to ${percent}% smaller. The rest returns to your wallet.`,
     leftovers: 'Comes back to your wallet',
     leftoversNone: 'Nothing',
@@ -120,7 +133,8 @@ export const JOURNEY = {
     /** Base's ceiling, under Details: a label of its own, not a second "Network fee" beside the one in view. */
     networkCeiling: 'Network fee, at most',
     l1Fee: 'L1 data fee',
-    l1Unavailable: 'Not available right now',
+    // Removed on purpose 2026-10-30 (QA round 2, SWEEP: no words saying a figure is missing): `l1Unavailable`, "Not
+    // available right now", the title of Details' dash for an unread L1 data fee; the dash stands alone (pack 7's rule).
     deadline: 'Good for',
     deadlineValue: (span: string) => `${span}, then a new quote`,
     signedFor: (span: string) => `What you sign stays valid for ${span}.`,
@@ -142,6 +156,12 @@ export const JOURNEY = {
       `Your wallet has ${have}${afterFees ? ' after network fees' : ''}; this position needs ${need}. Lower the amount, or ${bring ? `bring ${token} from another network` : `add ${token} to your wallet`}.`,
     /** Today's journey on Domino V2 (./JourneyCreateV2.tsx): the plan is asked for the signed-in wallet only. */
     signInForQuote: 'Sign in with your wallet to get the quote. Signing in moves nothing.',
+    /**
+     * Added 2026-10-30 (QA round 2, Q31): the wallet card's title while no wallet is connected. "In your wallet" above a
+     * Connect wallet button read as if the position were already there; with a wallet it stays "In your wallet". Not
+     * "Last step": signing in and the wallet's own confirmations still follow (final.afterConnect says so).
+     */
+    stepsConnect: 'Next: connect your wallet',
     signIn: 'Sign in',
     reviewAgain: 'Review again',
   },
@@ -199,18 +219,22 @@ export const JOURNEY = {
     /** A wallet short of the amount: why Create position waits (Review says what it has and needs, above). */
     reasonShort: 'Your wallet doesn’t have enough for this amount.',
     reasonTick: 'Tick the box above first.',
+    /** Why Create position waits with no wallet, where no Connect wallet button is drawn (the zap path's FinalControl). */
     reasonNoWallet: 'Connect a wallet to create this position.',
     /**
+     * Added 2026-10-30 (QA round 2, Q5: what happens after Connect wallet): the line under New position's own Connect
+     * wallet button (./JourneyCreateV2.tsx), in place of reasonNoWallet, which the button and the card's title above it
+     * already say.
+     */
+    afterConnect: 'After connecting, you sign in and confirm each step in your wallet.',
+    /**
      * Added 2026-10-06 (the final check's F4): with no wallet, Create position's place asks for one, as today's control does
-     * (components/create/CreatePosition.tsx), opening the header's wallet dialog; reasonNoWallet is the line under it.
+     * (components/create/CreatePosition.tsx), opening the header's wallet dialog; afterConnect is the line under it.
      */
     connect: 'Connect wallet',
-    /**
-     * Added 2026-10-06 (the final check's F5): the wallet's balances of the pool's two tokens could not be read, so no quote
-     * can be asked; `readAgain`, an outline button under the line, reads them again.
-     */
-    reasonUnread: 'Your balance couldn’t be read.',
-    readAgain: 'Read again',
+    // Removed on purpose 2026-10-30 (QA round 2, final review journey-1): reasonUnread ("Your balance couldn’t be read.") and
+    // readAgain ("Read again"): balances not read yet are said as being checked (CREATE.amount.pairReading) and read again
+    // on their own, never offered as a button (./JourneyCreateV2.tsx).
     permitReverted: 'The transaction failed on the network, so nothing moved. The signature you gave for it can still be used until it expires: cancel it before a new quote.',
     cancelSignature: 'Cancel the signature',
     keepSignature: 'Keep it and get a new quote',
@@ -229,9 +253,14 @@ export const JOURNEY = {
     returned: 'Returned to your wallet',
     added: 'Added to the position',
     gas: 'Network fee',
-    gasUnavailable: 'Not reported',
+    // Removed on purpose 2026-10-30 (QA round 2, SWEEP): `gasUnavailable`, "Not reported", the title of the receipt's dash
+    // for a network fee it does not carry; the dash stands alone (pack 7's rule).
     state: 'Status',
-    unreadable: 'This receipt can’t be read exactly. Nothing is guessed.',
+    /**
+     * Changed on purpose 2026-10-30 (QA round 2, SWEEP): a receipt this page could not read exactly, said as where to see
+     * it (it was "This receipt can’t be read exactly. Nothing is guessed."). Nothing is guessed still: no figure is drawn.
+     */
+    unreadable: 'See your wallet’s activity for the details.',
     positions: 'Your positions',
     view: 'View position',
     /** Auto-exit beside the position's link (2026-10-06, the review of point 5), in today's created view's words. */

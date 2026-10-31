@@ -18,7 +18,8 @@
  * than the one before them. And
  * after a read comes back busy, the whole queue holds for the Retry-After
  * that answer asked for, plus up to R-1's 250 ms of jitter: the next read,
- * whichever it is, is not sent into a service that has just said it is full.
+ * whichever it is, is not sent into a service that has just said it is full
+ * (since 2026-10-30, the next read of that lane only; see the end of this note).
  *
  * R-1's 60 s for a read start here, when it is queued, so they cover the time
  * it waits in line; the source is handed what is left. They and the 1.1 s
@@ -73,11 +74,12 @@
  *     first. 1 (the default): one read at a time, as before;
  *   - since #241 the gateway's provider lane has sixteen slots and no start interval (backend/read_api.py
  *     `public_gate`), so the deployed source spaces provider reads 0 ms apart (`minIntervalMs`), and the old 1.1 s
- *     (`refusedIntervalMs`) comes back by itself, for the page's life and one provider read at a time, the first
- *     time a provider read meets a refusal, as a gateway older than #241 answers a start inside its 1 s;
+ *     (`refusedIntervalMs`) comes back by itself, for the page's life (since 2026-10-30, until a quiet minute) and one
+ *     provider read at a time, the first time a provider read meets a refusal, as a gateway older than #241 answers a
+ *     start inside its 1 s;
  *   - a refusal means the gateway counted more than the queue did: a read that settles busy leaves the budget at
  *     nothing, and a retry, which goes once the Retry-After has filled the gateway's own count to one, at one
- *     before it spends it; the budget fills again at its own pace;
+ *     before it spends it; the budget fills again at its own pace (since 2026-10-30, the refused lane's own count);
  *   - `budgetStore`: the budget is this browser's, not this document's. A reload, a pasted link or a second tab
  *     starts from what the others left (appSourceBridge.ts keeps it in localStorage), and a read that waited for
  *     it looks again before it goes, in case another tab spent it meanwhile. A pool opened 1.5 s after Markets
@@ -89,6 +91,25 @@
  *     gives its read back the same way, and so does any read answered in front of the gateway (UNCOUNTED);
  *   - a source that throws, instead of answering, settles its read as unavailable (a network failure) at once: it
  *     used to hold every reader, and the queue, until the 60 s.
+ *
+ * Changed on purpose 2026-10-30 (launch capacity study, item 9b): a refusal holds only the lane it came from. The gateway
+ * counts each visitor per lane (backend/read_gateway.py VISITOR_BUDGETS: stored and provider apart), so a provider read's
+ * 429 says nothing of the stored lane, yet it held every read of the page: the busy hold was the whole queue's, and the
+ * refusal left the one budget at nothing, the edge-cached overview, history and featured list included. With
+ * `unspacedStored` (the deployed build, where the gateway has both lanes):
+ *   - a busy answer holds the reads of its own lane (STORED_LANE or the provider lane) for its Retry-After, and a
+ *     refusal leaves what that lane alone may spend (`cap`) at what the gateway left it, refilled at the budget's pace;
+ *     the other lane goes on with the tab's budget as it stood. That `cap` is kept with the browser's budget
+ *     (`budgetStore`), so a reload or a second tab waits for it too; the busy hold stays this document's, as before;
+ *   - the routes the edge answers from its cache (EDGE_CACHED) wait for neither: no lane hold, no refusal's cap, only
+ *     the tab's own budget as before (the featured list not even that);
+ *   - a read held by its lane lets a read queued behind it go first: another lane's, or one the edge answers, even after
+ *     a reader asked first joined the held read (which keeps its turn); and a read on the wire that settles lets the
+ *     queue look again, for a read its lane held behind it;
+ *   - the provider lane's refused spacing (`refusedIntervalMs`) goes back to `minIntervalMs` after a minute with no
+ *     refusal (REFUSAL_QUIET_MS); it stayed for the page's life.
+ * The budget itself is unchanged (GATEWAY_BUDGET, the provider lane's burst is not raised for every browser). Without
+ * `unspacedStored` (local-live, the fixtures) there is one lane, which every read waits for, as before.
  */
 import { BRIDGE_RETRY, realClock, settleBy, type Clock, type Settled } from './pipeline'
 import type { Provenance, ReadOptions, ReadOutcome, ReadRequests, ReadRoute, ReadSource, RouteCheck } from './types'
@@ -138,10 +159,44 @@ export const UNCOUNTED: ReadonlySet<ReadOutcome['state']> = new Set<ReadOutcome[
 const uncounted = (route: ReadRoute, outcome: ReadOutcome) =>
   outcome.state === 'ok' ? EDGE_CACHED.has(route) && outcome.provenance.edge === true : UNCOUNTED.has(outcome.state) || (outcome.state === 'disabled' && EDGE_CACHED.has(route))
 
+/**
+ * After a refusal, how long with no other before the provider lane's spacing goes back to `minIntervalMs` (2026-10-30,
+ * launch capacity item 9b: it used to stay at `refusedIntervalMs` for the page's life).
+ */
+export const REFUSAL_QUIET_MS = 60_000
+
+/** The gateway's two lanes (2026-10-30, launch capacity item 9b). */
+type LaneName = 'stored' | 'provider'
+const LANE_NAMES: readonly LaneName[] = ['stored', 'provider']
+
+/**
+ * One of the gateway's two lanes as this tab keeps it (2026-10-30, launch capacity item 9b): what a refusal of its reads
+ * holds, for its reads alone.
+ */
+interface LaneState {
+  /** No read of this lane starts before this monotonic reading: the Retry-After of its last busy answer. */
+  holdUntil: number
+  /**
+   * What this lane may still spend since its last refusal, counted at `at` (on the budget's clock: the wall clock when the
+   * budget is the browser's, else this document's monotonic one), refilled at the budget's pace up to its burst; null
+   * when no refusal is outstanding. A read waits for this and the tab's budget. Kept with the browser's budget (since
+   * 2026-10-30 after review), so a reload or another tab waits for it too.
+   */
+  cap: { tokens: number; at: number } | null
+  /** Reads of this lane holding the budget they took at their start, nothing sent yet. */
+  holding: number
+}
+
 /** The budget as this browser keeps it: the attempts left, counted at `at` (wall-clock ms). */
 export interface BudgetState {
   tokens: number
   at: number
+  /**
+   * What a lane may still spend since its last refusal, each counted at its own `at` (wall-clock ms); a lane with none
+   * outstanding is left out. Added 2026-10-30 after review (item 9b): a refusal left the one budget at nothing for every
+   * document of the browser, and once it held only its lane, a reload or a second tab no longer saw it.
+   */
+  lanes?: Partial<Record<LaneName, { tokens: number; at: number }>>
 }
 
 /** Where a budget shared by this browser's documents is kept (appSourceBridge.ts). Either call may throw. */
@@ -211,18 +266,36 @@ export function createScheduledSource(
   let spacedFlights = 0
   const byKey = new Map<string, Job>()
   let running = false
-  /** The start spacing now: `refusedIntervalMs` once a spaced read met a refusal. */
+  /** The start spacing now: `refusedIntervalMs` once a spaced read met a refusal, until REFUSAL_QUIET_MS pass with none. */
   let interval = minIntervalMs
+  /** The monotonic reading of the last refusal of a spaced read. */
+  let refusedAt = -Infinity
   /** The last start of a spaced read. */
   let lastStart = -Infinity
-  /** No read starts before this monotonic reading: the Retry-After of the last busy answer. */
-  let holdUntil = -Infinity
-  /** Ends the wait of a read without priority that is next on the wire, so a read asked first can take its turn. */
+  /**
+   * The gateway's two lanes (2026-10-30, launch capacity item 9b): a refusal holds its own. A spaced read is the provider
+   * lane's; with `unspacedStored`, a stored read (STORED_LANE) the stored lane's. Without it, every read is spaced: one lane.
+   */
+  const lanes: Record<LaneName, LaneState> = {
+    stored: { holdUntil: -Infinity, cap: null, holding: 0 },
+    provider: { holdUntil: -Infinity, cap: null, holding: 0 },
+  }
+  const laneOf = (job: Job): LaneState => lanes[job.spaced ? 'provider' : 'stored']
+  /** A read the edge answers from its cache, where the gateway has two lanes: no lane hold and no refusal's cap holds it. */
+  const unheld = (job: Job) => unspacedStored && EDGE_CACHED.has(job.route)
+  /**
+   * Ends the wait of the read next on the wire: one without priority, so a read asked first can take its turn; or one
+   * waiting for its own lane alone (laneNap), so a read that may go now can pass it.
+   */
   let wake: AbortController | null = null
   /** The read waiting for its turn on the wire, out of the queue while it waits. */
   let napping: Job | null = null
-  /** It waits for its spacing alone: a stored read that joins the line meanwhile may go first. */
-  let spacingNap = false
+  /**
+   * It waits for its own lane alone (its spacing, its lane's hold, what its lane may spend since a refusal), not for the
+   * tab's budget: a read that may go now (another lane's, or one the edge answers), joining the line meanwhile, goes
+   * first, and so may a read its lane held behind a read on the wire, once that read settles.
+   */
+  let laneNap = false
   /** Ends that wait early, for the read to look again: the budget came back (a read the edge answered, one never sent). */
   let napper: AbortController | null = null
   /** That wait ended for the budget, not for another read: the read keeps its turn. */
@@ -240,7 +313,11 @@ export function createScheduledSource(
     const at = job.first || back ? queue.findIndex((queued) => !queued.first) : -1
     if (at === -1) queue.push(job)
     else queue.splice(at, 0, job)
-    if (job.first || (spacingNap && !job.spaced)) wake?.abort()
+    // A read asked first wakes a read without priority; a read that may go now wakes one waiting for its own lane alone
+    // (2026-10-30: it used to be a stored read waking a spaced one, the only lane wait there was). Fixed 2026-10-30 after
+    // review: a read asked first no longer wakes one asked first too (or joined by such a reader) that waits for its
+    // spacing alone; it took that read's turn, and a read that may go now wakes it anyway.
+    if ((job.first && !napping?.first) || (laneNap && laneWait(job, clock.monotonic()) <= 0)) wake?.abort()
     kick()
   }
 
@@ -280,6 +357,17 @@ export function createScheduledSource(
         seen = kept
         tokens = Math.min(budget.burst, kept.tokens + Math.max(0, at - kept.at) * perMs) - holding - unsaved
         filledAt = at
+        // A lane another document saw refused (2026-10-30 after review, item 9b): this one waits for what that lane has
+        // left too, less what this document's reads of that lane hold; never more than its own count of it.
+        for (const name of LANE_NAMES) {
+          const theirs = kept.lanes?.[name]
+          if (!usable(theirs, budget.burst)) continue
+          const filled = Math.min(budget.burst, theirs.tokens + Math.max(0, at - theirs.at) * perMs)
+          if (filled >= budget.burst) continue
+          const lane = lanes[name]
+          const left = filled - lane.holding
+          if (left < capOf(lane)) lane.cap = { tokens: left, at }
+        }
       }
     } catch {
       // Blocked storage: this document's own count.
@@ -295,7 +383,13 @@ export function createScheduledSource(
   let met = false
   const keep = () => {
     if (!met || !store) return
-    const state = { tokens: tokens + holding, at: filledAt }
+    const state: BudgetState = { tokens: tokens + holding, at: filledAt }
+    // Each lane with a refusal outstanding, as the others may count it: what this document's reads of it hold is not kept.
+    for (const name of LANE_NAMES) {
+      const lane = lanes[name]
+      if (capOf(lane) === Infinity) continue
+      state.lanes = { ...state.lanes, [name]: { tokens: lane.cap!.tokens + lane.holding, at: lane.cap!.at } }
+    }
     try {
       store.save(state)
       seen = state
@@ -331,24 +425,71 @@ export function createScheduledSource(
     // A thousandth of a millisecond forgiven, so the float sums of refilling never add a whole millisecond.
     return tokens >= wanted - 1e-9 ? 0 : Math.ceil((wanted - tokens) / perMs - 1e-3)
   }
+  /** What `lane` may still spend since its last refusal, refilled to now; Infinity when no refusal is outstanding. */
+  const capOf = (lane: LaneState): number => {
+    const cap = lane.cap
+    if (!cap || !budget) return Infinity
+    const at = stamp()
+    cap.tokens = Math.min(budget.burst, cap.tokens + Math.max(0, at - cap.at) * perMs)
+    cap.at = at
+    if (cap.tokens < budget.burst) return cap.tokens
+    lane.cap = null
+    return Infinity
+  }
+  /** Spends `by` of what `lane` may still spend since its last refusal (gives it back when negative), if a refusal is outstanding. */
+  const capSpend = (lane: LaneState, by: number) => {
+    if (capOf(lane) !== Infinity) lane.cap!.tokens -= by
+  }
+  /** Ms until `lane` may spend an attempt and a quarter since its last refusal; 0 when it may now, or none is outstanding. */
+  const capWait = (lane: LaneState) => {
+    const left = capOf(lane)
+    const wanted = 1 + BUDGET_RESERVE
+    return left >= wanted - 1e-9 ? 0 : Math.ceil((wanted - left) / perMs - 1e-3)
+  }
   /**
    * The gateway refused a read: it counted more than the queue did, so no more than `left` is left (0 when the read
    * settles busy, 1 when its retry goes out), and a spaced read's refusal brings the spacing back.
+   * Changed on purpose 2026-10-30 (launch capacity item 9b): what is left is the refused lane's alone (its `cap`, less
+   * the reads of that lane holding the budget), never the tab's budget, which the other lane keeps spending; and the
+   * spacing's refusal is dated, so a quiet minute takes it back. With one lane (no `unspacedStored`) every read waits for
+   * that cap, as every read waited for the budget left at nothing.
    */
   const refused = (job: Job, left: number) => {
+    const lane = laneOf(job)
     if (budget) {
       refill()
-      spend(Math.max(0, tokens + holding - left))
+      const kept = capOf(lane)
+      lane.cap = { tokens: Math.min(kept === Infinity ? tokens : kept, left - lane.holding), at: stamp() }
+      // Kept for this browser's other documents (fixed 2026-10-30 after review): a reload or a second tab waits for it too.
+      keep()
     }
-    if (job.spaced && refusedIntervalMs !== undefined) interval = Math.max(interval, refusedIntervalMs)
+    if (job.spaced && refusedIntervalMs !== undefined) {
+      interval = Math.max(interval, refusedIntervalMs)
+      refusedAt = clock.monotonic()
+    }
   }
+  /**
+   * Ms until `job`'s lane lets it go, its spacing aside: its lane's busy hold and what its lane may spend since a refusal
+   * (neither for a read the edge answers from its cache, with two lanes; no cap for the featured list, which never waits
+   * for the budget).
+   */
+  const laneRest = (job: Job, now: number) => {
+    if (unheld(job)) return 0
+    const lane = laneOf(job)
+    return Math.max(lane.holdUntil - now, EDGE_ANSWERED.has(job.route) ? 0 : capWait(lane))
+  }
+  /** Ms until `job` may go as far as its own lane says: its spacing (a spaced read's) too. The tab's budget is the other wait (budgetWait), the same for all. */
+  const laneWait = (job: Job, now: number) => Math.max(job.spaced ? lastStart + interval - now : 0, laneRest(job, now))
 
   /** One read on the wire until it settles: its budget, its registration, the hold a busy answer asks for, its answer. */
   async function fly(job: Job) {
     const { signal } = job.controller
+    const lane = laneOf(job)
     if (job.spaced) lastStart = clock.monotonic()
     if (budget) {
       spend(1, 1)
+      capSpend(lane, 1)
+      lane.holding += 1
       job.held = true
     }
     // Registered until it settles, so an identical read joins it in flight. Let go
@@ -365,11 +506,14 @@ export function createScheduledSource(
     // spends its own.
     if (job.held) {
       job.held = false
+      lane.holding -= 1
+      capSpend(lane, -1)
       spend(-1, -1)
     }
     if (byKey.get(job.key) === job) byKey.delete(job.key)
     if (settled.kind !== 'done') return
-    // Busy after R-1, or with a wait its read could not afford: the whole queue waits what the service asked.
+    // Busy after R-1, or with a wait its read could not afford: its lane waits what the service asked (the whole queue,
+    // with one lane).
     const outcome = settled.value
     if (!met && store && (outcome.state === 'busy' || outcome.provenance.contract)) {
       met = true
@@ -378,10 +522,11 @@ export function createScheduledSource(
       keep()
     }
     if (outcome.state === 'busy') {
-      holdUntil = Math.max(holdUntil, clock.monotonic() + outcome.retryAfterSeconds * 1000 + Math.floor(clock.random() * BRIDGE_RETRY.jitterMs))
+      lane.holdUntil = Math.max(lane.holdUntil, clock.monotonic() + outcome.retryAfterSeconds * 1000 + Math.floor(clock.random() * BRIDGE_RETRY.jitterMs))
       refused(job, 0)
     } else if (job.attempts > 0 && uncounted(job.route, outcome)) {
       // Answered from the edge cache, or in front of the gateway (UNCOUNTED): the gateway never counted its last attempt.
+      capSpend(lane, -1)
       spend(-1)
     }
     job.resolve(outcome)
@@ -401,6 +546,9 @@ export function createScheduledSource(
       flights.delete(flight)
       if (job.spaced) spacedFlights -= 1
       if (counted) wide -= 1
+      // A read waiting for its own lane alone looks again (fixed 2026-10-30 after review): a read its lane held behind the
+      // one that just settled (one provider read at a time after a refusal) may go now, not when that nap ends.
+      if (laneNap) wake?.abort()
       kick()
     }
     const flight: Promise<void> = fly(job).then(done, done)
@@ -413,7 +561,15 @@ export function createScheduledSource(
    * read behind it go first.
    */
   function pick(now: number, full: boolean): Job | null {
-    let notDue = -1
+    // A quiet minute since the last refusal: the provider lane's spacing as it was (2026-10-30, launch capacity item 9b).
+    if (interval !== minIntervalMs && now - refusedAt >= REFUSAL_QUIET_MS) interval = minIntervalMs
+    // What the browser's other documents kept, a lane they saw refused included (2026-10-30 after review), before any
+    // read is judged by its lane.
+    refill()
+    // Changed on purpose 2026-10-30 (item 9b): a read its own lane holds (its spacing, as before, and now its lane's busy
+    // hold or a refusal's cap) lets a read behind it go first; with none that may go, the one its lane frees soonest.
+    let soonest = -1
+    let least = Infinity
     for (let i = 0; i < queue.length; i++) {
       const job = queue[i]
       if (job.controller.signal.aborted) {
@@ -421,16 +577,18 @@ export function createScheduledSource(
         continue
       }
       if (full && !EDGE_ANSWERED.has(job.route)) continue
-      if (job.spaced) {
-        if (spacedFlights >= (interval > 0 ? 1 : width)) continue
-        if (lastStart + interval > now) {
-          if (notDue === -1) notDue = i
-          continue
+      if (job.spaced && spacedFlights >= (interval > 0 ? 1 : width)) continue
+      const own = laneWait(job, now)
+      if (own > 0) {
+        if (own < least) {
+          least = own
+          soonest = i
         }
+        continue
       }
       return queue.splice(i, 1)[0]
     }
-    return notDue === -1 ? null : queue.splice(notDue, 1)[0]
+    return soonest === -1 ? null : queue.splice(soonest, 1)[0]
   }
 
   async function drain() {
@@ -449,34 +607,40 @@ export function createScheduledSource(
         }
         const { signal } = job.controller
         const now = clock.monotonic()
-        // One wait for all three: the spacing (a spaced read's only), a busy answer's hold, and the budget.
-        const others = Math.max(holdUntil - now, EDGE_ANSWERED.has(job.route) ? 0 : budgetWait())
-        const wait = Math.max(job.spaced ? lastStart + interval - now : 0, others)
+        // One wait for all: the spacing (a spaced read's only), its lane's busy hold and refusal's cap (laneWait), and
+        // the tab's budget.
+        const rest = laneRest(job, now)
+        const shared = EDGE_ANSWERED.has(job.route) ? 0 : budgetWait()
+        const wait = Math.max(job.spaced ? lastStart + interval - now : 0, rest, shared)
         if (wait > 0) {
           const nap = new AbortController()
           const stop = () => nap.abort()
           signal.addEventListener('abort', stop, { once: true })
-          spacingNap = others <= 0
-          if (!job.first || spacingNap) wake = nap
+          laneNap = shared <= 0
+          if (!job.first || laneNap) wake = nap
           napping = job
           napper = nap
           budgetBack = false
           try {
             await clock.sleep(wait, nap.signal)
           } catch {
-            // Cancelled by its last reader, or woken for a read asked first (or, while it waits for its spacing alone,
-            // for a stored read).
+            // Cancelled by its last reader, or woken for a read asked first (or, while it waits for its own lane alone,
+            // for a read that may go now).
           } finally {
             signal.removeEventListener('abort', stop)
             if (wake === nap) wake = null
             napping = null
             napper = null
-            spacingNap = false
+            laneNap = false
           }
           if (signal.aborted) continue
-          // Woken for another read, it goes back to the head of its kind, and that read takes the turn. Otherwise it
-          // keeps its turn and is looked at again: another tab may have spent the budget meanwhile, or it came back.
-          if (nap.signal.aborted && !budgetBack) enqueue(job, true)
+          // Woken for another read, a read without priority goes back to the head of its kind, and that read takes the
+          // turn. One asked first is woken only while its own lane holds it (for a read that may go now, or to look again
+          // when a read on the wire settled): it keeps its place at the head of the line and a read that may go passes it
+          // (fixed 2026-10-30 after review: sent behind later reads asked first, one its lane held too took its turn).
+          // Otherwise it keeps its turn and is looked at again: another tab may have spent the budget meanwhile, or it
+          // came back.
+          if (nap.signal.aborted && !budgetBack && !job.first) enqueue(job, true)
           else queue.unshift(job)
           continue
         }
@@ -534,21 +698,27 @@ export function createScheduledSource(
           if (made.held) {
             // The budget it took at its start is spent now.
             made.held = false
+            laneOf(made).holding -= 1
             spend(0, -1)
-          } else spend()
+          } else {
+            capSpend(laneOf(made), 1)
+            spend()
+          }
         } }), controller: new AbortController(), waiters: 0, promise, resolve, spaced, first, attempts: 0 }
         byKey.set(key, (job = made))
         enqueue(made)
       } else if (first && !job.first) {
         // Joined by a reader asked first while it is still in line: it moves up with that reader. Already waiting for
         // its turn on the wire (out of the queue), it keeps that turn: no later read asked first takes it (fixed
-        // 2026-09-25 after review; it used to be woken and sent back behind such a read).
+        // 2026-09-25 after review; it used to be woken and sent back behind such a read). Fixed 2026-10-30 after review:
+        // waiting for its own lane alone, it can still be woken by a read that may go now (enqueue), which passes it and
+        // leaves it its turn; its lane's hold (a provider Retry-After, say) no longer holds the edge-cached overview.
         job.first = true
         const at = queue.indexOf(job)
         if (at !== -1) {
           queue.splice(at, 1)
           enqueue(job)
-        } else if (napping === job) wake = null
+        } else if (napping === job && !laneNap) wake = null
       }
 
       const shared = job

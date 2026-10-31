@@ -10,8 +10,10 @@
  * unchanged in what they decide.
  */
 import type { ChainBalancesResponse } from 'api-contracts/read-v6/types'
+import { amountText } from '../../lib/create/amountText'
 import type { DepositPlan } from '../../lib/create/depositPlan'
 import { CANDIDATE_ORIGINS, type Holding, type HoldingsReport, type OriginCandidate } from '../../finance/v2/holdings'
+import { capacityBusyWait, isCapacityBusy } from '../../finance/v2/requestCoordinator'
 import { maxSpend, REVIEW_GAS_RESERVE_WEI } from '../../lib/create/reviewPlan'
 import { formatUnitsExact, knownDecimals, tokenLabel } from '../../v2/crosschain/amounts'
 import type { CrosschainFailure } from '../../v2/crosschain/client'
@@ -29,6 +31,7 @@ import {
   FUNDS_MAX_SLIPPAGE_BPS,
   FUNDS_MIN_SLIPPAGE_BPS,
   FUNDS_REQUEST_RETRY_MS,
+  FUNDS_ROUTES_BUSY_RETRY_MS,
   FUNDS_SUGGEST_DESTINATION_GAS_AT_OR_BELOW_WEI,
   FUNDS_TYPED_QUOTE_DEBOUNCE_MS,
   FUNDS_TYPED_QUOTES_PER_MINUTE,
@@ -229,11 +232,18 @@ export function continueWith(balanceRaw: string | null, decimals: number | null,
 /**
  * The typed amount in the origin token's raw units, exactly as `amountRaw` takes it. With known decimals: a plain
  * decimal ("100", "0.05", ".5") with at most that many places. With unknown decimals: a whole number of raw units only
- * (never a guess at the decimals). Null for anything else: empty, zero, a sign, an exponent, grouping, too many places,
- * or 2^128 and above.
+ * (never a guess at the decimals). Null for anything else: empty, zero, a sign, an exponent, too many places, or 2^128
+ * and above.
+ *
+ * Changed on purpose 2026-10-30 (QA round 2, N99): read as New position's amount step reads a typed amount
+ * (lib/create/amountText.ts): spaces around it dropped, and thousands separators too ("1,500.25"), any other comma or a
+ * minus refused. A funding amount Domino writes itself is grouped (./fundingBudget.ts remotePayment, formatUnitsExact),
+ * so from 1,000 up it was refused here, and the offer to fund it never came.
  */
 export function amountRawOf(text: string, decimals: number | null): string | null {
-  const value = text.trim()
+  const read = amountText(text)
+  if (!read.ok) return null
+  const value = read.text
   let raw: bigint
   if (!knownDecimals(decimals)) {
     if (!/^[0-9]{1,78}$/.test(value)) return null
@@ -404,6 +414,16 @@ export interface RequestFailure {
 const grow = (attempt: number, base = FUNDS_REQUEST_RETRY_MS) => Math.min(300_000, base * 2 ** Math.max(0, attempt - 1))
 
 /**
+ * Added 2026-10-30 (launch capacity, CAP-5 and CAP-6; its review): how long, at least, a failed preparation of the offer
+ * waits before it is prepared again by itself (./BringFunds.tsx). No route for these tokens right now
+ * (funding_routes_busy) waits a minute; so does a capacity-busy refusal, whose two quick quiet retries the quote already
+ * spent (requestFailure: 4 to 5 s apart), so a busy service is never asked three more times every few seconds. Anything
+ * else waits FUNDS_REQUEST_RETRY_MS. The failure's own wait applies when it is longer.
+ */
+export const preparationRetryFloor = (code: string | null | undefined): number =>
+  code === 'funding_routes_busy' || isCapacityBusy(code) ? FUNDS_ROUTES_BUSY_RETRY_MS : FUNDS_REQUEST_RETRY_MS
+
+/**
  * The client's failure as the offer says it (§3.8 through v2/crosschain/errors.ts; the client's own words otherwise).
  * `attempt` counts the failures in a row, for the growing wait. No Retry button anywhere: transient failures ask again.
  */
@@ -443,6 +463,9 @@ export function requestFailure(failure: CrosschainFailure, attempt: number): Req
         case 'later':
           return { ...out, retryMs: grow(attempt, 60_000) }
         case 'backoff':
+          // Changed on purpose 2026-10-30 (launch capacity, CAP-6): a capacity-busy refusal waits 4 to 5 s, whatever
+          // Retry-After it names (finance/v2/requestCoordinator.ts capacityBusyWait); a rate limit keeps its Retry-After.
+          if (isCapacityBusy(failure.code)) return { ...out, retryMs: capacityBusyWait() }
           return { ...out, retryMs: Math.min(300_000, (failure.retryAfterS ?? 60) * 1000 * 2 ** Math.max(0, attempt - 1)) }
         case 'retry_once':
           return { ...out, retryMs: attempt <= 1 ? grow(attempt) : null }

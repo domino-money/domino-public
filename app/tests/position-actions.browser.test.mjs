@@ -596,6 +596,14 @@ test('only the owner sees the actions; hooked pools are refused, an empty positi
     const dialog = s.page.locator('[role="dialog"][data-position-dialog="close"]');
     await dialog.locator('[data-position-warning="automation"]').waitFor();
     assert.equal(await text(dialog.locator('[data-position-warning]')), 'Collecting fees or closing stops Domino automation for this position.');
+    // (QA round 2, N49) The same subscribed position as the root of Auto-exit's own vault: its subscriber is that vault and
+    // Auto-exit stays on, so the dialog, read and ready to send, says nothing of stopping automation.
+    await s.page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'hidden' });
+    await open({ position: actionsFor({ autoExitRoot: true }) });
+    await s.page.locator('[data-position-action="close"]').click();
+    await dialog.locator('[data-position-send="close"]:not([disabled])').waitFor({ timeout: 30_000 });
+    assert.equal(await dialog.locator('[data-position-warning="automation"]').count(), 0, 'no automation note on an Auto-exit root');
     assert.deepEqual(chain.sends, []);
   } finally { await s.close(); }
 });

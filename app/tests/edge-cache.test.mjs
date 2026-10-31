@@ -13,11 +13,15 @@ import { createRequire } from 'node:module';
 import { beforeEach, test } from 'node:test';
 import * as v5 from '../../api-contracts/read-v5/runtime.mjs';
 import * as v3 from '../../api-contracts/read-v3/runtime.mjs';
+import { agedPoolEntry, pendingPoolEntry } from './support/stale-store.mjs';
 
 const require = createRequire(import.meta.url);
 const { answerFeatured, cacheKey, FEATURED_PATH, LIST_SECONDS, WAIT_AFTER_SECONDS, REFRESH_WAIT_MS, featuredEvidence } = require('../.test-build/app/functions/_lib/featuredEdge.js');
-const { FOLLOW_WAIT_MS } = require('../.test-build/app/functions/_lib/publicEdge.js');
-const { answerOverview, overviewKey, OVERVIEW_PATH, OVERVIEW_SECONDS, OVERVIEW_STALE_SECONDS, settledOverview } = require('../.test-build/app/functions/_lib/overviewEdge.js');
+const { FOLLOW_WAIT_MS, LEAD_LIFE_MS, REFRESH_GUARD_MS } = require('../.test-build/app/functions/_lib/publicEdge.js');
+const {
+  answerOverview, overviewKey, OVERVIEW_PATH, OVERVIEW_SECONDS, OVERVIEW_SETTLING_SECONDS, OVERVIEW_STALE_SECONDS, OVERVIEW_WAIT_AFTER_SECONDS, OVERVIEW_ERROR_SECONDS,
+  OVERVIEW_REFRESH_WAIT_MS, OVERVIEW_ERROR_WAIT_MS, settledOverview, usefulOverview,
+} = require('../.test-build/app/functions/_lib/overviewEdge.js');
 const {
   answerDex, answerDex2, dexAsk, dex2Ask, dexMemory, resetDexMemory, trimPair, trimPairOn, pairsForPrice, DEX_FRESH_SECONDS, DEX_STALE_SECONDS,
   DEX_KEPT_SECONDS, DEX_NONE_FRESH_SECONDS, DEX_READ_STALE_MS, DEX_MISS_SECONDS, DEX_MISS_MAX_SECONDS, DEX_ON_ITS_WAY_SECONDS, DEX_VISITOR, DEX_VISITOR_NEW, MAX_TOKENS,
@@ -202,17 +206,39 @@ test('F7: a leader whose answer is not a valid 200 leaves its followers to ask t
 const askOverview = (body = { poolIds: [POOL] }, headers = {}) => ask({ url: `${ORIGIN}${OVERVIEW_PATH}`, body: JSON.stringify(body), version: v3.CONTRACT_VERSION, headers });
 const overviewSaid = (body = OVERVIEW_BODY, options = {}) => said(JSON.stringify(body), { version: v3.CONTRACT_VERSION, ...options });
 
-test('a settled overview is kept for the identical question: fresh 10 s, served to 30 s while it refreshes, dated, its read given back', async () => {
+const OVERVIEW_KEY = overviewKey(v3.CONTRACT_VERSION, { poolIds: [POOL] });
+/** A runtime timer that records each bounded wait and ends it after `ms` of real time (cleared once the work is in). */
+function waits() {
+  const armed = [];
+  return { armed, timer: (ms, fire) => { armed.push(ms); const handle = setTimeout(fire, ms); return () => clearTimeout(handle); } };
+}
+/** Every piece of work handed to waitUntil, including work handed on by work, settled. */
+async function drain(later) {
+  while (later.length > 0) await Promise.all(later.splice(0));
+}
+
+// Changed on purpose 2026-10-30 (launch capacity study, item 4): a kept overview is served at once for ten minutes (it was
+// 30 s), and one at least 30 s old waits a second at most for its refresh.
+// Changed on purpose 2026-10-30 (QA round 2, final review edge-1): served at once for two minutes, so its APR is still
+// within the page's 300 s when it lands; past them the VM is waited for up to 5 s (OVERVIEW_ERROR_WAIT_MS).
+test('a settled overview is kept for the identical question: fresh 10 s, served at once while it refreshes, waited for a second at most from 30 s, served at once no longer past two minutes', async () => {
   assert.equal(v3.validateResponse('overview', OVERVIEW_BODY), true);
   assert.equal(settledOverview(JSON.stringify(OVERVIEW_BODY)), true);
+  assert.deepEqual(
+    [OVERVIEW_SECONDS, OVERVIEW_SETTLING_SECONDS, OVERVIEW_WAIT_AFTER_SECONDS, OVERVIEW_STALE_SECONDS, OVERVIEW_ERROR_SECONDS, OVERVIEW_REFRESH_WAIT_MS, OVERVIEW_ERROR_WAIT_MS],
+    [10, 2, 30, 120, 900, 1_000, 5_000],
+  );
   const cache = memoryCache(), time = clock(), later = [];
-  const worker = bridge(() => overviewSaid());
-  const rt = () => ({ contract: OVERVIEW, cache, now: time.now, refreshing: new Map(), waitUntil: (work) => later.push(work) });
+  let down = false;
+  const worker = bridge(() => (down ? overviewSaid({ error: 'upstream_unavailable' }, { status: 503 }) : overviewSaid()));
+  const rt = (extra = {}) => ({ contract: OVERVIEW, cache, now: time.now, refreshing: new Map(), waitUntil: (work) => later.push(work), ...extra });
   const first = await answerOverview(askOverview(), worker.env, rt());
   assert.equal(first.status, 200);
   assert.equal(first.headers.get('X-Domino-Request-Id') !== null, true, 'the Worker’s answer');
-  await Promise.all(later.splice(0));
-  assert.deepEqual(cache.puts, [overviewKey(v3.CONTRACT_VERSION, { poolIds: [POOL] })]);
+  await drain(later);
+  assert.deepEqual(cache.puts, [OVERVIEW_KEY]);
+  assert.equal(cache.entries.get(OVERVIEW_KEY).headers.get('Cache-Control'), `max-age=${OVERVIEW_ERROR_SECONDS}`, 'the cache keeps it for its stale-if-error life');
+  assert.equal(cache.entries.get(OVERVIEW_KEY).headers.get('X-Edge-Settling'), null, 'settled');
   time.at.now += OVERVIEW_SECONDS * 1000 - 1;
   const hit = await answerOverview(askOverview(), worker.env, rt());
   assert.equal(hit.headers.get('X-Domino-Edge-Cache'), 'hit');
@@ -222,36 +248,393 @@ test('a settled overview is kept for the identical question: fresh 10 s, served 
   // Another question is never answered from it.
   await answerOverview(askOverview({ poolIds: [POOL], limit: 12 }), worker.env, rt());
   assert.equal(worker.calls.length, 2);
+  // Stale and younger than 30 s: served at once, its refresh behind.
   time.at.now += 1;
-  const stale = await answerOverview(askOverview(), worker.env, rt());
+  const quick = waits();
+  const stale = await answerOverview(askOverview(), worker.env, rt({ timer: quick.timer }));
   assert.equal(stale.headers.get('X-Domino-Edge-Cache'), null, 'the request that refreshes it is counted');
-  await Promise.all(later.splice(0));
+  assert.equal(stale.headers.get('Server-Timing'), 'edge;desc="stale"');
+  assert.deepEqual(quick.armed, [], 'no wait');
+  await drain(later);
   assert.equal(worker.calls.length, 3);
-  time.at.now += OVERVIEW_STALE_SECONDS * 1000;
-  await answerOverview(askOverview(), worker.env, rt());
-  assert.equal(worker.calls.length, 4, 'never served past 30 s');
+  // At least 30 s old: the request that refreshes it waits for the newer answer, a second at most.
+  time.at.now += OVERVIEW_WAIT_AFTER_SECONDS * 1000;
+  const slow = waits();
+  const waited = await answerOverview(askOverview(), worker.env, rt({ timer: slow.timer }));
+  assert.deepEqual(slow.armed, [OVERVIEW_REFRESH_WAIT_MS]);
+  assert.equal(waited.headers.get('Server-Timing'), 'edge;desc="miss"', 'the refresh it waited for');
+  assert.equal(waited.headers.get('X-Domino-Edge-Age'), '0');
+  await drain(later);
+  assert.equal(worker.calls.length, 4);
+  // Served to two minutes, the VM failing its refresh included; past them the VM answers.
+  time.at.now += OVERVIEW_STALE_SECONDS * 1000 - 1;
+  down = true;
+  const kept = cache.puts.length;
+  const late = await answerOverview(askOverview(), worker.env, rt());
+  assert.equal(late.headers.get('Server-Timing'), 'edge;desc="stale"');
+  assert.equal(late.headers.get('X-Domino-Edge-Age'), String(OVERVIEW_STALE_SECONDS * 1000 - 1));
+  assert.deepEqual(await late.json(), OVERVIEW_BODY);
+  await drain(later);
+  assert.equal(worker.calls.length, 5);
+  assert.equal(cache.puts.length, kept, 'the failed refresh kept nothing');
+  down = false;
+  time.at.now += 1;
+  const past = await answerOverview(askOverview(), worker.env, rt());
+  assert.equal(past.headers.get('Server-Timing'), 'edge;desc="miss"', 'never served at once past two minutes');
+  assert.equal(worker.calls.length, 6);
+  await drain(later);
 });
 
-test('an overview still collecting, refreshing, failed, or without provider figures is passed on and never kept', async () => {
+// Changed on purpose 2026-10-30 (launch capacity study, item 4): such an answer was passed on and never kept, so at launch
+// load, with the provider behind, the edge kept nothing.
+// Changed on purpose 2026-10-30 (review): fresh 2 s, below the page's first catch-up (marketsProvider.ts CATCH_UP_FLOOR_MS,
+// 2.5 s), so that catch-up finds it stale and waits for the figures coming; it was 5 s.
+test('an overview still collecting, refreshing, failed, or without provider figures is kept 2 s, and once stale its refresh is waited for at once; one with nothing to show, a refusal or another question’s answer never', async () => {
   const pool = OVERVIEW_BODY.pools[0];
   const variants = [
     { ...OVERVIEW_BODY, pools: [{ ...pool, acquisition: { ...pool.acquisition, status: 'pending' } }] },
     { ...OVERVIEW_BODY, pools: [{ ...pool, acquisition: { ...pool.acquisition, refreshing: true } }] },
-    { ...OVERVIEW_BODY, pools: [{ ...pool, value: { ...pool.value, market: { ...pool.value.market, market: { status: 'unavailable', reason: 'provider_rate_limited', data: null, cache: pool.value.market.market.cache } } } }] },
+    // The provider rate limited, as the store serves it (tests/support/stale-store.mjs).
+    { ...OVERVIEW_BODY, pools: [agedPoolEntry(pool, OVERVIEW_BODY.generatedAt, { providerBusy: true })] },
     { ...OVERVIEW_BODY, tokens: OVERVIEW_BODY.tokens.map((token, i) => (i === 0 ? { ...token, value: null, observedAt: null, acquisition: { ...token.acquisition, status: 'pending' } } : token)) },
   ];
   for (const [index, body] of variants.entries()) {
+    assert.equal(v3.validateResponse('overview', body), true, `variant ${index} passes read-v3’s own runtime`);
     assert.equal(settledOverview(JSON.stringify(body)), false, `variant ${index}`);
-    const cache = memoryCache();
-    const response = await answerOverview(askOverview(), bridge(() => overviewSaid(body)).env, { contract: OVERVIEW, cache, now: clock().now });
+    assert.equal(usefulOverview(JSON.stringify(body)), true, `variant ${index}`);
+    const cache = memoryCache(), time = clock(), later = [];
+    let settledNow = false;
+    const worker = bridge(() => overviewSaid(settledNow ? OVERVIEW_BODY : body));
+    const rt = (extra = {}) => ({ contract: OVERVIEW, cache, now: time.now, refreshing: new Map(), waitUntil: (work) => later.push(work), ...extra });
+    const response = await answerOverview(askOverview(), worker.env, rt());
     assert.equal(response.status, 200);
-    assert.equal(cache.puts.length, 0, `variant ${index} passed on, never kept`);
+    await drain(later);
+    assert.deepEqual(cache.puts, [OVERVIEW_KEY], `variant ${index} kept`);
+    assert.equal(cache.entries.get(OVERVIEW_KEY).headers.get('X-Edge-Settling'), '1');
+    // Within 2 s identical loads meet the edge, not the VM.
+    time.at.now += OVERVIEW_SETTLING_SECONDS * 1000 - 1;
+    const hit = await answerOverview(askOverview(), worker.env, rt());
+    assert.equal(hit.headers.get('X-Domino-Edge-Cache'), 'hit');
+    assert.deepEqual(await hit.json(), body);
+    assert.equal(worker.calls.length, 1);
+    // From 2 s (the page's first catch-up is 2.5 s at the soonest), the request that refreshes it waits for the newer
+    // answer at once: here the settled one.
+    time.at.now += 1;
+    settledNow = true;
+    const catchUp = waits();
+    const caught = await answerOverview(askOverview(), worker.env, rt({ timer: catchUp.timer }));
+    assert.deepEqual(catchUp.armed, [OVERVIEW_REFRESH_WAIT_MS], `variant ${index}: waited for`);
+    assert.deepEqual(await caught.json(), OVERVIEW_BODY);
+    await drain(later);
+    assert.equal(worker.calls.length, 2);
+    assert.equal(cache.entries.get(OVERVIEW_KEY).headers.get('X-Edge-Settling'), null, 'the settled answer replaced it');
   }
+  // Nothing to show yet (every pool and token listed, none with a value): passed on, never kept.
+  const pendingToken = (token) => ({ ...token, value: null, observedAt: null, acquisition: { ...token.acquisition, status: 'pending' } });
+  const empty = { ...OVERVIEW_BODY, pools: OVERVIEW_BODY.pools.map((entry) => pendingPoolEntry(entry, OVERVIEW_BODY.generatedAt)), tokens: OVERVIEW_BODY.tokens.map(pendingToken) };
+  assert.equal(v3.validateResponse('overview', empty), true, 'the variant passes read-v3’s own runtime');
+  assert.equal(usefulOverview(JSON.stringify(empty)), false);
+  // (review) Pools asked by id and none listed has nothing to show either; a page of no pools asked by none is settled.
+  const none = { ...OVERVIEW_BODY, pools: [], tokens: [] };
+  assert.equal(v3.validateResponse('overview', none), true, 'the variant passes read-v3’s own runtime');
+  assert.equal(usefulOverview(JSON.stringify(none)), false);
+  assert.equal(usefulOverview(JSON.stringify({ ...none, requestedPoolIds: [] })), true);
+  const nothing = memoryCache();
+  assert.equal((await answerOverview(askOverview(), bridge(() => overviewSaid(empty)).env, { contract: OVERVIEW, cache: nothing, now: clock().now })).status, 200);
+  assert.equal(nothing.puts.length, 0, 'nothing to show is never kept');
+  // It never replaces a kept answer that has figures: that one is still served, stale, while the VM collects.
+  const kept = memoryCache(), time = clock(), later = [];
+  let collecting = false;
+  const store = bridge(() => overviewSaid(collecting ? empty : OVERVIEW_BODY));
+  const rt = () => ({ contract: OVERVIEW, cache: kept, now: time.now, refreshing: new Map(), waitUntil: (work) => later.push(work) });
+  await answerOverview(askOverview(), store.env, rt());
+  await drain(later);
+  collecting = true;
+  time.at.now += OVERVIEW_SECONDS * 1000;
+  assert.deepEqual(await (await answerOverview(askOverview(), store.env, rt())).json(), OVERVIEW_BODY);
+  await drain(later);
+  assert.equal(store.calls.length, 2);
+  assert.equal(kept.puts.length, 1, 'the refresh with nothing to show kept nothing');
+  assert.deepEqual(await (await answerOverview(askOverview(), store.env, rt())).json(), OVERVIEW_BODY);
+  await drain(later);
   // An answer to another question, a refusal: passed on, never kept.
   const cache = memoryCache();
   await answerOverview(askOverview({ poolIds: [`0x${'cd'.repeat(32)}`] }), bridge(() => overviewSaid()).env, { contract: OVERVIEW, cache, now: clock().now });
   await answerOverview(askOverview(), bridge(() => overviewSaid({ error: 'read_capacity_busy' }, { status: 429 })).env, { contract: OVERVIEW, cache, now: clock().now });
   assert.equal(cache.puts.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Stale-if-error (2026-10-30, launch capacity study, item 4)
+// ---------------------------------------------------------------------------
+
+/** A cache holding the settled overview, kept at the clock's start; `delete` as the Cache API's. */
+async function keptOverview(time = clock()) {
+  const cache = memoryCache();
+  cache.delete = async (request) => cache.entries.delete(request.url);
+  await answerOverview(askOverview(), bridge(() => overviewSaid()).env, { contract: OVERVIEW, cache, now: time.now });
+  return { cache, time };
+}
+
+test('stale-if-error: past two minutes and up to fifteen, a kept overview stands in for a 408, a 429, any 5xx, a 200 that is no answer or one with nothing to show, dated and counted; never for a refusal, never past fifteen', async () => {
+  const failures = [
+    ['408', () => overviewSaid({ error: 'request_timeout' }, { status: 408 })],
+    ['429', () => overviewSaid({ error: 'read_capacity_busy' }, { status: 429 })],
+    ...[500, 502, 503, 504, 520, 530].map((status) => [String(status), () => overviewSaid({ error: 'upstream_unavailable' }, { status })]),
+    ['no answer', () => overviewSaid({ ...OVERVIEW_BODY, requestedPoolIds: [`0x${'cd'.repeat(32)}`] })],
+    // (review) A valid answer with nothing to show never replaces the kept figures for the visitor either.
+    ['nothing to show', () => overviewSaid({ ...OVERVIEW_BODY, pools: [], tokens: [] })],
+  ];
+  for (const [label, answer] of failures) {
+    const { cache, time } = await keptOverview();
+    time.at.now += OVERVIEW_STALE_SECONDS * 1000;
+    const failing = bridge(answer);
+    const response = await answerOverview(askOverview(), failing.env, { contract: OVERVIEW, cache, now: time.now, inflight: new Map(), refreshing: new Map() });
+    assert.equal(response.status, 200, label);
+    assert.deepEqual(await response.json(), OVERVIEW_BODY, label);
+    assert.equal(response.headers.get('Server-Timing'), 'edge;desc="stale-if-error"', label);
+    assert.equal(response.headers.get('X-Domino-Edge-Age'), String(OVERVIEW_STALE_SECONDS * 1000), `${label}: dated`);
+    assert.equal(response.headers.get('X-Domino-Edge-Cache'), null, `${label}: this request reached the Worker, which counted it`);
+    assert.equal(response.headers.get('X-Domino-Read-Contract'), v3.CONTRACT_VERSION);
+    assert.equal(response.headers.get('Cache-Control'), 'no-store');
+    assert.equal(response.headers.get('X-Domino-Request-Id'), null);
+    assert.equal(failing.calls.length, 1, label);
+    assert.equal(cache.puts.length, 1, `${label}: the failure is never kept`);
+  }
+  // The forwarder's own failure (no binding) too.
+  {
+    const { cache, time } = await keptOverview();
+    time.at.now += OVERVIEW_STALE_SECONDS * 1000;
+    const response = await answerOverview(askOverview(), {}, { contract: OVERVIEW, cache, now: time.now, inflight: new Map(), refreshing: new Map() });
+    assert.equal(response.headers.get('Server-Timing'), 'edge;desc="stale-if-error"');
+  }
+  // A refusal is the Worker's say, passed on as it came; a route switched off also takes the entry out.
+  {
+    const { cache, time } = await keptOverview();
+    time.at.now += OVERVIEW_STALE_SECONDS * 1000;
+    const invalid = await answerOverview(askOverview(), bridge(() => overviewSaid({ error: 'invalid_request' }, { status: 422 })).env, { contract: OVERVIEW, cache, now: time.now, inflight: new Map(), refreshing: new Map() });
+    assert.deepEqual([invalid.status, await invalid.json()], [422, { error: 'invalid_request' }]);
+    assert.equal(cache.entries.size, 1);
+    const off = await answerOverview(askOverview(), bridge(() => overviewSaid({ error: 'route_not_available' }, { status: 404 })).env, { contract: OVERVIEW, cache, now: time.now, inflight: new Map(), refreshing: new Map() });
+    assert.deepEqual([off.status, await off.json()], [404, { error: 'route_not_available' }]);
+    assert.equal(cache.entries.size, 0, 'the route is off: the entry is out');
+  }
+  // A working VM's answer is the answer, and it is kept.
+  {
+    const { cache, time } = await keptOverview();
+    time.at.now += OVERVIEW_STALE_SECONDS * 1000;
+    const response = await answerOverview(askOverview(), bridge(() => overviewSaid()).env, { contract: OVERVIEW, cache, now: time.now, inflight: new Map(), refreshing: new Map() });
+    assert.equal(response.headers.get('Server-Timing'), 'edge;desc="miss"');
+    assert.equal(cache.puts.length, 2);
+  }
+  // Past fifteen minutes nothing stands in.
+  {
+    const { cache, time } = await keptOverview();
+    time.at.now += OVERVIEW_ERROR_SECONDS * 1000;
+    const response = await answerOverview(askOverview(), bridge(() => overviewSaid({ error: 'upstream_unavailable' }, { status: 503 })).env, { contract: OVERVIEW, cache, now: time.now, inflight: new Map(), refreshing: new Map() });
+    assert.equal(response.status, 503);
+  }
+});
+
+// Changed on purpose 2026-10-30 (QA round 2, final review edge-1): the bound is OVERVIEW_ERROR_WAIT_MS, 5 s; it was a second.
+test('stale-if-error: a VM that does not answer within 5 s has the kept overview stand in, and its answer, when it comes, is kept behind', async () => {
+  const { cache, time } = await keptOverview();
+  time.at.now += OVERVIEW_STALE_SECONDS * 1000;
+  let release;
+  const late = new Promise((resolve) => { release = resolve; });
+  const slow = bridge(async () => { await late; return overviewSaid(); });
+  const later = [];
+  const armed = [];
+  const response = await answerOverview(askOverview(), slow.env, { contract: OVERVIEW, cache, now: time.now, inflight: new Map(), refreshing: new Map(), waitUntil: (work) => later.push(work),
+    timer: (ms, fire) => { armed.push(ms); setTimeout(fire, 0); return () => undefined; } });
+  assert.deepEqual(armed, [OVERVIEW_ERROR_WAIT_MS]);
+  assert.equal(response.headers.get('Server-Timing'), 'edge;desc="stale-if-error"');
+  assert.deepEqual(await response.json(), OVERVIEW_BODY);
+  release();
+  await drain(later);
+  assert.equal(cache.puts.length, 2, 'the late answer is kept for the next visitor');
+  const next = await answerOverview(askOverview(), slow.env, { contract: OVERVIEW, cache, now: time.now });
+  assert.equal(next.headers.get('X-Domino-Edge-Cache'), 'hit');
+  assert.equal(slow.calls.length, 1);
+});
+
+// Added 2026-10-30 (QA round 2, final review edge-1): a copy served at once for ten minutes, and past them after a second,
+// reached a page whose VM was healthy but slower than a second with every APR past the page's 300 s on arrival
+// (lib/read/aprEstimate.ts maxStaleSeconds), so the page showed stand-ins or none and asked DEX Screener for each pair.
+test('a kept overview 360 s old is not served at once: a VM that answers within 5 s gives its current overview, and a failure that comes at once still has the copy stand in', async () => {
+  const AGE_MS = 360_000;
+  assert.ok(AGE_MS > OVERVIEW_STALE_SECONDS * 1000 && AGE_MS < OVERVIEW_ERROR_SECONDS * 1000, 'past the at-once window, within the stand-in one');
+  {
+    const { cache, time } = await keptOverview();
+    time.at.now += AGE_MS;
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const vm = bridge(async () => { await gate; return overviewSaid(); });
+    const armed = [], later = [];
+    let answered = false;
+    // The 5 s bound is armed and never runs out here: the VM answers within it (2.5 s under launch load, say).
+    const asked = answerOverview(askOverview(), vm.env, { contract: OVERVIEW, cache, now: time.now, inflight: new Map(), refreshing: new Map(), waitUntil: (work) => later.push(work),
+      timer: (ms) => { armed.push(ms); return () => undefined; } });
+    void asked.then(() => { answered = true; });
+    while (vm.calls.length === 0) await tick();
+    for (let n = 0; n < 5; n += 1) await tick();
+    assert.equal(answered, false, 'the 360 s copy is not served at once');
+    assert.deepEqual(armed, [OVERVIEW_ERROR_WAIT_MS]);
+    release();
+    const response = await asked;
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('Server-Timing'), 'edge;desc="miss"', 'the VM’s own answer');
+    assert.notEqual(response.headers.get('X-Domino-Request-Id'), null);
+    assert.equal(response.headers.get('X-Domino-Edge-Age'), null, 'dated as it arrives, not 360 s back');
+    assert.deepEqual(await response.json(), OVERVIEW_BODY);
+    await drain(later);
+    assert.equal(cache.puts.length, 2, 'kept for the next visitor');
+    assert.equal(vm.calls.length, 1);
+  }
+  // A 503 at once (the forwarder's, say): the copy stands in as it comes, without waiting out the 5 s.
+  {
+    const { cache, time } = await keptOverview();
+    time.at.now += AGE_MS;
+    const armed = [];
+    const response = await answerOverview(askOverview(), bridge(() => overviewSaid({ error: 'upstream_unavailable' }, { status: 503 })).env,
+      { contract: OVERVIEW, cache, now: time.now, inflight: new Map(), refreshing: new Map(), timer: (ms) => { armed.push(ms); return () => undefined; } });
+    assert.deepEqual(armed, [OVERVIEW_ERROR_WAIT_MS], 'armed, never run out');
+    assert.equal(response.headers.get('Server-Timing'), 'edge;desc="stale-if-error"');
+    assert.equal(response.headers.get('X-Domino-Edge-Age'), String(AGE_MS));
+    assert.deepEqual(await response.json(), OVERVIEW_BODY);
+  }
+});
+
+test('stale-if-error: requests that join a failing or slow miss get the kept overview, which no gateway saw, and the VM is asked once', async () => {
+  const { cache, time } = await keptOverview();
+  time.at.now += OVERVIEW_STALE_SECONDS * 1000;
+  const inflight = new Map();
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const worker = bridge(async () => { await gate; return overviewSaid({ error: 'read_capacity_busy' }, { status: 429 }); });
+  let armed = 0;
+  const rt = () => ({ contract: OVERVIEW, cache, now: time.now, inflight, refreshing: new Map(), timer: () => { armed += 1; return () => undefined; } });
+  const leader = answerOverview(askOverview(), worker.env, rt());
+  while (inflight.size === 0) await tick();
+  const followers = [answerOverview(askOverview(), worker.env, rt()), answerOverview(askOverview(), worker.env, rt())];
+  while (armed < 3) await tick();
+  release();
+  const [first, ...rest] = await Promise.all([leader, ...followers]);
+  assert.equal(worker.calls.length, 1, 'one read of the VM for three visitors');
+  assert.equal(first.headers.get('Server-Timing'), 'edge;desc="stale-if-error"');
+  assert.equal(first.headers.get('X-Domino-Edge-Cache'), null);
+  for (const response of rest) {
+    assert.deepEqual(await response.json(), OVERVIEW_BODY);
+    assert.equal(response.headers.get('X-Domino-Edge-Cache'), 'hit', 'no gateway saw it');
+    assert.equal(response.headers.get('Server-Timing'), 'edge;desc="stale-if-error"');
+  }
+  assert.equal(inflight.size, 0, 'nothing left behind');
+  // A miss that does not settle: a follower waits FOLLOW_WAIT_MS at the most, then the kept answer, and asks nothing.
+  const stuck = bridge(() => new Promise(() => undefined));
+  const fired = [];
+  const slow = { contract: OVERVIEW, cache, now: time.now, inflight: new Map(), refreshing: new Map(), timer: (ms, fire) => { fired.push(ms); setTimeout(fire, 0); return () => undefined; } };
+  const stand = await answerOverview(askOverview(), stuck.env, slow);
+  assert.equal(stand.headers.get('Server-Timing'), 'edge;desc="stale-if-error"', 'the leader, at its own bound');
+  const follower = await answerOverview(askOverview(), stuck.env, slow);
+  assert.deepEqual(fired, [OVERVIEW_ERROR_WAIT_MS, FOLLOW_WAIT_MS]);
+  assert.equal(follower.headers.get('Server-Timing'), 'edge;desc="stale-if-error"');
+  assert.equal(follower.headers.get('X-Domino-Edge-Cache'), 'hit');
+  assert.equal(stuck.calls.length, 1, 'the follower did not ask the stuck VM again');
+  // One older than LEAD_LIFE_MS (its request cut off, say) is not joined: a new read starts.
+  time.at.now += LEAD_LIFE_MS;
+  const fresh = bridge(() => overviewSaid());
+  const after = await answerOverview(askOverview(), fresh.env, { ...slow, timer: () => () => undefined });
+  assert.equal(after.headers.get('Server-Timing'), 'edge;desc="miss"');
+  assert.equal(fresh.calls.length, 1);
+});
+
+// Added 2026-10-30 (review of the launch change): the refresh guard was lifted as soon as a refresh settled, failed or
+// not, and a read past ten minutes had no guard at all, so during a 429 storm every request in an isolate reached the VM.
+test('a failing VM is asked about a question once per REFRESH_GUARD_MS in an isolate, served stale or past two minutes; meanwhile the kept overview is served as a hit', async () => {
+  assert.equal(REFRESH_GUARD_MS, 10_000);
+  const none = { ...OVERVIEW_BODY, pools: [], tokens: [] };
+  const answers = [
+    ['429', () => overviewSaid({ error: 'read_capacity_busy' }, { status: 429 })],
+    ['503', () => overviewSaid({ error: 'upstream_unavailable' }, { status: 503 })],
+    ['nothing to show', () => overviewSaid(none)],
+  ];
+  for (const [window, age, made] of [['stale', OVERVIEW_SECONDS * 1000, 'stale'], ['past two minutes', OVERVIEW_STALE_SECONDS * 1000, 'stale-if-error']]) {
+    for (const [label, answer] of answers) {
+      const { cache, time } = await keptOverview();
+      time.at.now += age;
+      const refreshing = new Map(), inflight = new Map(), later = [];
+      let good = false;
+      const worker = bridge(() => (good ? overviewSaid() : answer()));
+      const rt = () => ({ contract: OVERVIEW, cache, now: time.now, refreshing, inflight, waitUntil: (work) => later.push(work), timer: (_ms, fire) => { setTimeout(fire, 0); return () => undefined; } });
+      const seen = [];
+      // A hundred visitors over five seconds.
+      for (let n = 0; n < 100; n += 1) {
+        const response = await answerOverview(askOverview(), worker.env, rt());
+        assert.deepEqual(await response.json(), OVERVIEW_BODY, `${window}, ${label}: the kept figures, every time`);
+        seen.push(`${response.headers.get('Server-Timing')} ${response.headers.get('X-Domino-Edge-Cache')}`);
+        await drain(later);
+        time.at.now += 50;
+      }
+      assert.equal(worker.calls.length, 1, `${window}, ${label}: one read of the failing VM`);
+      assert.equal(cache.puts.length, 1, `${window}, ${label}: nothing new kept`);
+      assert.equal(seen[0], `edge;desc="${made}" null`, `${window}, ${label}: the request that asked is counted`);
+      assert.deepEqual([...new Set(seen.slice(1))], [`edge;desc="${made}" hit`], `${window}, ${label}: the rest gave their read back`);
+      // Once the guard is over, one read again; a good answer is kept, and lifts the guard.
+      time.at.now += REFRESH_GUARD_MS;
+      good = true;
+      await answerOverview(askOverview(), worker.env, rt());
+      await drain(later);
+      assert.equal(worker.calls.length, 2, `${window}, ${label}: asked again after the guard`);
+      assert.equal(cache.puts.length, 2, `${window}, ${label}: the good answer is kept`);
+      assert.equal(refreshing.size, 0, `${window}, ${label}: the guard is lifted`);
+      const after = await answerOverview(askOverview(), worker.env, rt());
+      assert.equal(after.headers.get('Server-Timing'), 'edge;desc="hit"');
+    }
+  }
+  // Followers of a leader whose answer has nothing to show get the kept figures, not that answer.
+  {
+    const { cache, time } = await keptOverview();
+    time.at.now += OVERVIEW_STALE_SECONDS * 1000;
+    const inflight = new Map();
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const worker = bridge(async () => { await gate; return overviewSaid(none); });
+    let armed = 0;
+    const rt = () => ({ contract: OVERVIEW, cache, now: time.now, inflight, refreshing: new Map(), timer: () => { armed += 1; return () => undefined; } });
+    const leader = answerOverview(askOverview(), worker.env, rt());
+    while (inflight.size === 0) await tick();
+    const follower = answerOverview(askOverview(), worker.env, rt());
+    while (armed < 2) await tick();
+    release();
+    for (const response of await Promise.all([leader, follower])) {
+      assert.deepEqual(await response.json(), OVERVIEW_BODY);
+      assert.equal(response.headers.get('Server-Timing'), 'edge;desc="stale-if-error"');
+    }
+    assert.equal(worker.calls.length, 1);
+    assert.equal(cache.puts.length, 1);
+  }
+  // A follower waits no longer than its leader does, FOLLOW_WAIT_MS at the most: one that joins 600 ms in waits a second;
+  // one that joins 4.6 s in, the 400 ms left of the leader's 5 s (OVERVIEW_ERROR_WAIT_MS since the final review's edge-1).
+  {
+    const { cache, time } = await keptOverview();
+    time.at.now += OVERVIEW_STALE_SECONDS * 1000;
+    const stuck = bridge(() => new Promise(() => undefined));
+    const fired = [];
+    const slow = { contract: OVERVIEW, cache, now: time.now, inflight: new Map(), refreshing: new Map(), timer: (ms, fire) => { fired.push(ms); setTimeout(fire, 0); return () => undefined; } };
+    await answerOverview(askOverview(), stuck.env, slow);
+    time.at.now += 600;
+    const early = await answerOverview(askOverview(), stuck.env, slow);
+    time.at.now += 4_000;
+    const follower = await answerOverview(askOverview(), stuck.env, slow);
+    time.at.now += 400;
+    const late = await answerOverview(askOverview(), stuck.env, slow);
+    assert.deepEqual(fired, [OVERVIEW_ERROR_WAIT_MS, FOLLOW_WAIT_MS, 400], 'the last one waits nothing');
+    for (const response of [early, follower, late]) {
+      assert.equal(response.headers.get('Server-Timing'), 'edge;desc="stale-if-error"');
+      assert.equal(response.headers.get('X-Domino-Edge-Cache'), 'hit');
+    }
+    assert.equal(stuck.calls.length, 1);
+  }
 });
 
 // ---------------------------------------------------------------------------

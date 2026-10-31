@@ -22,6 +22,7 @@ import { whenVisibleAfter } from '../lib/read/screens/quietRead'
 import { isTransient } from '../lib/read/screens/transient'
 import type { TokenDisplay } from '../lib/read/types'
 import { quoteIndex } from '../lib/read/orientation'
+import { networkName } from '../lib/networkName'
 import { useRouteTitle } from '../lib/routeTitle'
 
 /*
@@ -98,8 +99,10 @@ function Pending({ id, entry, verifying = true, reason }: { id: string; entry?: 
               {entry ? <><bdi>{entry.labels[0]}</bdi> <span className="dm-pool-slash">/</span> <bdi>{entry.labels[1]}</bdi></> : 'Pool'}
             </h1>
             <div className="dm-pool-chips">
-              {/* The fee is the verified pool's to state: until then the chip names the protocol only. */}
+              {/* The fee is the verified pool's to state: until then the chip names the protocol only. QA round 2, Q23: and the
+                  network, which the route already fixes (Robinhood Chain), so the header does not change when it lands. */}
               <span className="dm-chip">Uniswap</span>
+              <span className="dm-chip" data-chain-chip={4663}>{networkName(4663)}</span>
             </div>
           </div>
         </div>
@@ -129,7 +132,8 @@ function Pending({ id, entry, verifying = true, reason }: { id: string; entry?: 
           {bubble('dm-pool-skel-price')}
           {bubble('dm-pool-skel-date')}
         </div>
-        <div className="dm-pool-plot dm-dots-chart mt-4" title="Prices from swaps on Robinhood Chain.">
+        {/* QA round 2 review (N16): no source caption as the plot's title, as the drawn chart has none. */}
+        <div className="dm-pool-plot dm-dots-chart mt-4">
           <div className="dm-pool-plot-empty">
             {verifying ? <Skeleton className="dm-pool-plot-baseline" /> : <span className="text-fg-subtle">—</span>}
           </div>
@@ -147,6 +151,8 @@ function Pending({ id, entry, verifying = true, reason }: { id: string; entry?: 
         {bubble('dm-pool-skel-seg')}
         {bubble('dm-pool-skel-result')}
         {bubble('dm-pool-skel-summary')}
+        {/* The second Create a position's place on a one-column page (QA round 2, N84; v4-pool.css shows it there only). */}
+        {entry && <span className="dm-pool-earn-action">{bubble('dm-pool-skel-earn-action')}</span>}
       </div>
       <div aria-hidden="true" className="dm-card dm-pool-card dm-pool-a-recent dm-pool-skel-card animate-rise [--delay:160ms]">
         <h2 className="dm-title">Recent activity</h2>
@@ -392,10 +398,10 @@ export function PoolDetail({ poolId }: { poolId: string }) {
         <h1 className="sr-only">Pool</h1>
         <EmptyState
           mark="domino"
-          title="This pool could not be verified"
-          body={tokenKey
-            ? <>The pools route did not return pool <span className="font-mono" title={id}>{shortAddress(id)}</span> for token <span className="font-mono" title={tokenKey}>{shortAddress(tokenKey)}</span>, so nothing about it is shown. It may hold other tokens, or not exist at this block.</>
-            : 'Robinhood Chain has no pool by this link, so nothing about it is shown. Open a pool from Markets and the address bar carries the right one.'}
+          // Changed on purpose 2026-10-30 (QA round 2, N101): plain words, no ids and no "pools route" (the read service's
+          // own wording reached the visitor). The route is Robinhood Chain's alone, so the chain is named.
+          title="We couldn’t find this pool"
+          body="There’s no pool at this link on Robinhood Chain. The link may be wrong."
           action={<LinkButton variant="outline" size="sm" href={exploreHref()}>Back to Markets</LinkButton>}
         />
       </div>
@@ -418,6 +424,7 @@ export function PoolDetail({ poolId }: { poolId: string }) {
         Not on Domino’s list. Before adding money, check both tokens’ contracts: <span className="font-mono break-all">{option.currencies[0].address}</span> and <span className="font-mono break-all">{option.currencies[1].address}</span>.
       </p>
     ) : undefined
+    const openable = optionUsableForDomino(option) && !warning && !withdrawn
     body = (
       <PoolWorkspace
         source={source}
@@ -425,7 +432,10 @@ export function PoolDetail({ poolId }: { poolId: string }) {
         painted={painted?.overview}
         onOption={onOption}
         notice={notice}
-        actions={optionUsableForDomino(option) && !warning && !withdrawn ? <LinkButton href={newPositionHref(option.key, linked.token)} size="lg" className="dm-pool-new" data-new-position="">Create a position</LinkButton> : undefined}
+        actions={openable ? <LinkButton href={newPositionHref(option.key, linked.token)} size="lg" className="dm-pool-new" data-new-position="">Create a position</LinkButton> : undefined}
+        // QA round 2, N84 (the owner's yes): the same way in again under the estimate, behind the same checks, for the
+        // one-column page (phone, tablet portrait); outlined, the title row's button staying the page's one solid one.
+        earnAction={openable ? <LinkButton href={newPositionHref(option.key, linked.token)} variant="outline" size="lg" data-new-position-again="">Create a position</LinkButton> : undefined}
         moment={moment}
       />
     )

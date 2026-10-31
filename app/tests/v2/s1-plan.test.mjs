@@ -18,7 +18,7 @@ const { planRequestWire, S1_SLIPPAGE_MIN_BPS, S1_SLIPPAGE_MAX_BPS } = require(`$
 const { parsePlanAnswer } = require(`${BUILD}v2/plan/parse.js`);
 const { requestS1Plan } = require(`${BUILD}v2/plan/client.js`);
 const { createS1PlanFixtureTransport } = require(`${BUILD}v2/plan/fixtureTransport.js`);
-const { createHttpS1PlanTransport } = require(`${BUILD}v2/plan/httpTransport.js`);
+const { createHttpS1PlanTransport, createSessionPlanTransport } = require(`${BUILD}v2/plan/httpTransport.js`);
 const { initialSqrtPrice, parsePriceText } = require(`${BUILD}v2/plan/initialPrice.js`);
 const { smallerUpToPercent, planNetworkCost, conversionSummary } = require(`${BUILD}v2/plan/present.js`);
 const { S1_PLAN_CONTRACT_VERSION } = require(`${BUILD}v2/plan/types.js`);
@@ -253,6 +253,33 @@ test('the http transport (unwired): the route, the contract header and CSRF; a r
   await assert.rejects(transport.plan({ chainId: 4663 }), /timeout/);
   const noSession = createHttpS1PlanTransport({ post: async () => next, csrf: () => null });
   await assert.rejects(noSession.plan({ chainId: 4663 }), /session_required/);
+});
+
+test('a quote nobody waits for any more stops: the caller\'s abort reaches the POST, and the page\'s deadline is said as timeout (2026-10-30, INST-2)', async () => {
+  const body = read('responses/plan.json');
+  const request = requestOf(body.plan);
+  const ctx = { owner: body.plan.owner, zaps: { 3: body.plan.zap, 4: body.plan.zap }, permit2: PERMIT2, managers: { 3: MANAGER, 4: MANAGER } };
+  const seen = [];
+  let next = { kind: 'timeout' };
+  const transport = createHttpS1PlanTransport({ post: async (url, init, options) => { seen.push(options); return next; }, csrf: () => 'token-1' });
+  const controller = new AbortController();
+  assert.deepEqual(await requestS1Plan(transport, runtime, request, ctx, undefined, controller.signal), { kind: 'unavailable', reason: 'timeout' }, 'the page\'s own deadline');
+  assert.equal(seen[0].signal, controller.signal, 'the abort is handed to the POST');
+  next = { kind: 'network' };
+  assert.deepEqual(await requestS1Plan(transport, runtime, request, ctx), { kind: 'unavailable', reason: 'network' });
+  assert.equal(seen[1].signal, undefined, 'no abort, none handed on');
+  next = { kind: 'aborted' };
+  controller.abort();
+  const sent = seen.length;
+  assert.deepEqual(await requestS1Plan(transport, runtime, request, ctx, undefined, controller.signal), { kind: 'unavailable', reason: 'aborted' });
+  assert.equal(seen.length, sent, 'an aborted quote sends nothing');
+  const late = new AbortController();
+  const stopping = createHttpS1PlanTransport({ post: async () => { late.abort(); return { kind: 'aborted' }; }, csrf: () => 'token-1' });
+  assert.deepEqual(await requestS1Plan(stopping, runtime, request, ctx, undefined, late.signal), { kind: 'unavailable', reason: 'aborted' }, 'stopped on the way');
+  const session = createSessionPlanTransport({ post: async (url, init, options) => { seen.push(options); return { kind: 'timeout' }; }, session: { csrfAccess: true, epoch: () => 1, withCsrf: async (epoch, fn) => ({ ok: true, value: await fn('token-2') }) } });
+  const lent = new AbortController();
+  await assert.rejects(session.plan({ chainId: 4663 }, lent.signal), /timeout/);
+  assert.equal(seen.at(-1).signal, lent.signal, 'through the session\'s transport too');
 });
 
 test('the review\'s figures: how much smaller the position may come out, the network cost per stack, a converted exit\'s rest', () => {

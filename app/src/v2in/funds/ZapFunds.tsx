@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { crosschainSessionAccess } from '../../finance/v2/http'
 import { useWalletIdentity } from '../../lib/walletIdentity'
-import { v2Chain } from '../../v2/chains'
 import { destinationChoices } from '../../v2/crosschain/present'
 import { ZERO_ADDRESS } from '../../v2/types'
 import { inputsOf, type Amounts, type JourneyState } from '../journey/model/state'
@@ -13,9 +12,17 @@ import { fundsServices } from './services'
 import { useS2Gate } from './useS2Gate'
 import { REVIEW_GAS_RESERVE_WEI } from '../../lib/create/reviewPlan'
 
-type Read = { key: string; balances: ReadonlyMap<string, bigint> | null }
-export const zapFundingScope = (state: JourneyState, walletKey: string | null, flowKey: string): string =>
-  JSON.stringify([flowKey, walletKey, state.chainId, state.pool?.id, state.range, state.amounts, state.slippage])
+/** `again`: a read with nothing usable that is being asked again (said as being checked, never as missing). */
+type Read = { key: string; balances: ReadonlyMap<string, bigint> | null; again?: boolean }
+/**
+ * The funding offer's scope: the flow, the wallet and the choices. Changed on purpose 2026-10-30 (QA round 2, N75): an
+ * amount's text is taken without spaces around it and without its thousands separators, so the separators Amount adds
+ * once its field is left (../journey/AmountStage.tsx) are the same amount, never a new offer.
+ */
+export const zapFundingScope = (state: JourneyState, walletKey: string | null, flowKey: string): string => {
+  const text = Object.fromEntries(Object.entries(state.amounts.text).map(([token, typed]) => [token, typed.trim().replace(/,/g, '')]))
+  return JSON.stringify([flowKey, walletKey, state.chainId, state.pool?.id, state.range, { ...state.amounts, text }, state.slippage])
+}
 
 /** The advanced V2 amount stage shares the guided journey's funding offer and chain-scoped balance reader.
  * Arrival refreshes actual balances without moving the wallet or replacing the amounts already entered. */
@@ -51,8 +58,9 @@ export function ZapFunds({ state, onAmounts, flowKey = '', onContinuationChange 
         setRead({ key, balances: new Map(reply.snapshot.balances.map(({ token, raw }) => [token, BigInt(raw)])) })
         return
       }
-      setRead({ key, balances: null })
-      if (++attempts < 4 && services?.readBalances) {
+      const again = ++attempts < 4 && Boolean(services?.readBalances)
+      setRead({ key, balances: null, again })
+      if (again) {
         timer = setTimeout(() => void check(), Math.max(10_500, reply?.kind === 'unavailable' ? reply.retryAfterMs ?? 0 : 0))
       }
     }
@@ -68,6 +76,10 @@ export function ZapFunds({ state, onAmounts, flowKey = '', onContinuationChange 
   useEffect(() => { currentIntent.current = intentKey; return () => { currentIntent.current = '' } }, [intentKey])
   const lacks = lackingZapTokens({ chainId: state.chainId, inputs, balances })
   const missing = !!inputs?.some((input) => !balances?.has(input.token))
+  // Changed on purpose 2026-10-30 (QA round 2, SWEEP: no words saying data is missing): while the read is under way or
+  // asked again (above: up to three more times, 10.5 s apart or the service's Retry-After), the tokens are being checked;
+  // once nothing more is asked, nothing is said (the offer stays away: an unread balance is never a shortfall).
+  const checking = current === null || current.again === true
   const targets = destinationChoices().find((d) => d.chainId === state.chainId)?.tokens.map((token) => token.address) ?? []
   if (!enabled || !gate || wallet === null || walletKey === null) return null
   const useToken = (token: string) => {
@@ -86,15 +98,15 @@ export function ZapFunds({ state, onAmounts, flowKey = '', onContinuationChange 
       const reply = await services.readBalances(state.chainId, [...new Set([ZERO_ADDRESS, ...inputs.map((input) => input.token)])]).catch(() => undefined)
       if (currentIntent.current !== intentKey) return false
       const available = reply?.kind === 'ok' ? new Map(reply.snapshot.balances.map(({ token, raw }) => [token, BigInt(raw)])) : null
-      setRead({ key, balances: available })
+      setRead({ key, balances: available, again: available === null })
       if (!coversInputs(available)) { refresh((value) => value + 1); return false }
       return continuation.run()
     },
   })
   return (
-    <div data-zap-funds="" className="dm-flow-stack">
-      {missing && <p className="dm-hint" role="status" data-zap-funds-balance={current === null ? 'pending' : 'unavailable'}>
-        {current === null ? 'Checking the tokens in your wallet…' : `Balances on ${v2Chain(state.chainId).name} could not be checked yet.`}
+    <div data-zap-funds="" className="dm-flow-stack" data-zap-funds-balance={missing && !checking ? 'unavailable' : undefined}>
+      {missing && checking && <p className="dm-hint" role="status" data-zap-funds-balance={current === null ? 'pending' : 'checking'}>
+        Checking the tokens in your wallet…
       </p>}
       <BringFunds key={`${walletKey}|${state.chainId}`} gate={gate} services={services}
         chainId={state.chainId} wallet={wallet} access={access} walletChainId={walletChainId}

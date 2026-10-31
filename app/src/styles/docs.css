@@ -87,9 +87,12 @@
   /* The two folds open and close as the prototype's (.acc-b: the rows 0fr to 1fr and back in .45s, the content fading in
      .25s) where a disclosure's content can be animated. A link chosen inside one closes it at once (data-instant,
      DocsToc closeDisclosureOf), so the section is measured without the list above it. Elsewhere they open and close at
-     once, as before. */
+     once, as before. Changed on purpose 2026-10-30 (QA round 2, final review, CI): the growing box clips (overflow: clip,
+     as New position's folds in v4-newposition.css) rather than hides. A hidden box can still be scrolled by script, so a
+     link scrolled into view while the list opened (a keyboard's focus, a test's click) shifted the list inside it, and the
+     list then slid away as the box grew; a click pressed on one link could be released on another and open nothing. */
   :is(.dm-docs-menu, .dm-docs-toc-menu) { interpolate-size: allow-keywords; }
-  :is(.dm-docs-menu, .dm-docs-toc-menu)::details-content { block-size: 0; opacity: 0; overflow: hidden; transition: block-size 0.45s var(--e-enter), opacity 0.25s var(--e-std), content-visibility 0.45s allow-discrete; }
+  :is(.dm-docs-menu, .dm-docs-toc-menu)::details-content { block-size: 0; opacity: 0; overflow: clip; transition: block-size 0.45s var(--e-enter), opacity 0.25s var(--e-std), content-visibility 0.45s allow-discrete; }
   :is(.dm-docs-menu, .dm-docs-toc-menu)[open]::details-content { block-size: auto; opacity: 1; transition: block-size 0.45s var(--e-enter), opacity 0.25s var(--e-std); } /* opening never transitions content-visibility: the content is there (and readable) at once */
   :is(.dm-docs-menu, .dm-docs-toc-menu)[data-instant]::details-content { transition: none; }
   /* Where you are, one run of words as the prototype's .dmn-s span: the group, ' / ' and the page (the spaces drawn around
@@ -203,6 +206,10 @@
   .dm-docs-addresses dt { display: grid; gap: 0.25rem; flex-shrink: 0; max-width: none; }
   .dm-docs-addr-name { font-size: 0.90625rem; line-height: 1.3; font-weight: 500; color: var(--fg); }
   .dm-docs-addr-role { font-size: 0.78125rem; line-height: 1.4; letter-spacing: -0.01rem; color: var(--subtle); }
+  /* 2026-10-30 (QA round 2, the owner's decision on N24): each network's explorer under the role, quiet docs links. */
+  .dm-docs-addr-links { display: flex; flex-wrap: wrap; gap: 0.125rem 0.875rem; margin-top: 0.125rem; font-size: 0.78125rem; line-height: 1.4; letter-spacing: -0.01rem; }
+  .dm-docs-addr-links > .dm-docs-link { color: var(--muted); transition: color 0.18s var(--e-std), text-decoration-color 0.18s var(--e-std); }
+  .dm-docs-addr-links > .dm-docs-link:hover { color: var(--fg); }
   .dm-docs-addresses .dm-kv .dm-kv-mono { display: flex; align-items: center; justify-content: flex-end; gap: 0.875rem; font-size: 0.75rem; line-height: 1.4; color: var(--muted); transition: color 0.18s var(--e-std); }
   .dm-docs-addresses .dm-kv > div:hover .dm-kv-mono { color: var(--fg); }
   .dm-docs-addresses .dm-kv-action { margin-left: 0; }

@@ -43,6 +43,11 @@ test('invalid, zero, overlong and outside-range prices are rejected', () => {
   }
 });
 
+// Added 2026-10-30 (QA round 2, Q18): a minus sign is a price below zero, said as zero is, not as a malformed number.
+test('a negative price is refused as one that is not above zero', () => {
+  for (const value of ['-500', '-0.5', ' -1']) assert.deepEqual(priceInputToTick(value, 'upper', range, price), { ok: false, message: 'Price must be greater than zero.' }, value);
+});
+
 test('an input cannot silently move or cross the opposite bound', () => {
   assert.match(priceInputToTick('2', 'lower', range, price).message, /below max/);
   assert.match(priceInputToTick('0.5', 'upper', range, price).message, /above min/);

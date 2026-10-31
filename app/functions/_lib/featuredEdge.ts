@@ -59,6 +59,15 @@
  * many pools it names against the size its rules ask for, every withdrawn pool
  * with its reason and time, and when it was served. Nothing else is logged, and
  * nothing about a visitor.
+ *
+ * Added 2026-10-30 (launch capacity study, item 4): stale-if-error. Past its 15 minutes and up to ERROR_SECONDS (an
+ * hour; the list is chosen once a day), a kept list is no longer served at once, but it stands in for the Worker's
+ * answer when that is a failure (a 429, a 5xx, a time-out, or none within REFRESH_WAIT_MS; publicEdge.ts), so an outage
+ * of the VM or the tunnel past 15 minutes still leaves Home its list. A list switched off (the Worker's 404) still
+ * reaches every visitor at once and takes the entry out.
+ * The page trusts an X-Domino-Edge-Age up to ERROR_SECONDS (src/lib/read/bridgeSource.ts EDGE_AGE_MAX_MS, an hour since
+ * 2026-10-30), so a stand-in is dated by its real age. The featured list judges its freshness by the list's own
+ * servedAt and generatedAt (lib/read/featuredList.ts, 72 h), so nothing on screen changes.
  */
 import { APP_ORIGIN, type BridgeEnv } from './bridge'
 import { answerFromEdge, type EdgeCache, type EdgeRuntime } from './publicEdge'
@@ -93,6 +102,8 @@ export const STALE_SECONDS = 15 * 60
 export const REFRESH_WAIT_MS = 1_000
 /** A kept list at least this old waits REFRESH_WAIT_MS for its refresh; a younger one is served at once (A6, 2026-10-01). */
 export const WAIT_AFTER_SECONDS = 5 * 60
+/** (2026-10-30) How long a kept list stands in for a failure of the Worker's (stale-if-error), in all. */
+export const ERROR_SECONDS = 60 * 60
 
 /**
  * The synthetic GET is scoped to the validated app origin: preview never reads or replaces production entries.
@@ -160,6 +171,7 @@ export function answerFeatured(request: Request, env: BridgeEnv, rt: FeaturedRun
     answers: (_body, text) => valid(text),
     freshSeconds: LIST_SECONDS,
     staleSeconds: STALE_SECONDS,
+    errorSeconds: ERROR_SECONDS,
     refreshWaitMs: REFRESH_WAIT_MS,
     waitAfterSeconds: WAIT_AFTER_SECONDS,
     onAnswer: (text, version) => {

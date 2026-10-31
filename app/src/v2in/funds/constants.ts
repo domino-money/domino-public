@@ -94,3 +94,13 @@ export const FUNDS_RECEIPT_POLL_MS = 3_000
 export const FUNDS_FINALITY_WATCH_MS = 60 * 60_000
 /** The first wait before an origins or quote request asks again by itself after a transient failure (doubling, to 5 min). */
 export const FUNDS_REQUEST_RETRY_MS = 5_000
+
+/**
+ * Added 2026-10-30 (launch capacity, CAP-5): every preparation of a transfer spends the wallet's one request budget, which
+ * its plan at Review shares (finance/v2/requestCoordinator.ts). A preparation that found no route because every provider
+ * was busy (`funding_routes_busy`) waits this long at least before it is asked again by itself; and an amount is
+ * prepared again by itself at most FUNDS_AUTO_RETRIES times after its first try (then Check again, or another amount,
+ * asks again: the offer stays one click, the owner's decision of 2026-10-05).
+ */
+export const FUNDS_ROUTES_BUSY_RETRY_MS = 60_000
+export const FUNDS_AUTO_RETRIES = 3

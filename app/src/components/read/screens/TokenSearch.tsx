@@ -1,14 +1,14 @@
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type ClipboardEvent, type KeyboardEvent } from 'react'
 import { mainTokenAt } from '../../../config/mainTokens'
-import { mergeHits, preselectOf, type HitFacts, type NetworkSearch, type NetworkToken } from '../../../lib/create/otherChains'
+import { hitRank, mergeHits, preselectOf, type HitFacts, type NetworkSearch, type NetworkToken } from '../../../lib/create/otherChains'
 import { unreadToken } from '../../../lib/read/project'
 import { formatUsdCompact } from '../../../lib/read/decimal'
-import { dexStore, usdText } from '../../../lib/read/dexFigures'
+import { dexStore, settleSearchHits, usdText } from '../../../lib/read/dexFigures'
 import { tokenWarning, warningText } from '../../../lib/read/screens/lookalike'
 import { symbolReading } from '../../../lib/symbolReading'
 import { tokenArtwork } from '../../../lib/tokenArtwork'
 import { ADDRESS_PROBLEM, failureText } from '../../../lib/read/screens/copy'
-import { parseAddressInput, screenPaste, shortAddress, type AddressKey } from '../../../lib/read/screens/identity'
+import { parseAddressInput, screenPaste, shortAddress, shortPrefixes, type AddressKey } from '../../../lib/read/screens/identity'
 import { failureCode, quietTitle, reaskDelayMs, whenVisibleAfter } from '../../../lib/read/screens/quietRead'
 import { readWithin } from '../../../lib/read/screens/screenRead'
 import { SEARCH_LIMIT, extendsQuery, keepSearch, keptSearch, searchCandidates } from '../../../lib/read/screens/searchAnswers'
@@ -20,9 +20,32 @@ import { TokenMark } from '../../TokenIcon'
 import { cx } from '../../ui'
 import { Address } from './Address'
 
+/**
+ * The search's one label and placeholder, wherever it is (QA round 2, N102: Markets said "Token name or address" and
+ * "Search token or address", New position "Search a token" and "Name or address, like USDG"; the pair kept is the
+ * approved prototype's, new.html). N33 (the owner's option A): where the other networks are searched too, the
+ * placeholder says so: Markets, whose label is unseen, says it whole (SEARCH_EVERY_NETWORK); a search whose label shows
+ * above it (New position) does not repeat "Search a token" under it (SEARCH_EVERY_NETWORK_UNDER_LABEL).
+ */
+export const SEARCH_LABEL = 'Search a token'
+export const SEARCH_PLACEHOLDER = 'Name or address, like USDG'
+export const SEARCH_EVERY_NETWORK = 'Search a token on any network'
+export const SEARCH_EVERY_NETWORK_UNDER_LABEL = 'Name or address, on any network'
+
+/**
+ * The separator between two facts of a hit's line: a no-break space before the dot, so a line that wraps ends with the
+ * dot and never starts with one (QA round 2, N1).
+ */
+const DOT = '\u00a0· '
+
 const NO_MATCH = 'No token by that name. Paste its contract address.'
 /** Added 2026-10-06: a pasted address no network names as a token (with the other networks listed). */
 const NO_TOKEN_AT = 'No token at this address.'
+/**
+ * QA round 2 review: a pasted address no network named, where one of them could not tell (read-v6 has no proof of
+ * absence): what the search found, never "no token" and never that a network is unavailable.
+ */
+const NOTHING_AT = 'Nothing found at this address.'
 /** Added 2026-10-06: the list's line while a search is still out and nothing is listed yet, in place of a "no token". */
 const SEARCHING = 'Searching…'
 const LISTBOX_LABEL = 'Matching tokens'
@@ -138,7 +161,7 @@ function liquidityText(facts: TokenFacts): string | null {
  * (audit V3, I1), its liquidity where DEX Screener reports it, a word when another hit has the same name, and a warning
  * when it passes for one of the site's main tokens. Where the app knows it from is a data attribute only.
  */
-function KnownRow({ token, twin }: { token: KnownToken; twin: boolean }) {
+function KnownRow({ token, twin, prefix }: { token: KnownToken; twin: boolean; prefix?: number }) {
   const facts = factsOf(token, token.key)
   const warning = tokenWarning({ symbol: token.label, address: token.key })
   const liquidity = liquidityText(facts)
@@ -150,22 +173,22 @@ function KnownRow({ token, twin }: { token: KnownToken; twin: boolean }) {
           {token.label === null ? <span className="text-fg-subtle">{UNNAMED}</span> : <bdi className="inline-block max-w-[24ch] truncate align-bottom">{token.label}</bdi>}
         </span>
         <span className="dm-flow-hit-meta">
-          <Address value={token.key} short />
+          <Address value={token.key} short prefix={prefix} />
           {token.balanceText !== null && (
             <>
-              <span aria-hidden="true"> · </span>
+              <span aria-hidden="true">{DOT}</span>
               <span className="tnum">Balance {token.balanceText}</span>
             </>
           )}
           {liquidity !== null && (
             <>
-              <span aria-hidden="true"> · </span>
+              <span aria-hidden="true">{DOT}</span>
               <span className="tnum" data-token-liquidity={facts.liquidityUsd ?? undefined} title="Liquidity across this token’s pools, as DEX Screener reports it.">{liquidity}</span>
             </>
           )}
           {twin && !warning && (
             <>
-              <span aria-hidden="true"> · </span>
+              <span aria-hidden="true">{DOT}</span>
               <span data-token-twin="" title="Another token has this name. Check the address before choosing.">Same name as another token</span>
             </>
           )}
@@ -180,14 +203,14 @@ function KnownRow({ token, twin }: { token: KnownToken; twin: boolean }) {
   )
 }
 
-function AddressRow({ wire }: { wire: string }) {
+function AddressRow({ wire, prefix }: { wire: string; prefix?: number }) {
   return (
     <>
       <span aria-hidden="true" className="dm-flow-hit-blank" />
       <span className="grid min-w-0 flex-1 gap-0.5">
         <span className="dm-flow-hit-name">{READ_ADDRESS}</span>
         <span className="dm-flow-hit-meta">
-          <Address value={wire} short />
+          <Address value={wire} short prefix={prefix} />
         </span>
       </span>
     </>
@@ -214,7 +237,7 @@ function NetworkTag({ chainId, name }: { chainId: number; name: string }) {
  * 3: no icon on the other networks): its mark asks DEX Screener for the token's artwork on its network, as a Robinhood
  * Chain token's does (lib/tokenArtwork.ts).
  */
-function NetworkRow({ row }: { row: NetworkToken }) {
+function NetworkRow({ row, prefix }: { row: NetworkToken; prefix?: number }) {
   const symbol = row.token.symbol
   return (
     <>
@@ -224,7 +247,7 @@ function NetworkRow({ row }: { row: NetworkToken }) {
           {row.unread ? READ_ADDRESS : symbol === null ? <span className="text-fg-subtle">{UNNAMED}</span> : <bdi className="inline-block max-w-[24ch] truncate align-bottom">{symbol}</bdi>}
         </span>
         <span className="dm-flow-hit-meta">
-          <Address value={row.token.address} short />
+          <Address value={row.token.address} short prefix={prefix} />
         </span>
         {/* Added 2026-10-06: a hit that passes for ETH, WETH or USDC there without being it (never chosen). */}
         {row.warning !== undefined && (
@@ -244,8 +267,21 @@ export type NetworkChoice = { ok: true } | { ok: false; code: string; reason: st
 type SearchEntry = { home: SearchResult } | { network: NetworkToken }
 type SearchGroup = { key: string; label: string; entries: SearchEntry[] }
 
-/** Presentation only: groups follow their first ranked hit, preserve internal order, and keep blocked hits last. */
-function groupedHits(ranked: readonly SearchEntry[], home: string | undefined, excluded: (result: SearchResult) => boolean) {
+/** What the list's order reads of a hit (QA round 2, N1): its match, whether it is the real one, its known liquidity. */
+type Standing = { rank: number; own: boolean; liquidity: number | null; dead: boolean }
+
+/** -1 when only `a` has it, 1 when only `b` does, 0 otherwise: the one that has it first. */
+const first = (a: boolean, b: boolean) => (a === b ? 0 : a ? -1 : 1)
+
+/**
+ * Presentation only: hits grouped by network, blocked hits last. Changed on purpose 2026-10-30 (QA round 2, N1: "USDC"
+ * listed sixteen Robinhood Chain copies above the real USDC on Base and Arbitrum One, in the list and to a screen
+ * reader): the group of the hit Enter takes comes first; then the group with the closer match; then one holding a token
+ * Domino uses or its network's own currency; then the one with the most known liquidity; then the order they were found
+ * in. Inside a group, by match, the real token first and a token with no liquidity last. Enter's choice is decided on
+ * the ranked list before this (preselectOf), so this order never changes which hit it is.
+ */
+function groupedHits(ranked: readonly SearchEntry[], home: string | undefined, excluded: (result: SearchResult) => boolean, standing: (entry: SearchEntry) => Standing, chosen: SearchEntry | undefined) {
   const byGroup = new Map<string, SearchGroup>()
   for (const entry of ranked) {
     const blocked = 'home' in entry ? excluded(entry.home) : entry.network.warning !== undefined
@@ -255,7 +291,20 @@ function groupedHits(ranked: readonly SearchEntry[], home: string | undefined, e
     group.entries.push(entry)
     byGroup.set(key, group)
   }
-  const groups = [...byGroup.values()].filter(group => group.key !== 'unavailable')
+  const found = [...byGroup.values()].filter(group => group.key !== 'unavailable')
+  const facts = new Map(ranked.map((entry) => [entry, standing(entry)]))
+  const of = (entry: SearchEntry) => facts.get(entry) ?? standing(entry)
+  for (const group of found) {
+    const at = new Map(group.entries.map((entry, index) => [entry, index]))
+    group.entries = [...group.entries].sort((a, b) => of(a).rank - of(b).rank || first(of(a).own, of(b).own) || first(!of(a).dead, !of(b).dead) || (at.get(a) ?? 0) - (at.get(b) ?? 0))
+  }
+  const place = new Map(found.map((group, index) => [group, index]))
+  const best = (group: SearchGroup) => Math.min(...group.entries.map((entry) => of(entry).rank))
+  const real = (group: SearchGroup) => group.entries.some((entry) => of(entry).own)
+  const liquid = (group: SearchGroup) => Math.max(-1, ...group.entries.map((entry) => of(entry).liquidity ?? -1))
+  const holds = (group: SearchGroup) => chosen !== undefined && group.entries.includes(chosen)
+  const groups = [...found].sort((a, b) =>
+    first(holds(a), holds(b)) || best(a) - best(b) || first(real(a), real(b)) || liquid(b) - liquid(a) || (place.get(a) ?? 0) - (place.get(b) ?? 0))
   const unavailable = byGroup.get('unavailable')
   if (unavailable) groups.push(unavailable)
   return { groups, entries: groups.flatMap(group => group.entries) }
@@ -292,8 +341,8 @@ export function TokenSearch({
   onFound,
   exclude = null,
   id,
-  label,
-  placeholder = 'Search by name, e.g. USDG, or paste an address',
+  label = SEARCH_LABEL,
+  placeholder,
   autoFocus,
   initialValue,
   onChoose,
@@ -309,7 +358,8 @@ export function TokenSearch({
   /** The token the pair already holds: listed, but not choosable. */
   exclude?: AddressKey | null
   id: string
-  label: string
+  /** Changed on purpose 2026-10-30 (QA round 2, N102): SEARCH_LABEL and the shared placeholder unless a caller says otherwise. */
+  label?: string
   placeholder?: string
   autoFocus?: boolean
   /** Text the field starts with, once, when it mounts (a name or an address someone already typed elsewhere). Nothing is read for it. */
@@ -483,6 +533,18 @@ export function TokenSearch({
   }, [source, pasteKey, pasteWire])
   const answered = searchable(query) ? (keptSearch(source, query) ?? (stored?.query === query ? stored.candidates : null)) : null
   const persisted = answered ? knownTokens({ catalogue: [], candidates: answered }) : []
+  // QA round 2, N6: the stored search's hits, all on Robinhood Chain, settled in one or two GETs of our edge's tokens batch
+  // (dexFigures.ts settleSearchHits): a look-alike with no pair reads "No liquidity found" with no artwork, as its own
+  // token-pairs answer would say, so its mark asks nothing. Other networks' rows are never sent. What a hit shows, and
+  // the hits' order, are unchanged.
+  const hitKeys = persisted.map((token) => token.key).join(',')
+  useEffect(() => {
+    if (!open || hitKeys === '') return
+    const controller = new AbortController()
+    // A batch that fails settles nothing: each mark then reads its own answer, as before.
+    settleSearchHits(hitKeys.split(','), controller.signal).catch(() => undefined)
+    return () => controller.abort()
+  }, [hitKeys, open])
   // Every hit the stored search answered, 20 at the most, where the list used to stop at 8 without a word (audit B7);
   // hits with one name told apart, and the clearly real one alone preselected (audit V3).
   const searched = searchTokens(value, [...known, ...persisted.filter((token) => !present.has(token.key))], SEARCH_LIMIT)
@@ -535,7 +597,21 @@ export function TokenSearch({
   // still use the original ranked list. Keyboard navigation and drawing share this same flattened group order.
   const warned = (result: SearchResult) => result.kind === 'known' && tokenWarning({ symbol: result.token.label, address: result.token.key }) !== null
   const excluded = (result: SearchResult) => (exclude !== null && keyOf(result) === exclude) || warned(result)
-  const { groups, entries: merged } = groupedHits(rankedMerged, home, excluded)
+  // QA round 2, N1: the list's order (presentation only), from what the search already knows of each hit.
+  const standing = (entry: SearchEntry): Standing => {
+    if ('home' in entry) {
+      const result = entry.home
+      if (result.kind !== 'known') return { rank: 0, own: false, liquidity: null, dead: false }
+      const facts = factsOf(result.token, result.token.key)
+      return { rank: result.rank, own: mainTokenAt(result.token.key) !== null, liquidity: facts.liquidityUsd, dead: emptyOf(facts) }
+    }
+    const facts = networkFacts(entry.network)
+    return { rank: hitRank(entry.network.token.symbol, query), own: entry.network.own === true, liquidity: facts.liquidityUsd, dead: emptyOf(facts) }
+  }
+  const { groups, entries: merged } = groupedHits(rankedMerged, home, excluded, standing, rankedPreselectAt < 0 ? undefined : rankedMerged[rankedPreselectAt])
+  // QA round 2, N30: where two listed addresses would read alike in short ("0x5fc5…d168"), both keep more characters.
+  const prefixes = shortPrefixes(merged.map((entry) => ('home' in entry ? (entry.home.kind === 'known' ? entry.home.token.key : entry.home.wire) : entry.network.token.address)))
+  const prefixOf = (address: string) => prefixes.get(address.toLowerCase())
   const total = merged.length
   const preselectAt = rankedPreselectAt < 0 ? -1 : merged.indexOf(rankedMerged[rankedPreselectAt])
   // Changed on purpose 2026-10-06 (review of the same day): the hit moved to is kept by its option, not its place, so a
@@ -560,7 +636,6 @@ export function TokenSearch({
       (pasteKey !== null && homePaste?.key !== pasteKey) ||
       (othersSearch?.pending(query) ?? false))
   const unavailableNetworks = othersSearch?.unavailable?.(query) ?? []
-  const unavailableNames = unavailableNetworks.map((chainId) => chainId === 8453 ? 'Base' : 'Arbitrum One').join(' and ')
 
   /** Stops whatever the last choice still has running or waiting. */
   const stop = () => {
@@ -751,7 +826,7 @@ export function TokenSearch({
           onPaste={onPaste}
           onFocus={() => setOpen(true)}
           onBlur={() => setOpen(false)}
-          placeholder={placeholder}
+          placeholder={placeholder ?? (others ? SEARCH_EVERY_NETWORK : SEARCH_PLACEHOLDER)}
           spellCheck={false}
           autoComplete="off"
           autoCapitalize="off"
@@ -790,7 +865,8 @@ export function TokenSearch({
                       onClick={() => choose(result)}
                       className={cx('dm-flow-hit', disabled && 'dm-flow-hit--off')}
                     >
-                      {result.kind === 'known' ? <KnownRow token={result.token} twin={twins.has(result.token.key)} /> : <AddressRow wire={result.wire} />}
+                      {/* QA round 2, N1: the token Domino uses (its ETH, WETH, USDG) is never "Same name as another token". */}
+                      {result.kind === 'known' ? <KnownRow token={result.token} twin={twins.has(result.token.key) && mainTokenAt(result.token.key) === null} prefix={prefixOf(result.token.key)} /> : <AddressRow wire={result.wire} prefix={prefixOf(result.wire)} />}
                       {disabled && !warned(result) && <span className="dm-flow-hit-meta shrink-0">{ALREADY_CHOSEN}</span>}
                       {home !== undefined && <NetworkTag chainId={4663} name={home} />}
                     </button>
@@ -816,7 +892,7 @@ export function TokenSearch({
                     onClick={() => chooseOther(row)}
                     className={cx('dm-flow-hit', row.warning !== undefined && 'dm-flow-hit--off')}
                   >
-                    <NetworkRow row={row} />
+                    <NetworkRow row={row} prefix={prefixOf(row.token.address)} />
                   </button>
                 </Fragment>
               )
@@ -828,9 +904,13 @@ export function TokenSearch({
               {lookingUp ? SEARCHING : home !== undefined && WHOLE_ADDRESS.test(query) ? NO_TOKEN_AT : NO_MATCH}
             </p>
           )}
+          {/* Changed on purpose 2026-10-30 (QA round 2 review, the owner's rule: no "unavailable" line on a read surface): a
+              network whose search did not answer, after its own quiet re-asks (v2in/journey/model/networkSearch.ts), no
+              longer says "Base search is unavailable right now." / "Token data on Base is unavailable right now."; the
+              list says what it found (a name: the usual line; an address: never "no token"), the networks kept as data. */}
           {expanded && total === 0 && !lookingUp && unavailableNetworks.length > 0 && (
-            <p className="dm-flow-listbox-empty" role="status" data-search-unavailable={unavailableNetworks.join(',')}>
-              {WHOLE_ADDRESS.test(query.trim()) ? `Token data on ${unavailableNames} is unavailable right now.` : `${unavailableNames} search is unavailable right now.`}
+            <p className="dm-flow-listbox-empty" data-search-unavailable={unavailableNetworks.join(',')}>
+              {WHOLE_ADDRESS.test(query) ? NOTHING_AT : NO_MATCH}
             </p>
           )}
         </div>

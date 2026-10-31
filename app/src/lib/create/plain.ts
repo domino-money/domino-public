@@ -12,13 +12,23 @@ export interface Away {
   side: 'below' | 'above' | 'at'
   /** Rounded for reading: one decimal under 10%, whole percent from there ("0.5%", "30%", "1,200%"). */
   percent: string
+  /** More than FAR_PERCENT above (`percent` is then FAR_PERCENT's own text): said as "more than", never as a long number. */
+  far?: true
 }
+
+/**
+ * Added 2026-10-30 (QA round 2, the owner's find on the preview): an end near the pool's price limit is billions of
+ * percent away; written whole ("+143,343,084,042,428,620,000,…%") it ran across the Range card and the card beside it.
+ * Past 10,000% (a hundred times today's price) the distance is "more than 10,000%". Below today it never passes 100%.
+ */
+const FAR_PERCENT = 10_000
 
 /** How far the price at `tick` sits from the pool's price at `poolTick`, as a side and a rounded percentage. */
 export function awayFrom(tick: number, poolTick: number): Away {
   const change = (Math.pow(1.0001, tick - poolTick) - 1) * 100
   const size = Math.abs(change)
   if (size < 0.05) return { side: 'at', percent: '0%' }
+  if (change > FAR_PERCENT) return { side: 'above', percent: `${numberFormat({ maximumFractionDigits: 0 }).format(FAR_PERCENT)}%`, far: true }
   const percent = `${numberFormat({ maximumFractionDigits: size < 10 ? 1 : 0 }).format(size)}%`
   return { side: change < 0 ? 'below' : 'above', percent }
 }
@@ -29,5 +39,5 @@ export function awayFrom(tick: number, poolTick: number): Away {
  */
 export function awayShort(tick: number, poolTick: number): string {
   const away = awayFrom(tick, poolTick)
-  return away.side === 'at' ? '0%' : `${away.side === 'below' ? '−' : '+'}${away.percent}`
+  return away.side === 'at' ? '0%' : `${away.far ? '>' : ''}${away.side === 'below' ? '−' : '+'}${away.percent}`
 }

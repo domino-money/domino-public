@@ -8,7 +8,8 @@
  *
  * `chain`: the pool's stored price history (read-v3 `history`, the stored
  * lane: no provider slot and no provider budget), asked once and then every
- * minute while the page can be seen, with the pool chart's own rules.
+ * five minutes while the page can be seen (CHAIN_REFRESH_MS, a minute until
+ * 2026-10-30), with the pool chart's own rules otherwise.
  *
  * `provider`: where `history` is not listed, the read-v1 hourly USD candles.
  * A provider read is costly and shared, so a card asks again only as
@@ -27,7 +28,7 @@ import type { PoolMarketResponse } from 'api-contracts/read-v1/types'
 import type { HistoryResponse } from 'api-contracts/read-v3/types'
 import type { Instant } from '../markets'
 import { jittered } from '../jitter'
-import { CARD_CACHE, CARD_RESOLUTION_SECONDS, CARD_WINDOW_SECONDS, FAILURE_WAIT_MS, FIRST_TALLY, keptWaitMs, providerAgain, type CardAnswer, type CardAsk, type CardCache, type CardSource } from './cardSeries'
+import { CARD_CACHE, CARD_RESOLUTION_SECONDS, CARD_WINDOW_SECONDS, CHAIN_REFRESH_MS, FAILURE_WAIT_MS, FIRST_TALLY, keptWaitMs, providerAgain, type CardAnswer, type CardAsk, type CardCache, type CardSource } from './cardSeries'
 import { followPublicHistory, pageShown } from './historyRead'
 import { realClock, type Clock } from './pipeline'
 import { failureText, type ScreenFailure } from './screens/copy'
@@ -153,12 +154,14 @@ export async function watchCard(source: ReadSource, ask: CardAsk, emit: (answer:
     if (ask.source === 'chain') {
       if (wait > 0) await clock.sleep(wait, signal)
       const request = { poolId: ask.poolId, currency: ask.currency, windowSeconds: CARD_WINDOW_SECONDS, resolutionSeconds: CARD_RESOLUTION_SECONDS } as const
+      // Every five minutes (CHAIN_REFRESH_MS), each card up to a quarter later at random (../jitter.ts), so the cards of a
+      // page do not all ask in the same second (added 2026-10-30, QA round 2, N104).
       await followPublicHistory(source, request, (event) => {
         if (event.state !== 'answer' || event.outcome.state === 'aborted' || signal.aborted) return
         const answer = answerOf(ask, event.outcome, clock)
         cache.put(answer)
         emit(answer)
-      }, { signal, clock, page })
+      }, { signal, clock, page, everyMs: jittered(CHAIN_REFRESH_MS, clock.random) })
       return
     }
     let tally = FIRST_TALLY

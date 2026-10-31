@@ -21,6 +21,10 @@ export function poolPricesFor(gates: JourneyGates | null): PoolPrices | null {
     const gate = gates[chainId as V2ChainId]
     return gate?.mode === 'live' ? gate : null
   }
+  // Added 2026-10-30 (launch capacity, item 9a): Ethereum's and OP Mainnet's holdings as last read for this visit, by
+  // wallet and pool network, reused only by Amount's background tick (`background`). A first read and every deliberate
+  // read again (funds arrived, Review's re-reads) ask them again, so balances from before a bridge are never merged.
+  const awayKept = new Map<string, ChainBalancesResponse>()
   return {
     async refresh(pool, signal) {
       const chainId = pool.currencies[0].chainId
@@ -39,7 +43,7 @@ export function poolPricesFor(gates: JourneyGates | null): PoolPrices | null {
       const said = await patiently(() => chainPoolsOn(gate, 4663, pair.currency0, pair.currency1), signal, PRICE_REASKS)
       return said.kind === 'ok' && !signal.aborted ? (pricesOf(said.body, pair) ?? null) : null
     },
-    async pay(pool, owner, signal, later, selected) {
+    async pay(pool, owner, signal, later, selected, background) {
       const chainId = pool.currencies[0].chainId
       const gate = live(chainId)
       const tokens = pool.currencies.map((currency) => currency.address)
@@ -64,8 +68,20 @@ export function poolPricesFor(gates: JourneyGates | null): PoolPrices | null {
       }
       // Theirs asked beside Domino's three, in a request of its own, and never waited for: `away.body` once it is back.
       const elsewhere = selected ? [] : balanceChainsRequest(chainId)
-      const away: { body?: ChainBalancesResponse | null } = {}
-      const asked = elsewhere.length === 0 ? null : ask(elsewhere).then((said) => (away.body = said.kind === 'ok' ? said.body : null), () => (away.body = null))
+      const awayKey = `${owner.toLowerCase()}|${chainId}`
+      // A deliberate read forgets what was kept before it asks, so a tick while its answer is still out asks too (and
+      // joins that request) instead of reusing balances from before a bridge.
+      if (background !== true && elsewhere.length > 0) awayKept.delete(awayKey)
+      const kept = background === true && elsewhere.length > 0 ? awayKept.get(awayKey) : undefined
+      const away: { body?: ChainBalancesResponse | null } = kept ? { body: kept } : {}
+      const asked = elsewhere.length === 0 || kept ? null : ask(elsewhere).then((said) => {
+        if (said.kind === 'ok') awayKept.set(awayKey, said.body)
+        else awayKept.delete(awayKey)
+        return (away.body = said.kind === 'ok' ? said.body : null)
+      }, () => {
+        awayKept.delete(awayKey)
+        return (away.body = null)
+      })
       const said = await patiently(() => ask(requested), signal)
       const domino = said.kind === 'ok' ? said.body : null
       const first = offer(domino, away.body ?? null)

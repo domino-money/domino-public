@@ -1,5 +1,6 @@
 import { useEffect, useReducer, useRef } from 'react'
 import { readZapReceipt, type ZapReceipt } from '../../finance/v2/receipt'
+import { capacityBusyWait, isCapacityBusy } from '../../finance/v2/requestCoordinator'
 import type { PreparedV2, SignedNonce, V2Receipt } from '../../finance/v2/transact'
 import type { ZapBatch, ZapReview, ZapStep } from '../../finance/v2/zap'
 import { v2Chain } from '../../v2/chains'
@@ -7,6 +8,7 @@ import type { V2Gate } from '../../v2/gate'
 import { requestS1Plan } from '../../v2/plan/client'
 import type { ConsentChoice } from '../../v2/plan/consent'
 import { readFeesToCome } from '../../v2/plan/present'
+import { planRequestWire } from '../../v2/plan/request'
 import { planTargetOf } from '../../v2/plan/route'
 import type { S1PlanConsent, S1PlanReply, S1PlanRequest } from '../../v2/plan/types'
 import type { Address, Hex, V2ChainId } from '../../v2/types'
@@ -22,6 +24,7 @@ import { livePlanTransport, liveContext, planRuntime } from './source'
 import { connectJourney, onChain, type JourneyConnection } from './wallet'
 import { RECEIPT_FOLLOW, type FollowedReceipt } from './receiptFollow'
 import { journeyOperation } from './model/receiptOperation'
+import { createPlanCache, type PlanAsk } from './model/planCache'
 import { RECEIPT_STILL_WAITING_MS, receiptPause, receiptSettled, receiptWalletAway } from '../receiptWait'
 
 /**
@@ -51,6 +54,21 @@ import { RECEIPT_STILL_WAITING_MS, receiptPause, receiptSettled, receiptWalletAw
  * A plan that fails on price (or expires) goes back to a fresh quote by itself, at most twice in a row, and the person
  * presses again on the new review; a step the wallet may have sent is never offered again (rev2 review F2), and nothing
  * else is until the chain settles it (F3: "I rejected it in my wallet").
+ *
+ * Changed on purpose 2026-10-30 (QA round 2, INST-2, the owner's "New position faster"; nothing the wallet is asked, no
+ * amount, call, approval or signature changes):
+ *   - the plan service's answer is kept for the same choices (./model/planCache.ts PLANS: the chain, the wallet and the
+ *     request as sent, its consent path included) and handed out again while its quote has at least two minutes left, so
+ *     Review opened again does not wait for the plan service; the money client still reviews it afresh, and a kept plan
+ *     whose review fails is forgotten and asked again once, without a word. A quote asked again because the price moved
+ *     or the quote ran out never takes a kept plan; Create position pressed forgets the plan it runs;
+ *   - a plan still being asked for the same choices is joined, never asked twice; each quote brings its own abort, and
+ *     the plan request of a quote nobody waits for any more (a new quote for other choices, Review left) is stopped;
+ *   - a wallet the plan service refused Permit2 for (`consent_unsupported`) is asked for the direct path at once on that
+ *     chain from then on (DIRECT_ONLY), not refused again first;
+ *   - a plan request that ran out of time (the service's request_timeout or upstream_timeout, or the page's own deadline)
+ *     is asked again once after TIMEOUT_RETRY_MS; a busy service keeps its 4 s / 8 s waits and its Retry-After.
+ * The wallet's one-request lock and the reads an earlier review leaves on its client (`reading`, `held`) keep their order.
  */
 
 export type RunPath = 'batch' | 'permit2' | 'direct'
@@ -154,6 +172,27 @@ function held<T>(zap: object, work: Promise<T>): Promise<T> {
   return work
 }
 
+/** Added 2026-10-30 (INST-2): New position's plans, kept for the same choices across Review's openings (./model/planCache.ts). */
+const PLANS = createPlanCache()
+/**
+ * Added 2026-10-30 (INST-2): the wallets the plan service refused Permit2 for, by chain (`chain:owner`): asked for the
+ * direct path at once from then on. The refusal is the account's (its code on that chain), never the inputs': Permit2 is
+ * never offered with native ETH (v2/plan/consent.ts chooseConsent).
+ */
+const DIRECT_ONLY = new Set<string>()
+/** Added 2026-10-30 (INST-2): the one quick retry after a plan request that ran out of time, in ms. */
+const TIMEOUT_RETRY_MS = 750
+const TIMEOUT_CODES: ReadonlySet<string> = new Set(['request_timeout', 'upstream_timeout', 'plan_timeout'])
+
+/** A plan's key in PLANS: the chain, the wallet and the request's own wire form (fixed key order); null for one never sent. */
+function planKeyOf(chainId: V2ChainId, owner: Address, request: S1PlanRequest): string | null {
+  try {
+    return `${chainId}|${owner.toLowerCase()}|${JSON.stringify(planRequestWire(request))}`
+  } catch {
+    return null
+  }
+}
+
 /** The zap receipt in the decoder's input shape (finance/v2/receipt.ts RpcReceipt). */
 export function rpcReceiptOf(hash: Hex | null, receipt: Extract<V2Receipt, { logs: unknown }>) {
   return {
@@ -173,21 +212,42 @@ const IDLE: RunView = { stage: 'idle', requoting: false, reviewed: null, asked: 
 
 export function useJourneyRun(input: RunInput) {
   const [, bump] = useReducer((n: number) => n + 1, 0)
-  const live = useRef<RunView & { prepared: PreparedV2 | null; batch: ZapBatch | null; requotes: number }>({ ...IDLE, prepared: null, batch: null, requotes: 0 })
+  const live = useRef<RunView & { prepared: PreparedV2 | null; batch: ZapBatch | null; requotes: number; planKey: string | null }>({ ...IDLE, prepared: null, batch: null, requotes: 0, planKey: null })
   const generation = useRef(0)
+  /** The abort of the latest quote's plan request (INST-2). */
+  const asking = useRef<AbortController | null>(null)
   const latest = useRef(input)
   useEffect(() => {
     latest.current = input
   })
-  useEffect(() => () => void generation.current++, [])
+  useEffect(() => () => {
+    generation.current++
+    asking.current?.abort()
+  }, [])
   const errorOf = (error: unknown) => (error instanceof PlanFailure ? error.view : journeyError(error, latest.current.chainId, latest.current.label))
 
-  async function quote(requoting: boolean, allowSwitch = true): Promise<void> {
+  /**
+   * `fresh` (added 2026-10-30, INST-2): never a kept plan, for the one quiet retry after a kept plan's review failed. A
+   * quote asked again (`requoting`) never takes a kept plan either.
+   */
+  async function quote(requoting: boolean, allowSwitch = true, fresh = false): Promise<void> {
     const gen = ++generation.current
-    Object.assign(live.current, { stage: 'quoting', requoting, reviewed: null, asked: null, steps: [], current: 0, error: null, prepared: null, batch: null, feePerGas: null, cancel: null, round: live.current.round + 1 })
+    // INST-2: the previous quote's plan request is let go once this one has joined it (the same choices) or asked its
+    // own, or failed before; it stops if nobody else waits for it (./model/planCache.ts).
+    const previous = asking.current
+    const controller = new AbortController()
+    asking.current = controller
+    const release = () => previous?.abort()
+    Object.assign(live.current, { stage: 'quoting', requoting, reviewed: null, asked: null, steps: [], current: 0, error: null, prepared: null, batch: null, feePerGas: null, cancel: null, round: live.current.round + 1, planKey: null })
     bump()
-    if (latest.current.gate.mode === 'preview') return previewQuote(gen)
+    if (latest.current.gate.mode === 'preview') {
+      release()
+      return previewQuote(gen)
+    }
     const { chainId, gate, inputs, request, tokens = [] } = latest.current
+    let key: string | null = null
+    let kept = false
+    let reviewing = false
     try {
       const transport = livePlanTransport()
       if (!transport) throw new PlanFailure({ copy: JOURNEY.review.planUnavailable, code: 'plan_route_unavailable', recovery: 'none' })
@@ -196,45 +256,78 @@ export function useJourneyRun(input: RunInput) {
       await reading.get(connection.zap)
       if (gen !== generation.current) return
       const chosen = await connection.zap.consentFor('create', inputs)
-      const context = liveContext(chainId, connection.zap.owner, gate.contracts)
-      let consent = chosen
+      const owner = connection.zap.owner
+      const context = liveContext(chainId, owner, gate.contracts)
+      const wallet = `${chainId}:${owner.toLowerCase()}`
+      const direct = () => Object.freeze({ ...chosen, path: 'direct' as const, planConsent: 'direct' as const, reason: 'account_has_code' as const })
+      // INST-2: a wallet the plan service already refused Permit2 for on this chain goes the direct way at once.
+      let consent = chosen.planConsent === 'permit2' && DIRECT_ONLY.has(wallet) ? direct() : chosen
       let asked = request(consent.planConsent)
       if (!asked) throw new Error('plan_target')
-      let result = await requestS1Plan(transport, planRuntime, asked, context)
+      // INST-2: the plan kept for these very choices, the ask already out for them, or a new ask with this quote's abort.
+      const askPlan = (plan: S1PlanRequest): { key: string | null; answer: Promise<PlanAsk> } => {
+        const planKey = planKeyOf(chainId, owner, plan)
+        const send = (signal: AbortSignal) => requestS1Plan(transport, planRuntime, plan, context, undefined, signal)
+        const answer = planKey === null ? send(controller.signal).then((result) => ({ result, kept: false })) : PLANS.plan(planKey, send, { signal: controller.signal, reuse: !requoting && !fresh })
+        release()
+        return { key: planKey, answer }
+      }
+      let pending = askPlan(asked)
+      key = pending.key
+      let answer = await pending.answer
       // §2.4: `position_plan_consent_unsupported` (Permit2 for an account with code, or with native ETH): the direct path, without a word.
-      if (result.kind === 'refused' && result.code === 'position_plan_consent_unsupported' && consent.planConsent === 'permit2') {
-        consent = Object.freeze({ ...chosen, path: 'direct' as const, planConsent: 'direct' as const, reason: 'account_has_code' as const })
+      if (answer.result.kind === 'refused' && answer.result.code === 'position_plan_consent_unsupported' && consent.planConsent === 'permit2') {
+        DIRECT_ONLY.add(wallet)
+        consent = direct()
         asked = request('direct')
         if (!asked) throw new Error('plan_target')
-        result = await requestS1Plan(transport, planRuntime, asked, context)
+        pending = askPlan(asked)
+        key = pending.key
+        answer = await pending.answer
       }
+      const result = answer.result
+      kept = answer.kept
       if (gen !== generation.current) return
       if (result.kind !== 'ok') throw new PlanFailure(planFailure(result, chainId, latest.current.label))
       // What the person asked for (rev2 review F1): the money client ties the plan's swaps to it.
       const target = planTargetOf(asked)
       if (!target) throw new Error('plan_target')
+      reviewing = true
       const review = await connection.zap.review({ chainId, plan: result.reply.plan, consent: consent.planConsent, quote: result.reply.quote, target, initSqrtPriceX96: asked.initialPrice?.sqrtPriceX96 })
       if (gen !== generation.current) return
       const path: RunPath = consent.path
       const reviewed: Reviewed = { connection, consent, review, reply: result.reply, request: asked, path, at: now(), tokens: tokens.map(token => ({ ...token })) }
       Object.assign(live.current, {
-        stage: 'reviewed', requoting: false, reviewed, current: 0,
+        stage: 'reviewed', requoting: false, reviewed, current: 0, planKey: key,
         steps: path === 'batch' ? [{ kind: 'batch', index: -1, step: null, status: 'waiting', feeWei: null, hash: null }] : stepsOf(review),
       })
       bump()
       await prepareCurrent(gen)
     } catch (error) {
+      release()
       if (gen !== generation.current) return
+      // INST-2: a plan that failed (its review, or anything once it was had) is never handed out again; a kept plan whose
+      // review failed is asked afresh once, without a word (the price may have moved since it was kept).
+      if (key !== null) PLANS.forget(key)
+      if (kept && reviewing && !fresh) return quote(requoting, allowSwitch, true)
       const view = errorOf(error)
       // An answer past its expiry, or `preview_expired`: asked again without a word, twice at most in a row.
       if (view.recovery === 'quiet-requote' && live.current.requotes < JOURNEY_QUIET_REQUOTES) {
         live.current.requotes++
         return quote(true, allowSwitch)
       }
-      // Read failures get bounded, delayed recovery; no wallet transaction is retried here.
+      // Read failures get bounded, delayed recovery; no wallet transaction is retried here. Changed on purpose 2026-10-30
+      // (INST-2): a request that ran out of time is asked again once after TIMEOUT_RETRY_MS; a busy service still waits
+      // 4 s, then 8 s, or its Retry-After. Changed on purpose 2026-10-30 (launch capacity, CAP-6): a capacity-busy refusal
+      // waits 4 to 5 s (finance/v2/requestCoordinator.ts capacityBusyWait), whatever Retry-After it names (every one says
+      // 60 s, while the slot frees in a few seconds); a rate limit (CAP-5: session_rate_limited and the like) keeps its
+      // Retry-After. At most JOURNEY_QUIET_REQUOTES in a row either way.
       if (view.recovery === 'retry-later' && (view.retryAfterSeconds ?? 0) <= 300 && live.current.requotes < JOURNEY_QUIET_REQUOTES) {
         const attempt = live.current.requotes++
-        await sleep(Math.max(4000 * 2 ** attempt, (view.retryAfterSeconds ?? 0) * 1000))
+        const wait = isCapacityBusy(view.code)
+          ? capacityBusyWait()
+          : Math.max(TIMEOUT_CODES.has(view.code) && attempt === 0 ? TIMEOUT_RETRY_MS : 4000 * 2 ** attempt, (view.retryAfterSeconds ?? 0) * 1000)
+        await sleep(wait)
         if (gen === generation.current) return quote(true, false)
         return
       }
@@ -313,6 +406,8 @@ export function useJourneyRun(input: RunInput) {
   async function failed(gen: number, error: unknown): Promise<void> {
     const view = errorOf(error)
     const state = live.current
+    // INST-2: a plan whose step failed is never handed out again.
+    if (state.planKey !== null) PLANS.forget(state.planKey)
     const step = state.steps[state.current]
     if (step && step.status !== 'sent') step.status = 'ready'
     state.prepared = null
@@ -667,6 +762,8 @@ export function useJourneyRun(input: RunInput) {
       return quote(true)
     }
     const gen = generation.current
+    // INST-2: the plan Create position runs is used from now on (a signature, an approval for it): never handed out again.
+    if (state.planKey !== null) PLANS.forget(state.planKey)
     state.busy = true
     bump()
     try {
@@ -778,7 +875,10 @@ export function useJourneyRun(input: RunInput) {
     forgetUnsettled: () => void forgetUnsettled(),
     reset: () => {
       generation.current++
-      Object.assign(live.current, { ...IDLE, prepared: null, batch: null, requotes: 0 })
+      // INST-2: a plan request nobody waits for any more stops (unless another quote shares it).
+      asking.current?.abort()
+      asking.current = null
+      Object.assign(live.current, { ...IDLE, prepared: null, batch: null, requotes: 0, planKey: null })
       bump()
     },
   }

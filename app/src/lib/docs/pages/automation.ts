@@ -48,7 +48,7 @@ export const AUTO_COMPOUND: DocPage = {
       id: 'service-fee',
       title: 'Service fee',
       // 2026-09-27 (review of 260a76a): 2 is 2% of the 100 used, not of the 98 put back (FeeAccounting.sol).
-      blocks: [p('2% of the earned fees it uses, taken once: of 100 USDG of fees it uses, 2 go to the service fee and 98 back into your position. It works on that one position only. Never on principal, and earned fees that wait are not charged. See ', doc('Fees', 'fees', 'service-fee'), '.')],
+      blocks: [p('2% of the earned fees it uses, each time it runs: of 100 USDG of fees it uses, 2 go to the service fee and 98 back into your position. It works on that one position only. Never on principal, and earned fees that wait are not charged. See ', doc('Fees', 'fees', 'service-fee'), '.')],
     },
     {
       id: 'where-it-starts',
@@ -73,11 +73,12 @@ export const DOMINO_COMPOUNDER: DocPage = {
       id: 'how-it-works',
       title: 'How it works',
       blocks: [
-        p('Domino-compound puts earned fees to work higher up the price.'),
+        // 2026-10-30 (QA2 Q32): plain words first; hard words link to the Glossary.
+        p('When the price climbs near the top of your range, Domino uses only your earned fees to open a new position higher up, so those fees can keep earning if the price rises past your range. Your original deposit is not touched.'),
         // Changed on purpose 2026-10-05 (rugged97's F7 delta of 5 Oct, §5.5, the owner's rules): near the top, fees go only
         // to the next position, which starts at the current price; it is opened by the sequence's newest position alone.
         p('Fees normally go back into the position that earned them. When the price nears the top of its range, they stop going back into it: the newest position opens the next one, one step higher in the same pool, starting at the current price, and its fees go there.'),
-        p('A next position is funded only from earned fees your automation holds, after the service fee. Automation never moves your principal; when a step does not pay off, or no more positions may open, it waits.'),
+        p('A next position is funded only from earned fees your automation holds, after the service fee. Automation never moves your ', doc('principal', 'glossary', 'principal'), '; when a step does not pay off, or no more positions may open, it waits.'),
       ],
     },
     {
@@ -96,7 +97,7 @@ export const DOMINO_COMPOUNDER: DocPage = {
             { label: 'Positions in the sequence', value: 'A cap you set; 3 at first', note: 'Counts the position it starts from. At the cap, no next position opens, and fees near the top wait.' },
           ],
         },
-        p('Each position opens at most one next position. A trigger only lets a step be considered; it never orders one. The swap limits and fixed settings are Auto-compound’s: see ', doc('What you choose', 'auto-compound', 'choices'), '.'),
+        p('Each position opens at most one next position. A ', doc('trigger', 'glossary', 'trigger-distance'), ' only lets a step be considered; it never orders one. The swap limits and fixed settings are Auto-compound’s: see ', doc('What you choose', 'auto-compound', 'choices'), '.'),
       ],
     },
     {
@@ -104,7 +105,7 @@ export const DOMINO_COMPOUNDER: DocPage = {
       id: 'sequence-vault',
       title: 'Where its positions live',
       blocks: [
-        p('The position you start from stays in your wallet, and only that NFT is approved to your automation.'),
+        p('The position you start from stays in your wallet, and only that ', doc('NFT', 'glossary', 'position-nft'), ' is approved to your automation.'),
         p('Positions it opens, and earned fees not yet added back, are held by your automation until you withdraw them. Each next position can be withdrawn to your wallet any time, as a plain position. See ', doc('Your automation', 'your-automation'), '.'),
       ],
     },
@@ -127,7 +128,7 @@ export const DOMINO_COMPOUNDER: DocPage = {
       id: 'service-fee',
       title: 'Service fee',
       blocks: [
-        p('4% of the earned fees it uses, once, for every step it takes, including putting fees back into the same position. No extra fee for its own swaps, and none on withdrawals. See ', doc('Fees', 'fees', 'service-fee'), '.'),
+        p('4% of the earned fees it uses, at every step it takes, including putting fees back into the same position. No extra fee for its own swaps, and none on withdrawals. See ', doc('Fees', 'fees', 'service-fee'), '.'),
       ],
     },
   ],
@@ -159,7 +160,7 @@ export const AUTO_EXIT: DocPage = {
       id: 'turn-it-on',
       title: 'Turn it on',
       blocks: [
-        p('On Automate, select ', b('Choose a position'), ' under Auto-exit, then choose the position. You can also select ', b('Auto-exit'), ' below a position’s title, or right after you create a position. The dialog shows where it closes, the price now and its fee. ', b('Turn on Auto-exit'), ' asks your wallet for one signature, then one confirmation when your wallet can send the calls together.'),
+        p('On Automate, select ', b('Set up Auto-exit'), ', then choose the position. You can also select ', b('Auto-exit'), ' below a position’s title, or right after you create a position. The dialog shows where it closes, the price now and its fee. ', b('Turn on Auto-exit'), ' asks your wallet for one signature, then one confirmation when your wallet can send the calls together.'),
         p('Behind it, Domino sets up an automation for that position alone, which never reinvests. Your position stays in your wallet. ', b('Details'), ' has the exact terms: both tokens as they come out, a 1% slippage limit on top of the pool fee, valid for a year.'),
       ],
     },
@@ -192,6 +193,8 @@ export const AUTO_EXIT: DocPage = {
       title: 'On, off and after',
       blocks: [
         p('The position’s page shows where Auto-exit closes, with ', b('Turn off'), ', which ends it for good. Once it closes the position, the page says so with what you received; anything your wallet could not receive waits there to claim. The emptied NFT stays in your wallet.'),
+        // 2026-10-30 (QA2 N70): autoexit/constants.ts signs 365 days.
+        p('After a year it ends by itself: the position stays open in your wallet, and you can turn Auto-exit on again.'),
       ],
     },
   ],
@@ -208,7 +211,7 @@ export const YOUR_AUTOMATION: DocPage = {
       title: 'One position, one automation',
       blocks: [
         p('Setting up Auto-compound, Domino-compound or Auto-exit creates a contract for that one position: your automation. Made for your wallet alone; only your wallet controls it.'),
-        p('Your position stays in your wallet: you approve only that NFT, and approving another app on it stops your automation.'),
+        p('Your position stays in your wallet: you approve only that NFT, and approving another app on it stops your automation. Positions Domino-compound opens are held by your automation until you withdraw them.'),
       ],
     },
     {
@@ -216,9 +219,9 @@ export const YOUR_AUTOMATION: DocPage = {
       title: 'Three ways',
       blocks: [
         list(
-          [doc('Auto-compound', 'auto-compound'), ': its fees go back into the position. 2% of the fees it reinvests.'],
-          [doc('Domino-compound', 'domino-compound'), ': near the top of its range, its fees open the next position one step higher. 4% of the fees it reinvests.'],
-          [doc('Auto-exit', 'auto-exit'), ': closes the position at the end of its range and never reinvests. 0.2% only if it closes.'],
+          [doc('Auto-compound', 'auto-compound'), ': its fees go back into the position. 2% of the earned fees it uses, each time.'],
+          [doc('Domino-compound', 'domino-compound'), ': near the top of its range, its fees open the next position one step higher. 4% of the earned fees it uses, each time.'],
+          [doc('Auto-exit', 'auto-exit'), ': closes the position at the end of its range and never reinvests. 0.2% of the position’s value, only if it closes.'],
         ),
         p('Nothing is chosen for you.'),
       ],
@@ -228,7 +231,7 @@ export const YOUR_AUTOMATION: DocPage = {
       title: 'Its card',
       blocks: [
         p('The mode and status button at the top of your position opens its controls. ', b('Automated positions'), ' links there, with one row per position. ', b('Activity'), ' shows completed actions.'),
-        p(b('Pause'), ' and ', b('Resume'), ' control compounding only. A position has compounding or Auto-exit, never both. Auto-exit has its own ', b('Turn off'), ' and restore actions. ', b('Previous setup balances'), ' keeps earlier funds available to recover.'),
+        p(b('Pause'), ' and ', b('Resume'), ' control compounding only. A position has compounding or Auto-exit, never both. Auto-exit has its own ', b('Turn off'), ', ', b('Turn on'), ' and ', b('Approve again'), '. ', b('Previous setup balances'), ' keeps earlier funds available to recover.'),
       ],
     },
     {
@@ -246,8 +249,10 @@ export const YOUR_AUTOMATION: DocPage = {
       title: 'Leave automation',
       blocks: [
         // 2026-10-04 (rugged97's delta of 4 Oct §2 item 3, #319): exitAll turns auto-exit off too.
-        p(b('Leave automation'), ' sends the positions Domino-compound opened, and everything your automation can pay, to your wallet in one action, and the position stops being automated. No fee. ', doc('Auto-exit', 'auto-exit'), ' pauses until you turn it back on.'),
+        p(b('Leave automation'), ' sends the positions Domino-compound opened, and everything your automation can pay, to your wallet in one action, and compounding ends. No fee. ', doc('Auto-exit', 'auto-exit'), ' pauses until you turn it back on.'),
         p('Each next position can also be withdrawn alone. On a Uniswap v4 position, once nothing is left, ', b('Remove Domino from this position'), ' and ', b('Revoke approval'), ' end Domino’s access.'),
+        // 2026-10-30 (QA2 N59).
+        p('You can leave even ', doc('without this site', 'non-custodial', 'if-domino-is-down'), '.'),
       ],
     },
     {
@@ -259,10 +264,11 @@ export const YOUR_AUTOMATION: DocPage = {
       ],
     },
     {
+      // The id stays (Contracts links it). 2026-10-30 (QA2 N26): no version name here.
       id: 'domino-v1',
-      title: 'Domino V1’s automation',
+      title: 'Older automation',
       blocks: [
-        p('Domino V1’s automation ends when the new one starts, with no migration: withdraw what V1 holds for you with ', b('Withdraw to wallet'), ', then set up the new automation. A position still in V1’s automation can’t take the new one, or Auto-exit, until it leaves.'),
+        p('Automation from Domino’s first contracts ends when the new one starts, with no migration: withdraw what it holds with ', b('Withdraw to wallet'), ', then set up the new automation. A position still in it can’t take the new one, or Auto-exit, until it leaves.'),
       ],
     },
   ],

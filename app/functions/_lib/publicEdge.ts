@@ -40,10 +40,37 @@
  *     an older one waits `refreshWaitMs` for that refresh (the featured list: 5 minutes, A6);
  *   - misses are coalesced, per isolate (F7): while one request for a key is on its way to the Worker, others asking
  *     the same question wait for its answer, a bounded FOLLOW_WAIT_MS, and get it as `hit` (no gateway saw them); a
- *     leader whose answer is not a valid 200 leaves them to ask the Worker themselves, as before;
+ *     leader whose answer is not a valid 200 leaves them to ask the Worker themselves, as before (since 2026-10-30, when
+ *     a kept answer is still within its error life, they get that instead: see below);
  *   - every answer names how it was made in a `Server-Timing` entry (`edge;desc=hit|stale|coalesced|miss`), so the
  *     hit rate can be measured from the browser or a tail;
  *   - a route may be told of every valid answer the Worker gives (`onAnswer`): the featured list logs its changes (B1).
+ *
+ * Added 2026-10-30 (launch capacity study, item 4: at launch load almost no overview answer was settled, so the edge kept
+ * nothing, and a VM or tunnel outage past the stale window left visitors with no figures at all):
+ *   - stale-if-error (`errorSeconds`): past `staleSeconds` and before `errorSeconds`, a kept answer is no longer served at
+ *     once, but it still stands in for the Worker's own answer when that is a failure: a 408, a 429, any 5xx (the
+ *     forwarder's 503 and Cloudflare's 520 to 530 included), a 200 that is no answer to the question, or none within the
+ *     route's `errorWaitMs` or `refreshWaitMs` when it has one. A definitive refusal (a 404 that says the route is off, which also takes the entry
+ *     out, or any other 4xx) is passed on as it came. The stand-in says `edge;desc="stale-if-error"` and how old it is
+ *     (X-Domino-Edge-Age); it is never `hit` for the request that reached the Worker, which the gateway counted;
+ *   - a route may keep an answer still settling (`settling`, the overview: a pool or token still being collected): fresh
+ *     only `settlingSeconds`, then served stale like any other, except that the request that refreshes it waits up to
+ *     `refreshWaitMs` for the newer answer at once, since the page asks again exactly for the figures that are coming;
+ *   - a miss on its way is joined by its own settling, not by its first request's frame, and only while younger than
+ *     LEAD_LIFE_MS, so one whose request was cut off never holds its key; a follower whose leader failed, or has not
+ *     answered by the time the leader itself stops waiting (FOLLOW_WAIT_MS at the most), gets the kept answer when there
+ *     is one (`stale-if-error`, `hit`: no gateway saw it) instead of asking the Worker again;
+ *   - the Worker is let alone after a failure (review of 2026-10-30): a refresh, or a read past `staleSeconds`, that
+ *     failed or brought nothing worth keeping holds its key REFRESH_GUARD_MS in the isolate, and meanwhile the kept
+ *     answer is served as it is (`hit`, no gateway saw it), so a failing VM is asked about a key once per guard per
+ *     isolate, never by every request; a valid answer worth keeping ends the guard. When a kept answer is there to stand
+ *     in, a valid answer not worth keeping (an overview with nothing to show) counts as a failure too, so it never
+ *     replaces figures for a visitor; a 408 (the Worker's own time-out) is a failure like a 429 or a 5xx;
+ *   - a route may bound the wait past `staleSeconds` on its own (`errorWaitMs`: the history, which has no
+ *     `refreshWaitMs`), so a slow VM has the kept answer stand in within it rather than at the Worker's own time-out.
+ * Nothing else changed: only a valid 200 is ever kept, under the same keys, for the same requests (plainAsk), and no
+ * error body, no other question's answer and nothing of a session or a wallet is ever served from it.
  */
 import { APP_ORIGIN, PREVIEW_ORIGIN, forward, type BridgeEnv } from './bridge'
 
@@ -63,13 +90,26 @@ export interface EdgeRuntime {
   /** A bounded foreground wait; its cancellation never cancels the background refresh. */
   timer?: (ms: number, fire: () => void) => () => void
   /** Misses on their way to the Worker, by key: this isolate's own unless a test gives one (F7). */
-  inflight?: Map<string, Promise<EdgeAnswer | null>>
+  inflight?: Map<string, Inflight>
 }
 
 /** A valid answer as text, with the contract version the Worker answered it in. Plain data: it may cross requests. */
 export interface EdgeAnswer {
   text: string
   version: string
+}
+
+/**
+ * What the Worker's answer to a miss came to (2026-10-30): a valid answer, and whether it is one worth keeping
+ * (`useful`: the route's `keep` says so); a failure a kept answer may stand in for (a 408, a 429, a 5xx, a 200 that is no
+ * answer to the question); or a refusal, the Worker's own say, passed on as it came.
+ */
+export type MissOutcome = { kind: 'answer'; answer: EdgeAnswer; useful: boolean } | { kind: 'failure' } | { kind: 'refusal' }
+
+/** A miss on its way to the Worker (F7), with when it began (2026-10-30): joined only while younger than LEAD_LIFE_MS. */
+export interface Inflight {
+  started: number
+  outcome: Promise<MissOutcome>
 }
 
 /** One public route's rules. */
@@ -89,11 +129,33 @@ export interface EdgePolicy {
    * it (history.ts: a history not ready yet, which may become ready at any moment). Absent: none is.
    */
   brief?(text: string): boolean
+  /**
+   * (2026-10-30, launch item 4) Whether a kept answer is still settling (the overview: a pool or token still being
+   * collected): fresh only `settlingSeconds`, and once stale, the request that refreshes it waits up to `refreshWaitMs`
+   * for the newer answer at once. Absent, or without `settlingSeconds`: none is.
+   */
+  settling?(text: string): boolean
+  settlingSeconds?: number
   freshSeconds: number
   /** Past `freshSeconds` and before this, served at once and refreshed in the background. Absent: `freshSeconds`. */
   staleSeconds?: number
-  /** Return a ready refresh to the requesting visitor within this bound; no extra upstream request. */
+  /**
+   * (2026-10-30, launch item 4) Stale-if-error: past `staleSeconds` and before this, a kept answer stands in for the
+   * Worker's answer when that is a failure (see the header), never otherwise. Absent, or not longer: none.
+   */
+  errorSeconds?: number
+  /**
+   * Return a ready refresh to the requesting visitor within this bound; no extra upstream request. (2026-10-30) Also the
+   * longest a request answered past `staleSeconds` waits for the Worker before a kept answer stands in for it, unless
+   * the route names `errorWaitMs`.
+   */
   refreshWaitMs?: number
+  /**
+   * (2026-10-30, review) The longest a request answered past `staleSeconds` waits for the Worker before a kept answer
+   * stands in for it, on its own: the stale-while-revalidate wait (`refreshWaitMs`) is untouched. Absent:
+   * `refreshWaitMs`; neither: the Worker's own result, a time-out of its own included.
+   */
+  errorWaitMs?: number
   /**
    * Only an entry at least this old waits `refreshWaitMs` for its refresh; a younger stale entry is served at once while
    * the refresh runs behind (A6, 2026-10-01). Absent: every stale entry that sends a refresh waits.
@@ -118,13 +180,47 @@ const OLD_STORED_AT = 'X-Featured-Stored-At'
 const STORED_CONTRACT = 'X-Edge-Contract'
 /** (2026-10-15, pack 7) How long a kept entry is served at all, in seconds, when the route kept it briefly; absent: the policy's. */
 const STORED_LIFE = 'X-Edge-Life'
+/** (2026-10-30, launch item 4) Set on an entry kept while still settling (EdgePolicy.settling): fresh `settlingSeconds` only. */
+const STORED_SETTLING = 'X-Edge-Settling'
 const JSON_TYPE = /^application\/json(?:\s*;\s*charset\s*=\s*(?:utf-8|"utf-8"))?$/i
-/** A background refresh of a key is not started again this soon, in one isolate. */
+/**
+ * A background refresh of a key is not started again this soon, in one isolate. (2026-10-30, review) Nor, after a read
+ * of the key that failed or brought nothing worth keeping, is the Worker asked about it again this soon while a kept
+ * answer can be served instead: the guard is lifted early only by a valid answer worth keeping.
+ */
 export const REFRESH_GUARD_MS = 10_000
+/** (2026-10-30, review) Past this many keys guarded in an isolate, those whose guard is over are let go. */
+const GUARD_KEYS = 512
+/**
+ * (2026-10-30, launch item 4) How long a miss on its way may be joined: past every limit of the read Worker's own
+ * (bridge/src/worker.mjs LIMITS.totalMs, 20 s), so a miss whose request was cut off before it settled never holds its key.
+ */
+export const LEAD_LIFE_MS = 25_000
 const REFRESHING = new Map<string, number>()
-const INFLIGHT = new Map<string, Promise<EdgeAnswer | null>>()
+const INFLIGHT = new Map<string, Inflight>()
 
 const accepted = (policy: EdgePolicy): readonly string[] => policy.versions ?? [policy.version]
+
+/**
+ * (2026-10-30) Whether a Worker's status is a failure a kept answer may stand in for: the Worker's own time-out (408,
+ * read-v3 request_timeout: its total deadline passed, or the request above it was dropped), a refusal for load (429), or
+ * any 5xx (the Worker's own 502, 503 and 504, the forwarder's 503, Cloudflare's 520 to 530). Any other status is the
+ * Worker's say.
+ */
+const transient = (status: number) => status === 408 || status === 429 || (status >= 500 && status <= 599)
+
+/** Whether a key's guard, set at `since`, still holds at `at`; a clock that went back never holds it. */
+const guarded = (since: number | undefined, at: number) => since !== undefined && at >= since && at - since < REFRESH_GUARD_MS
+
+/**
+ * (2026-10-30, review) A read of `key` failed, or brought nothing worth keeping, at `at`: its guard holds REFRESH_GUARD_MS
+ * from now. Keys whose guard is over are let go once the isolate holds more than GUARD_KEYS.
+ */
+function guardAfterFailure(refreshing: Map<string, number>, key: string, at: number): void {
+  refreshing.set(key, at)
+  if (refreshing.size <= GUARD_KEYS) return
+  for (const [other, since] of refreshing) if (!guarded(since, at)) refreshing.delete(other)
+}
 
 /** Where a route takes more than one version, an answer names the one it came in (the read Worker checks the same). */
 function names(policy: EdgePolicy, text: string, version: string): boolean {
@@ -167,20 +263,42 @@ async function plainAsk(request: Request, env: BridgeEnv, policy: EdgePolicy): P
   return { body: JSON.parse(text), text, origin: url.origin }
 }
 
-/** A kept answer, its age in ms and its version, while it is younger than the policy allows and still an answer; else null. */
-async function kept(rt: EdgeRuntime, key: string, body: unknown, policy: EdgePolicy): Promise<{ text: string; age: number; version: string } | null> {
+/**
+ * A kept answer: its text, its age in ms and its version, and, in ms, how long it is fresh and how long it is served at
+ * once (past that, until its error life, it only stands in for a failure), and whether it was kept while still settling.
+ */
+interface Kept {
+  text: string
+  age: number
+  version: string
+  freshMs: number
+  staleMs: number
+  settling: boolean
+}
+
+/** How long a route serves a kept answer at once, and at all (its stale-if-error life included), in seconds. */
+const staleLife = (policy: EdgePolicy) => policy.staleSeconds ?? policy.freshSeconds
+const wholeLife = (policy: EdgePolicy) => Math.max(staleLife(policy), policy.errorSeconds ?? 0)
+
+/** A kept answer while it is younger than the policy allows (its stale-if-error life included) and still an answer; else null. */
+async function kept(rt: EdgeRuntime, key: string, body: unknown, policy: EdgePolicy): Promise<Kept | null> {
   if (!rt.cache) return null
   try {
     const entry = await rt.cache.match(new Request(key))
     if (!entry) return null
     const at = Number(entry.headers.get(STORED_AT) ?? entry.headers.get(OLD_STORED_AT))
     const age = rt.now() - at
-    const life = Math.min(policy.staleSeconds ?? policy.freshSeconds, Number(entry.headers.get(STORED_LIFE) ?? Infinity))
+    // An entry kept briefly (pack 7) is served only while fresh: never stale, and never for a failure either.
+    const brief = Number(entry.headers.get(STORED_LIFE) ?? Infinity)
+    const life = Math.min(wholeLife(policy), brief)
     if (!Number.isSafeInteger(at) || age < 0 || !(age < life * 1000)) return null
     const version = entry.headers.get(STORED_CONTRACT) ?? policy.version
     if (!accepted(policy).includes(version)) return null
     const text = await entry.text()
-    return policy.answers(body, text) && names(policy, text, version) ? { text, age, version } : null
+    if (!policy.answers(body, text) || !names(policy, text, version)) return null
+    const settling = entry.headers.get(STORED_SETTLING) === '1' && policy.settlingSeconds !== undefined
+    const fresh = settling ? Math.min(policy.freshSeconds, policy.settlingSeconds ?? policy.freshSeconds) : policy.freshSeconds
+    return { text, age, version, freshMs: fresh * 1000, staleMs: Math.min(staleLife(policy), brief) * 1000, settling }
   } catch {
     return null
   }
@@ -189,20 +307,25 @@ async function kept(rt: EdgeRuntime, key: string, body: unknown, policy: EdgePol
 function keep(rt: EdgeRuntime, key: string, answer: EdgeAnswer, policy: EdgePolicy): Promise<void> {
   if (!rt.cache) return Promise.resolve()
   const brief = policy.brief?.(answer.text) === true
+  const settling = !brief && policy.settlingSeconds !== undefined && policy.settling?.(answer.text) === true
   const entry = new Response(answer.text, {
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': `max-age=${brief ? policy.freshSeconds : (policy.staleSeconds ?? policy.freshSeconds)}`,
+      'Cache-Control': `max-age=${brief ? policy.freshSeconds : wholeLife(policy)}`,
       [STORED_AT]: String(rt.now()),
       [STORED_CONTRACT]: answer.version,
       ...(brief ? { [STORED_LIFE]: String(policy.freshSeconds) } : {}),
+      ...(settling ? { [STORED_SETTLING]: '1' } : {}),
     },
   })
   return rt.cache.put(new Request(key), entry).catch(() => undefined)
 }
 
-/** How an answer was made, for its Server-Timing entry: a kept one, a stale one served while it refreshes, a leader's shared, the Worker's. */
-type Made = 'hit' | 'stale' | 'coalesced' | 'miss'
+/**
+ * How an answer was made, for its Server-Timing entry: a kept one, a stale one served while it refreshes, a leader's
+ * shared, the Worker's, or (2026-10-30) a kept one standing in for a failure of the Worker's.
+ */
+type Made = 'hit' | 'stale' | 'coalesced' | 'miss' | 'stale-if-error'
 const timing = (made: Made) => `edge;desc="${made}"`
 
 /**
@@ -279,20 +402,28 @@ export async function answerFromEdge(request: Request, env: BridgeEnv, rt: EdgeR
   const key = asked === undefined ? null : policy.keyOf(body, asked.origin)
   if (key !== null && asked !== undefined) {
     const hit = await kept(rt, key, body, policy)
-    if (hit !== null) {
-      const refreshing = rt.refreshing ?? REFRESHING
-      const since = refreshing.get(key)
-      const stale = hit.age >= policy.freshSeconds * 1000
-      const renew = stale && (since === undefined || rt.now() - since >= REFRESH_GUARD_MS || rt.now() < since)
+    const refreshing = rt.refreshing ?? REFRESHING
+    if (hit !== null && hit.age < hit.staleMs) {
+      const stale = hit.age >= hit.freshMs
+      const renew = stale && !guarded(refreshing.get(key), rt.now())
       if (renew) {
         refreshing.set(key, rt.now())
         // The same request, its body as it was read here: nothing of it is read again once this answer has left.
         const again = new Request(request.url, { method: 'POST', headers: request.headers, body: asked.text })
-        const work = refresh(again, env, rt, key, body, policy).finally(() => refreshing.delete(key))
+        // (2026-10-30, review) Only a refresh that kept a newer answer, or found the route off, lifts the guard. One that
+        // failed (a 429, a 5xx, no answer) or brought nothing worth keeping holds it REFRESH_GUARD_MS from its end, and
+        // the kept answer is served as it is meanwhile: a failing VM is not asked again by the very next request.
+        const work = refresh(again, env, rt, key, body, policy).then((fresh) => {
+          if (fresh) refreshing.delete(key)
+          else guardAfterFailure(refreshing, key, rt.now())
+          return fresh
+        })
         if (rt.waitUntil) rt.waitUntil(work)
         else void work
-        // Only an entry past `waitAfterSeconds` waits for its refresh (A6): a younger one is served at once.
-        if (policy.refreshWaitMs && hit.age >= (policy.waitAfterSeconds ?? 0) * 1000) {
+        // Only an entry past `waitAfterSeconds` waits for its refresh (A6): a younger one is served at once. One kept
+        // while still settling waits from the moment it is stale (2026-10-30): its page asks for the figures coming.
+        const waitAfterMs = hit.settling ? hit.freshMs : (policy.waitAfterSeconds ?? 0) * 1000
+        if (policy.refreshWaitMs && hit.age >= waitAfterMs) {
           const fresh = await within(work, policy.refreshWaitMs, rt)
           if (fresh) return fresh
         }
@@ -300,36 +431,77 @@ export async function answerFromEdge(request: Request, env: BridgeEnv, rt: EdgeR
       // The request that sends the refresh is the one the gateway counts: its page keeps the read it took.
       return fromCache(hit.text, hit.version, !renew, hit.age, stale ? 'stale' : 'hit')
     }
+    // Past its stale life (2026-10-30): a kept answer still within its error life only stands in for a failure.
+    const fallback = hit
     // A miss another request is already asking the Worker about (F7): its answer, as soon as it has one.
     const inflight = rt.inflight ?? INFLIGHT
     const leading = inflight.get(key)
-    if (leading) {
-      const shared = await within(leading, FOLLOW_WAIT_MS, rt)
-      if (shared) return fromCache(shared.text, shared.version, true, 0, 'coalesced')
+    const at = rt.now()
+    if (leading && at >= leading.started && at - leading.started < LEAD_LIFE_MS) {
+      // (2026-10-30, review) With a kept answer to stand in, a follower waits no longer than its leader does before that
+      // answer stands in for the leader's read (the route's bound, from when the leader began), FOLLOW_WAIT_MS at the most.
+      const bound = policy.errorWaitMs ?? policy.refreshWaitMs
+      const waitMs = fallback && bound ? Math.min(FOLLOW_WAIT_MS, Math.max(0, leading.started + bound - at)) : FOLLOW_WAIT_MS
+      const shared = waitMs > 0 ? await within(leading.outcome, waitMs, rt) : null
+      // A valid answer is shared, unless it is not worth keeping and the kept answer can stand in for it (review).
+      if (shared?.kind === 'answer' && (shared.useful || !fallback)) return fromCache(shared.answer.text, shared.answer.version, true, 0, 'coalesced')
+      // The leader's read failed, or is not in yet (2026-10-30): the kept answer, which no gateway counted, rather than
+      // one more read of a Worker that is failing or slow.
+      if (fallback && shared?.kind !== 'refusal') return fromCache(fallback.text, fallback.version, true, fallback.age, 'stale-if-error')
       // No valid answer, or none in time: this request asks the Worker itself, as it always did.
-      return answerMiss(request, env, rt, policy, key, body, null)
+      return answerMiss(request, env, rt, policy, key, body, null, fallback)
     }
-    let share!: (answer: EdgeAnswer | null) => void
-    const mine = new Promise<EdgeAnswer | null>((resolve) => { share = resolve })
+    // (2026-10-30, review) A read of this key failed lately in this isolate, or its refresh is on its way: the kept answer,
+    // which no gateway counted, rather than one more read of a Worker that is failing, until the guard is over.
+    if (fallback && guarded(refreshing.get(key), at)) return fromCache(fallback.text, fallback.version, true, fallback.age, 'stale-if-error')
+    // This request leads: its miss is joined until it settles (cleared by its own settling, never by this frame).
+    let settle!: (outcome: MissOutcome) => void
+    const mine: Inflight = { started: at, outcome: new Promise<MissOutcome>((resolve) => { settle = resolve }) }
     inflight.set(key, mine)
-    try {
-      return await answerMiss(request, env, rt, policy, key, body, share)
-    } finally {
-      share(null)
+    const share = (outcome: MissOutcome) => {
       if (inflight.get(key) === mine) inflight.delete(key)
+      // (2026-10-30, review) With a kept answer to stand in, a failure, or an answer not worth keeping, guards the key;
+      // an answer worth keeping (now kept) lifts the guard. A refusal is the Worker's say and changes nothing.
+      if (fallback) {
+        if (outcome.kind === 'answer' && outcome.useful) refreshing.delete(key)
+        else if (outcome.kind !== 'refusal') guardAfterFailure(refreshing, key, rt.now())
+      }
+      settle(outcome)
+    }
+    try {
+      return await answerMiss(request, env, rt, policy, key, body, share, fallback)
+    } catch (error) {
+      share({ kind: 'failure' })
+      throw error
     }
   }
-  return answerMiss(request, env, rt, policy, key, body, null)
+  return answerMiss(request, env, rt, policy, key, body, null, null)
 }
 
-/** The Worker's own answer, kept when it is one to keep, and handed to the requests waiting on this key (F7). */
-async function answerMiss(request: Request, env: BridgeEnv, rt: EdgeRuntime, policy: EdgePolicy, key: string | null, body: unknown, share: ((answer: EdgeAnswer | null) => void) | null): Promise<Response> {
+/** What a miss's read of the Worker came to: its outcome, and the response to pass on when no kept answer stands in. */
+interface Asked {
+  outcome: MissOutcome
+  response: Response
+}
+
+/**
+ * The Worker's own answer to a miss, kept when it is one to keep: a valid 200 is an answer; a 408, a 429, a 5xx or a 200
+ * that is no answer to the question is a failure; anything else is a refusal, and one that says the route is off takes out the
+ * entry a stand-in would have come from (`hasEntry`), as a refresh's does. `check`: whether the answer is read at all
+ * (with no cache, nobody to share it with and no stand-in, it is passed on unread, as it always was).
+ */
+async function askWorker(request: Request, env: BridgeEnv, rt: EdgeRuntime, policy: EdgePolicy, key: string, body: unknown, check: boolean, hasEntry: boolean): Promise<Asked> {
   const response = await forward(request, env)
-  if (key === null || response.status !== 200 || (!rt.cache && !share)) return response
-  const copy = response.clone()
-  const answer = await validAnswer(copy, body, policy)
-  share?.(answer)
-  if (rt.cache && keepable(answer, policy)) {
+  if (response.status !== 200) {
+    if (hasEntry && response.status === 404 && accepted(policy).includes(response.headers.get(CONTRACT_HEADER) ?? '')) {
+      await rt.cache?.delete?.(new Request(key))?.catch(() => false)
+    }
+    return { outcome: transient(response.status) ? { kind: 'failure' } : { kind: 'refusal' }, response }
+  }
+  if (!check) return { outcome: { kind: 'refusal' }, response }
+  const answer = await validAnswer(response.clone(), body, policy).catch(() => null)
+  const useful = keepable(answer, policy)
+  if (answer !== null && rt.cache && useful) {
     const stored = keep(rt, key, answer, policy)
     if (rt.waitUntil) rt.waitUntil(stored)
     else await stored
@@ -337,5 +509,47 @@ async function answerMiss(request: Request, env: BridgeEnv, rt: EdgeRuntime, pol
   // The same answer, its bytes read once, from a copy, to check them; it says it was the Worker's.
   const out = new Response(response.body, response)
   out.headers.set('Server-Timing', timing('miss'))
-  return out
+  return { outcome: answer !== null ? { kind: 'answer', answer, useful } : { kind: 'failure' }, response: out }
+}
+
+/**
+ * The Worker's own answer, kept when it is one to keep, and handed to the requests waiting on this key (F7). With a kept
+ * answer still within its error life (`fallback`, 2026-10-30), that answer stands in when the Worker's is a failure, or a
+ * valid answer not worth keeping (review), or is not in within the route's `errorWaitMs` (else `refreshWaitMs`); the read
+ * then goes on behind (waitUntil), and its answer is kept.
+ */
+async function answerMiss(
+  request: Request,
+  env: BridgeEnv,
+  rt: EdgeRuntime,
+  policy: EdgePolicy,
+  key: string | null,
+  body: unknown,
+  share: ((outcome: MissOutcome) => void) | null,
+  fallback: Kept | null,
+): Promise<Response> {
+  if (key === null) return forward(request, env)
+  const work = askWorker(request, env, rt, policy, key, body, rt.cache !== null || share !== null, fallback !== null).then(
+    (asked) => {
+      share?.(asked.outcome)
+      return asked
+    },
+    (error: unknown) => {
+      share?.({ kind: 'failure' })
+      throw error
+    },
+  )
+  if (fallback === null) return (await work).response
+  // The read is the stand-in's to outlive: its answer is kept for the next visitor even once this one has the stand-in.
+  if (rt.waitUntil) rt.waitUntil(work.catch(() => undefined))
+  const bound = policy.errorWaitMs ?? policy.refreshWaitMs
+  const asked = bound ? await within(work, bound, rt) : await work.catch(() => null)
+  // The Worker's say (a refusal), or an answer worth keeping, is passed on; an answer with nothing worth keeping never
+  // replaces the kept one for this visitor (review).
+  if (asked !== null && (asked.outcome.kind === 'refusal' || (asked.outcome.kind === 'answer' && asked.outcome.useful))) return asked.response
+  // The Worker's own failure, or its late answer once kept, is read no further.
+  if (asked === null) void work.then((late) => late.response.body?.cancel().catch(() => undefined), () => undefined)
+  else await asked.response.body?.cancel().catch(() => undefined)
+  // This request reached the Worker, and the gateway counted it: no `hit`.
+  return fromCache(fallback.text, fallback.version, false, fallback.age, 'stale-if-error')
 }

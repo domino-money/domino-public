@@ -440,6 +440,9 @@
   .dm-pool-figures-facts > div { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; min-width: 0; font-size: 0.75rem; line-height: 1rem; }
   .dm-pool-figures-facts dt { color: var(--fg-muted); }
   .dm-pool-figures-facts dd { min-width: 0; text-align: right; overflow-wrap: anywhere; }
+  /* QA round 2, final review read-1 (Q28): a fact's words under it (what the pool fee is), the row's whole width. */
+  .dm-pool-figures-facts > div:has(> .dm-pool-figures-fact-note) { flex-wrap: wrap; row-gap: 0.25rem; }
+  .dm-pool-figures-facts .dm-pool-figures-fact-note { flex-basis: 100%; text-align: left; color: var(--fg-subtle); line-height: 1.125rem; }
   .dm-pool-chart--compact { padding: 1rem; min-width: 0; }
   .dm-pool-chart--compact .dm-pool-heading, .dm-pool-chart--compact .dm-pool-chart-head > .dm-title { font-size: 1rem; line-height: 1.375rem; }
   .dm-pool-chart--compact .dm-pool-chart-figure { margin-top: 0.875rem; }

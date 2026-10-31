@@ -181,6 +181,7 @@
 import type { PoolMarketResponse, SnapshotPoolEntry, VerifiedPool } from 'api-contracts/read-v1/types'
 import type { StoredPool } from 'api-contracts/read-v3/types'
 import type { Market, MarketsResult, Metric } from '../markets'
+import { jittered } from '../jitter'
 import type { PaintedOverview, PaintMemory } from './marketsPaint'
 import { createSnapshotMemo, planSnapshot, SNAPSHOT_MAX_POOLS, type SnapshotMemo } from './marketsSnapshot'
 import { realClock, type Clock } from './pipeline'
@@ -848,7 +849,10 @@ export interface ReadMarketsOptions {
   paint?: PaintMemory
 }
 
-/** A stored load that read nothing is asked again this long after, then three times longer each time, up to eight refreshes. */
+/**
+ * A stored load that read nothing is asked again this long after, then three times longer each time, up to eight refreshes;
+ * each wait up to a quarter longer at random (since 2026-10-30).
+ */
 export const FAILED_RETRY_MS = 5_000
 
 export function createReadMarketsProvider({ source, poolIds: initialIds, pools, kind, notice, now, monotonic, clock = realClock, visibility = documentVisibility, refreshMs = 0, paint }: ReadMarketsOptions): MarketsProvider {
@@ -940,6 +944,14 @@ export function createReadMarketsProvider({ source, poolIds: initialIds, pools, 
   const catchUpWaits = (entry: StoredPool, inMs: number): 'shown' | 'asked' | false => {
     // Only a screen holding the quiet re-asks (the table) has this provider ask again on its own.
     if (holders === 0) return false
+    // Stale figures stay on screen with their own ages and are read again at the ordinary refresh, a minute later,
+    // silently, when they will still be within their five minutes then (staleOutlastsRefresh). Changed 2026-10-30 (QA
+    // round 2, N41): asking the overview again seconds after every refresh for a row that already shows figures sent
+    // each minute's read twice. Stale figures that would pass their limit before that refresh (a quiet pool served at
+    // 250 s, say) keep the catch-up, as before: their APR estimate would otherwise turn to a stand-in on screen for up
+    // to a minute, and ask DEX Screener for it. Returned before the row is recorded as behind, so a row that later
+    // loses its figures waits afresh.
+    if (staleOutlastsRefresh(entry)) return false
     const id = key(entry.poolId)
     const at = clock.monotonic()
     const seen = behindSince.get(id)
@@ -953,6 +965,23 @@ export function createReadMarketsProvider({ source, poolIds: initialIds, pools, 
     // a valid old figure into a loading mask, extend its usable lifetime, or poll beyond the existing catch-up window.
     if (!over && entry.value?.market.market.status === 'stale') return 'asked'
     return over ? false : at - since + interval <= CATCH_UP_SHOWN_MS ? 'shown' : 'asked'
+  }
+
+  /**
+   * Whether a stored pool's figures are stale and every age they carry (the provider figures', the estimate's market
+   * and snapshot ages, as served) will still be within the five-minute limit when the ordinary refresh lands at its
+   * latest (activeRefreshMs, doubled as after the last load's problems, plus its 10% jitter and CATCH_UP_MARGIN_MS).
+   * No age known: not proven, so it catches up. Added 2026-10-30 (N41 review).
+   */
+  function staleOutlastsRefresh(entry: StoredPool): boolean {
+    const value = entry.value
+    if (value?.market.market.status !== 'stale') return false
+    const provenance = value.estimate.provenance
+    const limit = Math.min(value.market.market.cache.maxStaleSeconds, provenance.maxStaleSeconds)
+    const ahead = (activeRefreshMs * 2 ** refreshFailures * 1.1 + CATCH_UP_MARGIN_MS) / 1000
+    const ages = [value.market.market.cache.ageSeconds, provenance.effectiveMarketAgeSeconds, provenance.snapshotAgeSeconds]
+      .filter((age): age is number => typeof age === 'number')
+    return ages.length > 0 && ages.every((age) => age + ahead < limit)
   }
 
   const nextRefresh = (failed: boolean, hasData: boolean, acquiring = false, schedule?: { inMs: number | null; running: boolean }, catchUp: number | null = null) => {
@@ -1097,13 +1126,15 @@ export function createReadMarketsProvider({ source, poolIds: initialIds, pools, 
     }
     // An empty overview (audit V1): every pool keeps its last good row, stale and dated, as below, and the overview is
     // asked again soon, as after one that read nothing.
-    if (loaded.empty && !quiet) refreshDueAt = refreshMs > 0 ? clock.monotonic() + Math.min(FAILED_RETRY_MS * 3 ** emptyLoads++, refreshMs * 8) : null
+    // Each wait up to a quarter longer at random (../jitter.ts, added 2026-10-30, QA round 2, launch budget): every tab one
+    // failed answer reached does not come back in the same second.
+    if (loaded.empty && !quiet) refreshDueAt = refreshMs > 0 ? clock.monotonic() + jittered(Math.min(FAILED_RETRY_MS * 3 ** emptyLoads++, refreshMs * 8), clock.random) : null
     const failure = rows.length === 0 && loaded.problems.length > 0 ? loaded.problems[0].outcome : null
     if (failure) {
       // Nothing read from the stored overview (one read for every row): asked again soon, then less and less often
       // (FAILED_RETRY_MS), while the page can be seen. A lean load is a read per pool on the provider's lane, and its
       // failures keep their rule: a reload asks again.
-      if (!quiet && failure.route === 'overview') refreshDueAt = refreshMs > 0 ? clock.monotonic() + Math.min(FAILED_RETRY_MS * 3 ** emptyLoads++, refreshMs * 8) : null
+      if (!quiet && failure.route === 'overview') refreshDueAt = refreshMs > 0 ? clock.monotonic() + jittered(Math.min(FAILED_RETRY_MS * 3 ** emptyLoads++, refreshMs * 8), clock.random) : null
       else if (!quiet) nextRefresh(true, kept.size > 0)
       set({ phase: 'failed', failure, retained: retained() })
       settledLoad(loaded.unbound)
@@ -1334,16 +1365,12 @@ export function createReadMarketsProvider({ source, poolIds: initialIds, pools, 
         recoveryAttempts = 0
         recoveryDueAt = null
         providerBusy.clear()
+        // A refresh already on the wire when the page is hidden runs to its end: its one stored read lands in place and
+        // the next one is planned a refresh interval later. Changed 2026-10-30 (instability study, INST-1): aborting it
+        // and asking again the moment the page came back sent and cancelled one read per hide/show (27k cancelled reads
+        // from one tab in two days). A hidden page only stops new reads from starting (askAgain).
         if (refreshMs > 0) cancelRefreshVisibility = visibility.onChange(() => {
-          if (visibility.hidden() && running?.kind === 'refresh') {
-            const from = running.from
-            controller?.abort()
-            controller = null
-            running = null
-            // Resume later with the original data still dated as observed.
-            refreshDueAt = clock.monotonic()
-            set(from)
-          } else if (!visibility.hidden()) plan()
+          if (!visibility.hidden()) plan()
         })
         plan()
       }

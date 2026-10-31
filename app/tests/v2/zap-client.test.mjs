@@ -387,3 +387,42 @@ test('a wallet node that fails now and then: the review fails with it, nothing i
   assert.deepEqual(review.steps.map((step) => step.kind), ['approve', 'action']);
   assert.equal(chain.sends.length, 0);
 });
+
+// Added 2026-10-30 (QA round 2, INST-2, the owner's "New position faster"): a review asked its 11 to 17 wallet reads one
+// after another. They are now asked together, each still pinned to the review's one block, and the review comes out the
+// same; one that fails still fails the review, and the review ends only once every read it asked is in.
+test('a review asks its reads together, all at its one block, with the same review; a failed read still fails it, after every read is in', async () => {
+  const { chain, wallet, client } = setup({ balances: { [fx.USDG]: 5_000_000_000n } });
+  const plan = fx.createWithSwap();
+  const plainReview = await reviewOf(client, 'create', plan);
+  const ask = wallet.request;
+  let inFlight = 0;
+  let most = 0;
+  let failNext = false;
+  wallet.request = async (method, params) => {
+    if (method !== 'eth_call') return ask(method, params);
+    inFlight++;
+    most = Math.max(most, inFlight);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      if (failNext && params[0]?.to?.toLowerCase() === fx.USDG.toLowerCase()) throw Object.assign(new Error('internal error'), { code: -32603 });
+      return await ask(method, params);
+    } finally {
+      inFlight--;
+    }
+  };
+  const before = chain.asked.length;
+  const review = await reviewOf(client, 'create', plan);
+  assert.ok(most > 1, `reads asked together (at most ${most} at once)`);
+  const calls = chain.asked.slice(before).filter(({ method }) => method === 'eth_call');
+  assert.ok(calls.length > 2);
+  assert.equal(new Set(calls.map(({ params }) => params[1])).size, 1, 'every read at the one block');
+  assert.deepEqual(review.steps.map((step) => ({ ...step })), plainReview.steps.map((step) => ({ ...step })));
+  assert.deepEqual({ ...review.fee }, { ...plainReview.fee });
+  assert.equal(review.intentHash, plainReview.intentHash);
+  // The allowance read fails: the review fails with it, and nothing it asked is still out when it does.
+  failNext = true;
+  await assert.rejects(reviewOf(client, 'create', plan), (error) => error.code === -32603);
+  assert.equal(inFlight, 0, 'no read outlives the review');
+  assert.equal(chain.sends.length, 0);
+});

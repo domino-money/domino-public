@@ -1,16 +1,21 @@
 import { Fragment, useState, type ReactNode } from 'react'
 import { CreatedArt, CreatedTile, InCreatedSlot, NewPositionAgain } from '../../components/create/createdParts'
+import { coversFullRange, poolSizeLine } from '../../components/create/valuation'
+import { automateHref } from '../../components/explore/routes'
+import { UsdText } from '../../components/figures'
 import { IconChevronRight } from '../../components/icons'
 import { Button, cx, FigureDash, Pill, Skeleton } from '../../components/ui'
 import { askAutoExitOnArrival, expectNewPosition } from '../../lib/automate/autoExitAsk'
 import { AUTO_EXIT_FEATURE, FEATURES } from '../../lib/automate/features'
 import { CREATE } from '../../lib/create/copy'
-import { rangePosition } from '../../lib/read/screens/poolRange'
+import { useFlowMade } from '../../lib/create/createProgress'
+import { slippageBpsFrom, slippageWritten } from '../../lib/create/slippage'
+import { rangePosition, usableTicks } from '../../lib/read/screens/poolRange'
 import type { ReceiptLine } from '../../finance/v2/receipt'
 import { v2Chain } from '../../v2/chains'
 import { v2TxUrl } from '../../v2/explorers'
 import type { V2Gate } from '../../v2/gate'
-import { ethAboutText, ethText, EXACT_FRACTION, exitOffer, feesToCome, keptWhileRequoting, networkFeeLine, planNetworkCost, priceText, rangeBothWays, SHOWN_FRACTION, smallerUpToPercent, spanText } from '../../v2/plan/present'
+import { ethAboutText, ethText, EXACT_FRACTION, exitOffer, feesToCome, keptWhileRequoting, networkFeeLine, planNetworkCost, priceText, rangeBothWays, smallerUpToPercent, spanText } from '../../v2/plan/present'
 import { ZERO_ADDRESS, type Address, type Dex, type V2ChainId } from '../../v2/types'
 import { exitOrderKey } from '../autoexit/entry'
 import { gateOpen, useGate } from '../automate/gate'
@@ -19,11 +24,11 @@ import { v2PositionHref } from '../route'
 import { JOURNEY_HIGH_SLIPPAGE_COPY, JOURNEY_SLIPPAGE_WARNING_ABOVE_BPS, NEW_POOL_CONFIRM_COPY, NEW_POOL_TITLE } from './constants'
 import { JOURNEY } from './copy'
 import { dexName, feePercent } from './model/pools'
-import type { JourneyPriceState } from './model/price'
+import { priceInvertedOn, pricedPair, type JourneyPriceState } from './model/price'
 import type { JourneyState } from './model/state'
 import { ErrorLine, Note, PoolChips, Tick, TokenDiscPair, TokenName } from './parts'
 import { stepTitle, type Reviewed, type RunStep, type RunView } from './run'
-import { amountText, decimalsOf, labelOf, tokenBook, type TokenBook } from './tokens'
+import { amountText, decimalsOf, labelOf, shortAmountText, tokenBook, type TokenBook } from './tokens'
 
 type Gate = Extract<V2Gate, { mode: 'preview' | 'live' }>
 
@@ -150,8 +155,25 @@ function useKept(view: RunView): { reviewed: Reviewed | null; steps: readonly Ru
  * smaller…") is in view, under the figures it bounds, no longer in Details. Details keeps what the delta lets it keep:
  * the route leg by leg with "At least" and its tiers, the leftovers, the L1 data fee and Base's ceiling, the deadlines,
  * §2.7's "Paying with ETH needs a direct transaction." and a new pool's tick and initSqrtPriceX96.
+ *
+ * Changed on purpose 2026-10-30 (QA round 2, Q5, the owner's decision: "Review cost summary: dollar total, Domino fee,
+ * network fee (estimate in $ when known), slippage, and what happens after Connect wallet"): the cost is in view before
+ * any wallet is connected. Under the amounts, their "Estimated total" in dollars (Amount's own label and valuation,
+ * `usdOf`, for whatever amounts the headline shows); the Domino fee line and the network fee line always (before a quote,
+ * the docs' fee sentence and the network fee in words; while the first quote runs, the page's resting bubble in their
+ * place); the network fee also in dollars where the pool itself prices ETH (`gasUsd`: no new read); the slippage
+ * tolerance. What follows Connect wallet is the line under it (./copy.ts final.afterConnect), and the wallet card is
+ * titled for it while no wallet is connected (Q31). Changed on purpose 2026-10-30 (QA round 2, N2): amounts at six
+ * significant digits, as the rest of the app writes them (./tokens.ts shortAmountText), no longer six decimals.
+ *
+ * Changed on purpose 2026-10-30 (QA round 2, as the owner's steps' Review does it, components/create/StageReview.tsx):
+ * the pair named and drawn as its price is written, base then quote, and the range and a new pool's starting price read
+ * that way first, the inverse beside it (Q24); an end at the pool's usable tick limit reads 0 or ∞ (N73); under the
+ * total, the one plain sentence Amount says about its share of the pool (N51, Q20, `tvlUsd`); and, until the position
+ * exists, one line saying automation is added afterwards from Automate, Auto-exit left out of it for a full range,
+ * which it is never offered for (Q12).
  */
-export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, onRejected, onNewPool, onPoolRace, short = null, estimate = null }: {
+export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, onRejected, onNewPool, onPoolRace, short = null, estimate = null, usdOf = null, gasUsd = null, connected = true, tvlUsd = null }: {
   state: JourneyState
   gate: Gate
   view: RunView
@@ -171,8 +193,18 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
    * from one token), for the headline until a quote has figures.
    */
   estimate?: readonly [bigint, bigint] | null
+  /** Added 2026-10-30 (Q5): the dollar value of amounts of the pool's two tokens, in pool order (Amount's valuation); null without one. */
+  usdOf?: ((amounts: readonly [bigint, bigint]) => string | null) | null
+  /** Added 2026-10-30 (Q5): the dollar value of a network fee in wei, where the pool itself prices ETH; null elsewhere. */
+  gasUsd?: ((wei: bigint) => string | null) | null
+  /** Added 2026-10-30 (Q31): whether a wallet is connected, for the wallet card's title. */
+  connected?: boolean
+  /** Added 2026-10-30 (N51, Q20): the pool's reported TVL in dollars, for the share sentence under the total; null without one. */
+  tvlUsd?: string | null
 }) {
   const kept = useKept(view)
+  // Q12: the flow's own word that the position exists (lib/create/createProgress.ts), beside this run's receipt.
+  const made = useFlowMade()
   const pool = state.pool
   if (!pool) return null
   const chain = v2Chain(state.chainId)
@@ -182,17 +214,37 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
   const stale = kept.stale
   const quoting = view.stage === 'quoting'
   const book: TokenBook = tokenBook(state.chainId, [...pool.tokens])
-  // Rounded where it is drawn (at most 6 decimals, present.ts SHOWN_FRACTION); every digit in the title. A fee and an
-  // amount to allow round up (`owed`): never shown lower than they are.
-  const amount = (token: Address, raw: bigint) => amountText(book, token, raw)
-  const owed = (token: Address, raw: bigint) => amountText(book, token, raw, SHOWN_FRACTION, 'up')
+  // Rounded where it is drawn (six significant digits, ./tokens.ts shortAmountText, 2026-10-30); every digit in the title.
+  // A fee and an amount to allow round up (`owed`): never shown lower than they are.
+  const amount = (token: Address, raw: bigint) => shortAmountText(book, token, raw)
+  const owed = (token: Address, raw: bigint) => shortAmountText(book, token, raw, 'up')
   const exact = (token: Address, raw: bigint) => amountText(book, token, raw, EXACT_FRACTION)
   const [l0, l1] = [labelOf(book, pool.pool.currency0), labelOf(book, pool.pool.currency1)]
+  // Q24 (2026-10-30): the pair as its price is written, base then quote (./model/price.ts pricedPair); its data keeps the
+  // pool's order.
+  const flip = priceInvertedOn(state.chainId, pool.pool.currency0, pool.pool.currency1)
+  const [baseToken, quoteToken] = pricedPair(state.chainId, pool.pool.currency0, pool.pool.currency1, pool.tokens)
+  const [baseLabel, quoteLabel] = flip ? [l1, l0] : [l0, l1]
   const range = state.range
   const both = range ? rangeBothWays(range.lower, range.upper, decimalsOf(book, pool.pool.currency0), decimalsOf(book, pool.pool.currency1)) : null
+  // N73 (2026-10-30): an end at the pool's usable tick limit reads 0 or ∞, as the range step and a position's card write
+  // it (components/create/valuation.ts endPrice), never a figure beyond display. `forward` is currency1 per currency0.
+  const limits = usableTicks(pool.pool.tickSpacing)
+  const lowAtLimit = range !== null && range.lower <= limits.min
+  const highAtLimit = range !== null && range.upper >= limits.max
+  const ends = both
+    ? {
+        forward: { low: lowAtLimit ? '0' : priceText(both.forward.low), high: highAtLimit ? '∞' : priceText(both.forward.high) },
+        inverse: { low: highAtLimit ? '0' : priceText(both.inverse.low), high: lowAtLimit ? '∞' : priceText(both.inverse.high) },
+      }
+    : null
+  // The reading in the price's own order first (Q24), the inverse beside it.
+  const lead = ends ? (flip ? ends.inverse : ends.forward) : null
+  const aside = ends ? (flip ? ends.forward : ends.inverse) : null
   const usable = price && price.state === 'usable' ? price : null
   const inside = usable && range ? rangePosition(range, usable.tick) === 'inside' : null
   const slippage = Number(state.slippage)
+  const slippageBps = figures?.request.slippageBps ?? slippageBpsFrom(state.slippage)
   const smaller = facts ? smallerUpToPercent(facts.expected.liquidity, facts.minimums.liquidity) : null
   const inputs = figures?.request.inputs ?? view.asked?.inputs ?? []
   const paysEth = inputs.some((input) => input.token === ZERO_ADDRESS)
@@ -224,6 +276,14 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
   const held = facts?.expected.amounts ?? short?.amounts ?? (quoting ? null : estimate)
   const sides = held === null ? [] : held[0] > 0n || held[1] > 0n ? ([0, 1] as const).filter((i) => held[i] > 0n) : ([0, 1] as const)
   const heldText = (write: (token: Address, raw: bigint) => string) => (held === null ? '' : sides.map((i) => write(currencies[i], held[i])).join(' + '))
+  // Q5 (2026-10-30): the amounts in view in dollars, and the network fee where the pool prices ETH; nothing is read for them.
+  const total = held !== null && usdOf ? usdOf(held) : null
+  // While the first quote runs, the total keeps its place (the resting bubble) wherever the typed amounts have one.
+  const totalPending = total === null && quoting && usdOf !== null && estimate !== null && usdOf(estimate) !== null
+  const networkUsd = network.kind !== 'unknown' && gasUsd ? gasUsd(network.wei) : null
+  // N51, Q20 (2026-10-30): Amount's one sentence about the deposit beside the whole pool, for the same total.
+  const sizeLine = total !== null ? poolSizeLine(tvlUsd, total) : null
+  const feeState = facts ? (fee ? 'charged' : 'none') : quoting ? 'pending' : 'before'
 
   return (
     <div className="dm-flow-stack" data-stage="review" data-zap-review={gate.mode} data-zap-review-stage={view.stage} data-review-stale={stale ? '' : undefined}>
@@ -235,9 +295,9 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
         </h3>
         <div className={cx('dm-flow-headline', stale && 'opacity-60 transition-opacity')} data-review-headline="" aria-busy={quoting || undefined}>
           <p className="dm-flow-headline-pair">
-            <TokenDiscPair chainId={state.chainId} first={pool.tokens[0]} second={pool.tokens[1]} size={40} ring="#1a1815" />
+            <TokenDiscPair chainId={state.chainId} first={baseToken} second={quoteToken} size={40} ring="#1a1815" />
             <span className="min-w-0" data-review-pool="">
-              <TokenName token={pool.tokens[0]} /> / <TokenName token={pool.tokens[1]} />
+              <TokenName token={baseToken} /> / <TokenName token={quoteToken} />
             </span>
           </p>
           <PoolChips chainId={state.chainId} dex={pool.pool.dex} fee={pool.pool.fee} />
@@ -276,6 +336,26 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
               CREATE.page.notChosen
             )}
           </p>
+          {(total !== null || totalPending) && (
+            // Q5 (2026-10-30): Amount's "Estimated total", for the amounts above (a sub-cent figure reads "<$0.01"); kept in
+            // place with the resting bubble while the first quote runs, as the fee lines below are.
+            <p className="dm-flow-headline-line tnum" data-review-total={total === null ? 'pending' : ''}>
+              <span className="dm-rv-k">
+                {CREATE.amount.total}
+                <span className="dm-rv-c">:</span>
+              </span>{' '}
+              <span className="dm-rv-v">
+                {total !== null ? <UsdText value={total} floor /> : <Skeleton className="inline-block h-[1em] w-24 align-middle" />}
+              </span>
+            </p>
+          )}
+          {sizeLine !== null && (
+            // N51, Q20 (2026-10-30): plain, no colour; one sentence, so it is set as the row's left half (the V4 row
+            // justifies its two halves apart, and would spread a bare sentence word by word).
+            <p className="dm-flow-headline-line" data-review-pool-share="">
+              <span className="dm-rv-k">{sizeLine}</span>
+            </p>
+          )}
           {inputs.length > 0 && (
             // What goes in, as the wallet is asked to allow it: the same figure, rounded up, every digit in the title.
             <p className="dm-flow-headline-line tnum" data-review-inputs="" title={inputs.map((input) => exact(input.token, input.amount)).join(' + ')}>
@@ -288,11 +368,11 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
               <span className="dm-rv-c">:</span>
             </span>{' '}
             <span className="dm-rv-v">
-              {both && priceText(both.forward.low) && priceText(both.forward.high) ? (
+              {lead && lead.low && lead.high ? (
                 <>
-                  {`1 ${l0} = ${priceText(both.forward.low)} to ${priceText(both.forward.high)} ${l1}`}
+                  {`1 ${baseLabel} = ${lead.low} to ${lead.high} ${quoteLabel}`}
                   <span className="dm-rv-c"> · </span>
-                  <span className="dm-rv-i">{`1 ${l1} = ${priceText(both.inverse.low) ?? '—'} to ${priceText(both.inverse.high) ?? '—'} ${l0}`}</span>
+                  <span className="dm-rv-i">{`1 ${quoteLabel} = ${aside?.low ?? '—'} to ${aside?.high ?? '—'} ${baseLabel}`}</span>
                 </>
               ) : range ? CREATE.review.summary.rangeTicks(range.lower, range.upper) : CREATE.page.notChosen}
             </span>
@@ -305,58 +385,84 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
                 <span className="dm-rv-c">:</span>
               </span>{' '}
               <span className="dm-rv-v">
-                {`1 ${l0} = ${facts.initialPrice.price0In1} ${l1}`}
+                {flip ? `1 ${l1} = ${facts.initialPrice.price1In0} ${l0}` : `1 ${l0} = ${facts.initialPrice.price0In1} ${l1}`}
                 <span className="dm-rv-c"> · </span>
-                <span className="dm-rv-i">{`1 ${l1} = ${facts.initialPrice.price1In0} ${l0}`}</span>
+                <span className="dm-rv-i">{flip ? `1 ${l0} = ${facts.initialPrice.price0In1} ${l1}` : `1 ${l1} = ${facts.initialPrice.price1In0} ${l0}`}</span>
               </span>
             </p>
           )}
-          {facts && (
-            // §2.8, one line: "Domino fee: 3.25 USDG (0.65% of 500 USDG swapped)", or "No Domino fee".
-            <p className="dm-flow-headline-line tnum" data-review-fee={fee ? 'charged' : 'none'} data-review-fee-state={fee ? 'charged' : 'none'}>
-              {fee ? (
+          {/* §2.8, one line: "Domino fee: 3.25 USDG (0.65% of 500 USDG swapped)", or "Domino fee: No Domino fee" (new.html
+              .sum, the receipts' own pair). Changed on purpose 2026-10-30 (Q5): drawn before a quote too, the docs' rule as
+              its value while no quote can be had, the resting bubble while the first one runs; always a label and a value,
+              the two halves the V4 row sets apart (a bare sentence was stretched word by word across it). */}
+          <p className="dm-flow-headline-line tnum" data-review-fee={feeState} data-review-fee-state={feeState}>
+            <span className="dm-rv-k">
+              {JOURNEY.review.fee}
+              <span className="dm-rv-c">:</span>
+            </span>{' '}
+            <span className="dm-rv-v">
+              {!facts ? (
+                quoting ? (
+                  <Skeleton className="inline-block h-[1em] w-24 align-middle" />
+                ) : (
+                  JOURNEY.review.feeBefore
+                )
+              ) : fee ? (
                 <>
-                  <span className="dm-rv-k">
-                    {JOURNEY.review.fee}
-                    <span className="dm-rv-c">:</span>
-                  </span>{' '}
-                  <span className="dm-rv-v">
-                    <span data-review-fee-amount="" title={exact(fee.token, fee.amount)}>{owed(fee.token, fee.amount)}</span> (
-                    <span data-review-fee-base="" title={JOURNEY.review.feeBase(exact(fee.token, fee.basis))}>{JOURNEY.review.feeBase(amount(fee.token, fee.basis))}</span>)
-                  </span>
+                  <span data-review-fee-amount="" title={exact(fee.token, fee.amount)}>{owed(fee.token, fee.amount)}</span> (
+                  <span data-review-fee-base="" title={JOURNEY.review.feeBase(exact(fee.token, fee.basis))}>{JOURNEY.review.feeBase(amount(fee.token, fee.basis))}</span>)
                 </>
               ) : (
                 JOURNEY.review.noFee
               )}
-            </p>
-          )}
-          {facts && (
-            // §2.4, one line: the plan's cost and the approvals still to send (each read at the review, ./run.ts). Changed
-            // on purpose 2026-10-06 (the review of the owner's point 4: no jargon, no bare dash in view): a part that could
-            // not be read (the plan's L1 data fee, or an approval that waits for an earlier one) is one plain clause beside
-            // the figure, never a 0 and never left out; Details says which part. With no figure yet, the resting bubble
-            // while a step is checked, else the words (a signature first: no transaction to read a fee from yet).
-            <p
-              className="dm-flow-headline-line tnum"
-              data-review-network-fee={network.kind}
-              data-review-network-wei={network.kind === 'unknown' ? undefined : network.wei.toString()}
-              data-review-network-others={network.kind === 'about' && network.othersMissing ? 'unprepared' : undefined}
-              data-review-l1-fee={l1Fee && l1Fee.status === 'ok' ? l1Fee.wei.toString() : 'unavailable'}
-            >
+            </span>
+          </p>
+          {/* §2.4, one line: the plan's cost and the approvals still to send (each read at the review, ./run.ts). Changed
+              on purpose 2026-10-06 (the review of the owner's point 4: no jargon, no bare dash in view): a part that could
+              not be read (the plan's L1 data fee, or an approval that waits for an earlier one) is one plain clause beside
+              the figure, never a 0 and never left out; Details says which part. With no figure yet, the resting bubble
+              while a quote runs or a step is checked, else the words (a signature first: no transaction to read a fee
+              from yet). Changed on purpose 2026-10-30 (Q5): drawn before any quote too, and in dollars beside the ETH
+              where the pool prices ETH. */}
+          <p
+            className="dm-flow-headline-line tnum"
+            data-review-network-fee={network.kind}
+            data-review-network-wei={network.kind === 'unknown' ? undefined : network.wei.toString()}
+            data-review-network-others={network.kind === 'about' && network.othersMissing ? 'unprepared' : undefined}
+            data-review-l1-fee={l1Fee && l1Fee.status === 'ok' ? l1Fee.wei.toString() : 'unavailable'}
+            data-review-network-usd={networkUsd ?? undefined}
+          >
+            <span className="dm-rv-k">
+              {JOURNEY.review.networkFee}
+              <span className="dm-rv-c">:</span>
+            </span>{' '}
+            <span className="dm-rv-v">
+              {network.kind === 'about'
+                ? JOURNEY.review.networkAbout(ethAboutText(network.wei))
+                : network.kind === 'upTo'
+                  ? JOURNEY.review.networkUpTo(ethText(network.wei))
+                  : !stale && (quoting || kept.steps.some((step) => step.status === 'preparing'))
+                    ? <Skeleton className="inline-block h-[1em] w-24 align-middle" />
+                    : JOURNEY.review.networkLater}
+              {networkUsd !== null && (
+                <>
+                  {' ('}
+                  <UsdText value={networkUsd} floor />
+                  {')'}
+                </>
+              )}
+              {network.kind === 'about' && (network.l1Missing || network.othersMissing) && `, ${JOURNEY.review.networkMore}`}
+            </span>
+          </p>
+          {slippageBps !== null && (
+            // Q5 (2026-10-30): the tolerance chosen on Amount, in its own words and format (lib/create/slippage.ts
+            // slippageWritten, as Amount writes it); moved here from Details, where it is no longer repeated.
+            <p className="dm-flow-headline-line tnum" data-review-slippage={slippageBps}>
               <span className="dm-rv-k">
-                {JOURNEY.review.networkFee}
+                {CREATE.amount.slippageLabel}
                 <span className="dm-rv-c">:</span>
               </span>{' '}
-              <span className="dm-rv-v">
-                {network.kind === 'about'
-                  ? JOURNEY.review.networkAbout(ethAboutText(network.wei))
-                  : network.kind === 'upTo'
-                    ? JOURNEY.review.networkUpTo(ethText(network.wei))
-                    : !stale && kept.steps.some((step) => step.status === 'preparing')
-                      ? <Skeleton className="inline-block h-[1em] w-24 align-middle" />
-                      : JOURNEY.review.networkLater}
-                {network.kind === 'about' && (network.l1Missing || network.othersMissing) && `, ${JOURNEY.review.networkMore}`}
-              </span>
+              <span className="dm-rv-v">{slippageWritten(slippageBps)}</span>
             </p>
           )}
         </div>
@@ -388,6 +494,23 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
             {JOURNEY.review.reviewAgain}
           </Button>
         )}
+        {view.receipt === null && !made && (
+          // Q12 (2026-10-30): automation is added once the position exists, from Automate (the created view then offers it
+          // too); a full range is never offered Auto-exit, so its line leaves it out. The owner's steps' Review says the same.
+          // Changed on purpose 2026-10-30 (QA round 2, final review create-1): in a new tab, so Review and every choice
+          // before it stay as they are (a same-tab link left New position, and Back started an empty flow); a screen reader
+          // hears where it opens.
+          <p className="dm-flow-position" data-tone="neutral" data-review-automate-later="">
+            <span>
+              {coversFullRange(range, pool.pool.tickSpacing) ? CREATE.review.automateLaterFull : CREATE.review.automateLater}{' '}
+              <a className="underline" href={automateHref} target="_blank" rel="noopener noreferrer">
+                {CREATE.review.automateLink}
+                <span className="sr-only">{CREATE.page.newTab}</span>
+              </a>
+              .
+            </span>
+          </p>
+        )}
       </section>
 
       {facts && figures?.createsPool && (
@@ -402,7 +525,8 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
       {(gate.mode === 'preview' || gate.mode === 'live' || kept.steps.length > 0) && (
         <section aria-labelledby="zap-steps-heading" className="dm-flow-section">
           <h3 id="zap-steps-heading" className="dm-flow-subtitle">
-            {CREATE.review.steps}
+            {/* Q31 (2026-10-30): titled for what to do while no wallet is connected; "In your wallet" once one is. */}
+            {gate.mode === 'live' && !connected ? JOURNEY.review.stepsConnect : CREATE.review.steps}
           </h3>
           {gate.mode === 'live' && kept.steps.length === 0 ? (
             quoting && (
@@ -519,14 +643,13 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
                 </Fact>
               )}
               <Fact label={JOURNEY.review.l1Fee} data="review-l1-fee">
-                {l1Fee && l1Fee.status === 'ok' ? ethText(l1Fee.wei) : <FigureDash reason={JOURNEY.review.l1Unavailable} />}
+                {l1Fee && l1Fee.status === 'ok' ? ethText(l1Fee.wei) : <FigureDash />}
               </Fact>
               <Fact label={JOURNEY.review.deadline} data="review-deadline">
                 <span className="block">{JOURNEY.review.deadlineValue(spanText(figures.quoteLeft))}</span>
                 <span className="block text-fg-subtle">{JOURNEY.review.signedFor(spanText(Number(facts.deadline) - facts.requestedAt))}</span>
               </Fact>
               <Fact label={JOURNEY.review.network} data="details-network">{chain.name}</Fact>
-              <Fact label={CREATE.amount.slippageLabel} data="details-slippage">{`${figures.request.slippageBps / 100}%`}</Fact>
               {range && <Fact label={CREATE.review.detailRows.ticks} data="details-ticks">{`${range.lower} to ${range.upper}`}</Fact>}
               <Fact label={CREATE.review.detailRows.contracts} data="details-tokens">
                 <span className="block">{pool.pool.currency0 === ZERO_ADDRESS ? `ETH (${CREATE.review.detailRows.native})` : pool.pool.currency0}</span>
@@ -694,7 +817,8 @@ function Created({ view }: { view: RunView }) {
   const pool = intent.pool
   const facts = reviewed.reply.facts
   const book = tokenBook(chainId, reviewed.tokens)
-  const amount = (token: Address, raw: bigint, round: 'down' | 'up' = 'down'): ReactNode => <span title={amountText(book, token, raw, EXACT_FRACTION)}>{amountText(book, token, raw, SHOWN_FRACTION, round)}</span>
+  // Six significant digits (2026-10-30, N2), as Review draws them: "Paid in" is Review's "You put in", the same figure.
+  const amount = (token: Address, raw: bigint, round: 'down' | 'up' = 'down'): ReactNode => <span title={amountText(book, token, raw, EXACT_FRACTION)}>{shortAmountText(book, token, raw, round)}</span>
   const read = receipt.read
   const tokenId = read?.summary.tokenId ?? null
   const failed = receipt.state === 'reverted' || receipt.state === 'not-included'
@@ -717,7 +841,7 @@ function Created({ view }: { view: RunView }) {
             <>
               {read.lines.map((line) => <ReceiptRow key={line.logIndex} line={line} amount={amount} />)}
               <Fact label={JOURNEY.created.gas} data="receipt-gas" attrs={{ 'data-receipt-gas': read.gas.status }}>
-                {read.gas.status === 'available' ? ethText(read.gas.totalWei) : <FigureDash reason={JOURNEY.created.gasUnavailable} />}
+                {read.gas.status === 'available' ? ethText(read.gas.totalWei) : <FigureDash />}
               </Fact>
             </>
           )}
@@ -731,7 +855,7 @@ function Created({ view }: { view: RunView }) {
               </span>
               <span className="dm-created-text">
                 <span className="dm-created-name">{JOURNEY.created.positions}</span>
-                <span className="dm-created-note">{`${labelOf(book, pool.currency0)} / ${labelOf(book, pool.currency1)} · ${v2Chain(chainId).name}`}</span>
+                <span className="dm-created-note">{`${pricedPair(chainId, pool.currency0, pool.currency1, [labelOf(book, pool.currency0), labelOf(book, pool.currency1)] as const).join(' / ')} · ${v2Chain(chainId).name}`}</span>
               </span>
               <span className="dm-created-go">
                 <span className="dm-created-go-text">{JOURNEY.created.view}</span>

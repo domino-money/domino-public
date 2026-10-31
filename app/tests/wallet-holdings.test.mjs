@@ -586,6 +586,28 @@ test('look-alikes of the main tokens are recognised however they are spelt; the 
   for (const [address, symbol] of [[PONS, 'PONS'], [UBIK, 'UBIK'], [USDG, 'USDG'], [WETH, 'WETH'], [NATIVE, 'ETH'], [WETH, 'ETH'], [UFG, 'UFG'], [addr(13), null]]) assert.equal(isLookAlike(row(address, symbol, '1')), false, String(symbol));
 });
 
+// Added 2026-10-30 (QA round 2, N64): the Wallet card showed an airdropped "USDC 45 = $0.01". Domino knows no USDC, USDT,
+// DAI, WBTC or EURC on Robinhood Chain, so a token there calling itself one of them is a look-alike: left out, never priced.
+test('a Robinhood Chain token calling itself USDC, USDT, DAI, WBTC or EURC at an address Domino does not know is a look-alike: not listed, never priced', () => {
+  const { RESERVED_SYMBOLS } = require('../.test-build/app/src/config/mainTokens.js');
+  assert.deepEqual([...RESERVED_SYMBOLS], ['USDC', 'USDT', 'DAI', 'WBTC', 'EURC']);
+  assert.ok(Object.isFrozen(RESERVED_SYMBOLS));
+  const cyrillicC = String.fromCharCode(0x0421);
+  for (const [address, symbol] of [[addr(20), 'USDC'], [addr(21), 'usdt'], [addr(22), 'DAI'], [addr(23), 'WBTC'], [addr(24), 'EURC'], [addr(25), `USD${cyrillicC}`], [addr(26), 'U S D C'], [addr(30), 'DAl'], [addr(31), 'Dai'], [addr(32), 'DA1'], [addr(33), 'U5DT']]) {
+    assert.equal(isLookAlike(row(address, symbol, '45')), true, symbol);
+  }
+  // Another symbol, or a token on another network, is not one. Fixed 2026-10-30 after review: a ticker of plain capitals
+  // counts only when it is a reserved one, so DAL (which reads DAI, a small l passing for a capital I) is listed.
+  for (const [address, symbol] of [[addr(27), 'USDCX'], [addr(28), 'UFG'], [addr(34), 'DAL']]) assert.equal(isLookAlike(row(address, symbol, '1')), false, symbol);
+  const onBase = row(addr(29), 'USDC', '1');
+  assert.equal(isLookAlike({ ...onBase, token: { ...onBase.token, chainId: 8453 } }), false, 'USDC on Base');
+  // The card: the airdropped USDC is neither listed nor asked a price; the tokens beside it are.
+  const rows = [row(addr(20), 'USDC', '45', 6), row(UFG, 'UFG', '1000'), row(USDG, 'USDG', '1', 6)];
+  const view = walletHoldings(rows, new Map([[UFG, { usd: '0.003', liquidityUsd: 100_000 }], [addr(20), { usd: '0.0002', liquidityUsd: 50_000 }]]));
+  assert.deepEqual(view.all.map((holding) => holding.row.token.symbol), ['UFG', 'USDG']);
+  assert.equal(addressesToPrice(rows).includes(addr(20)), false, 'never asked a price');
+});
+
 // Changed on purpose (round 6): at most one GET's worth (30) was named, and the rest went unanswered for good.
 test('what is priced: only what the wallet holds, WETH and the held selected-pool tokens first, every one of them', () => {
   assert.deepEqual(addressesToPrice([]), []);

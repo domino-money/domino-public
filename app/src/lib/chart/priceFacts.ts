@@ -6,6 +6,7 @@
  * small part, and the chart's own code loads with the chart, on a position's page only (PositionRange.tsx).
  */
 import { numberFormat } from '../format/numberFormat'
+import { hasFormatCharacter } from '../symbolReading'
 import { shownCardRange, shownCardTick, type CardPoolPrice, type ChainPositionCard } from '../read/screens/positions'
 import type { TokenDisplay } from '../read/types'
 
@@ -120,15 +121,22 @@ export function moveText(share: number): string {
   return `${numberFormat({ maximumFractionDigits: 0 }).format(percent)}%`
 }
 
+/** How close to an end of the range the price must be, as a share of that end, for the status to say what happens past it. */
+export const NEAR_END = 0.1
+
 /**
  * The card's one plain status (the owner, 2026-10-03: "a beginner must understand it"): a few words in bold, what they
  * mean, and, out of range, how far the price must move to come back into it.
+ * Changed on purpose 2026-10-30 (QA round 2, N68, the owner's decision): in range and within 10% of an end, what happens
+ * past that end, with the end as the key figures and the chart write it (readablePrice) and the token the position then
+ * holds ("Near the lower end: below 161.959, it stops earning and becomes all ETH."); nothing when that end has no
+ * written price or its token no symbol. The ends are named as Auto-exit names them ("Lower end", "Upper end").
  */
-export function statusWords(facts: Pick<RangeFacts, 'where' | 'now' | 'lower' | 'upper'>): { tone: 'in' | 'out' | 'closed'; title: string; detail: string; move: string | null } {
+export function statusWords(facts: Pick<RangeFacts, 'where' | 'now' | 'lower' | 'upper' | 'lowerText' | 'upperText' | 'base' | 'quote'>): { tone: 'in' | 'out' | 'closed'; title: string; detail: string; move: string | null } {
   const { where, now, lower, upper } = facts
   switch (where) {
     case 'inside':
-      return { tone: 'in', title: 'Earning fees', detail: 'the price is inside your range', move: null }
+      return { tone: 'in', title: 'Earning fees', detail: 'the price is inside your range', move: nearEnd(facts) }
     case 'under':
       return { tone: 'out', title: 'Not earning', detail: 'the price is below your range', move: lower > 0 ? `It must rise ${moveText(lower / now - 1)} to come back into your range.` : null }
     case 'over': {
@@ -141,4 +149,38 @@ export function statusWords(facts: Pick<RangeFacts, 'where' | 'now' | 'lower' | 
     default:
       return where satisfies never
   }
+}
+
+/** The most of a symbol the status writes, as TokenLabel caps it on screen (14ch). */
+export const SYMBOL_CHARS = 14
+/** FIRST STRONG ISOLATE and POP DIRECTIONAL ISOLATE, by code point: they are invisible in the source. */
+const ISOLATE = String.fromCodePoint(0x2068)
+const ISOLATE_END = String.fromCodePoint(0x2069)
+
+/**
+ * A token's symbol inside a sentence, as TokenLabel draws it beside one: isolated (U+2068 … U+2069, the text form of its
+ * <bdi>), so a right-to-left symbol never reorders the words around it, and cut at SYMBOL_CHARS with an ellipsis; null
+ * for none, or for one holding a format character, which could break out of the isolation (audit I2's rule).
+ */
+export function symbolInText(symbol: string | null): string | null {
+  if (!symbol || hasFormatCharacter(symbol)) return null
+  const chars = [...symbol]
+  return `${ISOLATE}${chars.length > SYMBOL_CHARS ? `${chars.slice(0, SYMBOL_CHARS - 1).join('')}…` : symbol}${ISOLATE_END}`
+}
+
+/**
+ * In range, near an end (NEAR_END): below the lower end the position becomes all `base` (the token priced), above the
+ * upper end all `quote`. Null away from both ends, at an end that is the pool's limit, or without that end's written
+ * price or its token's symbol (symbolInText).
+ */
+function nearEnd({ now, lower, upper, lowerText, upperText, base, quote }: Pick<RangeFacts, 'now' | 'lower' | 'upper' | 'lowerText' | 'upperText' | 'base' | 'quote'>): string | null {
+  if (lower > 0 && now / lower - 1 < NEAR_END) {
+    const symbol = symbolInText(base.symbol)
+    return lowerText !== null && symbol ? `Near the lower end: below ${readablePrice(lowerText)}, it stops earning and becomes all ${symbol}.` : null
+  }
+  if (Number.isFinite(upper) && 1 - now / upper < NEAR_END) {
+    const symbol = symbolInText(quote.symbol)
+    return upperText !== null && symbol ? `Near the upper end: above ${readablePrice(upperText)}, it stops earning and becomes all ${symbol}.` : null
+  }
+  return null
 }

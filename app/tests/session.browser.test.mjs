@@ -235,7 +235,11 @@ test('with no browser wallet, Connect says so in plain words and lists nothing',
   await viewIs(page, 'no_wallet');
   await openDialog(page);
   const text = await dialog(page).innerText();
-  assert.match(text, /No browser wallet found\. Install or unlock a wallet extension, then open this again\./);
+  // Changed on purpose 2026-10-30 (QA round 2, N4): what to do next in plain words, naming the wallets, and a phone's or a
+  // tablet's way on.
+  assert.match(text, /No wallet found in this browser\./);
+  assert.match(text, /Install MetaMask or Rabby, then reload this page\./);
+  assert.match(text, /On a phone or tablet, open this site in your wallet app’s browser\./);
   assert.doesNotMatch(text, /EIP-6963|announce|detected/i, 'no protocol names on screen');
   assert.equal(await dialog(page).getByRole('list', { name: 'Browser wallets' }).count(), 0);
   assert.equal(s.fake.state.log.length, 0);
@@ -784,7 +788,7 @@ test('a browser wallet known only as window.ethereum is offered as Browser walle
   await viewIs(page, 'no_wallet');
   await openDialog(page);
   await dialog(page).getByRole('button', { name: 'Connect Browser wallet' }).waitFor();
-  assert.doesNotMatch(await dialog(page).innerText(), /No browser wallet found/);
+  assert.doesNotMatch(await dialog(page).innerText(), /No wallet found in this browser/);
   await dialog(page).getByRole('button', { name: 'Connect Browser wallet' }).click();
   await viewIs(page, 'signed_out');
   assert.equal(await trigger(page).getAttribute('title'), ADDR_A);
@@ -816,10 +820,12 @@ test('with no wallet, a phone is offered the wallet apps that open this site (do
   assert.match(text, /Open this site in your wallet app’s browser, then connect there\./);
   assert.match(text, /access password again/);
   assert.doesNotMatch(text, /extension/, 'nothing a phone cannot do');
+  // Changed on purpose 2026-10-30 (QA round 2, N56): each link carries the open route (#/app here), as the gate keeps it
+  // through the password, so the wallet's browser opens the same screen; the site stays fixed.
   assert.deepEqual(await dialog(page).getByRole('list', { name: 'Wallet apps' }).locator('a').evaluateAll((links) => links.map((link) => link.getAttribute('href'))), [
-    'https://metamask.app.link/dapp/domino.money/',
-    'https://go.cb-w.com/dapp?cb_url=https%3A%2F%2Fdomino.money%2F',
-    'https://link.trustwallet.com/open_url?coin_id=60&url=https%3A%2F%2Fdomino.money%2F',
+    'https://metamask.app.link/dapp/domino.money/#/app',
+    'https://go.cb-w.com/dapp?cb_url=https%3A%2F%2Fdomino.money%2F%23%2Fapp',
+    'https://link.trustwallet.com/open_url?coin_id=60&url=https%3A%2F%2Fdomino.money%2F%23%2Fapp',
   ]);
   await phone.close();
 
@@ -827,7 +833,7 @@ test('with no wallet, a phone is offered the wallet apps that open this site (do
   const desk = await computer.open();
   await viewIs(desk, 'no_wallet');
   await openDialog(desk);
-  assert.match(await dialog(desk).innerText(), /No browser wallet found\./);
+  assert.match(await dialog(desk).innerText(), /No wallet found in this browser\./);
   assert.deepEqual(await dialog(desk).locator('a').evaluateAll((links) => links.map((link) => [link.getAttribute('href'), link.getAttribute('target'), link.getAttribute('rel')])), [
     ['https://metamask.io/download/', '_blank', 'noopener noreferrer'],
     ['https://rabby.io/', '_blank', 'noopener noreferrer'],
@@ -1912,7 +1918,7 @@ test('a refresh after the session is revoked signs out and clears private data, 
   await s.close();
 });
 
-test('a refresh the store cannot serve keeps the session, says so, and retries a bounded number of times', async () => {
+test('a refresh the store cannot serve keeps the session, silently, and retries a bounded number of times', async () => {
   const s = await scenario({ clockAt: Date.now() });
   const page = await s.open();
   await connect(page);
@@ -1930,7 +1936,11 @@ test('a refresh the store cannot serve keeps the session, says so, and retries a
   assert.equal(kept.status, 'signed_in', 'a 503 is not a sign-out');
   assert.deepEqual(await privateKeys(page), [scope], 'private data stays');
   await openDialog(page);
-  assert.match(await dialog(page).innerText(), /could not renew your session/);
+  // Changed on purpose 2026-10-30 (QA round 2, the owner's rule: no notices that something could not update): the session
+  // stays signed in and the renewal is asked again in the background; the dialog says only who is signed in.
+  const words = await dialog(page).innerText();
+  assert.doesNotMatch(words, /could not renew|try again/i);
+  assert.match(words, /Signed in as /);
 
   // Retries back off, and stop.
   for (const step of ['00:31', '01:01', '02:01']) {

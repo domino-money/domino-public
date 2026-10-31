@@ -148,6 +148,12 @@ export const MAX_VISITORS = 5_000
 /** How long the browser is told to wait when the node's secret is missing, and when the node is away. */
 export const SOURCE_OFF_RETRY_SECONDS = 300
 export const SOURCE_AWAY_RETRY_SECONDS = 60
+/**
+ * (2026-10-30, launch capacity study, item 7) The wait when the node is merely out of reach for this isolate (localRpc.ts
+ * LOCAL_RPC_DOWN): what is left of its window, within these bounds. It was SOURCE_AWAY_RETRY_SECONDS, a minute that
+ * outlasted the window several times over. Another chain or a refused token still waits SOURCE_AWAY_RETRY_SECONDS.
+ */
+export const SOURCE_DOWN_RETRY_SECONDS = { min: 5, max: 15 } as const
 /** automation/v1/state: an answer is kept this long per set of ids, a failure FAILURE_SECONDS. */
 export const AUTOMATION_SECONDS = 15
 export const AUTOMATION_FAILURE_SECONDS = 5
@@ -660,9 +666,12 @@ async function handle(name: ChainRouteName, context: ChainRouteContext, runtime:
       } catch {
         response = failed(name, PLAIN.has(name) ? 'chain_unavailable' : 'rpc_unavailable', 502, 5)
       }
-      if (response.status >= 500 && response.status !== 501 && transport.health() !== 'ok') {
+      const health = transport.health()
+      if (response.status >= 500 && response.status !== 501 && health !== 'ok') {
         await response.body?.cancel().catch(() => undefined)
-        return failed(name, 'source_unavailable', 503, SOURCE_AWAY_RETRY_SECONDS)
+        // Merely out of reach (2026-10-30): asked again as the window ends, not a minute later.
+        const down = Math.min(SOURCE_DOWN_RETRY_SECONDS.max, Math.max(SOURCE_DOWN_RETRY_SECONDS.min, Math.ceil(transport.downForMs() / 1000)))
+        return failed(name, 'source_unavailable', 503, health === 'down' ? down : SOURCE_AWAY_RETRY_SECONDS)
       }
       return response
     }

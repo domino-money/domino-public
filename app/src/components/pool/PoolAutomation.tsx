@@ -6,6 +6,14 @@ import { IconCheck } from '../icons'
 const DOCS: Record<string, string> = { plain: 'new-position', protection: 'auto-exit', compound: 'auto-compound', domino: 'domino-compound' }
 
 /**
+ * Each automation's fee in Automate's own words (QA round 2, Q1, the owner: one way on every screen): a compounding one
+ * "of the earned fees it uses, each time" (components/automate/ModeSummary.tsx), Auto-exit's on the position's value,
+ * only if it closes (components/automate/copy.ts). Written here, not imported: Automate's copy is not in this chunk.
+ */
+const AUTO_EXIT_FEE = '0.2% of the position’s value, only if it closes'
+const feeWords = (key: string, fee: string | null) => (key === 'protection' ? AUTO_EXIT_FEE : fee ? `${fee} of the earned fees it uses, each time` : 'No automation fee')
+
+/**
  * The same choices as Automate: create a position, protect its range, or put its fees to work.
  * They work in a pool with no hooks and a fixed fee, the pools New
  * position opens positions in and a sequence accepts; any other pool says so in one line. `why` is that line's reason.
@@ -32,7 +40,7 @@ export function PoolAutomation({ usable, why }: { usable: boolean; why: string }
                   <span className="dm-pool-auto-body">
                     <span className="dm-pool-auto-name">
                       <a href={docsHref(slug)}>{key === 'plain' ? 'New position' : feature.name}</a>
-                      <span className="dm-pool-auto-fee">{key === 'protection' ? feature.fee : feature.fee ? `${feature.fee} of fees` : 'No automation fee'}</span>
+                      <span className="dm-pool-auto-fee">{feeWords(key, feature.fee)}</span>
                     </span>
                     <span className="dm-pool-auto-line">{feature.line}</span>
                   </span>

@@ -50,11 +50,43 @@ export function formatUnitsText(raw: bigint, decimals: number | null, maxFractio
 }
 
 /**
+ * Added 2026-10-30 (QA round 2, N2: one number format; "10,345.741134 PRIORS" on Review): a raw amount at six significant
+ * digits, as the rest of the app writes a token amount (lib/format/amount.ts shortAmount): the whole part always whole and
+ * grouped, the fraction only until six significant digits in all, trailing zeros dropped ("10,345.7", "2,018,590",
+ * "0.19"). Below one, at most six decimals (the owner's point 4 of 2026-10-06: no 18-digit amounts on screen), so dust
+ * still reads "<0.000001". ROUNDED DOWN, or with `round` 'up' for a fee or an amount to allow, never shown lower than it
+ * is (formatUnitsText's rule). `decimals` null: the raw integer, said by the caller as raw units.
+ */
+export function significantUnitsText(raw: bigint, decimals: number | null, round: 'down' | 'up' = 'down', significant = 6): string {
+  if (decimals === null) return formatUnitsText(raw, null)
+  if (!Number.isSafeInteger(decimals) || decimals < 0 || decimals > 77) throw new Error('invalid_decimals')
+  const value = raw < 0n ? -raw : raw
+  const base = 10n ** BigInt(decimals)
+  const whole = value / base
+  let keep: number
+  if (whole > 0n) keep = Math.max(0, significant - whole.toString(10).length)
+  else {
+    const lead = (value % base).toString(10).padStart(decimals, '0').search(/[1-9]/)
+    keep = lead === -1 ? 0 : Math.min(lead + significant, SHOWN_FRACTION)
+  }
+  return formatUnitsText(raw, decimals, Math.min(keep, decimals), round)
+}
+
+/** A figure written with thousands separators, the way the page writes one: "1,000" or "2,500.25" (lib/create/amountText.ts). */
+const GROUPED = /^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/
+
+/**
  * What a person typed ("1,000.5", "0.25") as raw units; null when it is not a plain positive decimal with at most
  * `decimals` fraction digits. `decimals` null takes a raw integer only.
+ *
+ * Changed on purpose 2026-10-30 (QA round 2, N99): spaces around it are dropped, and commas only where they group
+ * thousands ("1,000.50"), the rule New position's own amount step reads by (lib/create/amountText.ts). Any other comma is
+ * refused: "0,5" was read as 5, ten times the amount, on the zap path and in a position's Add dialogs.
  */
 export function parseUnitsText(text: string, decimals: number | null): bigint | null {
-  const clean = text.trim().replace(/,/g, '')
+  const trimmed = text.trim()
+  if (trimmed.includes(',') && !GROUPED.test(trimmed)) return null
+  const clean = trimmed.replace(/,/g, '')
   if (decimals === null) return /^[0-9]{1,78}$/.test(clean) && BigInt(clean) > 0n ? BigInt(clean) : null
   const match = /^([0-9]{0,60})(?:\.([0-9]*))?$/.exec(clean)
   if (!match || (match[1] === '' && (match[2] ?? '') === '')) return null
@@ -82,17 +114,32 @@ export function tokenText(token: { address: Address; symbol: string | null }): s
   return token.symbol ?? shortAddress(token.address)
 }
 
-/** "0.3%": a pool's fee in pips (hundredths of a basis point) as a percent. */
+/**
+ * "0.30%": a pool's fee in pips (hundredths of a basis point) as a percent. Changed on purpose 2026-10-30 (QA round 2,
+ * N2: one fee format on every screen): the rule Robinhood Chain's screens write a fee by (lib/read/screens/fee.ts
+ * fixedFeePercent), in integers: at least two decimals, then every further digit that is not zero (3000 → "0.30%",
+ * 10000 → "1.00%", 500 → "0.05%", 200 → "0.02%", 50 → "0.005%"). It was "0.3%" and "1%" beside "0.30%" elsewhere.
+ */
 export function feeTierText(pips: number): string {
-  const percent = pips / 10_000
-  return `${Number(percent.toFixed(4)).toString()}%`
+  if (!Number.isSafeInteger(pips) || pips < 0) return `${Number((pips / 10_000).toFixed(4)).toString()}%`
+  const fraction = String(pips % 10_000).padStart(4, '0')
+  return `${Math.floor(pips / 10_000)}.${fraction.slice(0, 2)}${fraction.slice(2).replace(/0+$/, '')}%`
 }
 
-/** A price as a person reads it: six significant digits, no exponent; null stays a dash for the caller. */
+/**
+ * A price as a person reads it, no exponent; null stays a dash for the caller. Changed on purpose 2026-10-30 (QA round 2,
+ * N2: "1,590.87" beside "3,411.8"): from 1,000 up, exactly two decimals; from 1 to 1,000, six significant digits with at
+ * least two decimals ("3.40", "1.00045"); below 1, six significant digits as before. Never fewer digits than that: the
+ * neighbouring ticks of a stable pair still read apart.
+ */
 export function priceText(value: number | null): string | null {
   if (value === null || !Number.isFinite(value) || value <= 0) return null
   if (value >= 1e15 || value < 1e-15) return null
-  return new Intl.NumberFormat('en-US', { maximumSignificantDigits: 6, useGrouping: true }).format(value)
+  if (value >= 1000) return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true }).format(value)
+  const text = new Intl.NumberFormat('en-US', { maximumSignificantDigits: 6, useGrouping: true }).format(value)
+  if (value < 1) return text
+  const point = text.indexOf('.')
+  return point === -1 ? `${text}.00` : text.length - point - 1 < 2 ? `${text}0` : text
 }
 
 /**

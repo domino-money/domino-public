@@ -1,6 +1,8 @@
 import { lazy, Suspense, useState, type LazyExoticComponent } from 'react'
 import { CREATE } from '../../lib/create/copy'
-import { poolOnOtherChain } from '../../lib/create/otherChains'
+import { networkFiguresAt, poolOnOtherChain, useOtherChains } from '../../lib/create/otherChains'
+import { pricePair } from '../../lib/read/orientation'
+import { automateHref } from '../explore/routes'
 import type { PairBalancesState } from './usePairBalances'
 import { batchedSteps, priceOf, takesOnly, validateSlippage, walletSteps, type JourneyState } from '../../lib/create/journey'
 import { slippageWarns, slippageWritten } from '../../lib/create/slippage'
@@ -12,6 +14,7 @@ import { Button } from '../ui'
 import { ASSISTED_SWAP_FEE_BPS, type DepositPlan } from '../../lib/create/depositPlan'
 import { reviewPlan } from '../../lib/create/reviewPlan'
 import { NATIVE_CURRENCY } from '../../lib/read/screens/identity'
+import { useMarketOption } from '../../lib/read/screens/knownMarkets'
 import { useBatchAbility, useCreateProgress, useCreated, type LiveState } from '../../lib/create/createProgress'
 import { useRoutedReview } from '../../lib/create/routedReview'
 import { PoolPair, RangeSummary } from './StepList'
@@ -19,7 +22,7 @@ import { CreatedNext } from './CreatedNext'
 import { NewPositionAgain } from './createdParts'
 import { AmountText, UsdText } from '../figures'
 import { TokenMarkPair } from '../TokenIcon'
-import { heldAmounts, rawBalances } from './valuation'
+import { coversFullRange, heldAmounts, poolSizeLine, rawBalances, reportedTvl } from './valuation'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 
 /** One side of the position: an amount of one of the pool's tokens, in whole tokens, grouped as the read writes it. */
@@ -133,6 +136,17 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
   const slippage = validateSlippage(state.slippageBps)
   // The headline's value in USD (USDG pairs only).
   const total = planned ? (heldAmounts(state, balances)?.total ?? null) : null
+  // QA round 2, N51 (the owner's yes above 10%) and Q20: the same plain sentence the amount step says beside its total
+  // (valuation.ts poolSizeLine, one helper for both, its review), on the TVL its preview card and Markets show (N8, pass 3).
+  const marketPool = useMarketOption(pool)
+  const sizeText = marketPool && total !== null ? poolSizeLine(reportedTvl(networkFiguresAt(marketPool, Math.floor(now / 1000))), total) : null
+  // QA round 2, Q24: the pair named as its price is written, marks matched to the names.
+  const pair = pool ? pricePair(pool.currencies[0], pool.currencies[1]) : null
+  // QA round 2, Q23/N37: the pool's network beside its fee, where the chosen pool's panel names it (other networks offered).
+  const others = useOtherChains()
+  const network = pool ? (others?.name(pool.currencies[0].chainId) ?? null) : null
+  // QA round 2, Q12: automation is added from Automate once the position exists; once it does, the created view offers it.
+  const created = useCreated()
   const other = swap ? (swap.from === 0 ? 1 : 0) : 0
   // A range that takes one token alone (2026-09-28, one-sided): the headline names that token only, never "0" of the
   // other; and a deposit swapped whole for it is said as all of it, never "about 0" kept.
@@ -151,9 +165,9 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
           <p className="dm-flow-headline-pair">
             {pool ? (
               <>
-                <TokenMarkPair base={pool.currencies[0]} quote={pool.currencies[1]} size={40} ring="#1a1815" />
+                <TokenMarkPair base={pair?.base ?? pool.currencies[0]} quote={pair?.quote ?? pool.currencies[1]} size={40} ring="#1a1815" />
                 <span className="min-w-0">
-                  <PoolPair option={pool} />
+                  <PoolPair option={pool} network={network} />
                 </span>
               </>
             ) : (
@@ -189,7 +203,13 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
           {!routed && total !== null && (
             <p className="dm-usd-line dm-flow-headline-usd">
               <span>{CREATE.review.total}</span>
-              <UsdText value={total} />
+              {/* QA round 2, N2 (d): under a cent it reads "<$0.01", as every Estimated total does. */}
+              <UsdText value={total} floor />
+            </p>
+          )}
+          {!routed && sizeText !== null && (
+            <p className="dm-flow-headline-line" data-review-pool-share="">
+              {sizeText}
             </p>
           )}
           {!routed && swap && pool && (
@@ -241,8 +261,9 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
             a range that does not hold the price earns no fees until the price
             moves into it. The ordinary case is silent on screen. */}
         {inside === false && usable && (
-          // A price read more than 5 minutes ago keeps its sentence in normal type; that it is stale is in the title only.
-          <p role="status" className="dm-flow-position" data-tone="neutral" data-review-position="" data-stale={usable.stale ? '' : undefined} title={usable.stale ? CREATE.review.stale : undefined}>
+          // A price read more than 5 minutes ago keeps its sentence in normal type, with no note about its age (QA round 2
+          // sweep: no stale notices); data-stale keeps it as data.
+          <p role="status" className="dm-flow-position" data-tone="neutral" data-review-position="" data-stale={usable.stale ? '' : undefined}>
             {CREATE.review.outOfRange}
           </p>
         )}
@@ -283,11 +304,28 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
             </span>
           </p>
         )}
+        {/* Changed on purpose 2026-10-30 (QA round 2, final review create-1): Automate opens in a new tab, so Review and every
+            choice before it stay as they are (a same-tab link left New position, and Back started an empty flow); a screen
+            reader hears where it opens. Once the position exists, the created view offers Automate in place. */}
+        {created === null && (
+          <p className="dm-flow-position" data-tone="neutral" data-review-automate-later="">
+            <span>
+              {pool && coversFullRange(state.range, pool.tickSpacing) ? CREATE.review.automateLaterFull : CREATE.review.automateLater}{' '}
+              <a className="underline" href={automateHref} target="_blank" rel="noopener noreferrer">
+                {CREATE.review.automateLink}
+                <span className="sr-only">{CREATE.page.newTab}</span>
+              </a>
+              .
+            </span>
+          </p>
+        )}
       </section>
 
       <section aria-labelledby="create-steps-heading" className="dm-flow-section">
         <h3 id="create-steps-heading" className="dm-flow-subtitle">
-          {CREATE.review.steps}
+          {/* QA round 2, Q31 (2026-10-30): titled for what to do while no wallet is connected, as V2's Review is; "In your
+              wallet" once one is. */}
+          {balances.status === 'disconnected' ? CREATE.review.stepsConnect : CREATE.review.steps}
         </h3>
         {/* What the steps are is said once, under Create position (its reason line), not again here. */}
         <ol className="dm-flow-wsteps" data-wallet-steps="" data-live={live ? '' : undefined} aria-live="polite">

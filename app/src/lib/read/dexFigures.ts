@@ -225,3 +225,37 @@ export function subjectOf(currencies: readonly [string, string]): string {
 /** The page's one store, fed by every token-pairs body the artwork resolver reads, on every chain it reads. */
 export const dexStore = createDexStore((address, chainId) => tokenArtwork.pairs(chainId, address))
 tokenArtwork.onPairs((address, body, retrievedAt, chainId) => dexStore.take(address, body, retrievedAt, chainId))
+
+/** What settleSearchHits needs of the artwork resolver and the store: the page's own, unless a test gives its own. */
+export interface SearchHitDeps {
+  artwork: Pick<typeof tokenArtwork, 'edgeTokens' | 'peek' | 'seed'>
+  store: Pick<DexStore, 'take' | 'token'>
+}
+
+/**
+ * The token search's Robinhood Chain hits, settled in one or two GETs where it can (added 2026-10-30, QA round 2, N6).
+ * Each hit's mark used to send a token-pairs GET of its own for its artwork, and with it the hit's "$X liquidity" or
+ * "No liquidity found": 17 to 20 GETs for "USDC", most for look-alikes with no pair at all.
+ *
+ * The hits nothing is known of yet (no liquidity in the store, no artwork held) are asked of our edge's `tokens` batch
+ * once, ten a GET (tokenArtwork.edgeTokens): no provider fallback, and nothing at all where this build has no edge or it
+ * is resting. A hit the batch answers with no pair is settled exactly as its own token-pairs body ([]) would settle it:
+ * no liquidity ("No liquidity found") and no artwork, dated by the edge's own retrieval, so its mark asks nothing. Every
+ * other hit is left as it was: its mark reads its own token-pairs body, so its liquidity line, its artwork and the hits'
+ * order are what they were. The batch's pairs are trimmed (each token's most liquid four and its top base pair), so they
+ * never feed a total; a hit the batch did not answer, or a failed batch, is never taken for zero.
+ */
+export async function settleSearchHits(addresses: readonly string[], signal?: AbortSignal, deps: SearchHitDeps = { artwork: tokenArtwork, store: dexStore }): Promise<void> {
+  const { artwork, store } = deps
+  const unknown = [...new Set(addresses.map((address) => address.toLowerCase()))]
+    .filter((address) => ADDRESS.test(address) && !/^0x0{40}$/.test(address) && store.token(address) === null && artwork.peek(HOME, address) === undefined)
+  if (unknown.length === 0 || signal?.aborted) return
+  const answered = await artwork.edgeTokens(unknown, signal)
+  if (!answered || signal?.aborted) return
+  for (const [address, { pairs, retrievedAt }] of answered) {
+    // A hit with a pair is its mark's to read; one whose own body landed meanwhile is settled by it.
+    if (pairs.length > 0 || store.token(address) !== null) continue
+    store.take(address, [], retrievedAt)
+    artwork.seed(HOME, address, null)
+  }
+}

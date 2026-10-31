@@ -463,6 +463,67 @@ test('a chain that cannot be read is a 502 with a code, never a partial list; th
   assert.match(stored.get(key).headers.get('Cache-Control'), /^max-age=25$/);
 });
 
+// Added 2026-10-30 (launch capacity study, item 7): a chain_unavailable was kept the 12 s of a chain_busy, so one blip of
+// the tunnel or the node held a wallet's positions away for 12 s in a data centre. A node out of reach is kept 3 s now;
+// every other failure (review of 2026-10-30: the scan's deadline, its caps, a node's error) keeps 12 s, as chain_busy does.
+test('a node out of reach is kept 3 seconds for every question, fresh or not, then the chain is asked again; any other failure 12', async () => {
+  assert.deepEqual([owned.UNAVAILABLE_SECONDS, owned.FAILURE_SECONDS], [3, 12]);
+  /** The chain, with its first call failing in the transport the way localRpc.ts fails it. */
+  const failingFirst = (message) => {
+    const chain = fakeChain({ minted: minted(1), nfts: { 1: nft() } });
+    const fetch = chain.deps.fetch;
+    let failed = false;
+    chain.deps.fetch = async (url, init) => {
+      if (failed) return fetch(url, init);
+      failed = true;
+      throw new TypeError(message);
+    };
+    return chain;
+  };
+  for (const message of ['local_rpc_unreachable', 'local_rpc_down']) {
+    const { cache, stored } = memoryCache();
+    const failing = failingFirst(message);
+    const first = await ask(post({ owner: OWNER }), failing.deps, cache);
+    assert.deepEqual([first.status, await first.json(), first.headers.get('Retry-After')], [502, { error: 'chain_unavailable' }, '3'], message);
+    const [key] = stored.keys();
+    assert.match(stored.get(key).headers.get('Cache-Control'), /^max-age=3$/);
+    const calls = failing.log.length;
+    for (const [time, body, retry] of [[1_000, { owner: OWNER }, '2'], [2_999, { owner: OWNER, fresh: true }, '1']]) {
+      failing.deps.time = time;
+      const again = await ask(post(body), failing.deps, cache);
+      assert.deepEqual([again.status, await again.json(), again.headers.get('Retry-After')], [502, { error: 'chain_unavailable' }, retry], `${message} at ${time} ms`);
+    }
+    assert.equal(failing.log.length, calls, 'the kept failure read nothing');
+    failing.deps.time = 3_000;
+    const recovered = await ask(post({ owner: OWNER }), failing.deps, cache);
+    assert.equal(recovered.status, 200);
+    assert.deepEqual((await recovered.json()).positions.map((p) => [p.tokenId, p.status]), [['1', 'open']]);
+  }
+  // The transport's other refusals (its POST cap, a visitor's spent share), a node's error, a scan past its deadline: 12 s,
+  // as before.
+  const deadline = fakeChain({ minted: minted(1), nfts: { 1: nft() } });
+  const onTime = deadline.deps.fetch;
+  deadline.deps.fetch = async (url, init) => {
+    deadline.deps.time += 30_000;
+    return onTime(url, init);
+  };
+  for (const [label, chain] of [
+    ['local_rpc_budget', failingFirst('local_rpc_budget')],
+    ['local_rpc_visitor_spent', failingFirst('local_rpc_visitor_spent')],
+    ['a node error', fakeChain({ minted: minted(1), nfts: { 1: nft() }, script: { eth_call: [{ error: { code: -32601, message: 'method not found' } }] } })],
+    ['the deadline', deadline],
+  ]) {
+    const { cache, stored } = memoryCache();
+    const failed = await ask(post({ owner: OWNER }), chain.deps, cache);
+    assert.deepEqual([failed.status, await failed.json(), failed.headers.get('Retry-After')], [502, { error: 'chain_unavailable' }, '12'], label);
+    const [key] = stored.keys();
+    assert.match(stored.get(key).headers.get('Cache-Control'), /^max-age=12$/, label);
+    chain.deps.time += 3_000;
+    const kept = await ask(post({ owner: OWNER }), chain.deps, cache);
+    assert.deepEqual([kept.status, kept.headers.get('Retry-After')], [502, '9'], `${label}: still kept at 3 s`);
+  }
+});
+
 test('an answer is kept per owner for 25 seconds under a digest, and a fresh question within 5 seconds of it gets it rather than a new scan', async () => {
   const { cache, stored } = memoryCache();
   const chain = fakeChain({ minted: minted(1), nfts: { 1: nft() } });

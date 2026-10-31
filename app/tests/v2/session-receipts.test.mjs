@@ -55,7 +55,8 @@ test('a create checked in this browser is a receipt row at once, in the indexed 
   assert.deepEqual([entry.action, entry.tokenId, entry.at, entry.block, entry.state], ['create', '9000001', 1_790_000_000, 73_400_000, 'included']);
   const view = sessionReceiptView(entry, []);
   assert.equal(view.what, 'Created position #9000001', 'the title read-v6\'s s1_action row says');
-  assert.equal(view.amount, '0.1 ETH', 'the first amount paid in, as the indexed row');
+  // Changed on purpose 2026-10-30 (QA round 2, N66): every amount paid in, in the step's own token order, as the indexed row.
+  assert.equal(view.amount, '0.1 ETH + 1,000 USDG', 'every amount paid in, as the indexed row');
   assert.deepEqual(view.lines.map((line) => [line.label, line.value]), [
     ['Paid in', '0.1 ETH'], ['Paid in', '1,000 USDG'], ['Swapped', '500 USDG → 0.19 ETH'],
     ['Added to the position', '0.19 ETH + 490 USDG · position #9000001'], ['Returned to your wallet', '6.75 USDG'],

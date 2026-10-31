@@ -43,8 +43,6 @@ const CONFIRMED_RETRY_MS = [2_000, 10_000, 30_000, 60_000, 120_000] as const
  */
 const FIRST_PAINT_MS = 1500
 
-/** The pager's own closing sentence; the title says the same thing with the block number in it. */
-const PAGER_FOOTNOTE = 'Balances read from the chain at one block. Anyone can see them; they don’t prove who controls the wallet.'
 // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): NOTHING_TO_SHOW ("Your tokens couldn’t be loaded right now.") is no longer said.
 /** An empty card whose list answered: its block is the line's title. */
 const NONE_LISTED = 'No tokens listed.'
@@ -231,13 +229,15 @@ function TokensForm({ onCheck }: { onCheck: (tokens: string[]) => void }) {
  * What the list says about itself, for the count line's title only: the
  * block, that balances prove nothing about control, where the pages came
  * from, and whatever makes the list less than complete. None of it is
- * printed on the card.
+ * printed on the card. Changed on purpose 2026-10-30 (QA round 2, rules 3 and
+ * 5): the pager's own notes ("Inventory discovery is not configured…",
+ * "Partial list: inventory unavailable (…)", "One page of the provider’s
+ * inventory…") are no longer in it; the first line already says the rest.
  */
 function listTitle(snap: WalletSnapshot, view: WalletView, block: string | null, checkedByAddress: boolean): string {
   const provenance = view.freshness.filter((line) => !/^Block \d+$/.test(line))
   const lines = [
     block ? `Balances read from the chain at block ${block}. Anyone can see them; they don’t prove who controls the wallet.` : 'Balances read from the chain. Anyone can see them; they don’t prove who controls the wallet.',
-    ...view.notes.filter((note) => note !== PAGER_FOOTNOTE),
     provenance.length > 0 ? `${provenance.join(' · ')}.` : null,
     view.skipped > 0 ? `${view.skipped} provider candidate${view.skipped === 1 ? ' wasn’t' : 's weren’t'} checked in this read.` : null,
     checkedByAddress ? 'Balances checked for the verified pool tokens by their exact addresses.' : null,
@@ -712,7 +712,10 @@ export function PortfolioTokens({ address }: { address: string }) {
       data-wallet-asked={askedList.length}
       data-wallet-total-withheld={waiting || total !== null ? undefined : (withheld ?? undefined)}
     >
-      <p className="dm-acct-tokens-count" title={snap && view && view.pages > 0 ? listTitle(snap, view, block, checkedByAddress) : undefined}>
+      {/* (QA round 2, N64) The provider's listing count is data only now: hidden for the eye already, "101 tokens listed · page
+          5 of up to 5 · more tokens not listed" was still read out like a debug line, and is not on the approved card. Hidden,
+          it keeps its words and title in the markup; the card says its count in Show all N. */}
+      <p hidden className="dm-acct-tokens-count" title={snap && view && view.pages > 0 ? listTitle(snap, view, block, checkedByAddress) : undefined}>
         {view && view.pages > 0 ? (
           <>
             <span className="tnum">{freshRows.length}</span> token{freshRows.length === 1 ? '' : 's'} listed
@@ -752,7 +755,7 @@ export function PortfolioTokens({ address }: { address: string }) {
               {/* In the whole list, one quiet line before the tokens no market prices (and no earlier price places). */}
               {expanded && index > 0 && index === firstUnpriced && (
                 <li className="dm-acct-token-group" data-wallet-unpriced-note="">
-                  No price found
+                  No price
                 </li>
               )}
               <HoldingRow holding={holding} due={due && holding.due && askedSet.has(priceSource(holding.row) ?? '')} unasked={holding.due && !askedSet.has(priceSource(holding.row) ?? '')} cached={previousTotal !== null ? complete.snapshot?.holdings.get(holding.row.key) : undefined} />

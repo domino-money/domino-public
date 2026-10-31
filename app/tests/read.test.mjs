@@ -19,7 +19,7 @@ const require = createRequire(import.meta.url);
 const built = (name) => require(`../.test-build/app/src/lib/read/${name}.js`);
 const { interpretReply, GATE_REFUSAL, GATE_PAGE_MARKER } = built('interpret');
 const { createFixtureSource } = built('fixtureSource');
-const { createBridgeSource, READ_HEADERS, READ_INIT } = built('bridgeSource');
+const { createBridgeSource, READ_HEADERS, READ_INIT, CAPABILITIES_JOIN_MS } = built('bridgeSource');
 const { BRIDGE_RETRY } = built('pipeline');
 const { ERROR_CLASS } = built('errors');
 const { createScheduledSource, GATEWAY_BUDGET, BUDGET_RESERVE } = built('scheduler');
@@ -2527,36 +2527,77 @@ test('visible successful rows refresh in place, pause while hidden or unmounted,
   release(); back();
 });
 
-test('leaving or hiding during successful refresh aborts it and the next visible visit still revalidates', async () => {
-  for (const reason of ['hidden', 'unmounted']) {
-    let hang = false;
-    const attempted = [];
-    const wrap = (fetch) => async (path, init) => {
-      if (hang && init.method === 'POST') {
-        attempted.push(init.signal);
-        await new Promise(() => undefined);
-      }
-      return fetch(path, init);
-    };
-    const { provider, clock, posts, setHidden, viewer } = quietProvider(budgetAnswer, PRODUCTION_READS, { refreshMs: 60_000, wrap });
-    let release = provider.recoverQuietly();
-    const first = await settled(provider, () => provider.ensure());
-    const mark = posts().length;
-    hang = true; clock.advance(60_000); await drain();
-    assert.equal(attempted.length, 1);
-    if (reason === 'hidden') setHidden(true);
-    else { release(); viewer(); clock.advance(LEAVE_GRACE_MS); }
-    await drain();
-    assert.equal(attempted[0].aborted, true, reason);
-    assert.equal(provider.getSnapshot(), first, 'an abandoned refresh does not renew the old observations');
-    hang = false;
-    let back = viewer;
-    if (reason === 'hidden') setHidden(false);
-    else { back = provider.subscribe(() => undefined); provider.ensure(); release = provider.recoverQuietly(); }
-    clock.advance(0); await drain();
-    assert.equal(posts().length, mark + 2, 'revalidation was not lost with the cancelled read');
-    release(); back();
-  }
+test('leaving during successful refresh aborts it and the next visit still revalidates', async () => {
+  let hang = false;
+  const attempted = [];
+  const wrap = (fetch) => async (path, init) => {
+    if (hang && init.method === 'POST') {
+      attempted.push(init.signal);
+      await new Promise(() => undefined);
+    }
+    return fetch(path, init);
+  };
+  const { provider, clock, posts, viewer } = quietProvider(budgetAnswer, PRODUCTION_READS, { refreshMs: 60_000, wrap });
+  let release = provider.recoverQuietly();
+  const first = await settled(provider, () => provider.ensure());
+  const mark = posts().length;
+  hang = true; clock.advance(60_000); await drain();
+  assert.equal(attempted.length, 1);
+  release(); viewer(); clock.advance(LEAVE_GRACE_MS);
+  await drain();
+  assert.equal(attempted[0].aborted, true);
+  assert.equal(provider.getSnapshot(), first, 'an abandoned refresh does not renew the old observations');
+  hang = false;
+  const back = provider.subscribe(() => undefined); provider.ensure(); release = provider.recoverQuietly();
+  clock.advance(0); await drain();
+  assert.equal(posts().length, mark + 2, 'revalidation was not lost with the cancelled read');
+  release(); back();
+});
+
+// Changed on purpose 2026-10-30 (instability study, INST-1): hiding the page used to abort a refresh on the wire and
+// ask again the moment the page came back, so every hide/show sent and cancelled one read (27k cancelled reads from one
+// tab in two days). A refresh already sent now runs to its end, and a hidden page only keeps new reads from starting.
+test('hiding during a successful refresh lets it finish, and a hide/show storm never sends or cancels reads', async () => {
+  let hold = false;
+  const attempted = [];
+  const held = [];
+  const wrap = (fetch) => async (path, init) => {
+    if (hold && init.method === 'POST') {
+      attempted.push(init.signal);
+      await new Promise((resolve) => held.push(resolve));
+    }
+    return fetch(path, init);
+  };
+  const { provider, clock, posts, setHidden, viewer } = quietProvider(budgetAnswer, PRODUCTION_READS, { refreshMs: 60_000, wrap });
+  const release = provider.recoverQuietly();
+  const first = await settled(provider, () => provider.ensure());
+  const mark = posts().length;
+  hold = true; clock.advance(60_000); await drain();
+  assert.equal(attempted.length, 1, 'the minute’s refresh is on the wire');
+  // A hundred flips in a few seconds while it is out.
+  for (let i = 0; i < 100; i++) { setHidden(i % 2 === 0); clock.advance(30); await later(); }
+  await drain();
+  assert.equal(attempted.length, 1, 'no flip started another read');
+  assert.equal(attempted[0].aborted, false, 'hiding never cancels the read on the wire');
+  // The page ends hidden: the read still finishes and lands in place.
+  setHidden(true);
+  hold = false;
+  while (held.length) held.shift()();
+  await drain();
+  assert.equal(posts().length, mark + 2, 'the refresh ran to its end');
+  assert.equal(provider.getSnapshot().phase, 'ready');
+  assert.notEqual(provider.getSnapshot().result.markets[0].provenance.market.receivedAt, first.result.markets[0].provenance.market.receivedAt, 'the finished refresh renewed the rows');
+  // A second storm after it settled, past the minute while hidden: nothing until the page can be seen, then one refresh.
+  for (let i = 0; i < 100; i++) { setHidden(i % 2 === 1); clock.advance(30); await later(); }
+  setHidden(true);
+  clock.advance(60_000); await drain();
+  assert.equal(posts().length, mark + 2, 'a hidden page asks nothing');
+  setHidden(false); clock.advance(0); await drain();
+  assert.equal(posts().length, mark + 4, 'one refresh when the page can be seen again');
+  for (let i = 0; i < 100; i++) { setHidden(i % 2 === 0); clock.advance(30); await later(); }
+  setHidden(false); await drain();
+  assert.equal(posts().length, mark + 4, 'flips right after a refresh ask nothing more');
+  release(); viewer();
 });
 
 test('public metadata cache coalesces canonical addresses, preserves observation age, expires, and isolates source instances', async () => {
@@ -3589,6 +3630,225 @@ test('the speed wave: after a refusal a provider read waits for the one on the w
   assert.deepEqual((await Promise.all([first, second, stored])).map((outcome) => outcome.state), ['ok', 'ok', 'ok']);
 });
 
+// Added 2026-10-30 (launch capacity study, item 9b): a refusal held every read of the page, the edge-cached overview,
+// history and featured list included, and its 1.1 s spacing stayed for the page's life. The gateway counts each lane
+// apart (backend/read_gateway.py VISITOR_BUDGETS), so a refusal now holds only its own lane.
+/** A source that answers at once, one attempt a read, busy for the requests `busy(route, request)` names (its Retry-After in seconds). */
+function busySource(clock, busy) {
+  const starts = [];
+  return { starts, source: { transport: 'bridge', read: async (route, request, opts = {}) => {
+    starts.push([route, clock.monotonic()]);
+    opts.onAttempt?.();
+    const wait = busy(route, request);
+    return wait ? { route, state: 'busy', retryAfterSeconds: wait, provenance: {} } : { route, state: 'ok', data: {}, provenance: {} };
+  } } };
+}
+const SEARCH = (query) => ({ query, limit: 20 });
+const HISTORY = { poolId: FIXTURE_POOL, currency: NATIVE, windowSeconds: 86400, resolutionSeconds: 3600 };
+
+test('item 9b: a busy answer holds its own lane alone; the other lane and the routes the edge caches go on, and a held read lets them pass', async () => {
+  const clock = steppedClock();
+  const { starts, source } = busySource(clock, (route, request) => (request.token === NATIVE ? 5 : request.query === 'busy' ? 3 : 0));
+  const queue = createScheduledSource(source, { clock, ...DEPLOYED_PACE });
+  assert.equal((await queue.read('token', { token: NATIVE })).state, 'busy');
+  // The provider lane waits its 5 s. A provider read asked now waits; a stored read and the edge's routes asked after it pass it.
+  const token = queue.read('token', tokenAt(1));
+  const others = [queue.read('search', SEARCH('usdg')), queue.read('overview', { poolIds: [FIXTURE_POOL] }), queue.read('history', HISTORY), queue.read('featured-pools', {})];
+  await clock.advance(0);
+  assert.deepEqual(starts.slice(1).map(([route, at]) => `${route}@${at}`).sort(), ['featured-pools@0', 'history@0', 'overview@0', 'search@0']);
+  await clock.advance(4999);
+  assert.equal(starts.length, 5, 'the provider read still waits for its lane');
+  await clock.advance(1);
+  assert.deepEqual(starts.at(-1), ['token', 5000]);
+  assert.deepEqual((await Promise.all([token, ...others])).map((outcome) => outcome.state), ['ok', 'ok', 'ok', 'ok', 'ok']);
+
+  // The stored lane refused: search waits its 3 s; a provider read and the edge-cached history go on.
+  await clock.advance(5000);
+  assert.equal((await queue.read('search', SEARCH('busy'))).state, 'busy');
+  const at = clock.now();
+  const search = queue.read('search', SEARCH('pons'));
+  const after = [queue.read('token', tokenAt(2)), queue.read('history', { ...HISTORY, windowSeconds: 604800 })];
+  await clock.advance(0);
+  assert.deepEqual(starts.slice(-2).map(([route, when]) => `${route}@${when - at}`).sort(), ['history@0', 'token@0']);
+  await clock.advance(3000);
+  assert.deepEqual(starts.at(-1), ['search', at + 3000]);
+  assert.deepEqual((await Promise.all([search, ...after])).map((outcome) => outcome.state), ['ok', 'ok', 'ok']);
+
+  // With one lane (local-live, the fixtures) the whole queue still waits, as before.
+  const single = steppedClock();
+  const one = busySource(single, (route, request) => (request.token === NATIVE ? 2 : 0));
+  const queueOfOne = createScheduledSource(one.source, { clock: single, minIntervalMs: 0, budget: null });
+  assert.equal((await queueOfOne.read('token', { token: NATIVE })).state, 'busy');
+  const waiting = [queueOfOne.read('overview', { poolIds: [FIXTURE_POOL] }), queueOfOne.read('featured-pools', {})];
+  await single.advance(1999);
+  assert.equal(one.starts.length, 1, 'held with the rest');
+  await single.advance(1);
+  await single.advance(0);
+  assert.deepEqual(one.starts.slice(1).map(([route, when]) => `${route}@${when}`), ['overview@2000', 'featured-pools@2000']);
+  await Promise.all(waiting);
+});
+
+test('item 9b: a refusal leaves only its own lane’s budget at nothing; the other lane keeps the tab’s budget, and the provider budget is not raised', async () => {
+  const clock = steppedClock();
+  const { starts, source } = busySource(clock, (route, request) => (request.token === NATIVE ? 1 : 0));
+  const queue = createScheduledSource(source, { clock, minIntervalMs: 0, refusedIntervalMs: 1100, unspacedStored: true, width: 2 });
+  assert.equal((await queue.read('token', { token: NATIVE })).state, 'busy');
+  await clock.advance(1000);
+  const token = queue.read('token', tokenAt(1));
+  const search = queue.read('search', SEARCH('usdg'));
+  await clock.advance(0);
+  assert.deepEqual(starts.slice(1), [['search', 1000]], 'the stored lane goes on with the tab’s budget');
+  // The provider lane: left at nothing by the refusal at 0 ms, a read and a quarter back at half a read a second.
+  await clock.advance(1499);
+  assert.equal(starts.length, 2);
+  await clock.advance(1);
+  assert.deepEqual(starts.at(-1), ['token', 2500]);
+  await Promise.all([token, search]);
+  assert.deepEqual(GATEWAY_BUDGET, { burst: 5, perMinute: 30 }, 'the provider burst stays the gateway’s old one for every browser');
+});
+
+test('item 9b: the provider lane’s refused spacing goes back to none after a quiet minute', async () => {
+  const { REFUSAL_QUIET_MS } = built('scheduler');
+  assert.equal(REFUSAL_QUIET_MS, 60_000);
+  const clock = steppedClock();
+  const { log, answer, source } = heldSource(clock);
+  const queue = createScheduledSource(source, { clock, ...DEPLOYED_PACE });
+  const refused = queue.read('token', { token: NATIVE });
+  await clock.advance(0);
+  answer(`token:${NATIVE}`);
+  await refused;
+  // Within the minute: one provider read at a time, 1.1 s apart.
+  await clock.advance(30_000);
+  const early = [queue.read('token', tokenAt(1)), queue.read('token', tokenAt(2))];
+  await clock.advance(0);
+  assert.equal(log.length, 2, 'one at a time within the minute');
+  answer(`token:${tokenAt(1).token}`);
+  await clock.advance(1100);
+  assert.deepEqual(log.at(-1), [`token:${tokenAt(2).token}`, 31_100]);
+  answer(`token:${tokenAt(2).token}`);
+  await Promise.all(early);
+  // A minute after the refusal, none since: two provider reads go together, 0 ms apart.
+  await clock.advance(REFUSAL_QUIET_MS - 31_100);
+  const late = [queue.read('token', tokenAt(3)), queue.read('token', tokenAt(4))];
+  await clock.advance(0);
+  assert.deepEqual(log.slice(-2), [[`token:${tokenAt(3).token}`, 60_000], [`token:${tokenAt(4).token}`, 60_000]]);
+  answer(`token:${tokenAt(3).token}`);
+  answer(`token:${tokenAt(4).token}`);
+  await Promise.all(late);
+});
+
+// Fixed 2026-10-30 after review (item 9b): a reader asked first that joined a read waiting for its lane's hold cleared the
+// wake, so the edge-cached overview and a stored search asked after it waited out the provider lane's Retry-After (Markets
+// refreshed in place, then a new load asking the same token first).
+test('item 9b: a read its lane holds, joined by a reader asked first, still lets a read that may go now pass, and keeps its turn', async () => {
+  const clock = steppedClock();
+  const { starts, source } = busySource(clock, (route, request) => (request.token === NATIVE ? 5 : 0));
+  const queue = createScheduledSource(source, { clock, ...DEPLOYED_PACE });
+  assert.equal((await queue.read('token', { token: NATIVE })).state, 'busy');
+  // An in-place refresh asks a token (not first): it waits for the provider lane's 5 s.
+  const held = queue.read('token', tokenAt(1));
+  await clock.advance(0);
+  assert.equal(starts.length, 1);
+  // The new load asks the same token first, then its overview and a search first: they go at once.
+  const joined = queue.read('token', tokenAt(1), { priority: 'first' });
+  const overview = queue.read('overview', { poolIds: [FIXTURE_POOL] }, { priority: 'first' });
+  const search = queue.read('search', SEARCH('usdg'), { priority: 'first' });
+  // A later token asked first, which the same lane holds, does not take the joined read's turn.
+  const later = queue.read('token', tokenAt(2), { priority: 'first' });
+  const done = [];
+  held.then(() => done.push('joined'));
+  later.then(() => done.push('later'));
+  await clock.advance(0);
+  assert.deepEqual(starts.slice(1).map(([route, at]) => `${route}@${at}`), ['overview@0', 'search@0']);
+  await clock.advance(4999);
+  assert.equal(starts.length, 3, 'the tokens still wait for their lane');
+  await clock.advance(1);
+  assert.deepEqual(starts.at(-1), ['token', 5000]);
+  assert.deepEqual(done, ['joined'], 'the joined read went first');
+  await clock.advance(1100);
+  assert.deepEqual(starts.slice(3).map(([route, at]) => `${route}@${at}`), ['token@5000', 'token@6100'], 'the joined read first, then the later one, 1.1 s apart');
+  assert.deepEqual((await Promise.all([held, joined, overview, search, later])).map((outcome) => outcome.state), ['ok', 'ok', 'ok', 'ok', 'ok']);
+  assert.equal((await held), (await joined), 'one read for both readers');
+});
+
+// Fixed 2026-10-30 after review (item 9b): a read on the wire that settled did not wake a read napping on its own lane, so a
+// provider read that waited only for the one provider read on the wire waited for the stored lane's hold instead.
+test('item 9b: a read that settles wakes a read napping on its own lane, so a read held only by the one on the wire goes at its spacing', async () => {
+  const clock = steppedClock();
+  const log = [];
+  const pending = new Map();
+  const source = { transport: 'bridge', read: (route, request, opts = {}) => {
+    log.push([route === 'search' ? `search:${request.query}` : `token:${request.token}`, clock.monotonic()]);
+    opts.onAttempt?.();
+    // The gateway refused it once and it was sent again at once: a second attempt.
+    if (request.token === NATIVE) opts.onAttempt?.();
+    if (route === 'search') return Promise.resolve(request.query === 'busy' ? { route, state: 'busy', retryAfterSeconds: 3, provenance: {} } : { route, state: 'ok', data: {}, provenance: {} });
+    if (request.token === NATIVE) return Promise.resolve({ route, state: 'ok', data: {}, provenance: {} });
+    return new Promise((resolve) => pending.set(request.token, () => resolve({ route, state: 'ok', data: {}, provenance: {} })));
+  } };
+  const queue = createScheduledSource(source, { clock, ...DEPLOYED_PACE });
+  // A provider refusal at 0 ms: provider reads one at a time, 1.1 s apart.
+  assert.equal((await queue.read('token', { token: NATIVE })).state, 'ok');
+  await clock.advance(1100);
+  const first = queue.read('token', tokenAt(1));
+  await clock.advance(0);
+  assert.deepEqual(log.at(-1), [`token:${tokenAt(1).token}`, 1100]);
+  // The stored lane refused at 1100 ms for 3 s: a search waits for it; a second token waits for the first on the wire.
+  assert.equal((await queue.read('search', SEARCH('busy'))).state, 'busy');
+  const second = queue.read('token', tokenAt(2));
+  const search = queue.read('search', SEARCH('pons'));
+  await clock.advance(400);
+  assert.equal(log.length, 3, 'both wait');
+  // The first token answers at 1500 ms: the second goes at its 1.1 s (2200 ms), not when the search's hold ends.
+  pending.get(tokenAt(1).token)();
+  await clock.advance(0);
+  await clock.advance(699);
+  assert.equal(log.length, 3);
+  await clock.advance(1);
+  assert.deepEqual(log.at(-1), [`token:${tokenAt(2).token}`, 2200]);
+  pending.get(tokenAt(2).token)();
+  await clock.advance(1900);
+  assert.deepEqual(log.at(-1), ['search:pons', 4100], 'the search at its lane’s hold');
+  assert.deepEqual((await Promise.all([first, second, search])).map((outcome) => outcome.state), ['ok', 'ok', 'ok']);
+});
+
+// Fixed 2026-10-30 after review (item 9b): a refusal's lane count lived in its document alone, so a reload or a second tab
+// opened right after it sent its burst into the lane the gateway had just refused. It is kept with the browser's budget.
+test('item 9b: a refused lane’s count is kept for the browser’s other documents: a second tab’s provider read waits for it, its stored read goes', async () => {
+  let kept = null;
+  const store = { load: () => kept, save: (state) => { kept = state; } };
+  const pace = { budgetStore: store, minIntervalMs: 0, refusedIntervalMs: 1100, unspacedStored: true, width: 2 };
+  const firstClock = steppedClock();
+  const one = busySource(firstClock, (route, request) => (request.token === NATIVE ? 1 : 0));
+  const first = createScheduledSource(one.source, { clock: firstClock, ...pace });
+  assert.equal((await first.read('token', { token: NATIVE })).state, 'busy');
+  assert.deepEqual(kept, { tokens: 4, at: 0, lanes: { provider: { tokens: 0, at: 0 } } }, 'the tab’s budget less one, and the provider lane at nothing');
+  // A second tab of the same browser, opened at once.
+  const secondClock = steppedClock();
+  const two = busySource(secondClock, () => 0);
+  const second = createScheduledSource(two.source, { clock: secondClock, ...pace });
+  const reads = [second.read('token', tokenAt(1)), second.read('search', SEARCH('usdg'))];
+  await secondClock.advance(0);
+  assert.deepEqual(two.starts, [['search', 0]], 'the stored lane goes on');
+  await secondClock.advance(2499);
+  assert.equal(two.starts.length, 1);
+  await secondClock.advance(1);
+  assert.deepEqual(two.starts.at(-1), ['token', 2500], 'a read and a quarter back in the refused lane, as in the tab that saw it');
+  await Promise.all(reads);
+  // Once that lane is full again, nothing is kept for it.
+  await firstClock.advance(10_000);
+  await first.read('token', tokenAt(2));
+  assert.equal(kept.lanes, undefined);
+  // What another document kept that makes no sense for a lane is not believed.
+  kept = { tokens: 5, at: 20_000, lanes: { provider: { tokens: 'none', at: 0 }, stored: null } };
+  const thirdClock = steppedClock();
+  const three = busySource(thirdClock, () => 0);
+  const third = createScheduledSource(three.source, { clock: thirdClock, ...pace });
+  await thirdClock.advance(20_000);
+  await Promise.all([third.read('token', tokenAt(3)), third.read('search', SEARCH('pons'))]);
+  assert.deepEqual(three.starts.map(([, at]) => at), [20_000, 20_000]);
+});
+
 // ---------------------------------------------------------------------------
 // R-1's deadlines: 20 s an attempt, 60 s a read from enqueue (#69 D1)
 // ---------------------------------------------------------------------------
@@ -3726,7 +3986,10 @@ test('D1: a capabilities body that stops arriving is cancelled at 20 s', async (
   assert.equal(posts(calls).length, 0, 'no POST without capabilities');
 });
 
-test('D1: a read cancelled while capabilities stall frees the queue, and the next read runs', async () => {
+// Changed on purpose 2026-10-30 (instability study, INST-1b; revised after review the same day): the check nobody waits
+// for any more is no longer cancelled. It runs on to its own 20 s and a good answer is kept. A read that comes once it
+// has stalled past CAPABILITIES_JOIN_MS asks afresh and gets through at once, as when the stalled one was cancelled.
+test('D1: a read cancelled while capabilities stall frees the queue; the check runs on, and a read after it stalled asks afresh and runs', async () => {
   const clock = fakeClock();
   let gets = 0;
   const { fetch, calls } = bridgeFetch(clock, { capabilities: () => ((gets += 1) === 1 ? new Promise(() => undefined) : undefined) });
@@ -3736,10 +3999,62 @@ test('D1: a read cancelled while capabilities stall frees the queue, and the nex
   await until(() => calls.length === 1, 'the capabilities GET');
   leaving.abort();
   assert.equal((await within(stuck)).state, 'aborted');
+  assert.equal(calls[0].signal?.aborted, false, 'the check nobody waits for runs on');
+  clock.advance(CAPABILITIES_JOIN_MS + 1);
   const next = await within(source.read('pool-metrics', { poolId: FIXTURE_POOL }), 1000);
-  assert.equal(next.state, 'ok', 'the queue moved on');
-  assert.equal(calls[0].signal?.aborted, true, 'the check nobody waited for was cancelled');
+  assert.equal(next.state, 'ok', 'the queue moved on, and the read did not wait for the stalled check');
   assert.deepEqual(calls.map((call) => `${call.method} ${call.route}`), ['GET capabilities', 'GET capabilities', 'POST pool-metrics']);
+  assert.equal(calls[0].signal?.aborted, false, 'the stalled GET still runs');
+  clock.advance(20_000);
+  await until(() => calls[0].signal?.aborted === true, 'the stalled GET to end at its own 20 s');
+});
+
+test('D1: a capabilities GET is joined while young; once it stalls a read asks afresh, and a late good answer is kept when none is', async () => {
+  const clock = fakeClock();
+  const answers = [];
+  const { fetch, calls } = bridgeFetch(clock, { capabilities: () => (answers.length < 2 ? new Promise((resolve) => answers.push(resolve)) : undefined) });
+  const source = live(clock, fetch);
+  const capabilitiesGets = () => calls.filter((call) => call.route === 'capabilities').length;
+  const leaving = new AbortController();
+  const gone = source.read('token', tokenRequest, { signal: leaving.signal });
+  await until(() => answers.length === 1, 'the first capabilities GET');
+  leaving.abort();
+  assert.equal((await within(gone)).state, 'aborted');
+  // Young: a read that comes within CAPABILITIES_JOIN_MS of the GET joins it; no second GET.
+  clock.advance(CAPABILITIES_JOIN_MS);
+  const joined = source.read('pool-metrics', { poolId: FIXTURE_POOL });
+  assert.equal(await within(joined), PENDING);
+  assert.equal(capabilitiesGets(), 1, 'joined, not asked again');
+  // Stalled: a read that comes later asks afresh.
+  clock.advance(1);
+  const fresh = source.read('token', tokenRequest);
+  await until(() => answers.length === 2, 'a fresh capabilities GET');
+  assert.equal(await within(fresh), PENDING);
+  // The stalled one answers well first, while the fresh one is still out: its answer is kept, and every read uses it.
+  answers[0](bridgeResponse(200, text(gateway(ANSWERS.capabilities))));
+  assert.equal((await within(joined, 1000)).state, 'ok', 'the read that joined it is answered');
+  assert.equal((await within(source.read('pool-market', { poolId: FIXTURE_POOL, includePriceHistory: false }), 1000)).state, 'ok', 'a later read takes the kept answer');
+  assert.equal(capabilitiesGets(), 2, 'no third GET');
+  answers[1](bridgeResponse(200, text(gateway(ANSWERS.capabilities))));
+  assert.equal((await within(fresh, 1000)).state, 'ok');
+  assert.equal(capabilitiesGets(), 2);
+});
+
+test('D1: a capabilities answer that arrives after its last reader left is kept for the next read', async () => {
+  const clock = fakeClock();
+  let answer = null;
+  const { fetch, calls } = bridgeFetch(clock, { capabilities: () => new Promise((resolve) => { answer = resolve; }) });
+  const source = live(clock, fetch);
+  const leaving = new AbortController();
+  const gone = source.read('token', tokenRequest, { signal: leaving.signal });
+  await until(() => calls.length === 1 && answer !== null, 'the capabilities GET');
+  leaving.abort();
+  assert.equal((await within(gone)).state, 'aborted');
+  answer(bridgeResponse(200, text(gateway(ANSWERS.capabilities))));
+  for (let i = 0; i < 10; i++) await later();
+  assert.equal(calls[0].signal?.aborted, false, 'the GET ran to its end');
+  assert.equal((await within(source.read('token', tokenRequest), 1000)).state, 'ok');
+  assert.deepEqual(calls.map((call) => `${call.method} ${call.route}`), ['GET capabilities', 'POST token'], 'the kept answer served the next read: no second GET');
 });
 
 test('D1: 60 s from enqueue cover the queue, the waits and every attempt; a read still queued then is answered and never sent', async () => {

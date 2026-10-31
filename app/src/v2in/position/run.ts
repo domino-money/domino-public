@@ -9,7 +9,7 @@ import { planTargetOf } from '../../v2/plan/route'
 import type { S1PlanConsent, S1PlanReply, S1PlanRequest } from '../../v2/plan/types'
 import type { ActionName, Address, Hex, V2ChainId } from '../../v2/types'
 import { COPY } from './copy'
-import { SENT_CHECK_WALLET_COPY, STILL_PENDING_COPY, actionError, planFailure, type ActionError } from './errors'
+import { SENT_CHECK_WALLET_COPY, STILL_PENDING_COPY, actionError, planFailure, retryLaterWait, type ActionError } from './errors'
 import { askLivePlan } from './source'
 import { connectPosition, onChain, type OpenGate, type PositionConnection } from './wallet'
 import { burnedPositionIds, positionChanged } from '../lists/positionSync'
@@ -233,6 +233,18 @@ export function useActionRun(input: RunInput) {
       if (view.recovery === 'quiet-requote' && live.current.requotes < 2) {
         live.current.requotes++
         return quote(true)
+      }
+      // (QA round 2, CAP-5b) A busy or rate-limited plan service, as New position's run waits for it (../journey/run.ts):
+      // 4 s, then 8 s, or its Retry-After when longer (up to five minutes), twice at most in a row; the quote stays in
+      // progress meanwhile, and nothing is sent. Closing or going back ends the wait (the generation moves on). Changed on
+      // purpose 2026-10-30 (QA round 2, final review pos-run-1): a capacity-busy refusal waits 4 to 5 s whatever
+      // Retry-After it names (every one says 60 s), as New position's does; a rate limit keeps its Retry-After
+      // (./errors.ts retryLaterWait). It sat on the quote for about two minutes before "Busy right now".
+      if (view.recovery === 'retry-later' && (view.retryAfterSeconds ?? 0) <= 300 && live.current.requotes < 2) {
+        const attempt = live.current.requotes++
+        await sleep(retryLaterWait(view, attempt))
+        if (gen === generation.current) return quote(true)
+        return
       }
       Object.assign(live.current, { stage: 'failed', requoting: false, error: view })
       bump()

@@ -29,6 +29,7 @@ import {
   type Preselect,
   type Stage,
   type TickRange,
+  validateBudget,
 } from '../../lib/create/journey'
 import { useOtherChains } from '../../lib/create/otherChains'
 import { payFunding } from '../../lib/create/payFunding'
@@ -36,6 +37,8 @@ import type { PayFacts } from '../../lib/create/poolPrices'
 import { reviewPlan } from '../../lib/create/reviewPlan'
 import { forgetCreatePools } from '../../lib/create/poolsAhead'
 import { featuredStore, useFeatured } from '../../lib/read/featuredSource'
+import { appPaint } from '../../lib/read/appPaint'
+import { paintedPool } from '../../lib/read/publicOverview'
 import { verifyCandidate } from '../../lib/read/screens/catalogueSession'
 import { failureText } from '../../lib/read/screens/copy'
 import { DYNAMIC_FEE_PIPS } from '../../lib/read/screens/fee'
@@ -57,7 +60,7 @@ import { AmountSummary, PoolSummary, RangeSummary, StepList, VISUAL_STEPS, type 
 import { PositionPreview } from './PositionPreview'
 import { useFirstLoad, useReviewColumns } from './reviewColumns'
 import { useLivePoolPrice, usePayFacts, usePricedPool } from './usePricedPool'
-import { heldAmounts, rawBalances } from './valuation'
+import { heldAmounts, rawBalances, underMinimum, usdAt } from './valuation'
 import { fundingContext, type FundingContinuation } from '../../lib/create/fundingContext'
 import { useWalletIdentity } from '../../lib/walletIdentity'
 
@@ -87,14 +90,34 @@ type V2CreateProps = {
   pay?: PayFacts | null
   onBusy?: (busy: boolean) => void
   onReadAgain?: () => void
+  /** QA round 2, N18: the chosen pool at the price and tick a signed-in quote read it at, once per choice (withFreshPool). */
+  onFreshPool?: (pool: PoolOption) => void
   v1: ReactElement
 }
 const V2Review = __DOMINO_V2__ ? deferred<V2ReviewProps>(recovering(() => import('../../v2in/journey/JourneyCreateV2').then((module) => ({ default: module.ReviewV2 })), () => ({ default: ({ v1 }: V2ReviewProps) => v1 }))) : null
 const V2Create = __DOMINO_V2__ ? deferred<V2CreateProps>(recovering(() => import('../../v2in/journey/JourneyCreateV2').then((module) => ({ default: module.default })), () => ({ default: () => <CreateUnavailable note={CREATE.review.loadFailed} /> }))) : null
 
-/** How many times a failed verification of the linked pool is asked again on its own, and the first wait. */
-const VERIFY_ATTEMPTS = 3
+/**
+ * The first wait before a failed verification of the linked pool is asked again on its own, and the longest wait.
+ * Changed on purpose 2026-10-30 (QA round 2, N42): asked again for as long as the page is open and visible, the wait
+ * doubling up to a minute, instead of three times and then never (the step stayed without its pool for good).
+ */
 const VERIFY_WAIT_MS = 4000
+const VERIFY_WAIT_MAX_MS = 60_000
+
+/**
+ * Added 2026-10-30 (launch capacity, item 9a): how often Amount's reads are asked again in the background while the page
+ * is visible, and how old the last read must be before the page opened again asks them. A timer may fire a little early.
+ */
+const REFRESH_MS = 60_000
+const TIMER_SLACK_MS = 1_000
+/**
+ * Added 2026-10-30 (launch capacity 9a, its review): while Continue waits on a read that answered without the figure it
+ * needs (the balances, or the token chosen to pay with), the reads are asked again sooner: 15 s after the last, then 30 s,
+ * then every minute; and on focus or a tab shown once the last is 10 s old. A page that has its figures keeps the minute.
+ */
+const RETRY_MS = [15_000, 30_000, 60_000] as const
+const RETURN_RETRY_MS = 10_000
 
 /** Which half of the machine's `amount` stage is open: the range first, then the budget. */
 type AmountPart = 'range' | 'amount'
@@ -120,6 +143,33 @@ function visualOf(state: JourneyState, part: AmountPart): VisualStep {
 const STAGE_OF: Record<VisualStep, Stage> = { pool: 'token', range: 'amount', amount: 'amount', review: 'review' }
 
 /**
+ * Added 2026-10-30 (QA round 2, Q17): each step is an entry of the browser's history on the same URL (its state only,
+ * never the hash, so nothing routes or remounts), so the browser's Back and Forward walk the steps with the choices
+ * kept. `dmIndex` counts the flow's entries from its first. Changed on purpose 2026-10-30 (QA round 2 review): `dmFlow`
+ * names the flow that wrote the entry, new each time a flow starts (the page opened again on the same link, or another
+ * link followed), so the entries an earlier flow left behind are told apart: Back passes all of them in one press,
+ * instead of resting on each with nothing changing on screen.
+ */
+type StepMark = { dmFlow: string | null; dmStep: VisualStep; dmIndex: number }
+const markOf = (value: unknown): StepMark | null => {
+  if (!value || typeof value !== 'object') return null
+  const mark = value as { dmFlow?: unknown; dmStep?: unknown; dmIndex?: unknown }
+  if (typeof mark.dmStep !== 'string' || !(VISUAL_STEPS as readonly string[]).includes(mark.dmStep)) return null
+  if (typeof mark.dmIndex !== 'number' || !Number.isInteger(mark.dmIndex) || mark.dmIndex < 0) return null
+  return { dmFlow: typeof mark.dmFlow === 'string' ? mark.dmFlow : null, dmStep: mark.dmStep as VisualStep, dmIndex: mark.dmIndex }
+}
+/** Where the flow stands in the browser's history: its name, its entry, the step of each of its entries, and so on. */
+type Trail = {
+  flow: string | null
+  at: number
+  hash: string | null
+  popped: VisualStep | null
+  steps: (VisualStep | undefined)[]
+}
+let flowCount = 0
+const newFlowName = () => `${Date.now().toString(36)}.${(flowCount += 1)}`
+
+/**
  * The inputs a step was last shown with. A step that has been reached stays
  * mounted, folded, while those inputs hold, so going back finds its list and
  * its wallet balance where they were instead of reading them again. When the
@@ -139,7 +189,22 @@ const fail = (reason: string): Check => ({ ok: false, reason })
  * here asks about automation: that is applied from Automate, to a position
  * that exists.
  */
-export function Journey({ poolId, linkToken = null, initialToken = null }: { poolId: string; linkToken?: string | null; initialToken?: TokenCandidate | null }) {
+export function Journey({
+  poolId,
+  linkToken = null,
+  initialToken = null,
+  initialPool = null,
+}: {
+  poolId: string
+  linkToken?: string | null
+  initialToken?: TokenCandidate | null
+  /**
+   * Added 2026-10-30 (QA round 2, N5): the pool another network's link proposes with its token
+   * (#/new/network/<chain>/<token>/<pool>), handed by the journey's wrapper. Untrusted: that network's pool list chooses
+   * it once, only when its own read lists exactly that pool, never over a choice already made (StagePool.tsx).
+   */
+  initialPool?: string | null
+}) {
   const source = useReadSource()
   const now = useNow(false).wall
   const [state, setState] = useState<JourneyState>(() => initialToken ? withToken(initialState(), initialToken) : initialState())
@@ -178,11 +243,58 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
   const [verified, setVerified] = useState<{ poolId: string; attempt: number; outcome: Verified } | null>(null)
   // Each attempt is one more read of the same id: asked again on its own after a failure that asking again could fix.
   const [attempt, setAttempt] = useState(0)
+  // The state and Create position's run as they are now, for reads that answer later (the link's verification).
+  const stateRef = useRef(state)
+  useEffect(() => { stateRef.current = state })
+  const creatingRef = useRef(false)
+  useEffect(() => { creatingRef.current = creating }, [creating])
+  // Once the position exists, the link's verification changes nothing more (QA round 2 review, N42).
+  const doneRef = useRef(false)
+  useEffect(() => { doneRef.current = created || createdV2 })
+  // QA round 2 review (N42): a token or a pool picked by hand in step 1 ends what the link decides. A later answer of its
+  // verification then only refreshes that same pool's read, and it is not asked again. Each link starts without it.
+  const [steered, setSteered] = useState(false)
+  const steeredRef = useRef(false)
+  useEffect(() => { steeredRef.current = steered }, [steered])
+  const steer = () => {
+    steeredRef.current = true
+    setSteered(true)
+  }
   // A pool row pointed at or focused in step 1 while nothing is chosen: the preview beside the steps shows it.
   const [preview, setPreview] = useState<PoolOption | null>(null)
+  // QA round 2, Q18: a Custom price typed or refused in either field holds Continue, with the field's own reason.
+  const [rangeBlock, setRangeBlock] = useState<{ lower?: string | null; upper?: string | null }>({})
+  const onRangeBlock = useCallback((which: 'lower' | 'upper', reason: string | null) => {
+    setRangeBlock((was) => ((was[which] ?? null) === reason ? was : { ...was, [which]: reason }))
+  }, [])
+  // Another link's pool starts its own count (QA round 2, N42): a count spent on one link never holds back the next.
+  // Added 2026-10-30 (QA round 2, N53): and a New position link to another pool, followed while this flow is open (the
+  // page stays mounted from one link to the next), starts the flow again at step 1, as arriving by that link does; its
+  // pool is chosen once verified. The same pool's link keeps the flow, and nothing restarts while the wallet is asked.
+  // Done as the render's own adjustment, so no step of the old flow is drawn, or written to history, under the new link.
+  const [attemptFor, setAttemptFor] = useState(poolId)
+  if (attemptFor !== poolId) {
+    setAttemptFor(poolId)
+    setAttempt(0)
+    setSteered(false)
+    const link = preselectFrom(poolId)
+    if (link.ok && !creating && state.pool !== null && state.pool.key !== link.key) {
+      setFundingAdvance(null)
+      setPreview(null)
+      setRangeBlock({})
+      setAmountReached(false)
+      setKept({ pool: 'static' })
+      setPart('range')
+      setState(initialState())
+    }
+  }
   const running = useRef<AbortController | null>(null)
   // The list on screen (lib/read/featuredSource.ts): a linked pool it names is found by its entry.
   const featured = useFeatured()
+  // QA round 2, N19: the list's pools step 1 offers under the search, once the list has settled (never the stand-in).
+  const topPools = featured.settled ? featured.entries : []
+  // Named as Home and Markets name the same list (lib/read/featuredList.ts featuredTitle): Top pools for the server's.
+  const topServer = featured.source === 'server'
   // Added 2026-10-05 (the owner: New position across the three networks Domino V2 serves): Base and Arbitrum One beside
   // Robinhood Chain, handed in by the journey's wrapper in a build that carries V2 (lib/create/otherChains.ts); null
   // everywhere else, where every step is exactly today's.
@@ -237,10 +349,39 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
         setVerified({ poolId, attempt, outcome: { kind: 'withdrawn' } })
         return
       }
+      // The pool arrives chosen, with the token the link was verified against as the one an amount starts in, so step 1
+      // is exactly what choosing this pool from the search leaves (round 6, 2026-09-27: one flow, whichever way in).
+      // A verification read again after a failure never replaces another pool, or a token, the person chose in the
+      // meantime. The same pool read again (the copy chosen meanwhile, or a link to the pool already chosen) only takes the
+      // fresher read, exactly as a background price read does (withFreshPool): the token, the amount and the range stay as
+      // they are (QA round 2, N42, and its review). Nothing changes while Create position is asking the wallet, or once
+      // the position exists.
+      const choose = (option: PoolOption) => {
+        const at = Date.now()
+        const start = linkedDepositToken(option, poolHolds(option, USDG) ? USDG : against)
+        setState((was) => {
+          if (creatingRef.current || doneRef.current) return was
+          if (was.pool?.key === option.key) return withFreshPool(was, option)
+          if (was.pool || steeredRef.current) return was
+          const held = was.token !== null && poolHolds(option, was.token.key)
+          return withPool(held || !start ? was : withToken(was, start), option, at)
+        })
+        setCandidates((was) => mergeCandidates(was, candidatesFromPool(option)))
+      }
       const result = await (kept ?? verifyCandidate(source, against, null, linked.key, { signal: controller.signal }))
       if (controller.signal.aborted) return
       if (result.failure) {
-        if (result.failure.state !== 'aborted') setVerified({ poolId, attempt, outcome: { kind: 'failed', line: failureText(result.failure, 'pools') } })
+        if (result.failure.state === 'aborted') return
+        const line = failureText(result.failure, 'pools')
+        setVerified({ poolId, attempt, outcome: { kind: 'failed', line } })
+        // Added 2026-10-30 (QA round 2, N42): a read that asking again may fix leaves no dead end. The pool page and Markets
+        // paint from this browser's copy of the last stored overview (lib/read/marketsPaint.ts, block-verified, our own
+        // read, no request made here); a pool it names with this token, under the same rules as a verified one, is chosen
+        // from it meanwhile, and the verification keeps being asked quietly. Review plans from its own reads before
+        // anything is signed. Only while the person has chosen nothing in step 1 themselves.
+        const blank = !stateRef.current.pool && !stateRef.current.token && !steeredRef.current && !doneRef.current
+        const painted = line.retry && blank ? paintedPool(appPaint, linked.key, against) : null
+        if (painted && optionUsableForDomino(painted.option) && !poolWarning(painted.option.currencies)) choose(painted.option)
         return
       }
       const option = result.option
@@ -260,29 +401,24 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
         setVerified({ poolId, attempt, outcome: { kind: 'withdrawn' } })
         return
       }
-      const at = Date.now()
-      // The pool arrives chosen, with the token the link was verified against as the one an amount starts in, so step 1
-      // is exactly what choosing this pool from the search leaves (round 6, 2026-09-27: one flow, whichever way in).
-      // A verification read again after a failure never replaces a pool the person chose in the meantime.
-      const start = linkedDepositToken(option, poolHolds(option, USDG) ? USDG : against)
-      setState((was) => {
-        if (attempt > 0 && was.pool) return was
-        const held = was.token !== null && poolHolds(option, was.token.key)
-        return withPool(held || !start ? was : withToken(was, start), option, at)
-      })
-      setCandidates((was) => mergeCandidates(was, candidatesFromPool(option)))
+      choose(option)
       setVerified({ poolId, attempt, outcome: { kind: 'verified', block: option.block } })
     })
     return () => controller.abort()
   }, [source, poolId, linkToken, attempt])
 
   // No Retry on this page: a verification that failed in a way asking again could fix (a busy or unreachable
-  // read service) is read again by itself, a few times, at doubling intervals, and only while the page is
-  // visible. Any other outcome stays as it is, with its reason on the step's data attributes.
+  // read service) is read again by itself, at doubling intervals up to a minute, for as long as the page is open,
+  // and only while it is visible (QA round 2, N42). It stops once another pool is chosen, once the person picks a
+  // token or a pool by hand, and once the position exists (its review). Any other outcome stays as it is, with its
+  // reason on the step's data attributes.
+  const linkPool = preselectFrom(poolId)
+  const otherChosen = state.pool !== null && linkPool.ok && state.pool.key !== linkPool.key
+  const linkLeft = otherChosen || steered || created || createdV2
   useEffect(() => {
-    if (!verified || verified.poolId !== poolId || verified.attempt !== attempt) return
+    if (!verified || verified.poolId !== poolId || verified.attempt !== attempt || linkLeft) return
     const outcome = verified.outcome
-    if (outcome.kind !== 'failed' || !outcome.line.retry || attempt >= VERIFY_ATTEMPTS) return
+    if (outcome.kind !== 'failed' || !outcome.line.retry) return
     let cancelled = false
     const again = () => {
       if (!cancelled) setAttempt((count) => count + 1)
@@ -295,13 +431,13 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
     const timer = setTimeout(() => {
       if (document.hidden) document.addEventListener('visibilitychange', whenVisible)
       else again()
-    }, VERIFY_WAIT_MS * 2 ** attempt)
+    }, Math.min(VERIFY_WAIT_MAX_MS, VERIFY_WAIT_MS * 2 ** Math.min(attempt, 8)))
     return () => {
       cancelled = true
       clearTimeout(timer)
       document.removeEventListener('visibilitychange', whenVisible)
     }
-  }, [verified, poolId, attempt])
+  }, [verified, poolId, attempt, linkLeft])
 
   const linked = preselectFrom(poolId, featured.entries)
   const preselect: PreselectStatus = !linked.ok
@@ -314,6 +450,44 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
   // V4 (presentation only): the first moment's flag, and Review's two cards on a wide screen (./reviewColumns.ts).
   const firstLoad = useFirstLoad()
   useReviewColumns(current === 'review')
+
+  // QA round 2, Q17 (2026-10-30): each step change is an entry of the browser's history on the same URL, its state only
+  // (markOf), never the hash: nothing routes or remounts. A step reached by the browser's Back or Forward is not written
+  // again; the flow's first entry (or a link's) is marked in place, under the flow's own name (its review). The step
+  // of each entry is kept, so Back can pass the ones that would change nothing (onPop below). A browser that refuses
+  // history writes keeps the flow as one entry, as before.
+  const trail = useRef<Trail>({ flow: null, at: 0, hash: null, popped: null, steps: [] })
+  useEffect(() => {
+    const mine = trail.current
+    const hash = window.location.hash
+    if (mine.popped === current && mine.hash === hash) {
+      mine.popped = null
+      return
+    }
+    mine.popped = null
+    try {
+      if (mine.flow === null || mine.hash !== hash) {
+        // A flow starts on this entry. An entry an earlier flow marked keeps its count, so every entry behind it is
+        // still counted from the first one on this link (Back passes them all at once, onPop below).
+        const held: unknown = window.history.state
+        const mark = markOf(held)
+        mine.flow = newFlowName()
+        mine.hash = hash
+        mine.at = mark ? mark.dmIndex : 0
+        mine.steps = []
+        mine.steps[mine.at] = current
+        window.history.replaceState({ ...(held && typeof held === 'object' ? held : {}), dmFlow: mine.flow, dmStep: current, dmIndex: mine.at }, '')
+        return
+      }
+      if (mine.steps[mine.at] === current) return
+      mine.at += 1
+      mine.steps.length = mine.at
+      mine.steps[mine.at] = current
+      window.history.pushState({ dmFlow: mine.flow, dmStep: current, dmIndex: mine.at }, '')
+    } catch {
+      /* Kept as one entry. */
+    }
+  }, [current, poolId, linkToken])
 
   // Speed wave, 2026-09-28 (study item 33): Create position's code is asked once a pool is chosen, so Review finds it
   // loaded instead of waiting for it behind its disabled button. Loading it runs nothing.
@@ -341,13 +515,19 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
     setState(updated)
   }
 
+  // Step 1's token and pool, picked by hand: the link no longer decides (steer, above).
   const setToken = (candidate: TokenCandidate | null) => {
     setPreview(null)
+    steer()
     update(withToken(state, candidate))
   }
   const setPool = (option: PoolOption | null) => {
     setPreview(null)
     update(withPool(state, option, now))
+  }
+  const pickPool = (option: PoolOption | null) => {
+    steer()
+    setPool(option)
   }
   const setRange = (range: TickRange) => update(withRange(state, range))
   const setBudget = (text: string) => update(withBudget(state, text))
@@ -357,12 +537,14 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
   const setDeposit = (candidate: TokenCandidate, text: string) => update(withBudget(withToken(state, candidate), text))
   const setSlippage = (text: string) => update(withSlippage(state, text))
 
+  const blocked = rangeBlock.lower ?? rangeBlock.upper ?? null
+
   // What each step needs before Continue, in the machine's own words.
   const tokenCheck = canContinue('token', state, now)
   const poolCheck = tokenCheck.ok ? canContinue('pool', state, now) : tokenCheck
   const price = priceOf(state.pool, now)
   const usablePrice = price && price.state === 'usable' ? price : null
-  const rangeCheck: Check = !poolCheck.ok ? poolCheck : !state.pool ? fail(CREATE.pool.needPool) : !usablePrice ? fail(CREATE.amount.priceUnavailable) : validateRange(state.range, state.pool)
+  const rangeCheck: Check = !poolCheck.ok ? poolCheck : !state.pool ? fail(CREATE.pool.needPool) : !usablePrice ? fail(CREATE.amount.priceUnavailable) : blocked ? fail(blocked) : validateRange(state.range, state.pool)
   const amountCheck = poolCheck.ok ? canContinue('amount', state, now) : poolCheck
 
   const complete: Record<VisualStep, boolean> = { pool: poolCheck.ok, range: rangeCheck.ok, amount: amountCheck.ok, review: false }
@@ -440,59 +622,142 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
   // the amount step names the second token with it, and Review and Create
   // position plan the deposit from it.
   // Read again when funds brought from another network arrive (2026-10-05): the offer under the amounts says so. And on
-  // Review's Read again, when the read finished with nothing usable (2026-10-06, the final check's F5).
+  // Review's quiet re-reads while the read finishes with nothing usable (2026-10-06, the final check's F5; QA round 2,
+  // final review journey-1: no button any more).
   const [balanceRevision, setBalanceRevision] = useState(0)
-  const pair = usePairBalances(source, state.pool, others, balanceRevision)
+  // Changed on purpose 2026-10-30 (launch capacity, item 9a): while Amount is open its three reads (the balances, the offer
+  // to pay with another token, the pool's price) are asked again in the background from one tick, every minute while the
+  // page is visible, and when the page is opened again (Amount reached, focus, a tab shown) only once the last read is a
+  // minute old; it was every 30 s, with the offer and the price each on a timer of their own. A background read keeps what
+  // is on screen until its answer is in: nothing flips back to loading, and Continue stays as it is (usePairBalances.ts,
+  // usePricedPool.ts). A deliberate read again (funds arrived, Review's re-reads) still waits for its answer, as before.
+  // Its review: a background read of the balances that reads nothing keeps the balances it had (usePairBalances.ts), and
+  // Continue held by a read that answered without its figure is asked again sooner (RETRY_MS, below).
+  // `readsTick` moves the balances and the offer once a wallet's first read of them is in; `priceTick` the price.
+  const [readsTick, setReadsTick] = useState(0)
+  const [priceTick, setPriceTick] = useState(0)
+  const pair = usePairBalances(source, state.pool, others, balanceRevision, readsTick)
   const balanceRead = useRef(pair.status)
+  const balanceRefreshing = useRef(false)
   const payReading = useRef(false)
   const marketReading = useRef(false)
-  useEffect(() => { balanceRead.current = pair.status })
-  const balanceKey = state.pool ? `${state.pool.currencies[0].chainId}|${state.pool.key}` : null
   useEffect(() => {
-    if (!__DOMINO_V2__ || current !== 'amount' || creating || !balanceKey) return
-    let last = Date.now()
-    const refresh = () => {
-      if (document.hidden || balanceRead.current === 'disconnected' || balanceRead.current === 'loading' || payReading.current || marketReading.current || Date.now() - last < 20_000) return
-      last = Date.now()
-      setBalanceRevision((n) => n + 1)
-    }
-    const timer = setInterval(refresh, 30_000)
-    window.addEventListener('focus', refresh)
-    document.addEventListener('visibilitychange', refresh)
-    return () => {
-      clearInterval(timer)
-      window.removeEventListener('focus', refresh)
-      document.removeEventListener('visibilitychange', refresh)
-    }
-  }, [current, creating, balanceKey])
+    balanceRead.current = pair.status
+    balanceRefreshing.current = pair.refreshing === true
+  })
+  const balanceKey = state.pool ? `${state.pool.currencies[0].chainId}|${state.pool.key}` : null
+  // When the balances and the offer were last asked: as a pool is chosen, on a deliberate read again, and on each tick;
+  // when the price was last asked on the tick; and how many reads in a row were asked while Continue waited (RETRY_MS).
+  const lastRead = useRef(0)
+  const lastPrice = useRef(0)
+  const retries = useRef(0)
+  useEffect(() => {
+    lastRead.current = Date.now()
+    retries.current = 0
+  }, [balanceKey, balanceRevision])
   // Added 2026-10-06 (the owner: "USD estimate unavailable" for Robinhood Chain pairs without USDG): the chosen pool with its
   // currencies' qualified prices, once read (./usePricedPool.ts), for what the steps value: the amount step, its row, the
   // preview and Review. Everything else keeps the state as it is.
   const pricedPool = usePricedPool(state.pool)
   const valued = useMemo<JourneyState>(() => (pricedPool === state.pool ? state : { ...state, pool: pricedPool }), [state, pricedPool])
   // Added 2026-10-06 (the owner: AI/PONS short on Robinhood Chain and nothing offered): what paying with one other token
-  // would be for this pool and wallet, read once and again with the balances (./usePricedPool.ts usePayFacts).
-  const pay = usePayFacts(state.pool, balanceRevision, state.payWith?.token ?? null)
+  // would be for this pool and wallet, read once and again with the balances (./usePricedPool.ts usePayFacts): on a
+  // deliberate read again and on Amount's tick, keeping its last answer meanwhile; the tick apart, so a tick's read never
+  // cuts short one already out, and the reader knows a background read from a deliberate one (PoolPrices `pay`).
+  const pay = usePayFacts(state.pool, balanceRevision, state.payWith?.token ?? null, readsTick)
   useEffect(() => { payReading.current = pay === undefined })
-  const priceReading = useLivePoolPrice(state.pool, current === 'amount' && !creating, balanceRevision, (fresh) => {
+  // Changed on purpose 2026-10-30 (QA round 2, N18): the price is read once as Range opens, so the amount step pairs the
+  // first typed amount on a fresh price instead of changing it under the person when its first read lands; it is read
+  // again on Amount alone, in the background, on its tick (launch capacity 9a). The range keeps its width (RangeStep.tsx)
+  // and nothing is said.
+  const priceReading = useLivePoolPrice(state.pool, (current === 'range' || current === 'amount') && !creating, balanceRevision, (fresh) => {
     // A price crossing the range never clears or silently changes the user's independent amount.
     setState((was) => withFreshPool(was, fresh))
-  })
+  }, current === 'amount', priceTick)
   useEffect(() => { marketReading.current = priceReading })
   const paidFunding = state.payWith ? payFunding(state.payWith, pay) : null
   const pairFunding = state.payWith ? null : reviewPlan(state, rawBalances(pair))
+  // Continue held by a read that answered without the figure it needs: the token chosen to pay with, or the pool's two
+  // balances (a background read that reads nothing keeps the figures it had, usePairBalances.ts, so this is a first read,
+  // a deliberate one, or the offer's).
+  const unreadHold = __DOMINO_V2__ && current === 'amount' && (paidFunding ? paidFunding.kind === 'unread' : pair.status === 'ready' && (pair.balances === null || pair.balances.some((side) => side.raw === null)))
+  // Changed on purpose 2026-10-30 (launch capacity 9a, its review): one timer, set from the last read whatever asked it (a
+  // focus, a tab shown, a deliberate read again), so a read in between never makes the next wait close to two minutes;
+  // and sooner while `unreadHold` (RETRY_MS). Nothing is planned or asked while the page is hidden.
+  useEffect(() => {
+    if (!__DOMINO_V2__ || current !== 'amount' || creating || !balanceKey) return
+    if (!unreadHold) retries.current = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const due = () => (unreadHold ? RETRY_MS[Math.min(retries.current, RETRY_MS.length - 1)] : REFRESH_MS)
+    const refresh = (age: number) => {
+      if (document.hidden || Date.now() - lastRead.current < age) return
+      lastRead.current = Date.now()
+      if (unreadHold) retries.current += 1
+      // The price whatever the wallet, once a minute (a read of it already out is left to finish).
+      if (!marketReading.current && lastRead.current - lastPrice.current >= REFRESH_MS - TIMER_SLACK_MS) {
+        lastPrice.current = lastRead.current
+        setPriceTick((n) => n + 1)
+      }
+      // The balances and the offer once their first read is in, and no read of them is out: none is cut short.
+      if (balanceRead.current !== 'disconnected' && balanceRead.current !== 'loading' && !balanceRefreshing.current && !payReading.current) setReadsTick((n) => n + 1)
+    }
+    const plan = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        if (document.hidden) return
+        refresh(due() - TIMER_SLACK_MS)
+        plan()
+      }, Math.max(0, lastRead.current + due() - Date.now()))
+    }
+    const onReturn = () => {
+      refresh(unreadHold ? Math.min(due(), RETURN_RETRY_MS) : due())
+      plan()
+    }
+    refresh(due())
+    plan()
+    window.addEventListener('focus', onReturn)
+    document.addEventListener('visibilitychange', onReturn)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('focus', onReturn)
+      document.removeEventListener('visibilitychange', onReturn)
+    }
+  }, [current, creating, balanceKey, balanceRevision, unreadHold])
+  // Changed on purpose 2026-10-30 (QA round 2 review, the sweep): a balance not read yet holds Continue as a balance being
+  // checked, never as one that "could not be checked"; it is read again quietly (RETRY_MS, above).
   const fundingCheck: Check = paidFunding && paidFunding.kind !== 'ready'
-    ? fail(paidFunding.kind === 'short' ? 'Choose how to fund this amount below.' : paidFunding.kind === 'gas' ? 'Add ETH for the network fee to continue.' : paidFunding.kind === 'unread' ? 'Your balance could not be checked yet.' : CREATE.amount.pairReading)
+    ? fail(paidFunding.kind === 'short' ? 'Choose how to fund this amount below.' : paidFunding.kind === 'gas' ? 'Add ETH for the network fee to continue.' : CREATE.amount.pairReading)
     : __DOMINO_V2__ && !state.payWith && pair.status !== 'disconnected' && (!pairFunding?.plan || pairFunding.plan.kind === 'short')
-      ? fail(pairFunding?.plan?.kind === 'short' ? 'Choose how to fund this amount below.' : pair.status === 'ready' ? 'Your balance could not be checked yet.' : CREATE.amount.pairReading)
-      : priceReading ? fail('Updating the price…') : amountCheck
+      ? fail(pairFunding?.plan?.kind === 'short' ? 'Choose how to fund this amount below.' : CREATE.amount.pairReading)
+      : priceReading ? fail('Checking the price…') : amountCheck
 
-  const checkFor: Record<VisualStep, Check> = { pool: poolCheck, range: rangeCheck, amount: amountCheck.ok ? fundingCheck : amountCheck, review: canContinue('review', state, now) }
+  // Added 2026-10-30 (QA round 2, N54, the owner's decision): US$ 1 at least, by the total the step shows (or the amount
+  // paid with another token); a pool with no USD value refuses only an amount that rounds to nothing in one of its two
+  // tokens. Said only as Continue's reason; no figure is changed.
+  const minimumCheck: Check = (() => {
+    if (!amountCheck.ok || !valued.pool) return amountCheck
+    if (valued.payWith) {
+      const paidAmount = valued.payWith
+      const typed = validateBudget(paidAmount.text, paidAmount.token.decimals)
+      const facts = pay && pay.token.chainId === paidAmount.token.chainId && pay.token.address.toLowerCase() === paidAmount.token.address.toLowerCase() ? pay : null
+      const usd = typed.ok ? usdAt(typed.raw, paidAmount.token.decimals, facts?.usd ?? null) : null
+      return underMinimum(usd) ? fail(CREATE.amount.tooSmall) : amountCheck
+    }
+    const held = heldAmounts(valued, pair)
+    const total = held !== null && held.sides.every((side) => side.usd !== null) ? held.total : null
+    if (total !== null) return underMinimum(total) ? fail(CREATE.amount.tooSmall) : amountCheck
+    const planned = reviewPlan(valued, null)
+    return planned && takesOnly(valued) === null && (planned.need[0] === 0n || planned.need[1] === 0n) ? fail(CREATE.amount.tooSmallUnpriced) : amountCheck
+  })()
+
+  const checkFor: Record<VisualStep, Check> = { pool: poolCheck, range: rangeCheck, amount: !amountCheck.ok ? amountCheck : !minimumCheck.ok ? minimumCheck : fundingCheck, review: canContinue('review', state, now) }
   const check = checkFor[current]
+  // What Review's own control checks again (N53): the amount, and its minimum.
+  const reviewHold: Check = !amountCheck.ok ? amountCheck : minimumCheck
   const activeFunding = __DOMINO_V2__ && funding?.key === fundingKey ? funding.value : null
   const adoptingFunds = fundingAdvance?.key === fundingKey
   const continueFunding = async () => {
-    if (fundingBusy.current || activeFunding?.state !== 'ready' || !amountCheck.ok || !rangeCheck.ok) return
+    if (fundingBusy.current || activeFunding?.state !== 'ready' || !amountCheck.ok || !minimumCheck.ok || !rangeCheck.ok) return
     const request = { key: fundingKey, epoch: fundingEpoch.current }
     fundingBusy.current = true
     setFundingAdvance({ ...request, phase: 'checking' })
@@ -534,8 +799,78 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
   }, [fundingAdvance])
   const fundingWaiting = current === 'amount' && activeFunding && (activeFunding.state === 'waiting' || activeFunding.state === 'attention')
   const continuationReady = current === 'amount' && activeFunding?.state === 'ready'
-  const canPressContinue = __DOMINO_V2__ ? !adoptingFunds && !fundingWaiting && (continuationReady ? amountCheck.ok && rangeCheck.ok : check.ok) : check.ok
+  const canPressContinue = __DOMINO_V2__ ? !adoptingFunds && !fundingWaiting && (continuationReady ? amountCheck.ok && minimumCheck.ok && rangeCheck.ok : check.ok) : check.ok
   const continueReason = __DOMINO_V2__ && adoptingFunds ? 'Checking your selected funds…' : fundingWaiting ? activeFunding.copy : check.ok ? '' : check.reason
+  // QA round 2, Q17: the browser's Back and Forward open the step their entry names, with every choice kept (the flow never
+  // unmounted). Once the position exists the flow rests on its success: Back leaves it, as before. While Create position
+  // asks the wallet, a step change waits: the entry goes back to Review. A Forward the step's Continue would not take goes
+  // back to the entry on screen. Changed on purpose 2026-10-30 (QA round 2 review): Back never rests on an entry that
+  // changes nothing. An earlier flow's entry, or one whose step cannot open now, is passed on to the nearest entry of
+  // this flow that opens a step, else out of the flow to the page before it, in the same press.
+  const onPop = useRef<(event: PopStateEvent) => void>(() => undefined)
+  useEffect(() => {
+    onPop.current = (event) => {
+      const mine = trail.current
+      if (window.location.hash !== mine.hash) return
+      const mark = markOf(event.state)
+      if (!mark) return
+      const was = mine.at
+      const ahead = mark.dmIndex > was
+      // Back to the entry of the step on screen (never go(0), which reloads the page).
+      const stay = () => {
+        if (mark.dmIndex !== was) window.history.go(was - mark.dmIndex)
+      }
+      // Out of the flow, past every entry left on this link: the page before it.
+      const leave = () => {
+        mine.at = mark.dmIndex
+        window.history.go(-(mark.dmIndex + 1))
+      }
+      if (mark.dmFlow !== mine.flow) {
+        if (ahead) stay()
+        else leave()
+        return
+      }
+      if (mark.dmStep === current) {
+        mine.at = mark.dmIndex
+        return
+      }
+      if (created || createdV2) {
+        if (ahead) stay()
+        else leave()
+        return
+      }
+      if (creating) {
+        stay()
+        return
+      }
+      const opens = (step: VisualStep | undefined) => step !== undefined && step !== current && canOpen(STAGE_OF[step], state, now)
+      if (ahead && (!opens(mark.dmStep) || !canPressContinue || continuationReady)) {
+        stay()
+        return
+      }
+      if (!ahead && !opens(mark.dmStep)) {
+        let to = mark.dmIndex - 1
+        while (to >= 0 && !opens(mine.steps[to])) to -= 1
+        if (to < 0) {
+          leave()
+          return
+        }
+        mine.at = mark.dmIndex
+        window.history.go(to - mark.dmIndex)
+        return
+      }
+      mine.at = mark.dmIndex
+      mine.popped = mark.dmStep
+      if (mark.dmStep === 'amount') setAmountReached(true)
+      open(goTo(state, STAGE_OF[mark.dmStep], now), mark.dmStep === 'amount' ? 'amount' : 'range')
+    }
+  })
+  useEffect(() => {
+    const listener = (event: PopStateEvent) => onPop.current(event)
+    window.addEventListener('popstate', listener)
+    return () => window.removeEventListener('popstate', listener)
+  }, [])
+
   // Changed on purpose (owner, 2026-09-24): step 1 shows no buttons until a token is chosen, and then only
   // Continue, full width (there is nowhere to go back to from the first step). The buttons arrive gently
   // (flow.css, stilled under reduced motion). The reason paragraph stays mounted, out of sight while nothing
@@ -557,13 +892,18 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
         </Button>
       )}
       {current === 'review' ? (
-        V2Create ? (
+        // Added 2026-10-30 (QA round 2, N53): Review never offers Connect wallet or Create position for choices the amount
+        // step would not take (another pool's link, an amount gone); never while the wallet is asked, nor once created.
+        !creating && !created && !createdV2 && !reviewHold.ok ? (
+          <CreateUnavailable note={reviewHold.reason} />
+        ) : V2Create ? (
           <V2Create
             state={state}
             balances={pair}
             pay={pay}
             onBusy={setCreating}
             onReadAgain={() => setBalanceRevision((n) => n + 1)}
+            onFreshPool={(fresh) => setState((was) => withFreshPool(was, fresh))}
             v1={<FinalControl state={state} balances={pair} onBusy={setCreating} />}
           />
         ) : (
@@ -572,7 +912,16 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
       ) : (
         <>
           {!waiting && (
-            <Button type="button" variant="primary" size="lg" disabled={!canPressContinue} aria-describedby={canPressContinue ? undefined : 'continue-reason'} onClick={forward}>
+            // Changed on purpose 2026-10-30 (QA round 2, N89): not ready, Continue is aria-disabled rather than disabled, so
+            // Tab still reaches it and its reason is read with it; pressed then, it does nothing. It keeps its quiet face.
+            <Button
+              type="button"
+              variant="primary"
+              size="lg"
+              aria-disabled={canPressContinue ? undefined : true}
+              aria-describedby={canPressContinue ? undefined : 'continue-reason'}
+              onClick={canPressContinue ? forward : undefined}
+            >
               {__DOMINO_V2__ && adoptingFunds ? 'Checking funds…' : current === 'amount' && activeFunding?.state === 'waiting' ? 'Waiting for funds…' : CREATE.page.next}
             </Button>
           )}
@@ -581,9 +930,9 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
           <p id="continue-reason" role="status" className={waiting ? 'dm-flow-reason sr-only' : 'dm-flow-reason'}>
             {continueReason}
           </p>
-          {__DOMINO_V2__ && current === 'amount' && !adoptingFunds && !fundingWaiting && !check.ok && amountCheck.ok && amountReadSettled && (
-            <Button type="button" variant="ghost" size="sm" onClick={() => setBalanceRevision((n) => n + 1)}>Check balance again</Button>
-          )}
+          {/* Changed on purpose 2026-10-30 (QA round 2 review, the sweep, rule 3): no "Check balance again" button under it.
+              While Amount is open the balances are read again quietly: every minute, and sooner while they hold Continue
+              (RETRY_MS, launch capacity 9a). */}
         </>
       )}
     </div>
@@ -596,7 +945,7 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
         if (__DOMINO_V2__ && V2PoolAdvanced) {
           return (
             <div className="dm-flow-stack" data-pool-stage="">
-              <StageToken source={source} state={state} preselect={preselect} candidates={candidates} onCandidates={setCandidates} onToken={setToken} onPool={setPool} onPreview={setPreview} others={others} />
+              <StageToken source={source} state={state} preselect={preselect} candidates={candidates} onCandidates={setCandidates} onToken={setToken} onPool={pickPool} onPreview={setPreview} others={others} top={topPools} topServer={topServer} initialPool={initialPool} />
               {!state.pool && (
                 <Suspense fallback={null}>
                   <V2PoolAdvanced />
@@ -605,9 +954,9 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
             </div>
           )
         }
-        return <StageToken source={source} state={state} preselect={preselect} candidates={candidates} onCandidates={setCandidates} onToken={setToken} onPool={setPool} onPreview={setPreview} />
+        return <StageToken source={source} state={state} preselect={preselect} candidates={candidates} onCandidates={setCandidates} onToken={setToken} onPool={pickPool} onPreview={setPreview} top={topPools} topServer={topServer} initialPool={initialPool} />
       case 'range':
-        return <StageRange source={source} state={state} onRange={setRange} onPool={setPool} others={others} />
+        return <StageRange source={source} state={state} onRange={setRange} onPool={setPool} others={others} onBlock={onRangeBlock} />
       case 'amount':
         return (
           <StageAmount
@@ -638,7 +987,8 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
   const summaryOf = (step: VisualStep): ReactNode => {
     switch (step) {
       case 'pool':
-        return <PoolSummary state={state} />
+        // QA round 2, Q23/N37: the pool's network on its row, where the chosen pool's panel names it (other networks offered).
+        return <PoolSummary state={state} network={state.pool ? (others?.name(state.pool.currencies[0].chainId) ?? null) : null} />
       case 'range':
         return state.range && usablePrice ? <RangeSummary range={state.range} price={usablePrice} /> : null
       case 'amount':
@@ -672,7 +1022,9 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
       summary: done ? summaryOf(step) : null,
       body: mounted ? bodyOf(step) : null,
       footer: isCurrent ? footer : null,
-      lead: step === 'amount' ? amountLead ?? '' : step === 'range' ? undefined : '',
+      // Changed on purpose 2026-10-30 (QA round 2, Q4): a two-sided Amount says its own line (CREATE.step.amount.lead: both
+      // tokens go in), as Range does; Pool and Review keep none.
+      lead: step === 'amount' ? amountLead : step === 'range' ? undefined : '',
     }
   })
 
@@ -691,6 +1043,7 @@ export function Journey({ poolId, linkToken = null, initialToken = null }: { poo
         price={usablePrice}
         balances={pair}
         step={current}
+        network={others ? (chainId) => others.name(chainId) : null}
       />
     </PageShell>
   )

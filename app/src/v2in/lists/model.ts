@@ -666,8 +666,25 @@ function pairWords(amounts: readonly string[], tokens: readonly [TokenName, Toke
   return parts.length ? parts.join(' + ') : '0'
 }
 
+/**
+ * (QA round 2, N66) A receipt row's collapsed amount: every token that moved, joined ' + ' in the pool's own order (`order`,
+ * lowercase addresses; the expanded "Added to the position" line's order), where it showed the first token only ("0.5
+ * PONS" for 0.5 PONS + 0.141509 USDG). Zeros are left out; null with none. A token whose decimals are unknown (said in
+ * raw units) is left out beside a named one, as the first-token rule left it before; alone, it stays (the row's dash).
+ */
+function movedWords(list: readonly { token: string; amount: string }[], order: readonly string[], token: (address: string) => TokenName): string | null {
+  const rank = (address: string) => {
+    const at = order.indexOf(address.toLowerCase())
+    return at < 0 ? order.length : at
+  }
+  const words = list.filter((one) => BigInt(one.amount) > 0n).sort((a, b) => rank(a.token) - rank(b.token)).map((one) => amountWords(one.amount, token(one.token)))
+  const named = words.filter((one) => !one.includes('raw units'))
+  const shown = named.length > 0 ? named : words
+  return shown.length > 0 ? shown.join(' + ') : null
+}
+
 export type ReceiptFinality = (chainId: number, hash: string, blockHash: string) => 'included' | 'finalized' | 'reorged' | null
-function receiptOf(item: Item, owner: string, name: ReturnType<typeof tokenNamer>, pools: ReadonlyMap<string, readonly [string, string]>, finality?: ReceiptFinality): ReceiptView | null {
+function receiptOf(item: Item, owner: string, name: ReturnType<typeof tokenNamer>, pools: ReadonlyMap<string, readonly [string, string]>, finality?: ReceiptFinality, exitVaults: ReadonlySet<string> = new Set()): ReceiptView | null {
   if (!isV2ChainId(item.chainId)) return null
   const proved = finality?.(item.chainId, item.tx.hash, item.tx.snapshot.hash)
   if (proved === 'reorged') return null
@@ -714,8 +731,9 @@ function receiptOf(item: Item, owner: string, name: ReturnType<typeof tokenNamer
       if (item.previousTokenId !== null && item.previousTokenId !== item.tokenId) lines.push({ label: 'Previous position', value: `#${item.previousTokenId}`, data: 'previous' })
       const fees = feesOf(item.tariffs, token)
       if (fees.length === 0) lines.push({ label: 'Domino fee', value: 'No Domino fee', data: 'no-fee' })
-      const first = item.action === 'exit' ? item.refunds.find((r) => BigInt(r.amount) > 0n) : item.inputs[0]
-      return { ...base, what: S1_WHAT[item.action](item.tokenId), amount: first ? amountWords(first.amount, token(first.token)) : null, lines, fees }
+      const order = item.steps[0] ? [item.steps[0].pool.currency0.toLowerCase(), item.steps[0].pool.currency1.toLowerCase()] : []
+      const amount = movedWords(item.action === 'exit' ? item.refunds : item.inputs, order, token)
+      return { ...base, what: S1_WHAT[item.action](item.tokenId), amount, lines, fees }
     }
     case 'vault_execution': {
       const tokens = vaultTokens(item.vault)
@@ -742,6 +760,11 @@ function receiptOf(item: Item, owner: string, name: ReturnType<typeof tokenNamer
       return { ...base, what: outcome.title, amount: item.delivered.some((amount) => BigInt(amount) > 0n) ? pairWords(item.delivered, tokens) : null, lines, fees: feesOf(item.tariffs, token) }
     }
     case 'vault_created':
+      // (QA round 2, N65) Auto-exit's own vault records Auto-compound's mode with one position (decision #25): it is set up
+      // as Auto-exit, never named a compounding mode (the row's badge already says Auto-exit).
+      if (exitVaults.has(`${chainId}:${item.vault.toLowerCase()}`)) {
+        return { ...base, what: `Auto-exit set up for position #${item.rootTokenId}`, amount: null, lines: [{ label: 'Automation', value: 'Auto-exit', data: 'mode' }], fees: [] }
+      }
       return {
         ...base,
         what: `Automation set up for position #${item.rootTokenId}`,
@@ -780,20 +803,64 @@ function receiptOf(item: Item, owner: string, name: ReturnType<typeof tokenNamer
  * answer is about (who "you" is in an event). `portfolio`: the same wallet's portfolio, when read, for the pool tokens a
  * vault's [amount0, amount1] figures are in (without it they are said in raw units).
  */
-export function receiptViews(answer: Pick<ActivityResponse, 'items' | 'tokens' | 'wallet'>, open: (chainId: V2ChainId) => boolean, portfolio: Pick<PortfolioResponse, 'vaults' | 'tokens'> | null = null, finality?: ReceiptFinality): ReceiptView[] {
+export function receiptViews(answer: Pick<ActivityResponse, 'items' | 'tokens' | 'wallet'>, open: (chainId: V2ChainId) => boolean, portfolio: (Pick<PortfolioResponse, 'vaults' | 'tokens'> & Partial<Pick<PortfolioResponse, 'mandates'>>) | null = null, finality?: ReceiptFinality): ReceiptView[] {
   const name = tokenNamer([...answer.tokens, ...(portfolio?.tokens ?? [])])
   const pools = new Map<string, readonly [string, string]>()
   for (const vault of portfolio?.vaults ?? []) {
     if (vault.state.status === 'read') pools.set(`${vault.chainId}:${vault.address.toLowerCase()}`, [vault.state.pool.currency0, vault.state.pool.currency1])
   }
+  const exitVaults = autoExitVaults(answer.items, portfolio)
   const owner = answer.wallet.toLowerCase()
   const out: ReceiptView[] = []
   for (const item of answer.items) {
     if (!isV2ChainId(item.chainId) || !open(item.chainId)) continue
-    const view = receiptOf(item, owner, name, pools, finality)
+    const view = receiptOf(item, owner, name, pools, finality, exitVaults)
     if (view) out.push(view)
   }
   return out
+}
+
+/**
+ * (QA round 2, N65) The vaults that are Auto-exit's own (`chainId:address`): as the portfolio lists them (the row badge's
+ * own rule, ../autoexit/standing.ts protectionStanding), and for a vault it does not list, one created with Auto-compound's
+ * mode in the same transaction that turned its Auto-exit on (the one-batch setup). A vault the portfolio lists as another
+ * automation is never taken for Auto-exit's on that evidence.
+ */
+function autoExitVaults(items: readonly Item[], portfolio: (Pick<PortfolioResponse, 'vaults'> & Partial<Pick<PortfolioResponse, 'mandates'>>) | null): Set<string> {
+  const out = new Set<string>()
+  const listed = new Set<string>()
+  for (const vault of portfolio?.vaults ?? []) {
+    const key = `${vault.chainId}:${vault.address.toLowerCase()}`
+    listed.add(key)
+    if (protectionStanding(vault, portfolio?.mandates ?? []) !== null) out.add(key)
+  }
+  for (const item of items) {
+    if (item.kind !== 'vault_created' || item.policy.mode === 'domino') continue
+    const vault = item.vault.toLowerCase()
+    const key = `${item.chainId}:${vault}`
+    if (listed.has(key)) continue
+    const tx = item.tx.hash.toLowerCase()
+    const armed = items.some((other) => other.chainId === item.chainId && other.tx.hash.toLowerCase() === tx && (
+      (other.kind === 'auto_exit_event' && other.event === 'MandateRegistered' && other.vault?.toLowerCase() === vault)
+      || (other.kind === 'vault_event' && other.vault.toLowerCase() === vault && other.events.some((event) => event.event === 'ExitModuleSet' && event.module !== null && event.module.toLowerCase() !== ZERO_ADDRESS))))
+    if (armed) out.add(key)
+  }
+  return out
+}
+
+/**
+ * (QA round 2, N65) Whether an effect of one transaction's receipt says its own title. One Auto-exit setup is up to three
+ * events (the vault, its exit module, the registration), and the receipt said three titles: "Auto-exit turned on for
+ * position #N", "Auto-exit turned on" and "Automation set up…". Beside the registration, the module's bare "Auto-exit
+ * turned on" and Auto-exit's own vault's setup keep their lines but not their titles; every event stays in the receipt
+ * (its Events line).
+ */
+export function effectTitled(effect: Pick<ShownReceipt, 'kind' | 'what' | 'lines'>, effects: readonly Pick<ShownReceipt, 'kind' | 'what'>[]): boolean {
+  if (effects.length < 2) return false
+  const registered = effects.some((one) => one.kind === 'auto_exit_event' && one.what.startsWith('Auto-exit turned on'))
+  if (!registered) return true
+  if (effect.kind === 'vault_event' && effect.what === 'Auto-exit turned on' && effect.lines.length === 0) return false
+  return !(effect.kind === 'vault_created' && effect.what.startsWith('Auto-exit set up'))
 }
 
 /** (2026-10-15, pack 8): a receipt row's view whose block time may not be known (a session receipt): then none is drawn. */
@@ -828,14 +895,18 @@ export function sessionReceiptView(entry: SessionReceipt, tokens: readonly Index
   const fees: ReceiptFee[] = entry.fee ? [{ label: feeLabel('assisted_swap', null), kind: 'assisted_swap', rate: null, value: amountWords(entry.fee.amount, token(entry.fee.token)), deferred: null }] : []
   if (fees.length === 0) lines.push({ label: 'Domino fee', value: 'No Domino fee', data: 'no-fee' })
   const out = entry.action === 'exit' || entry.action === 'collect'
-  const first = out
-    ? entry.lines.flatMap((line) => line.kind === 'returned' && line.amount !== null && BigInt(line.amount) > 0n ? [{ token: line.token, amount: line.amount }] : line.kind === 'collected' ? line.amounts.filter((one) => BigInt(one.amount) > 0n) : [])[0]
-    : entry.lines.flatMap((line) => line.kind === 'paid-in' ? [{ token: line.token, amount: line.amount }] : [])[0]
+  // (QA round 2, N66) Every token, as the indexed row (movedWords above), in the order of the step's own amounts.
+  // What reached the wallet: its returned lines, or for a collect with none, the fees collected (never both added up).
+  const returned = entry.lines.flatMap((line) => line.kind === 'returned' && line.amount !== null ? [{ token: line.token, amount: line.amount }] : [])
+  const moved = out
+    ? returned.some((one) => BigInt(one.amount) > 0n) ? returned : entry.lines.flatMap((line) => line.kind === 'collected' ? line.amounts : [])
+    : entry.lines.flatMap((line) => line.kind === 'paid-in' ? [{ token: line.token, amount: line.amount }] : [])
+  const order = entry.lines.flatMap((line) => line.kind === 'added' || line.kind === 'removed' || line.kind === 'collected' ? line.amounts.map((one) => one.token.toLowerCase()) : [])
   const gas = entry.gas
   return {
     id: `session:${chainId}:${entry.hash}`, chainId, chain: chainName(chainId), kind: 's1_action',
     what: entry.action === 'collect' ? 'Fees collected' : S1_WHAT[entry.action](entry.tokenId),
-    amount: first ? amountWords(first.amount, token(first.token)) : null, lines, fees,
+    amount: movedWords(moved, order, token), lines, fees,
     gas: gas ? { sender: gas.sender, gasUsed: groupDigits(gas.gasUsed), gasPrice: gweiWords(gas.effectiveGasPrice), l1Fee: gas.l1Fee === null ? null : weiWords(gas.l1Fee) } : null,
     hash: entry.hash, block: entry.block, at: entry.at, confirmed: true,
     finalized: entry.state === 'finalized' || finality?.(chainId, entry.hash, entry.blockHash) === 'finalized',

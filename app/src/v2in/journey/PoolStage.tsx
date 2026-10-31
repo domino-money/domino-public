@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { StageToken, type PreselectStatus } from '../../components/create/StageToken'
 import { IconCheck } from '../../components/icons'
 import { Button, KeyValue, KeyValueList, Segmented } from '../../components/ui'
@@ -15,6 +15,7 @@ import { useJourneyNetwork } from './context'
 import { JOURNEY } from './copy'
 import { journeyError, type JourneyError } from './errors'
 import { dexName, feePercent, offeredPool, poolFromList, poolOf, tiersOf, type JourneyPool } from './model/pools'
+import { priceInvertedOn, pricedPair } from './model/price'
 import { startingPrice, type JourneyState, type StartingPriceText } from './model/state'
 import { ErrorLine, PoolChips, TokenDiscPair, TokenName } from './parts'
 import { cleanSymbol, labelOf, profileTokens, tokenBook, type JourneyToken } from './tokens'
@@ -57,8 +58,26 @@ export function PoolStage({ chainId, gate, state, finderOnly, preselect = NO_LIN
   const network = useJourneyNetwork()
   const chosen = state.pool && !changing ? state.pool : null
   const listed = chainId === 4663 && !finderOnly
+  // QA round 2, N57 (as the owner's step, components/create/StageToken.tsx): Change pool and Keep this pool swap the panel
+  // the focus was on for another, so the focus moves with them: to the search (or the finder's first choice), or back to
+  // the chosen pool's button, never to the page's start. From the keyboard only for Change pool: the search opens its
+  // list on focus, which a mouse click should not do over the pools it means to show.
+  const root = useRef<HTMLDivElement>(null)
+  const focusNext = useRef<'search' | 'chosen' | null>(null)
+  useEffect(() => {
+    const next = focusNext.current
+    focusNext.current = null
+    const here = root.current
+    if (!here || next === null) return
+    if (next === 'chosen') here.querySelector<HTMLElement>('[data-chosen-pool] button')?.focus()
+    else (here.querySelector<HTMLElement>('#create-token-search') ?? here.querySelector<HTMLElement>('[data-pool-finder] [role="radio"][tabindex="0"]'))?.focus()
+  }, [changing])
+  const change = (event: MouseEvent<HTMLButtonElement>) => {
+    if (event.detail === 0) focusNext.current = 'search'
+    setChanging(true)
+  }
   return (
-    <div className="dm-flow-stack" data-stage="pool" data-zap-pool-stage={chainId}>
+    <div ref={root} className="dm-flow-stack" data-stage="pool" data-zap-pool-stage={chainId}>
       {network?.backToList && (
         <div className="flex justify-end">
           <Button type="button" variant="ghost" size="sm" onClick={network.backToList} data-network-back-to-list="">
@@ -68,14 +87,22 @@ export function PoolStage({ chainId, gate, state, finderOnly, preselect = NO_LIN
       )}
       {chosen ? (
         <>
-          <ChosenPool pool={chosen} onChange={() => setChanging(true)} />
+          <ChosenPool pool={chosen} onChange={change} />
           {!chosen.initialized && <StartingPrice pool={chosen} value={state.start} onChange={onStart} />}
         </>
       ) : (
         <>
           {state.pool && (
             <div className="flex justify-end">
-              <Button type="button" variant="ghost" size="sm" onClick={() => setChanging(false)}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  focusNext.current = 'chosen'
+                  setChanging(false)
+                }}
+              >
                 {CREATE.pool.keep}
               </Button>
             </div>
@@ -106,18 +133,22 @@ export function PoolStage({ chainId, gate, state, finderOnly, preselect = NO_LIN
   )
 }
 
-/** The chosen pool, as today's step 1 draws it (components/create/StagePool.tsx ChosenPool): the pair, then its network, DEX and fee. */
-function ChosenPool({ pool, onChange }: { pool: JourneyPool; onChange: () => void }) {
+/**
+ * The chosen pool, as today's step 1 draws it (components/create/StagePool.tsx ChosenPool): the pair, then its network, DEX
+ * and fee. The pair as its price is written, base then quote (QA round 2, Q24: ./model/price.ts pricedPair).
+ */
+function ChosenPool({ pool, onChange }: { pool: JourneyPool; onChange: (event: MouseEvent<HTMLButtonElement>) => void }) {
+  const [base, quote] = pricedPair(pool.chainId, pool.pool.currency0, pool.pool.currency1, pool.tokens)
   return (
     <div className="dm-flow-panel" data-chosen-pool={pool.id} data-zap-pool={`${pool.chainId}:${pool.pool.dex}`} data-pool-source={pool.source}>
       <div className="dm-flow-pool-head">
         <span aria-hidden="true" className="dm-flow-chosen-check">
           <IconCheck size={12} />
         </span>
-        <TokenDiscPair chainId={pool.chainId} first={pool.tokens[0]} second={pool.tokens[1]} size={32} />
+        <TokenDiscPair chainId={pool.chainId} first={base} second={quote} size={32} />
         <div className="dm-flow-pool-name">
           <p className="dm-flow-pool-pair">
-            <TokenName token={pool.tokens[0]} /> / <TokenName token={pool.tokens[1]} />
+            <TokenName token={base} /> / <TokenName token={quote} />
           </p>
           <span title={pool.readAt === null ? undefined : JOURNEY.pool.readAt(pool.block.toString())}>
             <PoolChips chainId={pool.chainId} dex={pool.pool.dex} fee={pool.pool.fee} />
@@ -304,9 +335,13 @@ function PoolFinder({ chainId, gate, open, finderOnly, onPool, onListed }: {
 /**
  * "Create a new pool (advanced)" (rev2 §2.6.5): the starting price typed in either orientation, shown both ways round,
  * with the exact tick and initSqrtPriceX96 the app computes and the price recomputed from that integer (the round trip).
+ * Changed on purpose 2026-10-30 (QA round 2, Q24's review): the two choices, the price first asked for and the round trip
+ * follow the pair as its price is written, base then quote (./model/price.ts pricedPair), as the chosen pool above names
+ * it; startingPrice takes either base, so the price set on the pool is the same whichever way round it is typed.
  */
 function StartingPrice({ pool, value, onChange }: { pool: JourneyPool; value: StartingPriceText | null; onChange: (next: StartingPriceText | null) => void }) {
-  const current = value ?? { base: 'currency0' as const, text: '' }
+  const inverted = priceInvertedOn(pool.chainId, pool.pool.currency0, pool.pool.currency1)
+  const current = value ?? { base: inverted ? ('currency1' as const) : ('currency0' as const), text: '' }
   const [t0, t1] = pool.tokens
   const l0 = t0.symbol ?? labelOf(tokenBook(pool.chainId, [t0]), t0.address)
   const l1 = t1.symbol ?? labelOf(tokenBook(pool.chainId, [t1]), t1.address)
@@ -319,7 +354,7 @@ function StartingPrice({ pool, value, onChange }: { pool: JourneyPool; value: St
     <section className="dm-flow-panel" data-new-pool-price="">
       <p className="text-body font-medium">{NEW_POOL_TITLE}</p>
       <p className="text-caption text-fg-muted">{JOURNEY.newPool.lead}</p>
-      <Segmented label={JOURNEY.newPool.base} items={[{ key: 'currency0', label: l0 }, { key: 'currency1', label: l1 }]} value={current.base} onChange={(next) => onChange({ ...current, base: next })} />
+      <Segmented label={JOURNEY.newPool.base} items={pricedPair(pool.chainId, pool.pool.currency0, pool.pool.currency1, [{ key: 'currency0', label: l0 }, { key: 'currency1', label: l1 }] as const)} value={current.base} onChange={(next) => onChange({ ...current, base: next })} />
       <div>
         <label htmlFor={`new-pool-price-${pool.id}`} className="dm-label">{JOURNEY.newPool.price}</label>
         <div className="dm-flow-input" data-invalid={current.text !== '' && !exact ? '' : undefined}>
@@ -333,7 +368,7 @@ function StartingPrice({ pool, value, onChange }: { pool: JourneyPool; value: St
         <details className="dm-details" data-new-pool-details="">
           <summary>{CREATE_DETAILS}</summary>
           <KeyValueList>
-            <KeyValue label={JOURNEY.newPool.roundTrip} data-new-pool-round-trip="">{JOURNEY.newPool.both(`1 ${l0} = ${back.price0In1} ${l1}`, `1 ${l1} = ${back.price1In0} ${l0}`)}</KeyValue>
+            <KeyValue label={JOURNEY.newPool.roundTrip} data-new-pool-round-trip="">{JOURNEY.newPool.both(...pricedPair(pool.chainId, pool.pool.currency0, pool.pool.currency1, [`1 ${l0} = ${back.price0In1} ${l1}`, `1 ${l1} = ${back.price1In0} ${l0}`] as const))}</KeyValue>
             <KeyValue label={JOURNEY.newPool.tick} mono data-new-pool-tick="">{exact.tick}</KeyValue>
             <KeyValue label={JOURNEY.newPool.sqrt} mono data-new-pool-sqrt="">{exact.sqrtPriceX96.toString()}</KeyValue>
           </KeyValueList>

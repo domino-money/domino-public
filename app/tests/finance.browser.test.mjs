@@ -159,7 +159,7 @@ test('private history and receipts read themselves after login, format exact pro
     // Changed on purpose 2026-10-01 (audit D2): with no wallet connected yet, each card says to connect one (it said
     // "Sign in" to every visitor); once connected and signed out, it says to sign in (below, after Sign out).
     // Changed on purpose 2026-10-01 (the D2 follow-up): with nothing to show for the same reason, one line for both cards.
-    await s.page.getByText('Connect your wallet to see your automated positions and their receipts.', { exact: true }).waitFor();
+    await s.page.getByText('Connect a wallet to see your automated positions and their receipts.', { exact: true }).waitFor();
     assert.deepEqual([s.calls.length, s.executions.length], [0, 0], 'nothing private is read while signed out');
     await login(s.page);
     const history = s.page.locator('section[aria-label="Private performance"]');
@@ -358,7 +358,9 @@ async function sequenceWithoutRelease(s, label) {
   await connect.waitFor();
   await until(() => s.releases.some((call) => call.path === '/api/setup/v1/sequence-release'), `${label}: the release asked`);
   assert.equal(await s.page.locator('[data-sequence-release="unavailable"]').count(), 0, `${label}: no "Automation can’t be set up here."`);
-  assert.match(await connect.innerText(), /^Connect your wallet\s+Your open positions appear here to choose from\.\s+Connect wallet$/, label);
+  // Changed on purpose 2026-10-30 (QA round 2, the owner's decision on N13): the plate says where a first position comes
+  // from and offers New position (a link) beside Connect wallet, the one button.
+  assert.match(await connect.innerText(), /^Connect your wallet\s+Your open positions appear here to choose from\. Don’t have a position\? Start with New position\.\s+Connect wallet\s+New position$/, label);
   assert.deepEqual(await s.page.locator('main button').allInnerTexts(), ['Connect wallet'], `${label}: the wallet's one button, no owner controls`);
 }
 test('sequence is reachable from Automate, reads its release on mount with no wallet, and without one says in one plain line that automation can’t be set up here (with Domino V2: goes on to the wallet)', async () => {
@@ -367,7 +369,9 @@ test('sequence is reachable from Automate, reads its release on mount with no wa
     // The way into sequences lives on Automate (DESIGN.md E.6), where wallet builds render its link.
     await s.page.goto(`${s.origin}/#/automate`);
     await s.page.getByRole('link', {name:'Set up Domino-compound'}).click();
-    await s.page.getByRole('heading', {name:'Set up automation',exact:true}).waitFor();
+    // Changed on purpose 2026-10-30 (QA round 2, the owner's decision on N13): before a wallet the V2 page keeps the mode
+    // chosen (screens/Sequence.tsx); V1's legacy page, built for its own suites only, keeps its one title.
+    await s.page.getByRole('heading', {name: WALLET_DIST === WALLET_V2_DIST ? 'Set up Domino-compound' : 'Set up automation', exact:true}).waitFor();
     if (WALLET_DIST === WALLET_V2_DIST) {
       await sequenceWithoutRelease(s, 'no release');
       assert.deepEqual(s.releases, [{ path: '/api/setup/v1/sequence-release', method: 'GET', contract: '1.0.0-rc.1' }], 'one public GET on mount');
@@ -1288,7 +1292,7 @@ async function openCreated(page, id, timeout = 60_000, shot = null) {
     ...(v2 ? [['autoexit', `#/positions/${id}`]] : []),
   ]);
   assert.match(await next.innerText(), new RegExp(`Position NFT ${id} is in your wallet\\.[\\s\\S]*Plain position[\\s\\S]*View position[\\s\\S]*Auto-compound · 2%[\\s\\S]*Domino-compound · 4%`));
-  if (v2) assert.match(await next.locator('[data-created-next="autoexit"]').innerText(), /Auto-exit · 0\.2% if it closes[\s\S]*Closes it at the end of its range and sends the tokens to your wallet\.[\s\S]*Turn on/);
+  if (v2) assert.match(await next.locator('[data-created-next="autoexit"]').innerText(), /Auto-exit · 0\.2% of the position’s value, only if it closes[\s\S]*Closes it at the end of its range and sends the tokens to your wallet\.[\s\S]*Turn on/);
   assert.ok(!(await page.locator('[data-journey-footer] > button').first().isVisible()), 'Back rests once the position exists');
   if (shot) {
     await next.evaluate((element) => element.scrollIntoView({ block: 'end' }));
@@ -4011,7 +4015,8 @@ test('a link from a pool page verifies the pool with the token it names, and ste
     await s.page.locator('[data-stage="range"]').waitFor();
     // Changed on purpose 2026-10-01 (integration pass 3, audit E21): the step's row writes the fee as every chip does
     // (components/create/StepList.tsx, lib/format/fee.ts feeWords).
-    assert.equal(await s.page.locator('li[data-step="pool"] .dm-flow-row-summary').innerText(), 'ETH / TOKEN · 0.30% fee', 'no "deposit TOKEN" on the row');
+    // Changed on purpose 2026-10-30 (QA round 2, Q24): the pair named as its price is written ("1 TOKEN = … ETH"), as Markets does.
+    assert.equal(await s.page.locator('li[data-step="pool"] .dm-flow-row-summary').innerText(), 'TOKEN / ETH · 0.30% fee', 'no "deposit TOKEN" on the row');
   } finally { await s.close(); }
 });
 
@@ -4046,17 +4051,19 @@ test('New position’s Range step: Closer, Wider and Custom in words, the arrow 
     assert.deepEqual(await checked(), ['Closer']);
     assert.deepEqual(await ticks(), ['3600', '-4080']);
     assert.deepEqual(await away(), ['30% below today', '50% above today']);
-    assert.equal(await step.locator('.dm-flow-width-line').innerText(), 'A smaller window: the price can leave it sooner.');
+    // Changed on purpose 2026-10-30 (QA round 2, Q30): literal width lines (lib/create/copy.ts widthLines).
+    assert.equal(await step.locator('.dm-flow-width-line').innerText(), 'Earns more per dollar, but the price leaves it sooner.');
     assert.equal(await step.locator('[data-range-bound="lower"] [data-bound-price]').innerText(), '1 TOKEN = 0.000000000000697689 ETH');
     assert.equal(await step.locator('[data-range-bound="upper"] [data-bound-price]').innerText(), '1 TOKEN = 0.00000000000150378 ETH');
     assert.equal(await step.locator('input').count(), 0, 'no field, step or slider until Custom');
-    assert.doesNotMatch(await step.innerText(), /≈|\bper\b|\btick/i, 'no "≈", no "per", no ticks on screen');
+    // Changed on purpose 2026-10-30 (QA round 2, Q30): the width lines say "per dollar"; a price is still never "X per Y".
+    assert.doesNotMatch(await step.innerText(), /≈|\bper (?!dollar)|\btick/i, 'no "≈", no "per" in a price, no ticks on screen');
 
     await step.getByRole('radio', { name: 'Wider' }).click();
     assert.deepEqual(await checked(), ['Wider']);
     assert.deepEqual(await ticks(), ['6960', '-6960']);
     assert.deepEqual(await away(), ['50% below today', '101% above today']);
-    assert.equal(await step.locator('.dm-flow-width-line').innerText(), 'A larger window: more room to move, fees spread thinner.');
+    assert.equal(await step.locator('.dm-flow-width-line').innerText(), 'Stays in range longer, earns less per dollar.');
 
     // The arrow keys move the width switch, and the focus with it; Home and End go to either end.
     await step.getByRole('radio', { name: 'Wider' }).focus();
@@ -4114,13 +4121,14 @@ test('New position’s Range step: Closer, Wider and Custom in words, the arrow 
     await step.getByRole('radio', { name: 'Closer' }).click();
     assert.equal(await step.locator('p[data-range-position]').count(), 0);
 
-    // Five minutes on the page: the price is stale, which is said in its title only, and nothing is read by itself. The
-    // next change to the range reads it again, once; the price is fresh after that, so the changes after it read nothing.
+    // Five minutes on the page: the price is stale, which is said in its data only (QA round 2 sweep: no title about its
+    // age), and nothing is read by itself. The next change to the range reads it again, once; the price is fresh after
+    // that, so the changes after it read nothing.
     const priceReads = () => read.requests.filter(r => r.path === '/api/read/v1/pools' && JSON.parse(r.body).maxPools === 1 && JSON.parse(r.body).poolIds?.length === 1).length;
     const before = priceReads();
     await jump(s.page, '05:01');
     await s.page.waitForFunction(() => document.querySelector('li[data-step="range"] [data-picker="range"]')?.getAttribute('data-price-state') === 'stale');
-    assert.equal(await step.locator('[data-pool-price-text]').getAttribute('title'), 'The pool price was read more than 5 minutes ago on this page.');
+    assert.equal(await step.locator('[data-pool-price-text]').getAttribute('title'), null);
     assert.equal(priceReads(), before, 'nothing is read by itself');
     await step.getByRole('radio', { name: 'Wider' }).click();
     assert.deepEqual(await ticks(), ['6960', '-6960'], 'the width is drawn at once');
@@ -4153,7 +4161,12 @@ test('New position’s preview shows under the steps on a phone, aria-hidden, re
     await aside.waitFor();
     assert.equal(await aside.getAttribute('aria-hidden'), 'true');
     assert.equal(await aside.getAttribute('data-preview'), 'empty');
-    const [card, box] = [await s.page.locator('.dm-flow-card').boundingBox(), await aside.boundingBox()];
+    // Changed on purpose 2026-10-30 (QA round 2, CI): both boxes in one read. Step 1's suggested pools (N19) can arrive
+    // between two separate reads and grow the steps above the preview, which then moves down with them.
+    const { card, box } = await s.page.evaluate(() => {
+      const rect = (selector) => { const b = document.querySelector(selector).getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height }; };
+      return { card: rect('.dm-flow-card'), box: rect('aside.dm-flow-preview') };
+    });
     assert.ok(box.width > 300 && box.height > 200, `the preview is shown on a phone (${box.width} x ${box.height})`);
     assert.ok(box.y >= card.y + card.height, 'under the steps');
     assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth), 390, 'nothing overflows the phone');
@@ -4183,7 +4196,8 @@ test('New position’s preview shows under the steps on a phone, aria-hidden, re
     await row.hover();
     await aside.locator('.dm-flow-pv-fold[data-open] .dm-flow-pv-pair').waitFor();
     assert.equal(await aside.getAttribute('data-preview'), 'pointed');
-    assert.equal(await aside.locator('.dm-flow-pv-pair').innerText(), 'ETH / TOKEN');
+    // Changed on purpose 2026-10-30 (QA round 2, Q24): named as its price is written, as Markets and the pool page name it.
+    assert.equal(await aside.locator('.dm-flow-pv-pair').innerText(), 'TOKEN / ETH');
     await s.page.waitForFunction(() => document.querySelector('.dm-flow-pv-fold').getBoundingClientRect().height > 40);
     // Read in the same task as the commit that closes the fold (a MutationObserver's microtask), before any frame. The
     // observer is in place before the pointer moves.
@@ -6225,7 +6239,7 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
     // No wallet yet: one empty state that asks for one, and nothing is listed or read.
     await s.page.locator('[data-empty="owned-connect"]').waitFor();
-    assert.equal((await s.page.locator('[data-empty="owned-connect"]').innerText()).replace(/\s+/g, ' '), 'Connect a wallet to see your positions Connect wallet');
+    assert.equal((await s.page.locator('[data-empty="owned-connect"]').innerText()).replace(/\s+/g, ' '), 'Connect a wallet to see your positions. Connect wallet');
     assert.deepEqual([chain.edgeLog.filter((path) => path === '/api/owned/v2/positions').length, nftReads(read).length], [0, 0], 'nothing is asked without a wallet');
 
     await recordList(s.page);
@@ -6277,8 +6291,10 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     assert.equal(await closedRows.first().getAttribute('data-row-state'), 'closed');
     assert.equal(await closedRows.first().locator('.dm-own-closed-caption').innerText(), 'View history');
     assert.equal(await closedRows.first().locator('[data-cell="apr"]').count(), 0, 'closed positions do not carry an empty APR column');
-    assert.match(await closedRows.first().innerText(), /0 ETH[\s\S]*0 TOKEN/, 'measured zeroes remain available to assistive readers');
-    assert.ok(await closedRows.first().locator('.dm-own-figs').evaluate(node => node.getBoundingClientRect().height <= 1), 'empty closed figures do not take visual space');
+    // Changed on purpose 2026-10-30 (QA round 2, N45): a closed row with nothing left draws no zero figures at all; hidden for
+    // the eye only, every closed row read "Value … Fees to collect …" to a screen reader.
+    assert.doesNotMatch(await closedRows.first().innerText(), /Value|Fees to collect/, 'no zero figures on a closed row');
+    assert.equal(await closedRows.first().locator('.dm-own-figs').count(), 0, 'empty closed figures are not drawn');
     await s.page.getByRole('button', { name: 'Show 1 more', exact: true }).click();
     await s.page.locator(`[data-owned-rows="closed"] a[data-position-row="${OWNED_CLOSED[10]}"]`).waitFor();
     assert.equal(await s.page.getByRole('button', { name: /^Show \d+ more$/ }).count(), 0);
@@ -6303,7 +6319,8 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     // price followed by its quote unit, and the range under it as a bar with its two ends, without "≈"; the facts are in Details,
     // closed until opened.
     // Changed on purpose 2026-10-01 (audit E5): the NFT's number is no longer in the chip; a screen reader still hears it.
-    assert.match(await detail.locator('.dm-pos-chips').innerText(), /Uniswap · 0\.30% fee\s+Position #3135288\s+In range/);
+    // Changed on purpose 2026-10-30 (QA round 2, N60): the network's chip after the fee's, as the Base/Arbitrum page has it.
+    assert.match(await detail.locator('.dm-pos-chips').innerText(), /Uniswap · 0\.30% fee\s+Robinhood Chain\s+Position #3135288\s+In range/);
     assert.equal(await detail.locator('.dm-pos-chips .dm-chip', { hasText: '#3135288' }).count(), 0, 'no NFT number on the chip');
     const stats = await detail.locator('[data-position-stats]').innerText();
     // Changed on purpose 2026-09-28 (one-sided): TOKEN's price in ETH, the app's one way round (lib/read/orientation.ts).
@@ -6345,7 +6362,8 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
       ['Pool', `#/pool/${STUB_POOL_ID}/${FIXTURE_TOKEN.toLowerCase()}`],
       // Changed on purpose (round 6, 2026-09-27): the link names the pool's token after its id, as the Pool link does, so
       // New position verifies an unlisted pool with it instead of USDG.
-      ['Add to this pool', `#/new/${STUB_POOL_ID}/${FIXTURE_TOKEN}`],
+      // Changed on purpose 2026-10-30 (QA round 2, Q33/N43): one name for the New position flow.
+      ['New position in this pool', `#/new/${STUB_POOL_ID}/${FIXTURE_TOKEN}`],
     ]);
     await detail.locator('[data-position-actions] a[data-automate-entry]').waitFor();
     assert.deepEqual(await detail.locator('[data-position-actions] a[data-automate-entry]').evaluate((a) => [a.textContent, a.getAttribute('href')]), ['Automate', `#/sequence/${OWNED_OPEN}`]);
@@ -6998,7 +7016,7 @@ test('a position’s page asks an NFT the chain does not show yet again, the ske
 // Review of 2026-09-25: the page offered "Add to this pool" (#/new/<poolId>) for a pool with hooks or a dynamic fee, which
 // New position refuses on arrival with nothing preselected. It links only to a pool Domino can open a position in. (A pool
 // with hooks is one the chain read names as such: its page says its details could not be read, with no link at all.)
-test('a position’s page offers Add to this pool only for a pool with no hooks and a fixed fee', async () => {
+test('a position’s page offers New position in this pool only for a pool with no hooks and a fixed fee', async () => {
   const [PLAIN, HOOKED, DYNAMIC] = ['4242', '4243', '4244'];
   const chain = browserChain({
     positions: [onChain(PLAIN, { holder: OTHER_OWNER }), onChain(HOOKED, { holder: OTHER_OWNER, key: { ...STUB_KEY, hooks: `0x${'4a'.repeat(20)}` } }), onChain(DYNAMIC, { holder: OTHER_OWNER, key: { ...STUB_KEY, fee: 8388608 } })],
@@ -7016,7 +7034,7 @@ test('a position’s page offers Add to this pool only for a pool with no hooks 
       links[id] = await detail.locator('.dm-pos-links a').evaluateAll((all) => all.map((a) => a.textContent));
     }
     // 2026-09-24: Automate is the owner's own action in the title row now (and never for a pool a sequence refuses).
-    assert.deepEqual(links, { [PLAIN]: ['Pool', 'Add to this pool'], [DYNAMIC]: ['Pool'] });
+    assert.deepEqual(links, { [PLAIN]: ['Pool', 'New position in this pool'], [DYNAMIC]: ['Pool'] });
     assert.equal(await s.page.locator('a[data-automate-entry]').count(), 0, 'someone else’s position offers no Automate');
     await s.page.evaluate((next) => { location.hash = `#/positions/${next}`; }, HOOKED);
     const hooked = s.page.locator('[data-position-reason="hooked_pool"]');
@@ -7047,6 +7065,11 @@ test('a position’s page downloads the owner’s actions only for the owner’s
     await s.page.waitForTimeout(300);
     return detail;
   };
+  /** Shows `address`'s list read-only (the Wallet card's View address), so the position opened next is opened from it. */
+  const viewList = async (address) => {
+    await s.page.evaluate((next) => { location.hash = `#/portfolio/${next}`; }, address);
+    await s.page.locator(`[data-owned-viewed="${address}"]`).waitFor({ timeout: 15_000 });
+  };
   try {
     await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
     await s.page.locator('[data-empty="owned-connect"]').waitFor();
@@ -7054,15 +7077,29 @@ test('a position’s page downloads the owner’s actions only for the owner’s
     await open(MINE);
     assert.deepEqual(chunks, [], 'no wallet: the actions chunk is not requested');
     assert.equal(await s.page.locator('[data-position-actions]').count(), 0);
+    // Added 2026-10-30 (QA round 2, N43): opened from a link, nothing says whose the actions are (the holder may be a Domino
+    // vault, which nobody connects); opened from the holder's own list (View address), one quiet line says it.
+    assert.equal(await s.page.locator('[data-position-owner-only]').count(), 0, 'opened from a link: no line');
+    await viewList(OWNER);
+    await open(MINE);
+    assert.match(await s.page.locator('[data-position-owner-only="no-wallet"]').innerText(), /^Connect the owner wallet [\s\S]+ to collect fees, add or close\.$/);
+    assert.deepEqual(chunks, [], 'opened from the list: still not requested');
+    // An NFT that address does not hold (as a Domino-compound successor is its vault's, not its list's address): no line.
+    await open(THEIRS);
+    assert.equal(await s.page.locator('[data-position-owner-only]').count(), 0, 'held by another address than the list’s: no line');
     // Connected, on someone else's NFT: still nothing.
+    await viewList(OTHER_OWNER);
     await open(THEIRS);
     await connectWallet(s.page);
     await s.page.waitForTimeout(500);
     assert.deepEqual(chunks, [], 'someone else’s NFT: not requested either');
     assert.equal(await s.page.locator('[data-position-actions]').count(), 0);
+    await s.page.locator('[data-position-owner-only="other-wallet"]').waitFor();
+    assert.match(await s.page.locator('[data-position-owner-only]').innerText(), /^Only the owner wallet [\s\S]+ can collect fees, add or close\.$/);
     // The wallet's own NFT: its actions, and their chunk.
     await open(MINE);
     await s.page.locator('.dm-pos-actions[data-position-actions]').waitFor();
+    assert.equal(await s.page.locator('[data-position-owner-only]').count(), 0, 'the owner reads no such line');
     await s.page.waitForFunction(() => performance.getEntriesByType('resource').some((entry) => /\/PositionActions-[\w-]+\.js$/.test(entry.name)));
     assert.equal(chunks.length, 1, 'requested once, for the owner');
     assert.deepEqual(s.wallet.state.signed, [], 'nothing was signed');

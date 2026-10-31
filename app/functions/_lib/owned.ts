@@ -114,8 +114,17 @@ const DEADLINE_MS = 25_000
  * position's mint is kept, ownedMints.ts), and a read after an action asks fresh (FRESH_AFTER_MS).
  */
 export const CACHE_SECONDS = 25
-/** How long a chain_busy or chain_unavailable is kept per owner, for every question, fresh or not. */
+/** How long a chain_busy, or a chain_unavailable other than a node out of reach, is kept per owner, for every question, fresh or not. */
 export const FAILURE_SECONDS = 12
+/**
+ * How long a chain_unavailable is kept per owner, likewise, when the node could not be reached (a POST that failed to
+ * reach it, or one refused while this isolate holds it down: localRpc.ts). Changed on purpose 2026-10-30 (launch capacity
+ * study, item 7): 3 s, it was FAILURE_SECONDS, so one tunnel or node blip no longer holds a wallet's positions away for
+ * 12 s in a data centre; still long enough that asking in a loop cannot make every question a scan of the node. Every
+ * other chain_unavailable (the scan's deadline, its call or POST cap, a slow node, a reply too large or not readable, a
+ * node's error) keeps FAILURE_SECONDS: those come back the same, after the same work (review of 2026-10-30).
+ */
+export const UNAVAILABLE_SECONDS = 3
 /** A fresh question gets the kept answer while it is younger than this, rather than a new scan. */
 export const FRESH_AFTER_MS = 5_000
 const MAX_BODY_BYTES = 512
@@ -193,8 +202,9 @@ export class ChainError extends Error {
   constructor(
     readonly kind: Failure,
     message: string,
+    options?: ErrorOptions,
   ) {
-    super(message)
+    super(message, options)
   }
 }
 
@@ -475,7 +485,9 @@ async function rpc(deps: OwnedDeps, budget: Budget, method: string, params: unkn
   try {
     response = await deps.fetch(RPC_URL, init)
   } catch (error) {
-    throw slow(error) ?? new ChainError('fatal', 'rpc_unreachable')
+    // (2026-10-30) The transport's own error goes with it, so the owner cache can tell a node out of reach (kept briefly)
+    // from the rest (answerOwnerAsked).
+    throw slow(error) ?? new ChainError('fatal', 'rpc_unreachable', { cause: error })
   }
   if (response.status === 429 || response.status === 503) throw new ChainError('rate', `http_${response.status}`)
   if (!response.ok) throw new ChainError('fatal', `http_${response.status}`)
@@ -616,7 +628,23 @@ type Outcome = 'answer' | 'chain_busy' | 'chain_unavailable'
 const STORED_AT = 'X-Owned-Stored-At'
 const OUTCOME = 'X-Owned-Outcome'
 
+/** (2026-10-30) On a kept failure: how long it is kept, in seconds. An entry without it was kept FAILURE_SECONDS. */
+const LIFE = 'X-Owned-Life'
+
 const failed = (code: Outcome, leftMs: number) => refuse(code, 502, { 'Retry-After': String(Math.max(1, Math.ceil(leftMs / 1000))) })
+/** (2026-10-30) The edge transport's errors for a node it could not reach, and for a POST refused while it holds it down. */
+const OUT_OF_REACH: ReadonlySet<string> = new Set(['local_rpc_unreachable', 'local_rpc_down'])
+/**
+ * (2026-10-30, launch item 7 and its review) Whether a scan failed only because the node could not be reached: the edge
+ * transport (localRpc.ts) could not reach it, or refused the POST while this isolate holds it down. Never its other
+ * refusals (the POST cap of one invocation, a visitor's spent share, a method or body it does not send), which come back
+ * the same for the same wallet.
+ */
+function outOfReach(error: unknown): boolean {
+  return error instanceof ChainError && error.message === 'rpc_unreachable' && error.cause instanceof Error && OUT_OF_REACH.has(error.cause.message)
+}
+/** How long a failure is kept per owner, in seconds: a node out of reach briefly, anything else as before. */
+const failureSeconds = (outcome: Outcome, error: unknown) => (outcome === 'chain_unavailable' && outOfReach(error) ? UNAVAILABLE_SECONDS : FAILURE_SECONDS)
 const cappedHeader = (capped: boolean): Record<string, string> => (capped ? { [CAPPED]: 'true' } : {})
 
 /**
@@ -630,7 +658,9 @@ function fromKept(kept: Response, now: number, fresh: boolean): Response | null 
   if (!Number.isSafeInteger(at)) return null
   const age = Math.max(0, now - at)
   if (outcome === 'chain_busy' || outcome === 'chain_unavailable') {
-    const left = FAILURE_SECONDS * 1000 - age
+    const life = Number(kept.headers.get(LIFE) ?? FAILURE_SECONDS)
+    const seconds = Number.isSafeInteger(life) && life > 0 && life <= FAILURE_SECONDS ? life : FAILURE_SECONDS
+    const left = seconds * 1000 - age
     return left > 0 ? failed(outcome, left) : null
   }
   if (outcome !== 'answer' || age >= CACHE_SECONDS * 1000 || (fresh && age >= FRESH_AFTER_MS)) return null
@@ -648,8 +678,9 @@ export interface OwnerScan {
  * be read fully is a 502, never a partial list presented as the whole. Per
  * owner, under a digest and the route's `version`, the last outcome is kept:
  * an answer for CACHE_SECONDS (a fresh question takes it only within
- * FRESH_AFTER_MS), a failure for FAILURE_SECONDS whatever the question, so
- * asking in a loop cannot make every question a scan of the node.
+ * FRESH_AFTER_MS), a failure whatever the question (FAILURE_SECONDS; a
+ * chain_unavailable because the node could not be reached, UNAVAILABLE_SECONDS),
+ * so asking in a loop cannot make every question a scan of the node.
  */
 export async function answerOwner(
   request: Request,
@@ -688,21 +719,30 @@ export async function answerOwnerAsked(
   let outcome: Outcome = 'answer'
   let text = ''
   let capped = false
+  let failure = FAILURE_SECONDS
   try {
     const scanned = await scan(deps, owner)
     text = JSON.stringify(scanned.body)
     capped = scanned.capped
   } catch (error) {
     outcome = error instanceof ChainError && error.kind === 'rate' ? 'chain_busy' : 'chain_unavailable'
+    failure = failureSeconds(outcome, error)
   }
   if (cache && key) {
-    const seconds = outcome === 'answer' ? CACHE_SECONDS : FAILURE_SECONDS
+    const seconds = outcome === 'answer' ? CACHE_SECONDS : failure
     const entry = new Response(outcome === 'answer' ? text : JSON.stringify({ error: outcome }), {
-      headers: { 'Content-Type': 'application/json', 'Cache-Control': `max-age=${seconds}`, [STORED_AT]: String(deps.now()), [OUTCOME]: outcome, ...cappedHeader(capped) },
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': `max-age=${seconds}`,
+        [STORED_AT]: String(deps.now()),
+        [OUTCOME]: outcome,
+        ...(outcome === 'answer' ? {} : { [LIFE]: String(failure) }),
+        ...cappedHeader(capped),
+      },
     })
     const stored = cache.put(key, entry).catch(() => undefined)
     if (waitUntil) waitUntil(stored)
     else await stored
   }
-  return outcome === 'answer' ? new Response(text, { status: 200, headers: { ...JSON_HEADERS, ...cappedHeader(capped) } }) : failed(outcome, FAILURE_SECONDS * 1000)
+  return outcome === 'answer' ? new Response(text, { status: 200, headers: { ...JSON_HEADERS, ...cappedHeader(capped) } }) : failed(outcome, failure * 1000)
 }

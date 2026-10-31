@@ -934,7 +934,9 @@ const WEEK_GRID = 216_000;
 /** The plot's box under the card's period (the chart, its skeleton or its quiet line). */
 const plotBox = async (card) => card.locator('.dm-fees-body > :last-child').boundingBox();
 
-test('a position eight days old: 24H, 7D, 30D and All; 7D first, its start read at a past block while the chart keeps its box, then its line and what it earned since; Your APR’s last 24 hours from the day’s read; four reads, none for a start again on a reload', { timeout: 120_000 }, async () => {
+// Changed on purpose 2026-10-30 (QA round 2, N44): with no measured point a week back, the card opens on All, drawn at once
+// (it opened on 7D over an empty grid while its start was read); 7D's start is read once 7D is chosen.
+test('a position eight days old: 24H, 7D, 30D and All; All first with no measured point a week back, 7D’s start read at a past block once chosen while the chart keeps its box, then its line and what it earned since; Your APR’s last 24 hours from the day’s read; four reads, none for a start again on a reload', { timeout: 120_000 }, async () => {
   const world = automated(LONG);
   // The first read waits until the test lets it go: the card's figures are exact meanwhile, the plot a skeleton.
   let release;
@@ -951,7 +953,10 @@ test('a position eight days old: 24H, 7D, 30D and All; 7D first, its start read 
     const card = page.locator('[data-fees-card][data-fees-state="verified"]');
     await card.waitFor({ timeout: 60_000 });
     assert.deepEqual(await card.getByRole('radio').allInnerTexts(), ['24H', '7D', '30D', 'All']);
-    assert.equal(await card.getAttribute('data-fees-period'), '7d', 'past 36 hours: 7D first');
+    assert.equal(await card.getAttribute('data-fees-period'), 'all', 'past 36 hours, but no measured point a week back: All first');
+    await page.locator('[data-fees-card][data-fees-period="all"][data-fees-period-state="drawn"] .dm-fees-chart').waitFor({ timeout: 20_000 });
+    const tab = (name) => card.getByRole('radio', { name, exact: true });
+    await tab('7D').click();
     await page.locator('[data-fees-card][data-fees-period="7d"][data-fees-period-state="reading"] [data-pending-plot]').waitFor({ timeout: 20_000 });
     assert.match(await card.locator('.dm-fees-hero').innerText(), /\$[\d,]+\.\d\d/, 'the hero is exact while the start is read');
     const skeleton = await plotBox(card);
@@ -979,7 +984,6 @@ test('a position eight days old: 24H, 7D, 30D and All; 7D first, its start read 
     assert.equal(dayBlock % DAY_GRID, 0, `on the 24H grid: ${dayBlock}`);
     assert.match(await day.getAttribute('title'), /^Measured from \d\d-\d\d \d\d:\d\d UTC, block \d+, to now \(2[45] hours\)$/);
     // Each period without a jump: the plot keeps its box; 24H from the day's read, 30D and All from the mint.
-    const tab = (name) => card.getByRole('radio', { name, exact: true });
     await tab('24H').click();
     await page.locator(`[data-fees-card][data-fees-period="24h"][data-fees-period-state="drawn"][data-fees-period-from="${dayBlock}"] .dm-fees-chart`).waitFor({ timeout: 10_000 });
     assert.match(await card.locator('.dm-fees-delta').getAttribute('title'), /\(2[45] hours\), measured at block \d+$/);
@@ -1025,6 +1029,9 @@ test('a start that cannot be read: the period says so in one calm line, its tabs
     const page = s.page;
     const card = page.locator('[data-fees-card][data-fees-state="verified"]');
     await card.waitFor({ timeout: 60_000 });
+    // Changed on purpose 2026-10-30 (QA round 2, N44): All first (no measured point a week back), then 7D is chosen.
+    await page.locator('[data-fees-card][data-fees-period="all"][data-fees-period-state="drawn"] .dm-fees-chart').waitFor({ timeout: 10_000 });
+    await card.getByRole('radio', { name: '7D', exact: true }).click();
     const quiet = page.locator('[data-fees-card][data-fees-period="7d"][data-fees-period-state="unavailable"] [data-fees-quiet="period_unavailable"]');
     await quiet.waitFor({ timeout: 30_000 });
     // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the flat plot says nothing ("This period can’t be read right now. Fees earned above is exact.").

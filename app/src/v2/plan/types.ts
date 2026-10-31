@@ -201,10 +201,14 @@ export type S1PlanResult =
   | { kind: 'reverted'; selector: Hex | null; name: string | null }
   | { kind: 'unsimulated'; reason: string }
 
-/** One exchange with the plan service: the HTTP status and the JSON body; throws for a failure to reach it. */
+/**
+ * One exchange with the plan service: the HTTP status and the JSON body; throws for a failure to reach it. `signal`
+ * (added 2026-10-30, QA round 2 INST-2): the caller's abort, for a quote nobody waits for any more (an http transport
+ * hands it to its POST; one that cannot stop a request may ignore it).
+ */
 export interface S1PlanTransport {
   readonly kind: 'fixture' | 'http'
-  plan(request: Record<string, unknown>): Promise<{ status: number; body: unknown; retryAfterSeconds?: number }>
+  plan(request: Record<string, unknown>, signal?: AbortSignal): Promise<{ status: number; body: unknown; retryAfterSeconds?: number }>
 }
 
 export type { PositionPlanErrorCode }

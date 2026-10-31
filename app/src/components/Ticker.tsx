@@ -1,7 +1,6 @@
 import { aprLabel, feeLabel, type FallbackApr as Fallback, type Instant, type Market, type Metric } from '../lib/markets'
 import { feeWords } from '../lib/format/fee'
 import { presentAprEstimate, type AprEstimateObservation } from '../lib/read/aprEstimate'
-import { describeFailure } from '../lib/read/describe'
 import { shownResult, useMarkets } from '../lib/read/useMarkets'
 import { TokenMarkPair } from './TokenIcon'
 import { FallbackApr } from './read/screens/FallbackApr'
@@ -97,8 +96,9 @@ const NO_MARKETS: readonly Market[] = []
  * source, caveat and age. A pool with no APR figure reads "Est. APR —"
  * whether its row has not landed or landed without an estimate, so nothing
  * changes words as the rows arrive; why is in the title. With no rows it
- * says why. The strip pauses while it is hovered or holds focus; with
- * reduced motion it stands still and scrolls by hand.
+ * says it is loading them, or that none are selected. The strip pauses while
+ * it is hovered or holds focus; with reduced motion it stands still and
+ * scrolls by hand.
  */
 export function Ticker() {
   const { state, provider } = useMarkets()
@@ -131,7 +131,10 @@ export function Ticker() {
   const items = render(false)
 
   // Until the list's first answer is in there is nothing to name yet (audit B4): loading, whatever the rows' own state.
-  const quiet = listed && !featured.settled ? 'Loading pools…' : state.phase === 'failed' ? describeFailure(state.failure).title : state.phase === 'ready' ? 'No pools selected yet' : 'Loading pools…'
+  // Changed on purpose 2026-10-30 (QA round 2, rule 3: no line saying data is unavailable): a failed read reads as one
+  // still loading, as it is (a failed overview is asked again silently, with backoff); it used to show the failure's title
+  // ("Temporarily unavailable", "Live data unavailable", "Read service busy").
+  const quiet = state.phase === 'ready' && !(listed && !featured.settled) ? 'No pools selected yet' : 'Loading pools…'
 
   return (
     <div className="dm-ticker" data-ticker="">
@@ -142,7 +145,7 @@ export function Ticker() {
       )}
       <div className="dm-ticker-scroller">
         {items.length === 0 ? (
-          // The table below carries the status line; the strip only says there is nothing to scroll, and why.
+          // The strip only says there is nothing to scroll yet: loading, or no pools selected.
           <span className="dm-ticker-status" data-ticker-status="">
             {quiet}
           </span>

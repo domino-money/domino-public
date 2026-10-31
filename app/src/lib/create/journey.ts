@@ -27,6 +27,7 @@ import type { TokenCandidate } from '../read/screens/tokens'
 import type { TokenDisplay } from '../read/types'
 import type { BudgetFields } from './budgets'
 import { CREATE } from './copy'
+import { amountText } from './amountText'
 import { rangeTakesOnly } from './pairAmount'
 import { SLIPPAGE_DEFAULT_BPS, slippageBpsFrom, slippageWritten } from './slippage'
 
@@ -242,9 +243,13 @@ export type BudgetCheck = { ok: true; raw: string } | { ok: false; reason: strin
  * the read returned. Exact BigInt arithmetic; unknown decimals block, never
  * guess. The result matches the preview contract's `amountRaw` pattern.
  */
-export function validateBudget(text: string, decimals: number | null): BudgetCheck {
+export function validateBudget(typed: string, decimals: number | null): BudgetCheck {
   if (decimals === null) return { ok: false, reason: CREATE.amount.decimalsUnknown }
-  if (text === '') return { ok: false, reason: CREATE.amount.empty }
+  // QA round 2, N99 (2026-10-30): spaces around it and a page-style "1,000.50" are read; a minus or a decimal comma has its own words.
+  const cleaned = typed.trim() === '' ? null : amountText(typed)
+  if (cleaned === null) return { ok: false, reason: CREATE.amount.empty }
+  if (!cleaned.ok) return cleaned
+  const text = cleaned.text
   if (text.length > 100 || !DECIMAL_TEXT.test(text)) return { ok: false, reason: CREATE.amount.format }
   const value = parseDecimal(text)
   if (!value || value.coefficient === 0n) return { ok: false, reason: CREATE.amount.zero }

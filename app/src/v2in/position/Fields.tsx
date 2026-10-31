@@ -306,12 +306,12 @@ function RangeGlyph({ kind }: { kind: string }) {
   )
 }
 
-/** How much of the position a change of range or a withdrawal moves: all of it, half or a quarter. */
-export function ShareField({ value, onChange, label = COPY.form.howMuch }: { value: Share; onChange: (next: Share) => void; label?: string }) {
+/** How much of the position a change of range or a withdrawal moves: all of it, half or a quarter. `all`: the first choice's word (Withdraw says Max). */
+export function ShareField({ value, onChange, label = COPY.form.howMuch, all = COPY.form.all }: { value: Share; onChange: (next: Share) => void; label?: string; all?: string }) {
   return (
     <div className="dm-pa-field">
       <span className="dm-pa-label">{label}</span>
-      <Segmented label={COPY.form.howMuch} className="dm-pa-share" items={[{ key: '100', label: COPY.form.all }, { key: '50', label: '50%' }, { key: '25', label: '25%' }]} value={value} onChange={(next) => onChange(next as Share)} />
+      <Segmented label={COPY.form.howMuch} className="dm-pa-share" items={[{ key: '100', label: all }, { key: '50', label: '50%' }, { key: '25', label: '25%' }]} value={value} onChange={(next) => onChange(next as Share)} />
     </div>
   )
 }

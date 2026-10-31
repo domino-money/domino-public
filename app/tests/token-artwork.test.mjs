@@ -652,3 +652,58 @@ test('a result scrolled away or removed before its queue slot does not start an 
   assert.equal(asked.length, 2, 'the queued row no longer visible never reaches the provider');
   stops.forEach(stop => stop());
 });
+
+// Added 2026-10-30 (QA round 2, N6): the token search's one batch for its hits, and a queued lookup a seed answered.
+test('N6: the search batch asks our edge’s tokens path ten a GET and nothing else; no edge, a resting edge or a 429 asks nothing', async () => {
+  const addresses = Array.from({ length: 12 }, (_, i) => `0x${(i + 1).toString(16).padStart(40, '0')}`);
+  const asked = [];
+  let at = 0;
+  let refuse = false;
+  const resolver = createTokenArtworkResolver({ edge: DEX_EDGE, now: () => at, wall: () => 1_000_000, fetch: async (url, init) => {
+    asked.push(url);
+    assert.equal(init.credentials, 'same-origin');
+    if (refuse) return new Response(null, { status: 429, headers: { 'Retry-After': '60' } });
+    const named = url.split('/').at(-1).split(',');
+    return json({ v: 2, now: 700_000, tokens: Object.fromEntries(named.map((token) => [token,
+      token === addresses[2] ? { missing: 'timeout', retryAfterS: 30 } : token === addresses[1] ? { at: 699_000, pairs: [pair({ baseToken: { address: token } })] } : { at: 690_000, none: true }])) });
+  } });
+  const answered = await resolver.edgeTokens([...addresses, addresses[0].toUpperCase().replace('0X', '0x'), `0x${'0'.repeat(40)}`]);
+  assert.deepEqual(asked, [`${DEX_EDGE_V2}tokens/${addresses.slice(0, 10).join(',')}`, `${DEX_EDGE_V2}tokens/${addresses.slice(10).join(',')}`], 'two GETs for twelve tokens, the zero address and a repeat left out');
+  assert.deepEqual(answered.get(addresses[0]), { pairs: [], retrievedAt: 1_000_000 - 10_000 }, 'no pair: an answer, dated by the edge’s retrieval');
+  assert.equal(answered.get(addresses[1]).pairs.length, 1);
+  assert.equal(answered.has(addresses[2]), false, 'a token marked missing is no answer');
+  assert.equal(resolver.peek(4663, addresses[0]), undefined, 'nothing is seeded by the batch itself');
+  // A 429 is a request to wait: nothing is asked around it, and nothing more until the wait is over.
+  asked.length = 0;
+  refuse = true;
+  assert.equal(await resolver.edgeTokens([address]), null);
+  assert.deepEqual(asked, [`${DEX_EDGE_V2}tokens/${address}`], 'never the provider');
+  assert.equal(await resolver.edgeTokens([address]), null);
+  assert.equal(asked.length, 1, 'cooling: no GET');
+  // A build with no edge (the test builds) asks nothing at all.
+  const direct = [];
+  const bare = createTokenArtworkResolver({ fetch: async (url) => { direct.push(url); return json([]); } });
+  assert.equal(await bare.edgeTokens([address]), null);
+  assert.deepEqual(direct, []);
+});
+
+test('N6: a queued lookup that a seed answered while it waited for its slot asks nothing', async () => {
+  const pending = [];
+  const asked = [];
+  const third = `0x${'c'.repeat(40)}`;
+  const resolver = createTokenArtworkResolver({ fetch: (url) => {
+    asked.push(url);
+    return new Promise((done) => pending.push(() => done(json([]))));
+  } });
+  const seen = [];
+  const stops = [address, other, third].map((token) => resolver.observe(4663, token, (image) => seen.push([token, image])));
+  assert.equal(asked.length, 2, 'two lanes');
+  resolver.seed(4663, third, null);
+  pending.forEach((done) => done());
+  await new Promise((done) => setImmediate(done));
+  await new Promise((done) => setImmediate(done));
+  assert.equal(asked.length, 2, 'the seeded token never reaches the provider');
+  assert.equal(resolver.peek(4663, third), null);
+  assert.ok(seen.some(([token, image]) => token === third && image === null), 'its mark heard the seed');
+  stops.forEach((stop) => stop());
+});

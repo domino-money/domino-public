@@ -36,6 +36,14 @@ export const MAIN_TOKENS: readonly MainToken[] = Object.freeze([
   Object.freeze({ address: USDG, symbol: 'USDG', artwork: 'USDG' } as const),
 ])
 
+/**
+ * Symbols of well-known tokens that Domino knows at no address on Robinhood Chain (2026-10-30, QA round 2, N64: the
+ * Wallet card showed an airdropped "USDC 45 = $0.01"). A token there that calls itself one of these, at an address
+ * Domino does not know, is a look-alike (lib/walletHoldings.ts isLookAlike): left out and never priced, like an
+ * airdropped "USDG".
+ */
+export const RESERVED_SYMBOLS: readonly string[] = Object.freeze(['USDC', 'USDT', 'DAI', 'WBTC', 'EURC'])
+
 /** The main token at `address` (any case), or null. */
 export function mainTokenAt(address: string): MainToken | null {
   const key = address.toLowerCase()

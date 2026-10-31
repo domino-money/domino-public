@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { ActivityResponse, PortfolioResponse } from 'api-contracts/read-v6/types'
-import { positionsHref } from '../../components/explore/routes'
-import { IconChevronDown, IconChevronLeft, IconClose, IconSearch } from '../../components/icons'
+import { IconChevronDown, IconChevronLeft, IconClose, IconSearch, IconWalletLine } from '../../components/icons'
+import { positionsListHref, viewedPositionsAddress } from '../../components/positions/listHref'
+import { openWalletDialog } from '../../finance/signedOut'
 import { IconCollect } from '../../components/positions/actionIcons'
 import { PositionRange, chainCardPrice, preloadPriceChart } from '../../components/positions/PositionRange'
 import { activityOpenedAt } from '../../lib/chart/positionOpened'
@@ -48,10 +49,10 @@ import { usdTitleWords } from './usdAvailability'
 // 2026-10-03 (the owner's point 10): the Price range chart's own chunk, asked for as this page's code arrives (V1's page does the same).
 preloadPriceChart()
 
-/** The way back to the list (V1's page's own). */
+/** The way back to the list it was opened from (V1's page's own; N62: the viewed address's, when it was another address's). */
 function Back() {
   return (
-    <a href={positionsHref} className="dm-pos-back">
+    <a href={positionsListHref()} className="dm-pos-back">
       <IconChevronLeft size={16} />
       {COPY.page.back}
     </a>
@@ -72,12 +73,41 @@ function Waiting({ id }: { id: string }) {
 }
 
 /** A page that has nothing to draw, in V1's empty-state frame. */
-function Empty({ title, body, reason }: { title: string; body?: string; reason: string }) {
+function Empty({ title, body, reason, action }: { title: string; body?: ReactNode; reason: string; action?: ReactNode }) {
   return (
     <PageShell>
       <Back />
-      <EmptyState icon={<IconSearch />} title={title} body={body} plate className="dm-pos-empty" data-empty="position-v2" data-position-reason={reason} />
+      <EmptyState icon={<IconSearch />} title={title} body={body} action={action} plate className="dm-pos-empty" data-empty="position-v2" data-position-reason={reason} />
     </PageShell>
+  )
+}
+
+/** The words of a row's status pill (../lists/parts.tsx RowStatus), for the line below. */
+const STATE_WORDS: Readonly<Record<string, string>> = { 'in-range': 'In range', 'out-of-range': 'Out of range', closed: 'Closed' }
+
+/**
+ * (QA round 2, N61) A page the connected wallet cannot open (none connected, or another wallet's position, opened from
+ * View address): what the list already knows of it, over the sentence and a way on. Always its network, from the link;
+ * its pair and status too when the list of the address it was opened from holds it, from that list's answer as it is
+ * already kept in this tab (OWN_PORTFOLIO.get: no read is asked for it, and nothing is drawn from one address's answer
+ * for another's link). No figure and no action: those stay the owner's, on the page itself.
+ */
+function knownLine(target: V2PositionRef, wallet: string | null): string {
+  const viewed = viewedPositionsAddress()
+  const reply = viewed !== null && viewed !== wallet ? OWN_PORTFOLIO.get(viewed) : null
+  const listed = reply?.kind === 'ok' ? reply.body.positions.find((one) => one.chainId === target.chainId && one.dex === target.dex && one.tokenId === target.tokenId.toString(10)) : undefined
+  const row = reply?.kind === 'ok' && listed ? positionRows({ ...reply.body, positions: [listed] }, () => true)[0] ?? null : null
+  const pair = row?.tokens ? `${row.tokens[0].label} / ${row.tokens[1].label}` : null
+  return [pair, v2Chain(target.chainId).name, row ? STATE_WORDS[row.state] ?? null : null].filter(Boolean).join(' · ')
+}
+
+/** The empty page's body: the known line, a value in the page's value ink (Geist 500, --fg), then its sentence in caption ink. */
+function Known({ line, sentence }: { line: string; sentence: string }) {
+  return (
+    <>
+      <span className="block font-medium text-fg" data-position-known="">{line}</span>
+      {sentence}
+    </>
   )
 }
 
@@ -113,6 +143,12 @@ export default function PositionPage({ param, list }: { param: string; list: Rea
   if (!ref) return <>{list}</>
   if (gate === null) return <Waiting id={ref.tokenId.toString()} />
   if (gate.mode === 'off') return <>{list}</>
+  // Changed on purpose 2026-10-30 (QA round 2, final review pos-connect-flash-1): while the wallet island has not said
+  // what it found (identity `unknown`, the 0.7 to 2 s audit C5 is about), the page waits in its frame, as the Positions
+  // list does: a returning owner whose wallet reconnects saw "Connect wallet" for that moment, then the page. A build
+  // without a wallet control starts `disconnected` and a failed island publishes `disconnected` (lib/walletIdentity.ts,
+  // components/wallet/WalletBoundary.tsx), so this never waits for good.
+  if (identity.kind === 'unknown') return <Waiting id={ref.tokenId.toString()} />
   // Keyed by the wallet too: another wallet's answer is never drawn for this one, not even for a moment.
   return <Opened key={`${param}|${wallet ?? ''}`} target={ref} gate={gate} wallet={wallet} walletOnChain={walletChain === ref.chainId} />
 }
@@ -140,7 +176,12 @@ function Opened({ target, gate, wallet, walletOnChain }: { target: V2PositionRef
     return () => clearTimeout(timer)
   }, [awaited, reply, target.chainId, wallet])
 
-  if (needsWallet) return <Empty title={`Position #${id}`} body={COPY.page.connect} reason="connect_wallet" />
+  if (needsWallet) {
+    return (
+      <Empty title={`Position #${id}`} body={<Known line={knownLine(target, wallet)} sentence={COPY.page.connect} />} reason="connect_wallet"
+        action={<Button type="button" onClick={openWalletDialog} data-position-connect=""><IconWalletLine size={16} />Connect wallet</Button>} />
+    )
+  }
   // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a page with nothing read yet, or whose read
   // failed (it is asked again), shows its title alone, its reason as data. It said "Updating position details…", "Your
   // positions can’t be listed right now.", "{chain} can’t be read right now.", "This position can’t be read right now."
@@ -148,14 +189,20 @@ function Opened({ target, gate, wallet, walletOnChain }: { target: V2PositionRef
   if (creation && !(found && isLive(found))) return <Empty title={`Position #${id}`} reason="awaiting_index" />
   if (reply === null) return <Waiting id={id} />
   if (reply.kind === 'unavailable') return <Empty title={`Position #${id}`} reason={reply.reason} />
-  if (reply.kind === 'invalid') return <Empty title={`Position #${id}`} body={COPY.page.listInvalid} reason={reply.detail} />
+  // (QA round 2, SWEEP) Its title alone, as for a read that failed: it said "The list of positions came back in a form this app does not accept."
+  if (reply.kind === 'invalid') return <Empty title={`Position #${id}`} reason={reply.detail} />
   const answer = reply.body
   // §6.2: the chain's status before any of its values; an unavailable chain never shows zeros.
   const status = chainStatusOf(answer, target.chainId)
   if (!status || status.status === 'unavailable') return <Empty title={`Position #${id}`} reason={status?.reason ?? 'chain_unavailable'} />
   if (!found || !isLive(found)) {
     if (awaited) return <Waiting id={id} />
-    if (!found) return <Empty title={`Position #${id}`} body={COPY.page.notListed} reason="position_not_listed" />
+    if (!found) {
+      return (
+        <Empty title={`Position #${id}`} body={<Known line={knownLine(target, wallet)} sentence={COPY.page.notListed} />} reason="position_not_listed"
+          action={<Button type="button" variant="outline" onClick={openWalletDialog} data-position-connect="">Open wallet</Button>} />
+      )
+    }
     return <Empty title={`Position #${id}`} reason={found.status} />
   }
   return (
@@ -445,7 +492,7 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
       </div>
 
       {mode && action && (
-        <PositionDialog gate={gate} position={action} mode={mode} book={book} reserves={reserves} onClose={() => setMode(null)} onDone={onChanged} />
+        <PositionDialog gate={gate} position={action} mode={mode} book={book} reserves={reserves} available={position.principal} onClose={() => setMode(null)} onDone={onChanged} />
       )}
     </div>
   )

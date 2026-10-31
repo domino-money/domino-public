@@ -46,16 +46,48 @@ export function numberOf(text: string | null | undefined): number | null {
  */
 export function aboutPercent(value: number): string {
   if (!(value > 0)) return '0%'
-  const digits = aprDigitsOf(value)
+  return aboutDigits(aprDigitsOf(value))
+}
+
+/**
+ * The same, from the digits the APR tile itself shows (QA round 2, N8): the tile rounds the read service's decimal and
+ * this sentence used to round its number again, so "38.8% est." sat over "about 38.9% a year". The tile's digits now go
+ * into the sentence as they are; the figure and its formula are unchanged (D9).
+ */
+export function aboutDigits(digits: string): string {
   return digits === APR_SLIVER ? 'less than 0.1%' : `${digits}%`
 }
 
-/** An amount typed in dollars ("1,000", "$250.5"), or null when it is not one. At most a billion. */
+/** The largest amount the estimate takes, in dollars. */
+export const AMOUNT_LIMIT = 1e9
+
+/**
+ * An amount typed in dollars ("1,000", "$250.5"), or null when it is not one. At most a billion. Changed on purpose
+ * 2026-10-30 (QA round 2, Q21): a comma before one or two last digits is a decimal comma ("1000,50", "1,5"), never a
+ * thousands comma, so it is not an amount here; it used to be read as 100050 and 15, an estimate 100 or 10 times too high.
+ */
 export function parseAmount(text: string): number | null {
+  if (/,\d{1,2}(?!\d)/.test(text)) return null
   const clean = text.replace(/[,\s$]/g, '')
   if (!/^\d{1,10}(\.\d{0,2})?$/.test(clean)) return null
   const value = Number(clean)
-  return value > 0 && value <= 1e9 ? value : null
+  return value > 0 && value <= AMOUNT_LIMIT ? value : null
+}
+
+/**
+ * Why typed text is not an amount, where that can be said (QA round 2, Q21): written with a decimal comma or a dot for
+ * thousands, or with more than two decimals ("1.000,50", "1000,50", "1.000", "10.125": `format`); above the limit
+ * (`large`); zero or below (`small`). Null for anything else, and for text parseAmount takes.
+ */
+export function amountProblem(text: string): 'format' | 'large' | 'small' | null {
+  const bare = text.replace(/[\s$]/g, '')
+  if (bare === '' || parseAmount(text) !== null) return null
+  if (/^[-−]/.test(bare)) return 'small'
+  if (/,\d{1,2}$/.test(bare) || /\.\d{3,}/.test(bare)) return 'format'
+  const digits = bare.replace(/,/g, '')
+  if (!/^\d+(\.\d*)?$/.test(digits)) return null
+  const value = Number(digits)
+  return value > AMOUNT_LIMIT ? 'large' : value > 0 ? null : 'small'
 }
 
 /**

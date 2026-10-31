@@ -1,8 +1,9 @@
-import { createContext } from 'react'
+import { createContext, type CSSProperties } from 'react'
 import { statusWords, type RangeFacts } from '../../../lib/chart/priceFacts'
 import { useMediaQuery } from '../../../lib/useMediaQuery'
 import { rem } from '../../../lib/rootScale'
 import { TokenLabel } from '../../read/TokenLabel'
+import { Skeleton } from '../../ui'
 import { positionPlotHeight, usePositionChartOptions } from '../PositionChartOptions'
 
 /**
@@ -11,6 +12,20 @@ import { positionPlotHeight, usePositionChartOptions } from '../PositionChartOpt
  * The chart itself (PriceVsRange.tsx, its axis, labels and line, and the pool's history) is its own chunk, loaded on a
  * position's page only (PositionRange.tsx), so the Positions list and the screens around it never carry it.
  */
+
+/**
+ * (QA round 2, N69) The pool chart's own shimmer (pool.css .dm-pool-plot-baseline: its wave under the skeleton sweep), in
+ * the box of a Price range chart that has nothing to draw yet: while its code loads, and while the pool's history is first
+ * read. First load only: an answered history is kept through every refresh, so it never comes back; a read that fails
+ * leaves the box quietly empty, as before. `style` places it (the plot's own rectangle, or the whole box).
+ */
+export function RangeSkeleton({ style }: { style?: CSSProperties }) {
+  return (
+    <div aria-hidden="true" className="dm-pool-plot-empty" data-pvr-skeleton="" style={{ minHeight: 0, padding: 0, ...style }}>
+      <Skeleton className="dm-pool-plot-baseline" />
+    </div>
+  )
+}
 
 /** Handed down by the page's Price range (PositionRange) to the chart inside it. */
 export const RangeFactsContext = createContext<RangeFacts | null>(null)
@@ -71,7 +86,9 @@ export function RangeChartWaiting({ facts, failed = false, recorded = false }: {
     <div className="dm-pvr-wrap" data-pvr-waiting={failed ? undefined : ''} data-pvr-unavailable={failed ? '' : undefined} aria-busy={failed ? undefined : true}>
       <RangeHead facts={facts} />
       {/* In design px through rem, as ChartFrame sizes the chart that replaces it (lib/rootScale.ts), so nothing moves. */}
-      <div className="dm-pvr" style={{ height: rem(rangeChartBox(phone, expanded, recorded)) }} />
+      <div className="dm-pvr" style={{ height: rem(rangeChartBox(phone, expanded, recorded)) }}>
+        {!failed && <RangeSkeleton style={{ height: '100%' }} />}
+      </div>
       <div className="dm-pvr-legend">
         <span className="dm-pvr-key" data-key="range">
           <span aria-hidden="true" className="dm-pvr-swatch" />

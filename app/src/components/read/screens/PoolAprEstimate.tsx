@@ -1,5 +1,5 @@
 import { estimateTitle, presentAprEstimate, type AprEstimateObservation } from '../../../lib/read/aprEstimate'
-import { formatUsdCompact } from '../../../lib/read/decimal'
+import { formatUsdCompact, toFixed } from '../../../lib/read/decimal'
 import type { Instant } from '../../../lib/markets'
 import { fixedFeePercent } from '../../../lib/read/screens/fee'
 import { protocolFee } from '../../../lib/read/screens/figures'
@@ -18,20 +18,23 @@ function protocolFeeWords(raw: number): string {
  * table cell or a stat ("12.34% est.", or without a figure the same dash a
  * catalogue row shows, so a row that lands without an estimate changes no
  * word), plain in the ticker ("Est. APR —"), `detailed` where its
- * inputs are listed, beside `label` when one is given. What the estimate is
- * not is a figure's title, from the estimate's own limitations (since
- * 2026-10-15, pack 7: no longer why it is unavailable or that it is stale),
- * and its state and reasons are data either way;
+ * inputs are listed, beside `label` when one is given. A figure's title is
+ * one plain sentence, the same for every estimate (estimateTitle,
+ * ESTIMATE_SCOPE; 2026-10-30, N105), and its state and reasons are data;
  * the figure is in the site's own ink. It is never a figure the app worked
  * out. Changed on purpose 2026-09-27 (r6/marketsdata, the owner's plain-words
  * rule): the ticker's figure no longer runs "from provider-reported inputs"
  * after it; where the inputs come from stays in its title.
  */
+/** The exact estimate to four decimals, trailing zeros dropped ("25.4409", "10.95"); the full figure stays in its title. */
+export const preciseEstimate = (exact: string) => (toFixed(exact, 4) ?? exact).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')
+
 export function PoolAprEstimate({ observation, now, detailed = false, compact = false, label }: { observation?: AprEstimateObservation; now: Instant; detailed?: boolean; compact?: boolean; label?: string }) {
   const shown = presentAprEstimate(observation, now)
   const data = observation?.data
   // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the title is the estimate's basis
-  // (estimateTitle), and only on a figure: a dash has none (it used to carry why there is no estimate).
+  // (estimateTitle), and only on a figure: a dash has none (it used to carry why there is no estimate). Changed on purpose
+  // 2026-10-30 (QA round 2, N105/Q29): one sentence for the compact and the detailed figure alike, as for a stand-in's.
   const title = shown.text === null ? undefined : estimateTitle(observation)
   const tone = shown.text === null ? 'text-fg-subtle' : 'text-fg'
   if (detailed) {
@@ -39,7 +42,8 @@ export function PoolAprEstimate({ observation, now, detailed = false, compact = 
     const usd = (value: string | null | undefined) => (value === null || value === undefined ? '—' : (formatUsdCompact(value) ?? '—'))
     const figure = (
       <span className={cx('tnum whitespace-nowrap font-medium', label ? undefined : 'text-body', tone)} title={title} data-apr-figure="">
-        {shown.text === null ? '—' : `${shown.text}% est. APR`}
+        {/* QA round 2, Q34: beside its label ("Estimated APR") the figure is the percent alone, never "46.5% est. APR". */}
+        {shown.text === null ? '—' : label ? `${shown.text}%` : `${shown.text}% est. APR`}
       </span>
     )
     return (
@@ -60,9 +64,11 @@ export function PoolAprEstimate({ observation, now, detailed = false, compact = 
             <div className="flex flex-wrap justify-between gap-x-3"><dt>TVL, provider-reported</dt><dd className="tnum text-fg-muted" title={inputs.reportedLiquidityUsd ?? undefined}>{usd(inputs.reportedLiquidityUsd)}</dd></div>
             <div className="flex flex-wrap justify-between gap-x-3"><dt>Method</dt><dd className="text-fg-muted">365 × LP fee × (1 − protocol fee) × 24h volume ÷ TVL</dd></div>
             {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no "Inputs retrieved <HH:MM:SS UTC, date>" row. */}
-            <div className="flex flex-wrap justify-between gap-x-3"><dt>Pool verified</dt><dd className="tnum text-fg-muted">block {data.provenance.snapshot.number}</dd></div>
+            <div className="flex flex-wrap justify-between gap-x-3"><dt>Pool verified</dt><dd className="tnum text-fg-muted">block {data.provenance.snapshot.number.toLocaleString('en-US')}</dd></div>
             {shown.text !== null && data.feeAprEstimate24hPercent !== null && (
-              <div className="flex flex-wrap justify-between gap-x-3"><dt>Exact estimate</dt><dd className="tnum break-all text-fg-muted">{data.feeAprEstimate24hPercent}%</dd></div>
+              // Changed on purpose 2026-10-30 (QA round 2, Q34): four decimals, the read service's whole figure in its title
+              // (it printed 18 decimals of figures that are rounded at the provider).
+              <div className="flex flex-wrap justify-between gap-x-3"><dt>Precise estimate</dt><dd className="tnum text-fg-muted" title={`${data.feeAprEstimate24hPercent}%`}>{preciseEstimate(data.feeAprEstimate24hPercent)}%</dd></div>
             )}
           </dl>
         )}

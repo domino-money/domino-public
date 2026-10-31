@@ -1,5 +1,16 @@
 /* Consistent hierarchy across live-data screens; no graphic stands in for a financial value. */
 @layer components {
+  /* Hit areas of the screens' small controls (2026-10-30, QA round 2, N17; the chrome's are v4-foundation.css's): at least
+     24 CSS px under a mouse and 44 under a finger, through a transparent layer, what is drawn unchanged. The range
+     steppers sit 4 design px apart, so theirs grows up and down and sideways only into half that gap; segmented options
+     sit edge to edge, so theirs grows up and down only. */
+  :is(.dm-flow-bound-steps > .dm-icon-btn, .dm-pool-earn-preset) { position: relative; }
+  .dm-flow-bound-steps > .dm-icon-btn::after { content: ''; position: absolute; left: -0.125rem; right: -0.125rem; top: 50%; height: max(100%, calc(1.5rem / var(--vwk))); translate: 0 -50%; }
+  .dm-seg > .dm-seg-item::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: max(100%, calc(1.5rem / var(--vwk))); translate: 0 -50%; }
+  @media (pointer: coarse) {
+    :is(.dm-flow-bound-steps > .dm-icon-btn, .dm-seg > .dm-seg-item)::after { height: max(100%, calc(2.75rem / var(--vwk))); }
+    .dm-pool-earn-preset::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: max(100%, calc(2.75rem / var(--vwk))); translate: 0 -50%; }
+  }
   .dm-positions-page .dm-acct-title { padding-bottom: 1.75rem; border-bottom: 1px solid var(--border); }
   .dm-acct-title-copy { min-width: 0; }
   .dm-positions-page .dm-own-head { padding: 1rem; }

@@ -18,15 +18,16 @@ import { routeServes } from '../../v2/routes'
 import type { V2ChainId } from '../../v2/types'
 import { switchToOrigin } from '../../wallet/port'
 import { v2Transports } from '../transports'
-import { FUNDS_RECEIPT_POLL_MS, FUNDS_TYPED_QUOTE_DEBOUNCE_MS } from './constants'
+import { FUNDS_AUTO_RETRIES, FUNDS_RECEIPT_POLL_MS, FUNDS_TYPED_QUOTE_DEBOUNCE_MS } from './constants'
 import { FUNDS_TEXT, senderCopy } from './copy'
 import { DepositStatus, PendingDeposit, type TrackedDeposit } from './DepositStatus'
 import { runDeposit, type FlowStage } from './flow'
-import { balanceChainsRequest, balancesRequest, holdingsFromChainBalances, kindOf, mergeBalances, nativeOn, originCandidate, originName, originToken, requestFailure, sendable, valueUsdOf, type FundingBudget, type Lack } from './model'
+import { balanceChainsRequest, balancesRequest, holdingsFromChainBalances, kindOf, mergeBalances, nativeOn, originCandidate, originName, originToken, preparationRetryFloor, requestFailure, sendable, valueUsdOf, type FundingBudget, type Lack } from './model'
 import { freezeFunding, fundingBatchLeg, fundingSpendable, fundingStorageKey, gasRecoveryKey, outstandingLegs, parseFunding, planFunding, planGasRecovery, requestForLeg, respectsLeg, withGasFailure, type FundingIntent, type PricedLeg } from './fundingIntent'
 import type { FundsServices } from './services'
 import { invalidateFundingBalances, readFundingBalanceGroup } from './balanceCache'
 import { fundingOrigins, fundingWait } from './originsCache'
+import { fundingQuote } from './quoteCache'
 import { canDiscardFunding, fundingDepositKey, fundingFinished, fundingNeverSent, fundingOwnsDeposit, fundingTerminal } from './fundingLifecycle'
 import type { TransferProgress } from './transferView'
 
@@ -131,7 +132,6 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
   const [readSnapshot, setReadSnapshot] = useState<{ data: ChainBalancesResponse | null; complete: boolean } | null>(null)
   const readDone = readSnapshot !== null
   const balances = readSnapshot?.data ?? null
-  const [reading, setReading] = useState(true)
   const lastGroups = useRef<(ChainBalancesResponse | null)[]>([null, null])
   const [listing, setListing] = useState<OriginsList | null>(null)
   const [screen, setScreen] = useState<Screen>('checking')
@@ -306,7 +306,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
     let lastRead = 0
     const refresh = async () => {
       if (!active || document.hidden || busy || Date.now() - lastRead < 10_000) return
-      lastRead = Date.now(); busy = true; setReading(true)
+      lastRead = Date.now(); busy = true
       const succeeded = [false, false]
       try {
         await read((index, answer) => {
@@ -318,7 +318,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
       } catch { /* Keep the last observed balances; a failed read is not a zero balance. */ }
       finally {
         busy = false
-        if (active) { setReading(false); setReadSnapshot((previous) => previous ?? { data: null, complete: false }) }
+        if (active) setReadSnapshot((previous) => previous ?? { data: null, complete: false })
       }
     }
     void refresh()
@@ -344,7 +344,10 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
     if (!services) throw new FundingError(FUNDS_TEXT.locked, 'not_deployed')
     for (let attempt = 1; attempt <= 3; attempt++) {
       if (!current() || !latest.current.ready || signal?.aborted) throw new FundingError('Your transfer is paused.', 'funding_cancelled')
-      const result = await services.client.quote(request, { owner: wallet, signal, priority })
+      // Changed on purpose 2026-10-30 (launch capacity, CAP-11): a speculative preparation's quote is shared with any other
+      // asked for the very same request, and reused for a few seconds (./quoteCache.ts); a quote asked before sending
+      // (`action`) is always the service's own, fresh.
+      const result = priority === 'preview' ? await fundingQuote(services, access, request, signal) : await services.client.quote(request, { owner: wallet, signal, priority })
       if (!current()) throw new FundingError('Your transfer is paused.', 'funding_cancelled')
       if (result.ok) return { quote: result.data.quote, timing: result.timing }
       const failure = requestFailure(result.failure, attempt)
@@ -352,7 +355,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
       throw new FundingError(failure.copy || 'Could not update this transfer.', failure.code ?? result.failure.kind, failure.retryMs)
     }
     throw new FundingError('Could not update this transfer.', 'quote_unavailable')
-  }, [services, wallet])
+  }, [services, wallet, access])
   const prepare = async () => {
     if (!live || !services || !ready || !targetAmount || need === null || need <= 0n || intentRef.current || foreignPending || running.current || preparation.current || !holdings.length || !visible || optional && !remoteOpened) return
     const controller = new AbortController()
@@ -391,7 +394,11 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
     } catch (error) {
       if (!current()) return
       const failure = error instanceof FundingError ? error : new FundingError('Transfer costs are taking longer to load. Your wallet balances are still available.', error instanceof Error ? error.message : 'funding_unavailable')
-      retryAfter.current = services.clock.monoMs() + Math.max(5_000, failure.retryMs ?? 10_000)
+      // Changed on purpose 2026-10-30 (launch capacity, CAP-5, CAP-6): no route for these tokens right now (every provider
+      // listed as busy or unavailable), and a capacity-busy refusal after the quote's own two quick retries, wait a minute
+      // at least before it is asked again by itself (./model.ts preparationRetryFloor).
+      const floor = preparationRetryFloor(failure.code)
+      retryAfter.current = services.clock.monoMs() + Math.max(floor, failure.retryMs ?? 10_000)
       setNotice({ copy: failure.copy, code: failure.code }); setScreen('unavailable')
     } finally {
       stopDeadline()
@@ -407,6 +414,10 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
     if (!readDone || !ready || !need || intent || foreignPending || run || checking || !visible || !holdingsKey || proposal || preparation.current || optional && !remoteOpened) return
     const retry = attempted.current === wantedKey
     if (retry && screen !== 'unavailable') return
+    // Changed on purpose 2026-10-30 (launch capacity, CAP-5): a few automatic tries per amount, then no more by itself (the
+    // offer stays one click: Check again, or another amount, asks again). Every try spends the wallet's request budget,
+    // which its plan at Review shares.
+    if (retry && automaticAttempts.current >= FUNDS_AUTO_RETRIES) return
     const delay = Math.max(retry && automaticAttempts.current >= 2 ? 60_000 : FUNDS_TYPED_QUOTE_DEBOUNCE_MS, retryAfter.current - (services?.clock.monoMs() ?? 0))
     const timer = setTimeout(() => { if (retry) automaticAttempts.current++; void prepareRef.current?.() }, delay)
     return () => clearTimeout(timer)
@@ -644,7 +655,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
       {notice && <p role="status" className="dm-funding-notice" data-funds-run-notice="" data-error-code={notice.code}>{notice.copy}</p>}
       {gasReview && !previousUnsent && !notice && !proposal?.recoveryFrom && screen !== 'quoting' && <p className="dm-funding-notice" data-funds-gas-recovery="">{GAS_RECOVERY_COPY}</p>}
       {proposal?.recoveryFrom && <p className="dm-hint" data-funds-gas-recovery="">{proposal.intent.legs.some((leg) => leg.reserveRaw) ? 'Keep 0.006 ETH on Ethereum for network fees. ' : 'Use another available network. '}Your position amount stays the same. Confirm the amounts below before continuing.</p>}
-      {live && readDone && !proposal && !intent && !tracking && !foreignPending && screen !== 'quoting' && !notice && <p className="dm-hint" data-funds-nothing="">{holdings.length === 0 ? !readSnapshot?.complete ? 'Some wallet balances could not be checked yet. We will try again automatically.' : observedNetworks.length ? 'These networks need ETH for the transfer fee. Add a little ETH there to use these tokens.' : 'No available funds found on the supported networks. Add funds or choose a smaller amount.' : need === null ? 'Enter an amount. Domino will check how to bring your funds here.' : !ready ? 'Sign in to prepare your transfer. This does not move funds.' : 'Checking a transfer for this amount.'}</p>}
+      {live && readDone && !proposal && !intent && !tracking && !foreignPending && screen !== 'quoting' && !notice && <p className="dm-hint" data-funds-nothing="">{holdings.length === 0 ? !readSnapshot?.complete ? 'Checking the tokens in your wallet…' : observedNetworks.length ? 'These networks need ETH for the transfer fee. Add a little ETH there to use these tokens.' : 'No available funds found on the supported networks. Add funds or choose a smaller amount.' : need === null ? 'Enter an amount. Domino will check how to bring your funds here.' : !ready ? 'Sign in to prepare your transfer. This does not move funds.' : 'Checking a transfer for this amount.'}</p>}
       {proposed && selected.some((leg) => !leg.depositTxHash) && <div className="dm-funding-summary" data-funds-quote="" data-funding-sources={selected.length}>
         {selected.filter((leg) => !leg.depositTxHash).map((leg) => <div className="dm-funding-leg" key={leg.id} data-funds-network={leg.originChainId} data-funding-leg-state={leg.state}>
           <span>{originName(leg.originChainId)}</span><strong>{shortAmountText(leg.maxInputRaw, leg.originToken, leg, 'up')}</strong>
@@ -658,7 +669,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
       {optional && remoteOpened && !intent && !foreignPending && !run && <Button variant="ghost" size="sm" data-funds-close="" onClick={() => { generation.current++; preparation.current?.abort(); setRemoteSelection(null); setProposal(null); setNotice(null); setExpired(false); attempted.current = ''; setScreen('checking') }}>Back to funding options</Button>}
       {!onContinuationChange && onRemoteUse && intent?.paymentRaw && continueReady && <Button variant="accent" data-funds-remote-use="" onClick={() => void useArrivedFunds()}>Use these funds for this position</Button>}
       {live && !run && unknownOrigin !== undefined && <Button variant="outline" size="sm" data-funds-run-forget="" onClick={() => void resolveUnknown(unknownOrigin)}>I cancelled the request in my wallet</Button>}
-      {live && !run && ready && !intent && !foreignPending && !proposal && !needsReview && readDone && (screen === 'unavailable' || screen === 'paused' || notice?.code === 'funding_insufficient' || !reading && !readSnapshot?.complete) && <Button variant="outline" size="sm" data-funds-renew="" onClick={() => { attempted.current = ''; automaticAttempts.current = 0; setNotice(null); setRevision((n) => n + 1); setPrepareRevision((n) => n + 1) }}>Check again</Button>}
+      {live && !run && ready && !intent && !foreignPending && !proposal && !needsReview && readDone && (screen === 'unavailable' || screen === 'paused' || notice?.code === 'funding_insufficient') && /* Changed on purpose 2026-10-30 (QA round 2, SWEEP): a transfer to check again only; a balance read that came back short is read again on its own (every 30 s and on focus), with no button. */ <Button variant="outline" size="sm" data-funds-renew="" onClick={() => { attempted.current = ''; automaticAttempts.current = 0; setNotice(null); setRevision((n) => n + 1); setPrepareRevision((n) => n + 1) }}>Check again</Button>}
       {live && !run && ready && !intent && needsReview && <Button variant="outline" size="sm" data-funding-review="" onClick={() => void prepare()}>Review transfer</Button>}
       {proposal && <details className="dm-details dm-funds-details" data-funds-details=""><summary>Transfer details</summary><div className="dm-funding-details">
         <p>Only the amounts above can leave your wallet. Network fees are separate. Different networks may need separate confirmations.</p>

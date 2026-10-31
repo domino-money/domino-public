@@ -1,4 +1,5 @@
-import { useState, type KeyboardEvent } from 'react'
+import { useEffect, useState, type KeyboardEvent } from 'react'
+import { endPrice } from '../../components/create/valuation'
 import { IconMinus, IconPlus } from '../../components/icons'
 import { PriceSlider } from '../../components/PriceSlider'
 import { SymbolText } from '../../components/read/screens/SymbolText'
@@ -7,14 +8,31 @@ import { CREATE } from '../../lib/create/copy'
 import { awayFrom, awayShort, plainFigure } from '../../lib/create/plain'
 import { RANGES, type RangeKey } from '../../lib/ranges'
 import { editablePrice, priceInputToTick } from '../../lib/read/screens/RangePriceInput'
-import { boundPrice, moveBound, presetFor, rangeMode, shownPosition, shownPrice, shownRange, sliderWindow, stepBound, type RangeMode } from '../../lib/read/screens/poolRange'
+import { moveBound, presetFor, rangeMode, shownPosition, shownPrice, shownRange, sliderWindow, stepBound, usableTicks, type RangeMode } from '../../lib/read/screens/poolRange'
 import { JOURNEY } from './copy'
 import type { JourneyPrice, JourneyPriceState } from './model/price'
 import type { JourneyState, TickRange } from './model/state'
 
-/** The three widths, in order: the two presets (lib/ranges.ts), then your own prices, as today's range step offers them. */
-const WIDTHS: readonly RangeMode[] = [...(Object.keys(RANGES) as RangeKey[]), 'custom']
-const widthName = (mode: RangeMode) => (mode === 'custom' ? 'Custom' : RANGES[mode].label.replace(' range', ''))
+/**
+ * The widths, in order: the two presets (lib/ranges.ts), then your own prices, as today's range step offers them
+ * (components/create/RangeStep.tsx). A Full range width added 2026-10-30 (QA round 2, N73) was removed the same day
+ * (the owner, after seeing it on the preview: as it was before).
+ */
+type Width = RangeMode
+const WIDTHS: readonly Width[] = [...(Object.keys(RANGES) as RangeKey[]), 'custom']
+const widthName = (mode: Width) => (mode === 'custom' ? 'Custom' : RANGES[mode].label.replace(' range', ''))
+
+/** An end at the pool's usable tick limit: every price below it (0) or above it (∞), as a position's card writes it. */
+const atLimit = (tick: number, which: 'lower' | 'upper', spacing: number) => {
+  const { min, max } = usableTicks(spacing)
+  return which === 'lower' ? tick <= min : tick >= max
+}
+
+/** A price typed the way the page writes one ("1,747.65", spaces around it) is read without its separators. */
+const typedPrice = (text: string) => {
+  const trimmed = text.trim()
+  return /^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(trimmed) ? trimmed.replace(/,/g, '') : trimmed
+}
 
 /** "1 ETH = 2,499.91 USDC": the price as the page writes it, the symbols as untrusted text. */
 function OneFor({ price, figure }: { price: JourneyPrice; figure: string }) {
@@ -25,22 +43,28 @@ function OneFor({ price, figure }: { price: JourneyPrice; figure: string }) {
   )
 }
 
-/** How far a bound sits from the price, in words. */
-function awayWords(tick: number, price: JourneyPrice): string {
+/** How far a bound sits from the price, in words; nothing for an end at the pool's limit, which has no distance to say. */
+function awayWords(tick: number, price: JourneyPrice, which: 'lower' | 'upper' | null = null): string {
+  if (which && atLimit(tick, which, price.tickSpacing)) return ''
   const away = awayFrom(tick, price.tick)
-  return away.side === 'at' ? CREATE.amount.atToday : away.side === 'below' ? CREATE.amount.below(away.percent) : CREATE.amount.above(away.percent)
+  return away.side === 'at' ? CREATE.amount.atToday : away.side === 'below' ? CREATE.amount.below(away.percent) : away.far ? CREATE.amount.farAbove(away.percent) : CREATE.amount.above(away.percent)
 }
 
 /**
  * One end of the range, as today's range step draws it (components/create/RangeStep.tsx Bound): its price for one of the
  * priced token and how far it is from the price; with Custom chosen, typed (applied on Enter or when the field is left),
- * stepped by the pool's smallest step, or dragged; typed prices move outward to the nearest price the pool allows.
+ * stepped by the pool's smallest step, or dragged; typed prices move outward, to the closest price the pool allows beyond
+ * them. An end at the pool's usable tick limit reads 0 or ∞ (N73).
+ *
+ * Changed on purpose 2026-10-30 (QA round 2, Q18, as today's range step): a price typed but not applied yet is checked as
+ * it is typed, and one that would be refused, or was refused, is reported up (`onBlock`) so Continue holds with the reason
+ * until the field is fixed or left for a preset. The error under the field still appears on Enter or when it is left.
  */
-function Bound({ which, range, price, editing, onRange }: { which: 'lower' | 'upper'; range: TickRange; price: JourneyPrice; editing: boolean; onRange: (next: TickRange) => void }) {
+function Bound({ which, range, price, editing, onRange, onBlock }: { which: 'lower' | 'upper'; range: TickRange; price: JourneyPrice; editing: boolean; onRange: (next: TickRange) => void; onBlock?: (which: 'lower' | 'upper', reason: string | null) => void }) {
   const label = which === 'lower' ? CREATE.amount.lowest : CREATE.amount.highest
   const tick = range[which]
   const id = `zap-range-${which}`
-  const written = boundPrice(tick, price)
+  const written = endPrice(tick, which, price)
   const displayed = editablePrice(written)
   const [draft, setDraft] = useState<{ tick: number; text: string } | null>(null)
   const [refused, setRefused] = useState<{ tick: number; text: string } | null>(null)
@@ -53,11 +77,20 @@ function Bound({ which, range, price, editing, onRange }: { which: 'lower' | 'up
   }
   const apply = () => {
     if (value === displayed) return setRefused(null)
-    const typed = /^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(value.trim()) ? value.trim().replace(/,/g, '') : value
-    const parsed = priceInputToTick(typed, which, range, price)
+    const parsed = priceInputToTick(typedPrice(value), which, range, price)
     if (!parsed.ok) return setRefused({ tick, text: CREATE.amount.priceErrors[parsed.message] ?? parsed.message })
     change({ ...range, [which]: parsed.tick })
   }
+  // What Continue must wait for: the error on screen, or the text in the field that applying would refuse.
+  const live = editing && value !== displayed ? priceInputToTick(typedPrice(value), which, range, price) : null
+  const block = error ?? (live && !live.ok ? (CREATE.amount.priceErrors[live.message] ?? live.message) : null)
+  // The field's name leads the reason, unless the reason already names the field ("The lowest price must stay below the
+  // highest price.").
+  useEffect(() => {
+    onBlock?.(which, block === null ? null : /^The (lowest|highest) price/.test(block) ? block : `${label}: ${block.charAt(0).toLowerCase()}${block.slice(1)}`)
+  }, [onBlock, which, label, block])
+  // A field that goes (a preset chosen, the step left) holds nothing back.
+  useEffect(() => () => onBlock?.(which, null), [onBlock, which])
   const span = sliderWindow(price.tick, price.tickSpacing, range)
   return (
     <div className="dm-flow-bound" data-range-bound={which} data-editing={editing ? '' : undefined}>
@@ -65,7 +98,7 @@ function Bound({ which, range, price, editing, onRange }: { which: 'lower' | 'up
         <span className="dm-flow-bound-label" id={`${id}-label`}>
           {label}
         </span>
-        <span className="dm-flow-bound-away">{awayWords(tick, price)}</span>
+        <span className="dm-flow-bound-away">{awayWords(tick, price, which)}</span>
       </div>
       {editing ? (
         <div className="dm-flow-bound-edit">
@@ -123,7 +156,7 @@ function Bound({ which, range, price, editing, onRange }: { which: 'lower' | 'up
           lower={range.lower}
           upper={range.upper}
           format={(next) => awayShort(next, price.tick)}
-          valueText={(next) => `${plainFigure(boundPrice(next, price) ?? CREATE.review.summary.beyondDisplay)}, ${awayWords(next, price)}`}
+          valueText={(next) => [plainFigure(endPrice(next, which, price) ?? CREATE.review.summary.beyondDisplay), awayWords(next, price, which)].filter(Boolean).join(', ')}
           tone="quiet"
         />
       )}
@@ -137,23 +170,37 @@ function Bound({ which, range, price, editing, onRange }: { which: 'lower' | 'up
  * own ticks on its spacing. For a new pool the price is the starting price typed (§2.6.5: the range and the minimum are
  * computed at it). Its only data is the pool's price as it was read; a price that cannot be written (a token whose
  * decimals were never read) shows the range in ticks.
+ *
+ * Changed on purpose 2026-10-30 (QA round 2, as today's range step): a width chosen, or
+ * shown first, stays checked while the range is still the one it made, so a price read again never flips it to Custom
+ * under the person (N18); and a Custom price that would be refused holds Continue with its reason (`onBlock`, Q18).
  */
-export function RangeStage({ state, price, onRange }: { state: JourneyState; price: JourneyPriceState | null; onRange: (range: TickRange) => void }) {
+export function RangeStage({ state, price, onRange, onBlock }: { state: JourneyState; price: JourneyPriceState | null; onRange: (range: TickRange) => void; onBlock?: (which: 'lower' | 'upper', reason: string | null) => void }) {
   const usable = price && price.state === 'usable' ? price : null
   const inverted = usable?.inverted === true
   const shown = usable ? shownPrice(usable) : null
-  const [picked, setPicked] = useState<RangeMode | null>(null)
+  const [picked, setPicked] = useState<{ mode: Width; range: TickRange | null } | null>(null)
   const range = state.range
   const view = range ? shownRange(range, inverted) : null
-  const mode = shown && view ? rangeMode(view, shown.tick, shown.tickSpacing, picked) : null
-  const pick = (key: RangeMode) => {
+  const held = picked !== null && picked.mode !== 'custom' && picked.range !== null && range !== null && picked.range.lower === range.lower && picked.range.upper === range.upper
+  const derived: Width | null = shown && view ? rangeMode(view, shown.tick, shown.tickSpacing, picked?.mode === 'custom' ? 'custom' : null) : null
+  const mode: Width | null = held && picked ? picked.mode : derived
+  // The width shown first is remembered with its range, as one chosen is (React's "a value from the previous render").
+  if (picked === null && derived !== null && derived !== 'custom' && range !== null) setPicked({ mode: derived, range })
+  const pick = (key: Width) => {
     if (!usable) return
-    setPicked(key)
-    if (key !== 'custom') onRange(presetFor(usable, key))
-    else if (!range) onRange(presetFor(usable, 'standard'))
+    if (key === 'custom') {
+      setPicked({ mode: 'custom', range: null })
+      if (!range) onRange(presetFor(usable, 'standard'))
+      return
+    }
+    const next = presetFor(usable, key)
+    setPicked({ mode: key, range: next })
+    onRange(next)
   }
+  /** A range from the controls, in the page's frame: kept in the pool's own ticks. */
   const custom = (next: TickRange) => {
-    setPicked('custom')
+    setPicked({ mode: 'custom', range: null })
     onRange(shownRange(next, inverted))
   }
   const arrows = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -170,7 +217,8 @@ export function RangeStage({ state, price, onRange }: { state: JourneyState; pri
     <div className="dm-flow-stack" data-stage="range" data-zap-range={range ? `${range.lower}:${range.upper}` : ''} data-price-state={usable ? (usable.stale ? 'stale' : 'usable') : 'unavailable'}>
       <div className="dm-flow-now" data-pool-price="">
         <span className="dm-flow-now-label">{starting ? JOURNEY.range.start : CREATE.amount.now}</span>
-        <span className="dm-flow-now-price tnum" data-pool-price-text="" title={usable?.stale ? CREATE.review.stale : undefined}>
+        {/* No title about the price's age (QA round 2, SWEEP: no stale notices); data-price-state keeps the state. */}
+        <span className="dm-flow-now-price tnum" data-pool-price-text="">
           {usable ? <OneFor price={usable} figure={usable.text} /> : '—'}
         </span>
       </div>
@@ -179,7 +227,8 @@ export function RangeStage({ state, price, onRange }: { state: JourneyState; pri
           <div role="radiogroup" tabIndex={-1} aria-label={CREATE.amount.widths} className="dm-seg dm-flow-widths" onKeyDown={arrows}>
             {WIDTHS.map((key) => (
               <button key={key} type="button" role="radio" aria-checked={mode === key} tabIndex={mode === key || (mode === null && key === 'standard') ? 0 : -1} className="dm-seg-item" data-width={key} onClick={() => pick(key)}>
-                {widthName(key)}
+                <span className="dm-flow-width-art" data-width-art={key} aria-hidden="true"><span /></span>
+                <span>{widthName(key)}</span>
               </button>
             ))}
           </div>
@@ -188,8 +237,9 @@ export function RangeStage({ state, price, onRange }: { state: JourneyState; pri
       )}
       {shown && view ? (
         <div className="dm-flow-bounds" data-range-controls="">
-          <Bound key={mode === 'custom' ? 'lower-edit' : 'lower'} which="lower" range={view} price={shown} editing={mode === 'custom'} onRange={custom} />
-          <Bound key={mode === 'custom' ? 'upper-edit' : 'upper'} which="upper" range={view} price={shown} editing={mode === 'custom'} onRange={custom} />
+          {/* Keyed by Custom: leaving it for a preset drops a half-typed or refused price with its fields. */}
+          <Bound key={mode === 'custom' ? 'lower-edit' : 'lower'} which="lower" range={view} price={shown} editing={mode === 'custom'} onRange={custom} onBlock={onBlock} />
+          <Bound key={mode === 'custom' ? 'upper-edit' : 'upper'} which="upper" range={view} price={shown} editing={mode === 'custom'} onRange={custom} onBlock={onBlock} />
         </div>
       ) : range ? (
         <p className="text-body" data-range-ticks="">

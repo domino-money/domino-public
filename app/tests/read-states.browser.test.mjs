@@ -272,12 +272,13 @@ test('table-wide states: one polite status line, the right words, and not a sing
     assert.equal(await root.locator('tbody tr').count(), 0, `${id} rendered rows`);
     assert.equal(await root.locator('[data-metric]').count(), 0, `${id} rendered figures`);
   }
-  // Live data not connected, or switched off: a Retry cannot change that, and the ticker says the same words.
+  // Live data not connected, or switched off: a Retry cannot change that.
+  // Changed on purpose 2026-10-30 (QA round 2, rule 3): the ticker no longer repeats the failure's words; a failed read
+  // reads as one still loading there (it is asked again silently), as every failed state in this list does.
   for (const id of ['not-connected', 'not-found', 'no-forwarder', 'route-disabled']) {
     const root = section(`market-${id}`);
     assert.equal(await root.getByRole('button', { name: 'Retry' }).count(), 0, `${id} offers a Retry`);
-    const title = await root.locator('[data-read-status] p').first().innerText();
-    assert.equal(await root.locator('[data-ticker-status]').innerText(), title, `${id}: the ticker disagrees with the table`);
+    assert.equal(await root.locator('[data-ticker-status]').innerText(), 'Loading pools…', `${id}: the ticker names no failure`);
   }
   const signIn = section('market-gate401').getByRole('link', { name: 'Sign in again' });
   assert.equal(await signIn.getAttribute('href'), '/', 'the way back is this site’s own root');

@@ -9,6 +9,7 @@ import { PositionActivity, useAutomaticAdds } from '../components/positions/Posi
 import { PositionRange, chainCardPrice, preloadPriceChart } from '../components/positions/PositionRange'
 import { FeesCard } from '../components/positions/visual/FeesCard'
 import { PositionSkeleton } from '../components/positions/visual/PositionSkeleton'
+import { positionsListHref, viewedPositionsAddress } from '../components/positions/listHref'
 import { usdgSide } from '../components/positions/visual/value'
 import { Address } from '../components/read/screens/Address'
 import { TokenMarkPair } from '../components/TokenIcon'
@@ -20,8 +21,8 @@ import { ledgerClosedAt, ledgerOpenedAt, ledgerOpenedBefore, ledgerPriceObservat
 import { readKept } from '../finance/privateCards'
 import { KEPT_MAX_AGE_MS } from '../lib/browserCopies'
 import { createdHere } from '../lib/create/createProgress'
-import { shortDate, shortTime } from '../lib/format/time'
 import { CHAIN_ID } from '../lib/read/screens/identity'
+import { networkName } from '../lib/networkName'
 import type { RelayAnswer, StatePositionOk, StateResponse } from '../lib/fees/types'
 import { warmVault } from '../lib/automationImpact'
 import { useAutomation } from '../lib/automationState'
@@ -64,6 +65,8 @@ interface ActionsProps {
   automationSlot?: ReactNode
   /** Collect fees is the primary button (2026-09-27: not for one of Domino's sequences). */
   primary?: boolean
+  /** (QA round 2, N49) The root of Auto-exit's own vault: Collect fees leaves Auto-exit on, so its dialog says nothing of stopping automation. */
+  autoExitRoot?: boolean
 }
 
 // The owner's Collect fees and Close position, in builds that carry the wallet
@@ -86,6 +89,7 @@ interface V2ActionsProps {
   position: WalletPosition
   owner: string
   onChanged: (block?: bigint) => void
+  onAutoExitRoot?: (root: boolean) => void
 }
 const V2Actions = __DOMINO_V2__ ? lazy<ComponentType<V2ActionsProps>>(recovering(() => import('../v2in/position/PositionV2Actions'), couldNotLoad)) : null
 /**
@@ -263,10 +267,10 @@ function vaultOf(answer: RelayAnswer<StateResponse>, found: StatePositionOk, sig
 /** A token as the actions take it: its address and what the chain said about it. */
 const currency = (token: TokenDisplay): CurrencyView => ({ address: token.address, symbol: token.symbol, decimals: token.decimals })
 
-/** The way back to the list. */
+/** The way back to the list it was opened from (N62: the viewed address's, when it was another address's). */
 function Back() {
   return (
-    <a href={positionsHref} className="dm-pos-back">
+    <a href={positionsListHref()} className="dm-pos-back">
       <IconChevronLeft size={16} />
       Positions
     </a>
@@ -280,18 +284,6 @@ function Back() {
  * on any network, also gets Collect fees and Close position in the title row; anyone else reads the same page with
  * no action on it. Every figure but the fees history's is from one chain read, at its block (the figures' title).
  */
-/** Why a ledger cannot measure Fees earned, in Details' own words (lib/fees/types.ts LedgerWhy). */
-const WHY_WORDS: Readonly<Record<string, string>> = {
-  before_floor: 'the position was opened before Domino’s release',
-  manual: 'an add or a withdrawal settled fees together with the tokens it moved',
-  shared: 'a collect’s transaction did more than collect this position',
-  native: 'a collect paid out ETH, which leaves no log',
-  liquidity: 'a change of this position was not found',
-  unseen: 'something settled this position that Domino’s reads cannot see',
-  too_many: 'it has more settlements or owners than one ledger keeps',
-  reading: 'it is still being read',
-}
-
 /**
  * Where the fees history on this page comes from, for the technical Details (item A13 moved blocks and exact times here,
  * off the main screen). Changed on purpose 2026-10-02 (RPC-SPEC §11.4): the position's own ledger of settlements, and how
@@ -302,13 +294,12 @@ function HistorySource({ tokenId }: { tokenId: string }) {
   // 2026-10-02 (review of the chart's tabs, finding 1): the ledger requests this visit made and how the last ended, as data
   // attributes only (for a tester's devtools and the browser suites; the line's words stay).
   const trace = useLedgerTraces([tokenId]).get(tokenId)
-  let text: string
-  if (fees.phase === 'verified') {
-    text = `Every settlement of this position from its own events, through block ${fees.history.through}, and the fees ready to collect at block ${fees.state.block}. Measured at each compound or collect and when this browser read it; the line between points is a guide, not a measurement.`
-  } else if (fees.phase === 'cached') text = `A copy saved in this browser, through block ${fees.state.block} (${shortDate(fees.state.timestamp)} ${shortTime(fees.state.timestamp)})`
-  else if (fees.phase === 'unclaimed-only' && fees.reason === 'not_exact') text = `Fees earned is not measured: ${WHY_WORDS[fees.why ?? 'unseen'] ?? WHY_WORDS.unseen}. Fees ready to collect is exact.`
-  else if (fees.phase === 'unclaimed-only' || fees.phase === 'unavailable') text = `Not read (${fees.reason.replace(/_/g, ' ')})`
-  else text = 'Reading…'
+  // (QA round 2, SWEEP) Anything but the ledger's own history is the figure dash, as every figure with nothing to say: it
+  // said "Reading…", "Not read (reason)", "Fees earned is not measured: …" or, for this browser's copy, "A copy saved in
+  // this browser, through block …" (a stale-data notice). Where the history stands, and why, stay the row's data attributes.
+  const text = fees.phase === 'verified'
+    ? `Every settlement of this position from its own events, through block ${fees.history.through}, and the fees ready to collect at block ${fees.state.block}. Measured at each compound or collect and when this browser read it; the line between points is a guide, not a measurement.`
+    : '—'
   return (
     <KeyValue label="Fees history">
       <span data-history-source={fees.phase === 'verified' ? 'ledger' : fees.phase} data-history-why={fees.phase === 'unclaimed-only' ? fees.why : undefined} data-ledger-asks={trace?.asks ?? 0} data-ledger-last={trace?.last ?? undefined}>
@@ -331,6 +322,10 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
   // network before preparing its review, and checks the owner again before anything is sent.
   const identity = useWalletIdentity()
   const mine = identity.kind === 'connected' && identity.address.toLowerCase() === card.owner.address
+  // (QA round 2, N43, review) Opened from the holder's own list (View address): the address the person chose to read as a
+  // wallet. Only then does the page say whose the actions are: the NFT's holder can be a Domino vault (a Domino-compound
+  // successor is its vault's), which nobody connects, so a page opened from a link or from another list says nothing.
+  const fromHolderList = viewedPositionsAddress()?.toLowerCase() === card.owner.address.toLowerCase()
   // Read again after each of the owner's actions (`changes`), and never offered for a position this read shows closed:
   // after a Close, Automate and the Plain position pill go at once (2026-09-25, audit of 754014c: the wallet's list, read
   // before the Close, still offered them until the page was opened again).
@@ -349,6 +344,8 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
     setIndexedMint((previous) => previous?.tokenId === mint.tokenId && previous.block === mint.block && previous.tx === mint.tx && previous.timestamp === mint.timestamp ? previous : mint)
     feesStore.offerMint(mint)
   }, [card.tokenId])
+  // (QA round 2, N49) Whether read-v6 lists the position as Auto-exit's own vault's root (the V2 actions read it).
+  const [autoExitRoot, setAutoExitRoot] = useState(false)
   const feeHistory = useFeeHistory(card.tokenId)
   const openedAt = ledgerOpenedAt(feeHistory) ?? (indexedMint?.tokenId === card.tokenId && indexedMint.block <= block ? indexedMint.timestamp : null)
   // (2026-10-15, pack 7): minted before Domino's release, the ledger has no mint, only a bound on it (never an opening time).
@@ -376,6 +373,11 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
                 <span>
                   Uniswap · <span data-fee="">{card.fee}</span> fee
                 </span>
+              </Chip>
+              {/* (QA round 2, N60) Its network, as the Base/Arbitrum page names it (a plain chip there too: no hover ring on a
+                  chip that is not a control). */}
+              <Chip>
+                <span data-position-network="robinhood">{networkName(CHAIN_ID)}</span>
               </Chip>
               <span className="sr-only">
                 Position #<span translate="no">{card.tokenId}</span>
@@ -428,6 +430,7 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
                 automate={entry}
                 automationSlot={__DOMINO_V2__ ? <span ref={setAutomationToolbar} className="dm-position-automation-slot" data-position-automation-slot="" /> : null}
                 primary={!(automation.phase === 'ready' && 'paused' in automation.state)}
+                autoExitRoot={autoExitRoot}
               />
             </Suspense>
           </div>
@@ -435,8 +438,24 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
         {/* V2 actions join the same visible action bar while retaining their own gates and lazy loading. */}
         {__DOMINO_V2__ && V2Actions && PositionActions && mine && copy === undefined && !gateway && (
           <Suspense fallback={null}>
-            <V2Actions position={wallet} owner={card.owner.address} onChanged={onChanged} />
+            <V2Actions position={wallet} owner={card.owner.address} onChanged={onChanged} onAutoExitRoot={setAutoExitRoot} />
           </Suspense>
+        )}
+        {/* (QA round 2, N43) Anyone but the owner wallet reads this page with no action on it (by design): one quiet line says
+            why and whose they are, laid out as the waiting line (v4-positions.css). Only on a page opened from the holder's
+            own list (fromHolderList), and not while the wallet is still being found, so a returning owner never sees it flash. */}
+        {PositionActions && !mine && fromHolderList && copy === undefined && !gateway && card.hasLiquidity && (identity.kind === 'disconnected' || identity.kind === 'connected') && (
+          <p className="max-w-md text-body text-fg-muted" data-position-owner-only={identity.kind === 'connected' ? 'other-wallet' : 'no-wallet'}>
+            {identity.kind === 'connected' ? (
+              <>
+                Only the owner wallet <Address value={card.owner.address} short /> can collect fees, add or close.
+              </>
+            ) : (
+              <>
+                Connect the owner wallet <Address value={card.owner.address} short /> to collect fees, add or close.
+              </>
+            )}
+          </p>
         )}
       </div>
 
@@ -480,6 +499,7 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
             <KeyValue label="NFT id">
               <Address value={card.tokenId} />
             </KeyValue>
+            <KeyValue label="Network">{networkName(CHAIN_ID)}</KeyValue>
             <KeyValue label="Owner">
               <span data-owner="" title={`The NFT’s owner at block ${block}, public data.`}>
                 <Address value={card.owner.address} />
@@ -523,7 +543,7 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
             {cardPoolUsableForDomino(card) && (
               <LinkButton href={newPositionHref(card.poolId, token)} variant="outline" size="sm">
                 <IconPlus />
-                Add to this pool
+                New position in this pool
               </LinkButton>
             )}
           </div>

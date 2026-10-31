@@ -21,7 +21,7 @@ import * as runtime from '../../api-contracts/read-v5/runtime.mjs';
 import { createWorker } from '../../bridge/src/worker.mjs';
 
 const require = createRequire(import.meta.url);
-const { answerFeatured, cacheKey, FEATURED_PATH, LIST_SECONDS, STALE_SECONDS, WAIT_AFTER_SECONDS } = require('../.test-build/app/functions/_lib/featuredEdge.js');
+const { answerFeatured, cacheKey, FEATURED_PATH, LIST_SECONDS, STALE_SECONDS, WAIT_AFTER_SECONDS, ERROR_SECONDS, REFRESH_WAIT_MS } = require('../.test-build/app/functions/_lib/featuredEdge.js');
 const { REFRESH_GUARD_MS } = require('../.test-build/app/functions/_lib/publicEdge.js');
 const { PREVIEW_ORIGIN } = require('../.test-build/app/functions/_lib/bridge.js');
 const { onRequest: gate, LOGIN_PATH, API_CSP } = require('../.test-build/app/functions/_middleware.js');
@@ -241,7 +241,8 @@ test('a valid list is passed on byte for byte and kept once; within 60 s the sam
   assert.equal(calls[0].body, '{}', 'the request goes on untouched');
   await Promise.all(later.splice(0));
   // Changed on purpose 2026-10-01 (the chain2 workstream, part B, audit item G10): the key names the chain the list is of.
-  assert.deepEqual(cache.puts, [{ url: `${ORIGIN}/api/read/v5/cache/4663/${VERSION}/featured-pools`, cacheControl: `max-age=${STALE_SECONDS}` }]);
+  // Changed on purpose 2026-10-30 (launch item 4): the cache keeps it for its stale-if-error hour, past its 15 minutes.
+  assert.deepEqual(cache.puts, [{ url: `${ORIGIN}/api/read/v5/cache/4663/${VERSION}/featured-pools`, cacheControl: `max-age=${ERROR_SECONDS}` }]);
   assert.equal(cacheKey(VERSION), cache.puts[0].url);
   assert.equal(cacheKey(VERSION, ORIGIN, 99801), `${ORIGIN}/api/read/v5/cache/99801/${VERSION}/featured-pools`, 'another chain, another key');
   assert.equal(first.headers.get('X-Domino-Edge-Cache'), null, 'the Worker answered');
@@ -600,7 +601,7 @@ test('with the real read Worker: the committed config answers route_not_availabl
 
 const v3 = await import('../../api-contracts/read-v3/runtime.mjs');
 const { historyFor } = await import('./markets-cards.fixtures.mjs');
-const { answerHistory, historyKey, HISTORY_PATH, HISTORY_SECONDS, HISTORY_STALE_SECONDS } = require('../.test-build/app/functions/_lib/historyEdge.js');
+const { answerHistory, historyKey, HISTORY_PATH, HISTORY_SECONDS, HISTORY_STALE_SECONDS, HISTORY_ERROR_SECONDS, HISTORY_ERROR_WAIT_MS } = require('../.test-build/app/functions/_lib/historyEdge.js');
 const HISTORY_CONTRACT = { CONTRACT_VERSION: v3.CONTRACT_VERSION, validateRequest: v3.validateRequest, validateResponse: v3.validateResponse, matchesRequest: v3.matchesRequest };
 const POOL = `0x${'ab'.repeat(32)}`;
 const ETH = '0x0000000000000000000000000000000000000000';
@@ -659,7 +660,8 @@ test('a built 24h history is kept 20 s for the identical question; one not built
   await Promise.all(later.splice(0));
   assert.equal(cache.puts.length, 1);
   assert.equal(cache.puts[0].url, historyKey(v3.CONTRACT_VERSION, question));
-  assert.equal(cache.puts[0].cacheControl, `max-age=${HISTORY_STALE_SECONDS}`);
+  // Changed on purpose 2026-10-30 (launch item 4): the cache keeps it for its stale-if-error life, past its minute.
+  assert.equal(cache.puts[0].cacheControl, `max-age=${HISTORY_ERROR_SECONDS}`);
   time.at.now += HISTORY_SECONDS * 1000 - 1;
   const hit = await answerHistory(askHistory(), env, runtime());
   assert.equal(hit.headers.get('X-Domino-Edge-Cache'), 'hit');
@@ -762,5 +764,114 @@ test('pack 7: a not-ready history answer is kept HISTORY_SECONDS only, so a youn
     for (let viewer = 0; viewer < 3; viewer++) await answerHistory(askHistory(), env, { contract: HISTORY_CONTRACT, cache, now: time.now, refreshing: new Map(), inflight: new Map() });
     assert.equal(cache.puts.length, 0);
     assert.equal(calls.length, 3);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Stale-if-error (2026-10-30, launch capacity study, item 4): past its stale window, a kept list or built history still
+// stands in for the Worker's failure, for a while; never for a refusal, and never one not built.
+// ---------------------------------------------------------------------------
+
+test('stale-if-error: a built history past its minute stands in for a failure of the gateway’s, or for none within a second, dated, up to fifteen minutes; one not built never does', async () => {
+  assert.deepEqual([HISTORY_ERROR_SECONDS, HISTORY_ERROR_WAIT_MS], [15 * 60, 1_000]);
+  const built = historyFor(question, { built: true });
+  // (review) 408 too: read-v3's request_timeout, the Worker's own deadline.
+  for (const status of [408, 429, 502, 503, 504]) {
+    const cache = memoryCache();
+    const time = clock();
+    await answerHistory(askHistory(), bridge(() => historySaid(built)).env, { contract: HISTORY_CONTRACT, cache, now: time.now });
+    time.at.now += HISTORY_STALE_SECONDS * 1000;
+    const failing = bridge(() => historySaid({ error: 'upstream_unavailable' }, { status }));
+    const response = await answerHistory(askHistory(), failing.env, { contract: HISTORY_CONTRACT, cache, now: time.now, inflight: new Map(), refreshing: new Map() });
+    assert.equal(response.status, 200, String(status));
+    assert.deepEqual(await response.json(), built);
+    assert.equal(response.headers.get('Server-Timing'), 'edge;desc="stale-if-error"');
+    assert.equal(response.headers.get('X-Domino-Edge-Age'), String(HISTORY_STALE_SECONDS * 1000));
+    assert.equal(response.headers.get('X-Domino-Edge-Cache'), null);
+    assert.equal(failing.calls.length, 1);
+    assert.equal(cache.puts.length, 1, 'the failure is never kept');
+    // Past fifteen minutes nothing stands in.
+    time.at.now += HISTORY_ERROR_SECONDS * 1000;
+    assert.equal((await answerHistory(askHistory(), failing.env, { contract: HISTORY_CONTRACT, cache, now: time.now, inflight: new Map(), refreshing: new Map() })).status, status);
+  }
+  // (review) A gateway that does not answer within HISTORY_ERROR_WAIT_MS: the kept history at that bound, and the answer,
+  // when it comes, kept behind; it waited for the Worker's own 20 s before.
+  {
+    const cache = memoryCache();
+    const time = clock();
+    await answerHistory(askHistory(), bridge(() => historySaid(built)).env, { contract: HISTORY_CONTRACT, cache, now: time.now });
+    time.at.now += HISTORY_STALE_SECONDS * 1000;
+    let release;
+    const late = new Promise((resolve) => { release = resolve; });
+    const slow = bridge(async () => { await late; return historySaid(built); });
+    const armed = [], later = [];
+    const response = await answerHistory(askHistory(), slow.env, { contract: HISTORY_CONTRACT, cache, now: time.now, inflight: new Map(), refreshing: new Map(),
+      waitUntil: (work) => later.push(work), timer: (ms, fire) => { armed.push(ms); setTimeout(fire, 0); return () => undefined; } });
+    assert.deepEqual(armed, [HISTORY_ERROR_WAIT_MS]);
+    assert.equal(response.headers.get('Server-Timing'), 'edge;desc="stale-if-error"');
+    assert.deepEqual(await response.json(), built);
+    release();
+    while (later.length > 0) await Promise.all(later.splice(0));
+    assert.equal(cache.puts.length, 2, 'the late answer is kept');
+    // The stale-while-revalidate minute is untouched: a history 20 s old is served at once, with no wait.
+    time.at.now += HISTORY_SECONDS * 1000;
+    const quick = [];
+    const stale = await answerHistory(askHistory(), slow.env, { contract: HISTORY_CONTRACT, cache, now: time.now, inflight: new Map(), refreshing: new Map(),
+      waitUntil: (work) => later.push(work), timer: (ms, fire) => { quick.push(ms); setTimeout(fire, 0); return () => undefined; } });
+    assert.equal(stale.headers.get('Server-Timing'), 'edge;desc="stale"');
+    assert.deepEqual(quick, []);
+    while (later.length > 0) await Promise.all(later.splice(0));
+  }
+  // One not built yet is kept 20 s and no longer, not even for a failure.
+  const cache = memoryCache();
+  const time = clock();
+  await answerHistory(askHistory(), bridge(() => historySaid(historyFor(question, { built: false }))).env, { contract: HISTORY_CONTRACT, cache, now: time.now });
+  time.at.now += HISTORY_SECONDS * 1000;
+  const refused = await answerHistory(askHistory(), bridge(() => historySaid({ error: 'upstream_unavailable' }, { status: 503 })).env, { contract: HISTORY_CONTRACT, cache, now: time.now, inflight: new Map(), refreshing: new Map() });
+  assert.equal(refused.status, 503);
+});
+
+test('stale-if-error: a list past its 15 minutes stands in for a failure of the Worker’s, or for none within a second, up to an hour; a list switched off still reaches the visitor and leaves the edge', async () => {
+  assert.equal(ERROR_SECONDS, 60 * 60);
+  for (const status of [429, 502, 503, 504]) {
+    const cache = memoryCache();
+    const time = clock();
+    await answerFeatured(ask(), bridge().env, runtimeWith(cache, time));
+    time.at.now += STALE_SECONDS * 1000;
+    const failing = bridge(() => said('{"error":"upstream_unavailable"}', { status }));
+    const response = await answerFeatured(ask(), failing.env, runtimeWith(cache, time, { inflight: new Map() }));
+    assert.equal(response.status, 200, String(status));
+    assert.equal(await response.text(), CURRENT);
+    assert.equal(response.headers.get('Server-Timing'), 'edge;desc="stale-if-error"');
+    assert.equal(response.headers.get('X-Domino-Edge-Age'), String(STALE_SECONDS * 1000));
+    assert.equal(response.headers.get('X-Domino-Edge-Cache'), null);
+    assert.equal(response.headers.get('X-Domino-Read-Contract'), VERSION);
+    assert.equal(cache.puts.length, 1);
+    time.at.now += ERROR_SECONDS * 1000;
+    assert.equal((await answerFeatured(ask(), failing.env, runtimeWith(cache, time, { inflight: new Map() }))).status, status, 'past an hour nothing stands in');
+  }
+  // A Worker that does not answer within REFRESH_WAIT_MS (below the page's 1.5 s deadline): the kept list at that bound.
+  {
+    const cache = memoryCache();
+    const time = clock();
+    await answerFeatured(ask(), bridge().env, runtimeWith(cache, time));
+    time.at.now += STALE_SECONDS * 1000;
+    const armed = [];
+    const response = await answerFeatured(ask(), bridge(() => new Promise(() => undefined)).env,
+      runtimeWith(cache, time, { inflight: new Map(), timer: (ms, fire) => { armed.push(ms); setTimeout(fire, 0); return () => undefined; } }));
+    assert.deepEqual(armed, [REFRESH_WAIT_MS]);
+    assert.equal(await response.text(), CURRENT);
+    assert.equal(response.headers.get('Server-Timing'), 'edge;desc="stale-if-error"');
+  }
+  // Switched off: the Worker's 404 reaches this visitor and takes the entry out.
+  {
+    const cache = memoryCache();
+    cache.delete = async (request) => cache.entries.delete(request.url);
+    const time = clock();
+    await answerFeatured(ask(), bridge().env, runtimeWith(cache, time));
+    time.at.now += STALE_SECONDS * 1000;
+    const off = await answerFeatured(ask(), bridge(() => said('{"error":"route_not_available"}', { status: 404 })).env, runtimeWith(cache, time, { inflight: new Map() }));
+    assert.deepEqual([off.status, await off.json()], [404, { error: 'route_not_available' }]);
+    assert.equal(cache.entries.size, 0);
   }
 });

@@ -91,7 +91,8 @@ export default function Receipts({ limit, onShows }: { limit?: number; onShows?:
         </ol>
       )}
       {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): nothing while the first page is on its way (it said "Loading activity…"). */}
-      {visible.length + immediate.length === 0 && !history.error && history.answer && <p className="dm-rcpt-note" role="status">{history.more ? 'More history is available.' : 'No activity yet.'}</p>}
+      {/* (QA round 2, SWEEP) Said only once the whole history is in; with more to read, nothing (it said "More history is available."). */}
+      {visible.length + immediate.length === 0 && !history.error && history.answer && !history.more && <p className="dm-rcpt-note" role="status">No activity yet.</p>}
       {limit === undefined && more && <div className="dm-activity-footer"><Button variant="ghost" size="sm" disabled={loading && !hidden}
         onClick={() => {
           setPage({ wallet, shown: shown + PAGE_ROWS })
@@ -100,7 +101,8 @@ export default function Receipts({ limit, onShows }: { limit?: number; onShows?:
       {limit === undefined && cancelled.length > 0 && <details className="dm-activity-internal" data-activity-internal="">
         <summary>Internal automation checks</summary>
         <ol className="dm-rcpt-list"><CancelledRow items={cancelled} /></ol>
-        <p className="dm-rcpt-note">These are loaded records, not transactions. Their dates aren’t available.</p>
+        {/* (QA round 2, SWEEP) It added "Their dates aren’t available."; the records carry no date, and none is drawn. */}
+        <p className="dm-rcpt-note">These are internal checks, not transactions.</p>
       </details>}
       {limit === undefined && view.state === 'signed_out' && <details className="dm-activity-internal" data-signed-out={session.kind}>
         <summary>Additional signed-in history</summary>

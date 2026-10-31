@@ -21,8 +21,8 @@
  * MARLIN") and a pair without USDG the way that read as 1 or more, so a price
  * could flip with the market; now "1 MARLIN = 0.0001291 USDG", as New position
  * and the position pages write it. The amount is the price at the pool's tick, which must agree
- * with its square-root price, written whole from 10,000, six significant
- * digits from 1, four below. Changed on purpose 2026-09-28 (round 6
+ * with its square-root price, written as the pool page writes it from 1 up
+ * (plainAmount), four significant digits below. Changed on purpose 2026-09-28 (round 6
  * integration): the square-root price put "1 ETH = 2,500.09 USDG" on Markets
  * beside "2,499.91 USDG for 1 ETH" on the same pool's page and in New
  * position, which price a pool at its tick (screens/poolRange.ts poolPrice),
@@ -38,6 +38,8 @@ import type { TokenDisplay } from './types'
 import { priceInverted } from './orientation'
 import { groupedRatioText } from './ratioSeries'
 import { PRICE_STALE_MS, tickAgrees, type PriceProblem } from './screens/poolRange'
+// No new cycle: positions.ts does not import this module (poolRange, above, already reaches it).
+import { priceDigits } from './screens/positions'
 import { numberFormat } from '../format/numberFormat'
 
 export type MarketPrice =
@@ -45,6 +47,14 @@ export type MarketPrice =
       state: 'usable'
       /** How much `quote` one `base` is worth, grouped, never an exponent: "84,367" in "1 cbBTC = 84,367 USDG". */
       text: string
+      /**
+       * The same price unrounded, a plain decimal with no grouping and never an exponent ("0.00012913498893818505"):
+       * what a change is measured to, never what a page writes. Added 2026-10-30 (QA round 2, final review read-4): a
+       * card's badge and its line's colour, and the pool page's chart header, measured the first hour's close to `text`,
+       * four significant digits below 1, so a pool that had not moved read "▼ 0.03%" in red (0.00012914 against
+       * "0.0001291").
+       */
+      exact: string
       /** The token one of which is priced. */
       base: TokenDisplay
       /** The token it is priced in. */
@@ -79,10 +89,15 @@ function stateAgeMs(market: Market, now: Instant): number | null {
  * An amount as the price writes it; null past what reads as a plain number: 10^15 and more, or under 10^−15. The floor
  * was added 2026-09-28 (one-sided): the price is no longer turned round to read as 1 or more, so it mirrors the ceiling,
  * and a price written one way round before can be written the other way round now.
+ * Changed on purpose 2026-10-30 (QA round 2, N2, one price format): from 1 up, the digits the pool page's Pool price,
+ * its range and the position cards write (screens/positions.ts priceDigits: "3,411.80", "1.50", "84,367.12"), so one
+ * pool reads one price on Markets, Home, its chart header and its own page. It wrote "3,411.8", "1.5" and "84,367".
+ * Below 1, four significant digits, as before (a Markets cell stays short).
  */
 export function plainAmount(value: number): string | null {
   if (!(value >= 1e-15 && value < 1e15)) return null
-  return numberFormat(value >= 10_000 ? { maximumFractionDigits: 0 } : { maximumSignificantDigits: value >= 1 ? 6 : 4 }).format(value)
+  if (value >= 1) return priceDigits(value)
+  return numberFormat({ maximumSignificantDigits: 4 }).format(value)
 }
 
 /**
@@ -129,7 +144,10 @@ export function marketPoolPrice(market: Market, now: Instant): MarketPrice {
   const [base, quote] = side === 0 ? [token0, token1] : [token1, token0]
   const partial = [base, quote].some((token) => token.symbol === null || token.readStatus === 'partial')
   const age = stateAgeMs(market, now)
-  return { state: 'usable', text, base, quote, block, stale: age !== null && age >= PRICE_STALE_MS, partial }
+  // Standard notation never writes an exponent, which parseScaled refuses (the change would vanish); 17 significant
+  // digits keep every digit the number holds.
+  const exact = numberFormat({ maximumSignificantDigits: 17, useGrouping: false }).format(value)
+  return { state: 'usable', text, exact, base, quote, block, stale: age !== null && age >= PRICE_STALE_MS, partial }
 }
 
 /** The token a row's price is of (the "1 cbBTC" of it), lowercase; null when the row cannot price its pool. */

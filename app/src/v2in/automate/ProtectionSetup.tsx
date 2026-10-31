@@ -2,6 +2,8 @@ import { useMemo, useState, useSyncExternalStore, type KeyboardEvent } from 'rea
 import { AddressMark } from '../../components/automate/marks'
 import { ExitPicture } from '../../components/automate-v4/AsidePictures'
 import { NoPositionsArt } from '../../components/automate-v4/SeqPlateArt'
+import { newPositionHref } from '../../components/explore/routes'
+import { IconPlus } from '../../components/icons'
 import { Button, Card, EmptyState, LinkButton, RangeBar, Skeleton } from '../../components/ui'
 import { feeText, rangeView } from '../../lib/automate/picker'
 import { feeWords } from '../../lib/format/fee'
@@ -13,6 +15,7 @@ import { v2PositionHref } from '../route'
 import { gateOpen, useGate } from './gate'
 import { protectionPositions, protectionSelection, type ProtectionPosition } from './protectionPositions'
 import { usePortfolio } from './read6'
+import { setupWaiting, useSetupWaitOver } from './setupPositions'
 import { automationState, sessionMandatesFor, sessionRevoked, subscribeAutomation } from './store'
 
 type OpenGate = Exclude<V2Gate, { mode: 'off' }>
@@ -54,6 +57,7 @@ export default function ProtectionSetup({ owner, route }: { owner: string; route
   const gates = { 4663: joined(vault4663, exit4663), 8453: joined(vault8453, exit8453), 42161: joined(vault42161, exit42161) }
   const pending = [vault4663, exit4663, vault8453, exit8453, vault42161, exit42161].some((gate) => gate === null)
   const [version, setVersion] = useState(0)
+  const waitOver = useSetupWaitOver()
   const answer = usePortfolio(owner as Address, null, version)
   const body = answer?.reply.kind === 'ok' ? answer.reply.body : null
   const list = useMemo(() => body ? protectionPositions(body, owner) : null, [body, owner])
@@ -68,19 +72,29 @@ export default function ProtectionSetup({ owner, route }: { owner: string; route
   const dialogGate: OpenGate | null = dialog ? gates[dialog.target.chainId] ?? {
     mode: 'preview', chainId: dialog.target.chainId, contracts: dialog.gate.contracts, locked: true, lockedCopy: 'Auto-exit isn’t available right now.',
   } : null
-  const retry = <Button type="button" variant="outline" size="sm" onClick={() => setVersion((n) => n + 1)}>Try again</Button>
   const missing = requested !== null && !positions.some((position) => position.key === requested)
+  // Changed on purpose 2026-10-30 (QA round 2, final review shell-1): an NFT of the wallet on an open network that could not be
+  // judged yet keeps the loading rows below, never the plate (./setupPositions.ts setupWaiting), for two minutes at most.
+  const waiting = body !== null && !waitOver && setupWaiting(body, owner, positions.length, (chainId) => gates[chainId] !== null)
   const back = <LinkButton href="#/automate" variant="outline">Back</LinkButton>
+  const newPosition = (variant: 'primary' | 'outline') => <LinkButton href={newPositionHref()} variant={variant} data-sequence-new-position=""><IconPlus />New position</LinkButton>
   const content = pending || (Object.values(gates).some(Boolean) && answer === null) ? <div className="dm-card dm-acct-block dm-seq-loading" aria-busy="true" data-sequence-positions="loading">
     {[0, 1, 2].map((row) => <Skeleton key={row} className="dm-seq-loading-row" />)}
   </div> : !Object.values(gates).some(Boolean) ? <div className="dm-acct-block"><p className="text-body text-fg-muted">Auto-exit isn’t available right now.</p>{back}</div>
-    : !list || (list.incomplete && !positions.length) ? <div className="dm-acct-block" data-sequence-positions="failed">
-      <p className="text-body text-fg-muted">Your positions couldn’t be checked right now.</p>{retry} {back}
+    /* Changed on purpose 2026-10-30 (QA round 2, the owner's rule: missing information stays out of sight, and reads are
+       asked again silently): a portfolio not read yet keeps the loading rows while ../lists/source.ts asks again by itself;
+       it said "Your positions couldn’t be checked right now." with Try again. The marker stays. An answer that leaves a
+       network behind with nothing to offer shows the plate at once (the list replaces it when that network is in). The
+       plate is Set up automation's (SetupEntry.tsx, the owner's decision on N13): a position comes first, New position.
+       Final review shell-1: not while one of the wallet's own NFTs on an open network waits to be judged (`waiting`). */
+    : !list || waiting ? <div className="dm-card dm-acct-block dm-seq-loading" aria-busy="true" data-sequence-positions="failed">
+      {[0, 1, 2].map((row) => <Skeleton key={row} className="dm-seq-loading-row" />)}
     </div> : !positions.length ? <EmptyState plate icon={<NoPositionsArt />} className="dm-acct-block dm-lit" data-sequence-positions="empty"
-      title="No positions available for Auto-exit" body="Check your positions to see their current status and automation."
-      action={<><LinkButton href="#/positions" variant="primary">View positions</LinkButton>{back}</>} /> : <>
+      title="No positions available for Auto-exit"
+      body={missing ? 'This position isn’t available for a new Auto-exit. Check its status in Positions.' : 'Open a new position, then come back to set up Auto-exit.'}
+      action={missing ? <><LinkButton href="#/positions" variant="primary">View positions</LinkButton>{newPosition('outline')}{back}</>
+        : <>{newPosition('primary')}<LinkButton href="#/positions" variant="outline">View positions</LinkButton>{back}</>} /> : <>
       {missing && <p className="dm-acct-note" role="status" data-sequence-position-missing="">This position isn’t available for a new Auto-exit. Choose another position below.</p>}
-      {list.incomplete && <p className="dm-acct-note" role="status">Some positions couldn’t be checked. {retry}</p>}
       <Card className="dm-acct-block dm-acct-panel dm-seq-create" data-v2in-protection-setup="">
         <div className="dm-seq-grid">
           <div className="dm-seq-steps dm-lit"><fieldset className="dm-acct-fieldset">
@@ -91,8 +105,10 @@ export default function ProtectionSetup({ owner, route }: { owner: string; route
             <div className="dm-auto-aside-heading"><h2>Auto-exit</h2></div>
             {/* V4 (the owner's approved site/sequence.html, Set up Auto-exit): Auto-exit's picture, playing once. */}
             <div className="dm-seq-pic" data-mode="protection"><div className="dm-seq-asc" data-scene="protection"><ExitPicture /></div></div>
-            <p className="dm-seq-hint">Closes your position at the end of its range and sends the tokens to your wallet.</p>
-            <p className="dm-seq-hint">0.2% only if it closes. No fee reinvestment.</p>
+            {/* Changed on purpose 2026-10-30 (QA round 2, N12 and the owner's Q1): no price is typed, and the fee in Automate's
+                words, its base named. */}
+            <p className="dm-seq-hint">Closes your position at the end of its range, with no price to set, and sends the tokens to your wallet.</p>
+            <p className="dm-seq-hint">0.2% of the position’s value, only if it closes. No fee reinvestment.</p>
             <span className="dm-seq-seam" aria-hidden="true"><span className="dm-seam-lit" /></span>
             <Button type="button" variant="primary" size="xl" className="w-full" data-sequence-action="protection" disabled={!chosen}
               onClick={() => { if (chosen && gates[chosen.target.chainId]) setDialog({ target: chosen.target, gate: gates[chosen.target.chainId]! }) }}>Continue</Button>

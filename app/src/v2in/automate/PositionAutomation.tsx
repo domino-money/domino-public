@@ -298,7 +298,7 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
   if (!gateOpen(vaultGate) && !gateOpen(exitGate)) return null
   // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the control says the automation's name alone while its state is
   // being read or could not be ("Updating", "Loading", "State unavailable", "Not available"); the panel no longer says
-  // "Automation data is unavailable. Refresh to check again." (its Refresh stays).
+  // "Automation data is unavailable. Refresh to check again." (its Refresh went on 2026-10-30, below).
 
   const reading = connected !== null && body === null
   const eligibilityNote = eligibility === 'subscribed' ? 'This position is linked to another service.' : eligibility === 'unsupported' ? 'Automation is not supported for this position.' : null
@@ -314,12 +314,21 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
 
   const controlId = `automation-controls-${chainId}-${dex}-${tokenId}`
   const ControlIcon = label === 'Auto-exit' ? IconShield : IconAutomate
+  // Added 2026-10-30 (QA round 2, N68, the owner's yes: the prototype's "Auto-exit · Off" on the position page): while
+  // Auto-exit can be turned on here, its own button beside the automation control opens its dialog. Never beside a
+  // control that is already Auto-exit's (its own automation, whose sheet turns it on), nor beside the Set up automation
+  // that opens this same dialog (setupExit); never on compounding (no target there), and never while the automation's
+  // state is not read (it never says Off then).
+  const exitEntry = offered && target !== null && label !== 'Auto-exit' && !setupExit && !stateUnavailable
   const controls = <>
       {setupLink ? <LinkButton href={setupHref({ chainId, dex, tokenId: idOf(tokenId) })} variant="primary" data-automation-control="" data-automation-setup="" data-automate-entry={tokenId}>Set up automation</LinkButton>
         : setupExit ? <Button type="button" variant="primary" onClick={() => beginAction({ kind: 'mandate', target })} data-automation-control="" data-automation-setup="" data-v2in-open="mandate">Set up automation</Button>
           : <Button type="button" variant="outline" onClick={() => setExpanded(true)} aria-haspopup="dialog" aria-expanded={expanded && !open} aria-controls={controlId} data-automation-control="">
             <ControlIcon size={18} /><span>{QUIET_STANDING.has(standing) ? label : `${label} · ${standing}`}</span>{fundsPending && <span className="dm-automation-funds-dot" aria-label="Funds available" />}
           </Button>}
+      {exitEntry && <Button type="button" variant="outline" onClick={() => beginAction({ kind: 'mandate', target })} aria-haspopup="dialog" data-automation-exit-entry="">
+        <IconShield size={18} /><span>Auto-exit <span className="dm-auto-dot">·</span> <span className="dm-auto-word" data-standing="Off">Off</span></span>
+      </Button>}
       {(setupLink || setupExit) && fundsPending && <Button type="button" variant="outline" onClick={() => setExpanded(true)} aria-haspopup="dialog" aria-expanded={expanded && !open} aria-controls={controlId} data-automation-recovery-toggle="">Recover funds</Button>}
     </>
   const renderManagement = (exitContent: ReactNode = null, actionOpen = false) => {
@@ -333,7 +342,9 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
       {current && (!protection || !showExit) && <VaultCard view={current} tokens={tokensOfView(current)} nowSeconds={now} onAction={(kind, subject) => beginAction({ kind, vault: current, subject: subject ?? null })} />}
       {/* (2026-10-15, pack 7 review): the note only when it has words; no empty status paragraph. */}
       {!current && !plain && !reading && eligibilityNote && <p role="status" className="dm-acct-note" data-automation-eligibility={eligibility}>{eligibilityNote}</p>}
-      {stateUnavailable && <Button type="button" variant="outline" size="sm" onClick={() => changed()} data-automation-refresh="">Refresh</Button>}
+      {/* Removed on purpose 2026-10-30 (QA round 2, the owner's rule: no Retry or Refresh on a read surface): the Refresh shown
+          while the state could not be read. The portfolio is asked again by itself (../lists/source.ts OWN_PORTFOLIO: after a
+          failure with backoff, and every 30 seconds otherwise), and this panel follows it. */}
       {exitContent}
       {recovery.length > 0 && <Details label="Previous setup balances" data-automation-recovery="">
         <p className="dm-acct-note">Earlier setups of this position may still hold funds. Recover them here.</p>

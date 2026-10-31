@@ -20,9 +20,12 @@
  *
  * Every wait here is bounded by R-1's deadlines (pipeline.ts): the shared
  * capabilities answer, each fetch and each body. A read whose caller aborts,
- * or whose deadline passes, settles at once, and what it was waiting for is
- * cancelled unless another read still waits for it. A read whose deadline
- * has already passed sends nothing at all, not even the capabilities GET.
+ * or whose deadline passes, settles at once, and its own request is
+ * cancelled. The shared capabilities GET is not: it runs to its end (20 s an
+ * attempt, up to 60 s on a validated 429, BRIDGE_RETRY) and a good answer is
+ * kept, but a read joins it only for its first CAPABILITIES_JOIN_MS (changed
+ * 2026-10-30, INST-1b). A read whose deadline has already passed sends
+ * nothing at all, not even the capabilities GET.
  */
 import { MAX_PAGE_BYTES, MAX_RESPONSE_BYTES } from './interpret'
 import { REQUEST_READ_CONTRACT } from './pin'
@@ -50,8 +53,12 @@ export const CONTRACT_HEADER = 'X-Domino-Read-Contract'
 export const EDGE_CACHE_HEADER = 'X-Domino-Edge-Cache'
 /** How old, in ms, a kept answer was when it left the edge (functions/_lib/publicEdge.ts, 2026-10-01). */
 export const EDGE_AGE_HEADER = 'X-Domino-Edge-Age'
-/** The oldest an edge answer can honestly be (the featured list's 15 minutes): anything else is no age at all. */
-const EDGE_AGE_MAX_MS = 15 * 60_000
+/**
+ * The oldest an edge answer can honestly be: anything else is no age at all. Changed on purpose 2026-10-30 (launch
+ * capacity, item 4): an hour, the featured list's stand-in at the edge (functions/_lib/featuredEdge.ts ERROR_SECONDS),
+ * so a list kept past its 15 minutes through an outage is dated by its real age, not by when it arrived.
+ */
+const EDGE_AGE_MAX_MS = 60 * 60_000
 
 /** The edge's age header as ms, when it is a plain whole number within EDGE_AGE_MAX_MS; undefined otherwise. */
 export function edgeAgeOf(value: string | null): number | undefined {
@@ -69,6 +76,13 @@ export const CAPABILITIES_REUSE_MS = 60_000
  * CAPABILITIES_REUSE_MS from when it came, so the next GET is never sooner than it was.
  */
 export const CAPABILITIES_KEEP_MS = 300_000
+/**
+ * How long a capabilities GET still in flight is joined by a read that comes (2026-10-30, INST-1b review). The Worker
+ * answers it itself, in well under a second; one still out after this has stalled (a phone changing networks, say), and
+ * the read asks afresh rather than wait out the rest of its attempt. The stalled one still runs, and a good answer it
+ * brings later is kept.
+ */
+export const CAPABILITIES_JOIN_MS = 5_000
 
 /** The only headers a read sends. Cookies are the browser's business, not ours. */
 export const READ_HEADERS: Readonly<Record<string, string>> = {
@@ -198,12 +212,12 @@ export interface BridgeOptions {
 
 type CapabilityCheck = { ok: true; enabledReads: ReadonlySet<ReadRoute> } | { ok: false; failure: FailedOutcome<'capabilities'> }
 
-/** The capabilities GET in flight or kept, and how many reads wait for it. */
+/** The capabilities GET in flight or kept. */
 interface SharedCheck {
   result: Promise<CapabilityCheck>
-  controller: AbortController
-  waiters: number
   settled: boolean
+  /** When it was sent, on the monotonic clock: a read joins it while it is unsettled for CAPABILITIES_JOIN_MS at most. */
+  startedAt: number
   expiresAt: number
   /** The answer, once settled: what a read past its minute may still use for a route it lists (A22). */
   value?: CapabilityCheck
@@ -245,7 +259,6 @@ export function createBridgeSource(options: BridgeOptions): BridgeSource {
    * once. Like any attempt it has 20 s.
    */
   function startCheck(): SharedCheck {
-    const controller = new AbortController()
     const result = runRead({
       route: 'capabilities',
       request: null,
@@ -253,7 +266,6 @@ export function createBridgeSource(options: BridgeOptions): BridgeSource {
       validators,
       policy,
       clock,
-      signal: controller.signal,
       label: { transport: 'bridge' },
     }).then((outcome): CapabilityCheck => {
       check.settled = true
@@ -263,20 +275,34 @@ export function createBridgeSource(options: BridgeOptions): BridgeSource {
         check.answeredAt = clock.monotonic()
         check.expiresAt = check.answeredAt + (reads.length > 0 ? CAPABILITIES_KEEP_MS : CAPABILITIES_REUSE_MS)
         check.value = { ok: true, enabledReads: new Set(reads) }
+        // A check a later read stopped joining (CAPABILITIES_JOIN_MS) that answers well after all: kept while no answer
+        // is, so the next read uses it instead of waiting for the one asked after it.
+        if (capabilities !== check && (capabilities === null || !capabilities.settled)) capabilities = check
         return check.value
       }
       if (capabilities === check) capabilities = null
       return { ok: false, failure: outcome }
     })
-    const check: SharedCheck = { result, controller, waiters: 0, settled: false, expiresAt: 0 }
+    const check: SharedCheck = { result, settled: false, startedAt: clock.monotonic(), expiresAt: 0 }
     return check
   }
 
   /**
    * The shared check, waited for only as long as this read may: its own abort
-   * or deadline settles it at once and leaves the check running for the other
-   * reads. When the last read waiting leaves, the check is cancelled and
-   * forgotten, so the next read asks afresh instead of joining a cancelled one.
+   * or deadline settles it at once and leaves the check running. The check
+   * runs to its end even when the last read waiting leaves, bounded by its own
+   * attempts (20 s each, up to 60 s on a validated 429, BRIDGE_RETRY): the
+   * Worker answers it without the VM, a good answer is kept for the reads that
+   * follow, and a read that comes within CAPABILITIES_JOIN_MS of its start
+   * joins it. A read that comes later, while it is still out, has it stalled:
+   * that read sends a fresh GET, which the reads after it join, and the old one
+   * runs on (a good answer it brings first is still kept). Changed 2026-10-30
+   * (instability study, INST-1b; revised after review the same day):
+   * cancelling it when its last waiter left meant a page that kept leaving (a
+   * hidden tab's aborted refresh, a screen changed mid-read) never kept an
+   * answer and sent a new GET, and a new cancelled request, every time; joining
+   * a stalled one without limit held the next screen's reads for the rest of
+   * its attempt, where the cancelled one's successor got through at once.
    */
   async function capabilitiesFor(signal: AbortSignal | undefined, deadlineAt: number, route?: ReadRoute): Promise<Settled<CapabilityCheck>> {
     // (2026-10-15, pack 7): an answer is past its time at CAPABILITIES_KEEP_MS for a route it lists, but still at its minute
@@ -303,16 +329,9 @@ export function createBridgeSource(options: BridgeOptions): BridgeSource {
       return settleBy(clock, kept.result, deadlineAt, signal)
     }
     if (stale) capabilities = null
+    if (capabilities && !capabilities.settled && at - capabilities.startedAt > CAPABILITIES_JOIN_MS) capabilities = null
     capabilities ??= startCheck()
-    const check = capabilities
-    check.waiters += 1
-    const settled = await settleBy(clock, check.result, deadlineAt, signal)
-    check.waiters -= 1
-    if (check.waiters === 0 && !check.settled) {
-      if (capabilities === check) capabilities = null
-      check.controller.abort()
-    }
-    return settled
+    return settleBy(clock, capabilities.result, deadlineAt, signal)
   }
 
   const stamp = (deadlineAt: number): Provenance => ({ transport: 'bridge', contract: null, receivedAt: clock.now(), receivedMonotonic: clock.monotonic(), attempts: 0, deadlineAt })

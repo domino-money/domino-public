@@ -9,7 +9,7 @@
  * read screens hand over.
  */
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
 
@@ -197,7 +197,30 @@ test('a deposit budget is converted with the decimals the read returned, exactly
   const v = journey.validateBudget;
   assert.deepEqual(v('1', null), { ok: false, reason: CREATE.amount.decimalsUnknown });
   assert.deepEqual(v('', 18), { ok: false, reason: CREATE.amount.empty });
-  for (const text of ['1,5', '-1', '1e3', '01', '.5', '1.', ' 1', '0x10']) assert.equal(v(text, 18).ok, false, text);
+  for (const text of ['1,5', '-1', '1e3', '01', '.5', '1.', '0x10']) assert.equal(v(text, 18).ok, false, text);
+  // QA round 2, N99 (2026-10-30): spaces around an amount and a page-style "1,000.50" are read; a minus says the zero
+  // rule, and a decimal comma asks for a dot, instead of the one format line.
+  assert.deepEqual(v(' 0.5 ', 18), { ok: true, raw: '500000000000000000' });
+  assert.deepEqual(v('1,000.50', 6), { ok: true, raw: '1000500000' });
+  assert.deepEqual(v('-1.5', 18), { ok: false, reason: CREATE.amount.zero });
+  assert.deepEqual(v('0,5', 18), { ok: false, reason: CREATE.amount.decimalComma });
+  assert.deepEqual(v('   ', 18), { ok: false, reason: CREATE.amount.empty });
+  // Changed on purpose 2026-10-30 (QA round 2, N99, pass 3): an amount typed to pay with another token is read the same
+  // way, separators and all (its funds offer reads grouped text too, src/v2in/funds/model.ts amountRawOf).
+  const { payFunding } = require('../.test-build/app/src/lib/create/payFunding.js');
+  const ETH = { origin: 'read', chainId: 4663, address: '0x0000000000000000000000000000000000000000', symbol: 'ETH', decimals: 18, readStatus: 'available', artwork: null };
+  const paidWith = (text) => payFunding({ token: ETH, text }, { token: ETH, raw: 2_000n * 10n ** 18n, nativeRaw: 2_000n * 10n ** 18n, usd: null });
+  assert.deepEqual([paidWith('1,000'), paidWith('1000')].map((funding) => funding.kind), ['ready', 'ready'], 'a typed "1,000" is the amount 1000');
+  assert.equal(paidWith('1,000').amount, 1_000n * 10n ** 18n);
+  // QA round 2, N75 (2026-10-30): a field nobody is typing in shows its amount grouped, as text (the fraction exactly as
+  // typed), and the grouped text reads back to the same amount; anything that is not a plain amount is left as it is.
+  const { groupedAmount } = require('../.test-build/app/src/lib/create/amountText.js');
+  assert.equal(groupedAmount('1234567.000150'), '1,234,567.000150');
+  assert.equal(groupedAmount('1000'), '1,000');
+  assert.equal(groupedAmount('999.5'), '999.5');
+  assert.equal(groupedAmount('0.000001'), '0.000001');
+  for (const text of ['', '1.', '.5', '01000', '1,000', '0,5', '1e21', ' 1000', '-1000']) assert.equal(groupedAmount(text), text, text);
+  assert.deepEqual(v(groupedAmount('123456789012345678901234567890.123456789012345678'), 18), v('123456789012345678901234567890.123456789012345678', 18));
   assert.deepEqual(v('0', 18), { ok: false, reason: CREATE.amount.zero });
   assert.deepEqual(v('0.000', 18), { ok: false, reason: CREATE.amount.zero });
   assert.deepEqual(v('1.0000001', 6), { ok: false, reason: CREATE.amount.tooManyPlaces(6) });
@@ -244,7 +267,8 @@ test('slippage is a whole number of basis points inside the product’s bound: 1
   assert.deepEqual(v('10'), { ok: true, bps: 10 }, 'the lower end is included');
   assert.deepEqual(v('500'), { ok: true, bps: 500 }, 'the upper end is included');
   for (const text of ['', '0', '9', '501', '9999', '10000', '-1', '1.5', '050', ' 50', '50 ', 'abc']) assert.deepEqual(v(text), { ok: false, reason: CREATE.amount.slippageInvalid }, text);
-  assert.equal(CREATE.amount.slippageInvalid, 'Slippage is a whole number of basis points from 10 to 500: 0.1% to 5%.');
+  // Changed on purpose 2026-10-30 (QA round 2, N28): Continue's reason while the box holds no usable tolerance, in plain words.
+  assert.equal(CREATE.amount.slippageInvalid, 'Choose a slippage tolerance from 0.1% to 5% under Advanced.');
 });
 
 test('the bound, its presets, default and warning line are one set of numbers, and the backend and both contracts hold the same ends', () => {
@@ -347,7 +371,8 @@ test('the amount step chooses slippage by a preset, by dragging or by an exact p
   const slider = readFileSync(new URL('../src/components/create/SlippageSlider.tsx', import.meta.url), 'utf8');
   assert.match(stage, /<details className="dm-details dm-flow-advanced" data-flow-advanced="" open=\{opened \|\| undefined\}>/, 'the slider is behind Advanced');
   assert.match(stage, /const \[opened\] = useState\(\(\) => slippageWarns\(value\)\)/, 'open by itself only above 2%, read once');
-  assert.match(stage, /\{CREATE\.amount\.slippageLabel\} \{slippageWritten\(value\)\}/, 'the summary says the tolerance');
+  // QA round 2, N28: a tolerance the box refused is not the one in use, so the summary shows the figure dash for it.
+  assert.match(stage, /\{CREATE\.amount\.slippageLabel\} \{kept === null \? CREATE\.page\.notChosen : slippageWritten\(kept\)\}/, 'the summary says the tolerance');
   assert.match(stage, /<SlippageSlider/);
   assert.match(slider, /type="range"/, 'a real range input: the keyboard, touch and assistive technology all work');
   assert.match(slider, /aria-valuetext/, 'the position says nothing out loud, so the percentage does');
@@ -595,14 +620,17 @@ test('the Review states its range position only when the range misses the price,
 // explaining them, were deleted; Review keeps Your choices and Wallet steps.
 test('the Review says the fee once, and keeps only Your choices and Wallet steps: no deposit amounts per token', () => {
   const review = readFileSync(new URL('../src/components/create/StageReview.tsx', import.meta.url), 'utf8');
-  assert.match(review, /<PoolPair option=\{pool\} \/>/, 'the pair still carries the fee');
+  // Changed on purpose 2026-10-30 (QA round 2, Q23/N37): with the pool's network before the fee, where it is named.
+  assert.match(review, /<PoolPair option=\{pool\} network=\{network\} \/>/, 'the pair still carries the fee');
   assert.doesNotMatch(review, /data-fee=/, 'no chip repeats it');
   assert.equal(existsSync(new URL('../src/components/create/StageBalance.tsx', import.meta.url)), false, 'the deposit amounts section is gone');
   const code = review.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   assert.doesNotMatch(code, /StageBalance|AmountsSection|CREATE\.balance|data-balance|CREATE\.review\.amounts|onboarding|previewRequest/, 'nothing of it is left in Review');
   // Two sections, in this order: the choices, then the wallet steps.
   assert.deepEqual([...review.matchAll(/aria-labelledby="(create-[a-z]+-heading)"/g)].map((match) => match[1]), ['create-choices-heading', 'create-steps-heading']);
-  assert.match(review, /\{CREATE\.review\.choices\}[\s\S]*\{CREATE\.review\.steps\}/);
+  // Changed on purpose 2026-10-30 (QA round 2, Q31): the second is titled for what to do while no wallet is connected.
+  assert.match(review, /\{CREATE\.review\.choices\}[\s\S]*\{balances\.status === 'disconnected' \? CREATE\.review\.stepsConnect : CREATE\.review\.steps\}/);
+  assert.equal(CREATE.review.stepsConnect, 'Next: connect your wallet');
   // Changed on purpose (round 6, 2026-09-27, the owner: New position for people who know nothing about pools): the two sections are
   // named for a beginner: the position, then what the wallet asks.
   assert.equal(CREATE.review.choices, 'Your position');
@@ -840,16 +868,23 @@ test('steps 1 to 3 speak in short lines, and say what Domino swaps in one senten
   const words = (text) => text.split(/\s+/).length;
   for (const key of ['pool', 'range', 'amount', 'review']) assert.ok(words(CREATE.step[key].lead) <= 10, `${key}: ${CREATE.step[key].lead}`);
   assert.equal(CREATE.step.pool.lead, 'Search a token, then pick a pool.');
-  assert.equal(CREATE.step.amount.lead, 'Enter one amount; the other fills in.');
+  // Changed on purpose 2026-10-30 (QA round 2, Q4): the line says both tokens go in, before the fields.
+  assert.equal(CREATE.step.amount.lead, 'You add both tokens: type one, the other fills in.');
   assert.equal(CREATE.step.amount.leadOne('ETH'), 'This range takes only ETH. Enter an amount.', 'a range beside the price says it takes one token, where the amount is typed');
   for (const line of [...Object.values(CREATE.amount.widthLines), ...Object.values(CREATE.amount.rangeOut), CREATE.amount.totalNote, CREATE.amount.totalOneNote, CREATE.amount.totalSwapNote]) {
     assert.ok(words(line) <= 10, line);
   }
   assert.deepEqual(CREATE.amount.rangeOut, { below: 'No fees until the price rises into this range.', above: 'No fees until the price falls into this range.' });
   // Network fees are paid in ETH on top, never taken from the position: "extra", not something the total is "before".
-  assert.deepEqual([CREATE.amount.totalNote, CREATE.amount.totalOneNote, CREATE.amount.totalSwapNote], ['Network fees are extra.', 'Network fees are extra.', 'After the swap; network fees are extra.']);
-  // Each width keeps its trade-off: the wider window is never simply better.
-  assert.deepEqual(CREATE.amount.widthLines, { standard: 'A smaller window: the price can leave it sooner.', wide: 'A larger window: more room to move, fees spread thinner.', custom: 'Set your own lowest and highest price.' });
+  // Changed on purpose 2026-10-30 (QA round 2, N37 c): and the line says which token pays them.
+  assert.deepEqual([CREATE.amount.totalNote, CREATE.amount.totalOneNote, CREATE.amount.totalSwapNote], ['Network fees are extra, paid in ETH.', 'Network fees are extra, paid in ETH.', 'After the swap; network fees are extra, paid in ETH.']);
+  // Each width keeps its trade-off: the wider range is never simply better. Changed on purpose 2026-10-30 (QA round 2, Q30,
+  // N74): literal lines, no idioms, each saying how the width changes what it earns (a Full range width came and went).
+  assert.deepEqual(CREATE.amount.widthLines, {
+    standard: 'Earns more per dollar, but the price leaves it sooner.',
+    wide: 'Stays in range longer, earns less per dollar.',
+    custom: 'Set your own lowest and highest price.',
+  });
   const paired = readFileSync(new URL('../src/components/create/PairedAmounts.tsx', import.meta.url), 'utf8');
   assert.equal((paired.match(/Domino swaps /g) ?? []).length, 3, 'each of the three swap lines says what Domino swaps');
   assert.doesNotMatch(paired, /You don’t have enough|when you create the position/, 'the long sentences are gone');
@@ -953,6 +988,12 @@ test('plain figures: no ≈ on the steps, and a bound as "30% below today" or "5
   assert.deepEqual(plain.awayFrom(50, 0), { side: 'above', percent: '0.5%' });
   assert.deepEqual(plain.awayFrom(0, 0), { side: 'at', percent: '0%' });
   assert.deepEqual(plain.awayFrom(30_000, 0), { side: 'above', percent: '1,908%' });
+  // Added 2026-10-30 (QA round 2, the owner's find on the preview): an end near the pool's limit is 'more than 10,000%',
+  // never a number billions of percent long that runs across the card.
+  assert.deepEqual(plain.awayFrom(887_200, 0), { side: 'above', percent: '10,000%', far: true });
+  assert.equal(plain.awayShort(887_200, 0), '>+10,000%');
+  assert.equal(plain.awayShort(-887_200, 0), '−100%');
+  assert.equal(CREATE.amount.farAbove('10,000%'), 'More than 10,000% above today');
   assert.equal(CREATE.amount.below('30%'), '30% below today');
   assert.equal(CREATE.amount.above('51%'), '51% above today');
   // Nothing a person reads on the four steps says "per" or starts with "≈".
@@ -963,7 +1004,8 @@ test('plain figures: no ≈ on the steps, and a bound as "30% below today" or "5
   const rail = readFileSync(new URL('../src/components/create/StepList.tsx', import.meta.url), 'utf8');
   // Changed on purpose 2026-09-28 (one-sided): the row writes the range lowest price first in the page's frame
   // (poolRange.ts shownRange), so a pool whose first token is USDG reads "1 MANY = 0.002 to 0.003 USDG".
-  assert.match(rail, /1 <SymbolText token=\{price\.base\} \/> = \{words\(view\.lower\)\} to \{words\(view\.upper\)\} <SymbolText token=\{price\.quote\} \/>/, 'the done Range row: "1 ETH = 1,747.65 to 3,766.84 USDG"');
+  // Changed on purpose 2026-10-30 (QA round 2, N73): each end says which it is, so a full range's ends read 0 and ∞.
+  assert.match(rail, /1 <SymbolText token=\{price\.base\} \/> = \{words\(view\.lower, 'lower'\)\} to \{words\(view\.upper, 'upper'\)\} <SymbolText token=\{price\.quote\} \/>/, 'the done Range row: "1 ETH = 1,747.65 to 3,766.84 USDG"');
   assert.match(rail, /const view = shownRange\(range, price\.inverted === true\)/);
   // Added 2026-09-28: the slider's chip and the preview's picture round the distance as the words beside them do, so
   // the page never says "30% below today" beside "−30.1%".
@@ -997,13 +1039,44 @@ test('the range step says a refused price in plain words, and reads a grouped pr
 test('the amount step asks for a wallet once, and the swapped panel keeps the paired amount', () => {
   const amounts = readFileSync(new URL('../src/components/create/PairedAmounts.tsx', import.meta.url), 'utf8');
   assert.equal(amounts.match(/CREATE\.amount\.connectForBalance/g)?.length, 1);
-  const map = amounts.slice(amounts.indexOf('pool.currencies.map('), amounts.indexOf('{disconnected && ('));
+  // Changed on purpose 2026-10-30 (QA round 2, Q4): the panels are drawn typed-first (`order`), no longer in pool order.
+  const map = amounts.slice(amounts.indexOf('order.map('), amounts.indexOf('{disconnected && ('));
+  assert.ok(map.length > 0, 'the panels are drawn by the one map');
   assert.doesNotMatch(map, /connectForBalance/, 'not inside each panel');
   assert.match(amounts, /footer=\{\s*disconnected \? null :/);
   assert.doesNotMatch(amounts, /swap\.receive/, 'the other panel never shows what the swap brings');
   // Added 2026-09-28 (round 6 review): only a derived panel is quieted; the typed one never is (finance.browser drives it).
   assert.match(amounts, /const quiet = swapped !== null && swapped !== independent \? swapped : null/);
   assert.match(amounts, /data-plan-side=\{side === quiet \? 'swapped' : undefined\}/);
+});
+
+// Added 2026-10-30 (QA round 2, final review create-1, journey-3): Amount's "How it works" links (the docs' amount step, and
+// Bring funds with Domino V2) and Review's "Automate" were same-tab routes to other screens: New position unmounted, and
+// Back started an empty flow, losing the pool, range and amount (Q17's loss through a new door). Every docs or Automate link
+// of New position's own screens opens in a new tab, keeps its visible words, and its name starts with them (WCAG 2.5.3):
+// what a screen reader hears after them (the new tab, the Bring funds page) is hidden text, never an aria-label.
+test('New position’s docs and Automate links open in a new tab, and each name starts with the link’s visible words', () => {
+  const root =new URL('../src/', import.meta.url);
+  const files = (dir) => readdirSync(new URL(dir, root), { withFileTypes: true }).flatMap((entry) => entry.isDirectory() ? files(`${dir}${entry.name}/`) : /\.tsx$/.test(entry.name) ? [`${dir}${entry.name}`] : []);
+  const links = [];
+  for (const file of [...files('components/create/'), ...files('v2in/journey/'), ...files('v2in/funds/')]) {
+    const code = readFileSync(new URL(file, root), 'utf8').replace(/\r\n/g, '\n');
+    for (const [anchor] of code.matchAll(/<a\b[^>]*href=\{(?:docsHref\([^)]*\)|automateHref)\}[^>]*>[\s\S]*?<\/a>/g)) links.push([file, anchor]);
+  }
+  assert.deepEqual(links.map(([file]) => file).sort(), ['components/create/PairedAmounts.tsx', 'components/create/StageReview.tsx', 'v2in/funds/FundsAmounts.tsx', 'v2in/journey/ReviewStage.tsx']);
+  for (const [file, anchor] of links) {
+    assert.match(anchor, / target="_blank" rel="noopener noreferrer"/, `${file}: in a new tab`);
+    assert.doesNotMatch(anchor, /aria-label=/, `${file}: the visible words stay the start of its name`);
+    assert.match(anchor, />\s*\{CREATE\.(?:amount\.connectOneTokenLink|review\.automateLink)\}\s*<span className="sr-only">\{[^\n]*CREATE\.page\.newTab[^\n]*\}<\/span>\s*<\/a>$/, `${file}: the visible words, then what is heard after them`);
+  }
+  assert.equal(CREATE.page.newTab, ' (opens in a new tab)', 'as the explorer links and the footer say it');
+  assert.deepEqual([CREATE.amount.connectOneTokenLink, CREATE.review.automateLink], ['How it works', 'Automate'], 'the visible words are kept');
+  // Bring funds' "How it works" is heard as "How it works: bringing funds from another network (opens in a new tab)".
+  const { FUNDS_TEXT } = require('../.test-build/app/src/v2in/funds/copy.js');
+  const funds = links.find(([file]) => file === 'v2in/funds/FundsAmounts.tsx')[1];
+  assert.match(funds, /<span className="sr-only">\{`: \$\{FUNDS_TEXT\.howBringingWorks\}\$\{CREATE\.page\.newTab\}`\}<\/span>/);
+  const heard = `${CREATE.amount.connectOneTokenLink}: ${FUNDS_TEXT.howBringingWorks}${CREATE.page.newTab}`;
+  assert.equal(heard, 'How it works: bringing funds from another network (opens in a new tab)');
 });
 
 // Added 2026-09-27 (round 6): Max on native ETH took every wei, and Review, which keeps a gas allowance back, then said

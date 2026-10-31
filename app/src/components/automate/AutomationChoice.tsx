@@ -8,7 +8,7 @@ import { HowBook } from '../automate-v4/RowIcons'
 
 type Choice = 'plain' | 'protection' | 'compound' | 'domino'
 
-/** "2% of earned fees used, once" → <b>2%</b> and the rest; a fee with no leading figure stays plain text. */
+/** "2% of the earned fees it uses, each time…" → <b>2%</b> and the rest; a fee with no leading figure stays plain text. */
 function feeFigure(fee: string): ReactNode {
   const figure = /^(\d[\d.]*%)( .*)$/.exec(fee)
   return figure ? <><b>{figure[1]}</b>{figure[2]}</> : fee
@@ -49,7 +49,7 @@ export function AutomationChoice({ kind, children, chosen }: { kind: Choice; chi
         <Display as="h2" id={`automate-${kind}`} className="dm-display-card">{copy.title}</Display>
       </div>
       <p className="dm-automation-choice-description">{copy.description}</p>
-      {/* V4 (2026-10-16): a leading figure in its own <b> for the ink (approved .fn-fee b); the words are unchanged. */}
+      {/* V4 (2026-10-16): a leading figure in its own <b> for the ink (approved .fn-fee b). The words: copy.ts (2026-10-30). */}
       <p className="dm-automation-choice-fee">{feeFigure(copy.fee)}</p>
       <div className="dm-automation-choice-entry">{children}</div>
       <a className="dm-automation-choice-doc" href={docsHref(copy.docs)} aria-label={`How ${copy.title} works`}>

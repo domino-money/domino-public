@@ -210,3 +210,105 @@ test('a step or a receipt that is in a block says "Confirmed", and keeps that wo
   assert.equal(copy.COPY.wallet.pendingNetwork, 'Waiting for the network', 'sent, not in a block yet: unchanged');
   assert.equal(JOURNEY.live.sent, 'Waiting for the network');
 });
+
+// Added 2026-10-30 (QA round 2, CAP-5b; the launch study's item 5): a busy planner and the session's own rate limits are
+// one state, asked again by itself after the Retry-After (src/v2in/position/run.ts), then "Busy right now". They said "The
+// planning service isn’t available yet." with nothing more, as if the feature did not exist.
+test('a busy or rate-limited plan service is one retry-later state, with its Retry-After, never "isn’t available yet"', () => {
+  const planned = (result) => errors.planFailure(result, 4663);
+  for (const code of ['position_plan_capacity_busy', 'session_rate_limited', 'session_capacity_busy', 'onboarding_rate_limited', 'onboarding_capacity_busy']) {
+    assert.deepEqual(planned({ kind: 'refused', code, status: 429, retryAfterSeconds: 7 }), { copy: 'Busy right now. Try again in a moment.', code, recovery: 'retry-later', retryAfterSeconds: 7 }, code);
+    assert.deepEqual(planned({ kind: 'refused', code, status: 429 }), { copy: 'Busy right now. Try again in a moment.', code, recovery: 'retry-later' }, `${code}, no Retry-After`);
+  }
+  assert.equal(planned({ kind: 'refused', code: 'session_store_unavailable', status: 503 }).copy, copy.COPY.review.planUnavailable, 'any other code: as before');
+});
+
+// Added 2026-10-30 (QA round 2, final review pos-run-1): the planner answers every *_capacity_busy with Retry-After 60
+// while its slot frees in a few seconds. Add liquidity, Change range and Withdraw in one token slept 60 s, then 60 s again,
+// before "Busy right now"; New position's run asks again after 4 to 5 s (finance/v2/requestCoordinator.ts capacityBusyWait).
+test('a capacity-busy plan refusal naming Retry-After 60 is asked again after 4 to 5 s, twice; a rate limit keeps its Retry-After', () => {
+  const planned = (result) => errors.planFailure(result, 8453);
+  const busy = planned({ kind: 'refused', code: 'position_plan_capacity_busy', status: 429, retryAfterSeconds: 60 });
+  assert.deepEqual([busy.recovery, busy.retryAfterSeconds], ['retry-later', 60]);
+  for (const attempt of [0, 1]) {
+    assert.equal(errors.retryLaterWait(busy, attempt, () => 0), 4000, `retry ${attempt + 1}: 4 s, not 60 s`);
+    assert.equal(errors.retryLaterWait(busy, attempt, () => 1), 5000, `retry ${attempt + 1}: at most 5 s`);
+    const drawn = errors.retryLaterWait(busy, attempt);
+    assert.ok(drawn >= 4000 && drawn <= 5000, `retry ${attempt + 1}: ${drawn} ms`);
+  }
+  for (const code of ['session_capacity_busy', 'onboarding_capacity_busy']) {
+    assert.equal(errors.retryLaterWait(planned({ kind: 'refused', code, status: 429, retryAfterSeconds: 60 }), 0, () => 0.5), 4500, code);
+  }
+  // Both quiet retries together stay under 10 s, where they took about two minutes.
+  assert.ok([0, 1].reduce((sum, attempt) => sum + errors.retryLaterWait(busy, attempt, () => 1), 0) <= 10_000);
+  // A rate limit is the service's own count: its Retry-After holds, or 4 s then 8 s when it names a shorter one or none.
+  for (const code of ['session_rate_limited', 'onboarding_rate_limited']) {
+    const limited = planned({ kind: 'refused', code, status: 429, retryAfterSeconds: 60 });
+    assert.deepEqual([errors.retryLaterWait(limited, 0, () => 0), errors.retryLaterWait(limited, 1, () => 0)], [60_000, 60_000], code);
+    const unnamed = planned({ kind: 'refused', code, status: 429 });
+    assert.deepEqual([errors.retryLaterWait(unnamed, 0), errors.retryLaterWait(unnamed, 1)], [4000, 8000], `${code}, no Retry-After`);
+  }
+  // The run (a React hook, outside this build) sleeps on that rule, at most twice in a row.
+  const run = readFileSync(resolve(import.meta.dirname, '../../src/v2in/position/run.ts'), 'utf8');
+  assert.match(run, /view\.recovery === 'retry-later' && \(view\.retryAfterSeconds \?\? 0\) <= 300 && live\.current\.requotes < 2\) \{\s+const attempt = live\.current\.requotes\+\+\s+await sleep\(retryLaterWait\(view, attempt\)\)/);
+  assert.doesNotMatch(run, /Math\.max\(4000 \* 2 \*\* attempt/, 'no wait of its own beside the rule');
+});
+
+// Added 2026-10-30 (QA round 2, WD-MAX): Withdraw's "In this position" on Robinhood Chain's own page, from the page's read.
+test('what Withdraw can take out is the page’s own read, in the pool’s order whichever way the read lists the pair', () => {
+  const tokens = [{ address: USDG, symbol: 'USDG', decimals: 6 }, { address: MANY, symbol: 'MANY', decimals: 18 }];
+  assert.deepEqual(model.heldInPoolOrder({ principal: ['5', '7'], currencies: tokens }, USDG), [5n, 7n]);
+  assert.deepEqual(model.heldInPoolOrder({ principal: ['7', '5'], currencies: [tokens[1], tokens[0]] }, USDG), [5n, 7n], 'the read listed the pair the other way round');
+  assert.deepEqual(model.heldInPoolOrder({ principal: ['5', '7'], currencies: tokens }, USDG.toUpperCase().replace('0X', '0x')), [5n, 7n]);
+  assert.equal(model.heldInPoolOrder({ principal: null, currencies: tokens }, USDG), null, 'no amounts read: nothing drawn');
+  assert.equal(model.heldInPoolOrder({ principal: ['5', 'x'], currencies: tokens }, USDG), null);
+  assert.equal(model.heldInPoolOrder({ principal: ['5', '7'], currencies: tokens }, '0x0000000000000000000000000000000000000001'), null, 'never beside the wrong token');
+});
+
+// Added 2026-10-30 (QA round 2, N2: one number format): the position dialogs write an amount as New position's Review does.
+test('an amount in the position dialogs reads at six significant digits, rounded down, or up for a fee or an allowance', () => {
+  const book = tokens.tokenBook(4663, [{ address: MANY, symbol: 'MANY', decimals: 18 }]);
+  assert.equal(tokens.shortAmountText(book, MANY, 10_345_741_134_000_000_000_000n), '10,345.7 MANY');
+  assert.equal(tokens.shortAmountText(book, MANY, 10_345_751_134_000_000_000_000n, 'up'), '10,345.8 MANY');
+  assert.equal(tokens.shortAmountText(book, MANY, 50_000_400_000_000_000n, 'up'), '0.050001 MANY', 'below one: six decimals, as before');
+  assert.equal(tokens.shortAmountText(book, MANY, 1n), '<0.000001 MANY', 'dust is never 0');
+  assert.equal(tokens.shortAmountText(book, '0x0000000000000000000000000000000000000002', 1234n), '1,234 raw units of 0x0000…0002', 'unknown decimals: raw units, never a guess');
+});
+
+// Added 2026-10-30 (QA round 2, N49; the review of the second pass): V1's Collect fees and Close position say nothing of
+// stopping automation on the root of Auto-exit's own vault (its subscriber is that vault, and Auto-exit stays on), and
+// still say it for any other subscribed position. Which root that is comes from read-v6's listing alone.
+test('the root of Auto-exit’s own vault is known from the listing: paused with Auto-exit on its root; never a member, a running vault or an unlisted one', () => {
+  const ROOT_VAULT = '0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2';
+  const [active] = portfolio.mandates;
+  const own = (mandates, paused = true, autoExitEnabled) => ({ ...portfolio, mandates, vaults: portfolio.vaults.map((vault) => (vault.address === ROOT_VAULT ? { ...vault, state: { ...vault.state, paused }, ...(autoExitEnabled === undefined ? {} : { autoExitEnabled }) } : vault)) });
+  const root = model.findPosition(portfolio, 4663, 4, 7n).vault;
+  const successor = model.findPosition(portfolio, 4663, 4, 8n).vault;
+  assert.deepEqual([root.address, root.role, successor.role], [ROOT_VAULT, 'root', 'successor']);
+  assert.equal(model.autoExitRootOf(own([active]), 4663, root), true, 'paused, Auto-exit listed on its root');
+  assert.equal(model.autoExitRootOf(own([active]), 4663, { ...root, address: ROOT_VAULT.toUpperCase().replace('0X', '0x') }), true, 'addresses in any case');
+  assert.equal(model.autoExitRootOf(own([], true, true), 4663, root), true, 'paused with its Auto-exit module on');
+  assert.equal(model.autoExitRootOf(own([], true, false), 4663, root), false, 'paused, nothing of Auto-exit left');
+  assert.equal(model.autoExitRootOf(own([active], false), 4663, root), false, 'a running automation is never Auto-exit’s own');
+  assert.equal(model.autoExitRootOf(own([active]), 4663, successor), false, 'a member of the vault is not its root');
+  assert.equal(model.autoExitRootOf(own([active]), 8453, root), false, 'another network’s listing');
+  assert.equal(model.autoExitRootOf(own([active]), 4663, { address: '0x' + 'a9'.repeat(20), role: 'root' }), false, 'a vault the listing does not hold');
+  assert.equal(model.autoExitRootOf(own([active]), 4663, null), false, 'a plain position');
+});
+
+// Added 2026-10-30 (QA round 2, final review pos-connect-flash-1): the Base and Arbitrum page waits in its frame while the
+// wallet island has not said what it found (identity `unknown`), as the Positions list does (audit C5), so a returning
+// owner whose wallet reconnects never sees "Connect wallet" for that moment. It never waits for good: a build without a
+// wallet control starts `disconnected`, and a wallet chunk that fails publishes `disconnected`.
+test('the Base and Arbitrum page waits while the wallet is being found, and only a wallet known to be away is asked to connect', () => {
+  const identity = build('lib/walletIdentity');
+  assert.deepEqual(identity.getWalletIdentity(), { kind: 'disconnected' }, 'a build without a wallet control (no __DOMINO_WALLET_SESSION__): disconnected from the start');
+  const source = (path) => readFileSync(resolve(import.meta.dirname, '../../src', path), 'utf8');
+  assert.match(source('lib/walletIdentity.ts'), /let current: WalletIdentityView = withWallet \? \{ kind: 'unknown' \} : DISCONNECTED/);
+  assert.match(source('components/wallet/WalletBoundary.tsx'), /componentDidCatch\(\) \{\s+publishWalletIdentity\(\{ kind: 'disconnected' \}\)/, 'a wallet chunk that fails: disconnected');
+  const page = source('v2in/position/PositionPage.tsx');
+  const body = page.slice(page.indexOf('export default function PositionPage('), page.indexOf('function Opened('));
+  const order = ["if (gate === null) return <Waiting id={ref.tokenId.toString()} />", "if (gate.mode === 'off') return <>{list}</>", "if (identity.kind === 'unknown') return <Waiting id={ref.tokenId.toString()} />", 'return <Opened '].map((line) => body.indexOf(line));
+  assert.ok(order.every((at) => at > 0), String(order));
+  assert.deepEqual([...order].sort((a, b) => a - b), order, 'the gate first (an `off` gate is the list, which waits on its own), then the wallet, then the page');
+});

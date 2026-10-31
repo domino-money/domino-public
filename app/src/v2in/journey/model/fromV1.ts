@@ -76,6 +76,16 @@ export interface PairRead {
 export const balancesUnread = (read: PairRead): boolean =>
   read.status === 'ready' && (read.balances === null || read.balances[0].raw === null || read.balances[1].raw === null)
 
+/**
+ * Added 2026-10-30 (QA round 2, final review journey-1): the pauses before Review reads such balances again on its own: 2 s,
+ * 5 s and 15 s, then once a minute for as long as they stay unread (../JourneyCreateV2.tsx, only while the page is in view).
+ * The last pause repeats: Review never stops asking, and never hands the person a button to ask.
+ */
+export const UNREAD_REREADS_MS = [2_000, 5_000, 15_000, 60_000] as const
+
+/** The pause before the next re-read, after `count` re-reads in a row. */
+export const unreadRereadAfter = (count: number): number => UNREAD_REREADS_MS[Math.min(Math.max(0, Math.floor(count)), UNREAD_REREADS_MS.length - 1)]
+
 export function requestFromV1(zap: JourneyState | null, funding: V1Funding, consent: S1PlanConsent): S1PlanRequest | null {
   if (!zap?.pool || !zap.range || funding.kind !== 'inputs' || !rangeCheckOn(zap.range, zap.pool.pool.tickSpacing).ok) return null
   const slippageBps = slippageBpsFrom(zap.slippage)

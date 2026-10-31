@@ -39,6 +39,19 @@ function WalletControl() {
   const needsSignIn = identity.kind === 'connected' && !session.away && (view.status === 'signed_out' || view.status === 'wrong_network')
   const startSignIn = () => { setOpen(true); void signInFlow.start() }
 
+  // The dialog belongs to the screen it was opened on (2026-10-30, QA round 2, N78): Back, Forward or a typed link to
+  // another route closes it, as the header menu closes (ui.tsx Menu); a section link on the same route does not. A
+  // connection or a sign-in under way goes on (wallet/port.ts, wallet/signIn.ts) and the header says so.
+  useEffect(() => {
+    if (!open) return
+    const route = (url: string) => new URL(url).hash.replace(/^#/, '').split('#')[0] || '/'
+    const moved = (event: HashChangeEvent) => {
+      if (route(event.oldURL) !== route(event.newURL)) setOpen(false)
+    }
+    window.addEventListener('hashchange', moved)
+    return () => window.removeEventListener('hashchange', moved)
+  }, [open])
+
   // Published outward for the screens that mention the connected address;
   // they may not import this feature, so the store is their only way in.
   // A connection, not the session: signed-in or not is never published.

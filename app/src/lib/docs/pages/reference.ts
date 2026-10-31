@@ -5,6 +5,10 @@ import type { DocPage } from '../types'
 
 const { feeLabels, feeValues } = CREATE.review
 
+/** 2026-10-30 (QA2 N24): the networks an address row's explorer links name. */
+const EVERY_NETWORK = [4663, 8453, 42161] as const
+const ROBINHOOD = [4663] as const
+
 /**
  * Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): Domino's five fees (spec F7 §1.6), each with when
  * it applies, and when nothing is charged ("Sem tarifa Domino").
@@ -22,9 +26,10 @@ export const FEES: DocPage = {
           kind: 'facts',
           rows: [
             { label: feeLabels.swap, value: feeValues.swap, note: 'When something you do needs a swap. Once per action.' },
-            { label: 'Deposit from another network', value: '0.35% of the amount deposited', note: 'When you bring funds from another network, charged by the bridge; none if you bridge any other way.' },
-            { label: feeLabels.service, value: feeValues.service, note: 'Once, on the earned fees automation uses. Never on principal, never on a direct deposit.' },
-            { label: 'Auto-exit fee', value: '0.2% of the position’s value at exit', note: 'When Auto-exit closes a position: the only fee.' },
+            // 2026-10-30 (QA2 N71): Domino's fee (bridgeAppFeeBps), as Bring funds says.
+            { label: 'Deposit from another network', value: '0.35% of the amount deposited', note: 'Domino’s fee, which Relay or Across collects. The bridge’s own fee and network gas come on top, in the quote. None if you bridge another way.' },
+            { label: feeLabels.service, value: feeValues.service, note: 'On the earned fees automation uses, each time. Never on principal, never on a direct deposit.' },
+            { label: 'Auto-exit fee', value: '0.2% of the position’s value, principal included', note: 'When Auto-exit closes a position: the only fee.' },
             // Changed on purpose 2026-10-01 (audit E24).
             { label: feeLabels.gas, value: 'Paid by the wallet that sends it', note: 'Your wallet pays for the steps you sign, and shows the network fee before you sign.' },
             { label: feeLabels.pool, value: 'The pool’s fee tier', note: 'Paid by swappers to the pool’s liquidity providers, on each trade. Not a charge on your deposit; a swap you make pays it.' },
@@ -52,7 +57,7 @@ export const FEES: DocPage = {
       title: 'Domino service fee',
       blocks: [
         // 2026-09-27 (review of 260a76a): the example counts the fees Auto-compound uses, of which 98 go back.
-        p('Auto-compound charges 2% of the earned fees it uses. Domino-compound charges 4% for every automated step, including putting fees back into the same position. Each is taken once: of 100 USDG of fees Auto-compound uses, 2 go to the service fee and 98 back into your position.'),
+        p('Auto-compound charges 2% of the earned fees it uses. Domino-compound charges 4% for every automated step, including putting fees back into the same position. Each run is charged once: of 100 USDG of fees Auto-compound uses, 2 go to the service fee and 98 back into your position.'),
         p('It is never charged on principal, on a deposit or on a withdrawal. Earned fees that wait are not charged, a run that fails charges nothing, and Domino pays the runs’ gas.'),
       ],
     },
@@ -159,19 +164,19 @@ export const CONTRACTS: DocPage = {
         {
           kind: 'addresses',
           rows: [
-            { label: 'DominoZapV4', role: 'Create, add, change range and withdraw, in Uniswap v4', address: '0x376b92929bbe778c6dd64e8d73f8688686288e8a' },
-            { label: 'DominoZapV4Steps', role: 'DominoZapV4’s helper', address: '0x355b0997d5e04392862a8e8d21d911851b2eefbe' },
-            { label: 'DominoZapV3', role: 'The same in Uniswap v3', address: '0xe30d7e07a67198c45d4c7b67d8423cbb6c7ea5a0' },
-            { label: 'DominoV2VaultFactory', role: 'Makes each automation contract (vault), Uniswap v4', address: '0xc71a561853514efc2271f1d10c13ec95834792ba' },
-            { label: 'DominoV2VaultFactory', role: 'The same, Uniswap v3', address: '0xa7dfb61a6597d09742cb7f9a8780c9c74ebc34f4' },
-            { label: 'DominoV2VaultV4', role: 'What each Uniswap v4 automation copies', address: '0xa3ff8d74e4ec4a19f35d92b7eec852ba6f7e2bbb' },
-            { label: 'DominoV2VaultV3', role: 'What each Uniswap v3 automation copies', address: '0xd55c0f5ff8ad1ded828edb36be77e0f3677ad4a4' },
-            { label: 'DominoV2VaultExecutorV4', role: 'Runs automation steps, Uniswap v4', address: '0xf3f68d8461c2071e2b8d88a60ce64f527f1d6639' },
-            { label: 'DominoV2VaultExecutorV3', role: 'The same, Uniswap v3', address: '0xd8d3bf832b234855fee2ac36ac4803aa7f9adca9' },
-            { label: 'DominoV2VaultSwapModule', role: 'Automation swaps', address: '0xbf22a36bbb419846e073cf0c6c729f669d7f348a' },
-            { label: 'DominoAutoExit', role: 'Carries out Auto-exit; 0.2% when it closes a position', address: '0x6109fc514a88a8e85e6e5c863238ddba9a98be36' },
-            { label: 'DominoRegistry', role: 'Fee currencies, swap routes, and stopping automation for safety', address: '0x25d4f013ecff3790e384e16ca9951bba6cd715fa' },
-            { label: 'DominoPriceAnchor', role: 'The reference price automation and Auto-exit check', address: '0x8c1edc4280d9533f6336f760380ba329e1f81f43' },
+            { label: 'DominoZapV4', role: 'Create, add, change range and withdraw, in Uniswap v4', address: '0x376b92929bbe778c6dd64e8d73f8688686288e8a', chains: EVERY_NETWORK, domino: true },
+            { label: 'DominoZapV4Steps', role: 'DominoZapV4’s helper', address: '0x355b0997d5e04392862a8e8d21d911851b2eefbe', chains: EVERY_NETWORK, domino: true },
+            { label: 'DominoZapV3', role: 'The same in Uniswap v3', address: '0xe30d7e07a67198c45d4c7b67d8423cbb6c7ea5a0', chains: EVERY_NETWORK, domino: true },
+            { label: 'DominoV2VaultFactory', role: 'Makes each automation contract (vault), Uniswap v4', address: '0xc71a561853514efc2271f1d10c13ec95834792ba', chains: EVERY_NETWORK, domino: true },
+            { label: 'DominoV2VaultFactory', role: 'The same, Uniswap v3', address: '0xa7dfb61a6597d09742cb7f9a8780c9c74ebc34f4', chains: EVERY_NETWORK, domino: true },
+            { label: 'DominoV2VaultV4', role: 'What each Uniswap v4 automation copies', address: '0xa3ff8d74e4ec4a19f35d92b7eec852ba6f7e2bbb', chains: EVERY_NETWORK, domino: true },
+            { label: 'DominoV2VaultV3', role: 'What each Uniswap v3 automation copies', address: '0xd55c0f5ff8ad1ded828edb36be77e0f3677ad4a4', chains: EVERY_NETWORK, domino: true },
+            { label: 'DominoV2VaultExecutorV4', role: 'Runs automation steps, Uniswap v4', address: '0xf3f68d8461c2071e2b8d88a60ce64f527f1d6639', chains: EVERY_NETWORK, domino: true },
+            { label: 'DominoV2VaultExecutorV3', role: 'The same, Uniswap v3', address: '0xd8d3bf832b234855fee2ac36ac4803aa7f9adca9', chains: EVERY_NETWORK, domino: true },
+            { label: 'DominoV2VaultSwapModule', role: 'Automation swaps', address: '0xbf22a36bbb419846e073cf0c6c729f669d7f348a', chains: EVERY_NETWORK, domino: true },
+            { label: 'DominoAutoExit', role: 'Carries out Auto-exit; 0.2% when it closes a position', address: '0x6109fc514a88a8e85e6e5c863238ddba9a98be36', chains: EVERY_NETWORK, domino: true },
+            { label: 'DominoRegistry', role: 'Fee currencies, swap routes, and stopping automation for safety', address: '0x25d4f013ecff3790e384e16ca9951bba6cd715fa', chains: EVERY_NETWORK, domino: true },
+            { label: 'DominoPriceAnchor', role: 'The reference price automation and Auto-exit check', address: '0x8c1edc4280d9533f6336f760380ba329e1f81f43', chains: EVERY_NETWORK, domino: true },
           ],
         },
         p('Each contract that charges a fee pays it to Domino’s fee recipient. A fee it cannot pay at once waits in that contract, apart from your funds, until it is paid.'),
@@ -183,12 +188,12 @@ export const CONTRACTS: DocPage = {
       id: 'domino-contracts',
       title: 'Domino V1 on Robinhood Chain',
       blocks: [
-        p('Domino V1’s contracts stay on Robinhood Chain. Its automation ends when the new automation starts, and nothing moves from V1 to it by itself: there is no migration. Withdraw what V1 holds for you, then set up the new automation. See ', doc('Domino V1’s automation', 'your-automation', 'domino-v1'), '.'),
+        p('Domino V1’s contracts stay on Robinhood Chain. Its automation ends when the new automation starts, and nothing moves from V1 to it by itself: there is no migration. Withdraw what V1 holds for you, then set up the new automation. See ', doc('Older automation', 'your-automation', 'domino-v1'), '.'),
         {
           kind: 'addresses',
           rows: [
-            { label: 'DominoSetupV1', role: 'Deposit approvals, then fund, assisted swap, mint and refund', address: '0x676f449fcfcd0f5ce4c7a1db2d98c7d6565dd37a' },
-            { label: 'DominoVaultFactoryV1', role: 'Made each Domino V1 automation', address: '0x16bf6eaba7b31118627b277e97249720dfe1c7ff' },
+            { label: 'DominoSetupV1', role: 'Deposit approvals, then fund, assisted swap, mint and refund', address: '0x676f449fcfcd0f5ce4c7a1db2d98c7d6565dd37a', chains: ROBINHOOD },
+            { label: 'DominoVaultFactoryV1', role: 'Made each Domino V1 automation', address: '0x16bf6eaba7b31118627b277e97249720dfe1c7ff', chains: ROBINHOOD },
           ],
         },
         p('A deposit made with V1 that never became a position can still be refunded through Setup, from Positions.'),
@@ -202,12 +207,12 @@ export const CONTRACTS: DocPage = {
         {
           kind: 'addresses',
           rows: [
-            { label: 'PoolManager', role: 'Every pool’s state and swaps', address: '0x8366a39cc670b4001a1121b8f6a443a643e40951' },
-            { label: 'PositionManager', role: 'Position NFTs', address: '0x58daec3116aae6d93017baaea7749052e8a04fa7' },
-            { label: 'StateView', role: 'Pool prices and ticks', address: '0xf3334192d15450cdd385c8b70e03f9a6bd9e673b' },
+            { label: 'PoolManager', role: 'Every pool’s state and swaps', address: '0x8366a39cc670b4001a1121b8f6a443a643e40951', chains: ROBINHOOD },
+            { label: 'PositionManager', role: 'Position NFTs', address: '0x58daec3116aae6d93017baaea7749052e8a04fa7', chains: ROBINHOOD },
+            { label: 'StateView', role: 'Pool prices and ticks', address: '0xf3334192d15450cdd385c8b70e03f9a6bd9e673b', chains: ROBINHOOD },
             // 2026-10-01 (audit E17, E20): finance/pin.ts ROUTE_PERMIT2, UNIVERSAL_ROUTER.
-            { label: 'Permit2', role: 'Allowance for a swap through Uniswap, only when Review shows one', address: '0x000000000022d473030f116ddee9f6b43ac78ba3' },
-            { label: 'Universal Router', role: 'A swap through Uniswap, only when Review shows one', address: '0x204faca1764b154221e35c0d20abb3c525710498' },
+            { label: 'Permit2', role: 'Allowance for a swap through Uniswap, only when Review shows one', address: '0x000000000022d473030f116ddee9f6b43ac78ba3', chains: ROBINHOOD },
+            { label: 'Universal Router', role: 'A swap through Uniswap, only when Review shows one', address: '0x204faca1764b154221e35c0d20abb3c525710498', chains: ROBINHOOD },
           ],
         },
       ],
@@ -221,11 +226,11 @@ export const CONTRACTS: DocPage = {
         {
           kind: 'addresses',
           rows: [
-            { label: 'NonfungiblePositionManager', role: 'Robinhood Chain, Uniswap v3', address: '0x73991a25c818bf1f1128deaab1492d45638de0d3' },
-            { label: 'PositionManager', role: 'Base, Uniswap v4', address: '0x7c5f5a4bbd8fd63184577525326123b519429bdc' },
-            { label: 'NonfungiblePositionManager', role: 'Base, Uniswap v3', address: '0x03a520b32c04bf3beef7beb72e919cf822ed34f1' },
-            { label: 'PositionManager', role: 'Arbitrum One, Uniswap v4', address: '0xd88f38f930b7952f2db2432cb002e7abbf3dd869' },
-            { label: 'NonfungiblePositionManager', role: 'Arbitrum One, Uniswap v3', address: '0xc36442b4a4522e871399cd717abdd847ab11fe88' },
+            { label: 'NonfungiblePositionManager', role: 'Robinhood Chain, Uniswap v3', address: '0x73991a25c818bf1f1128deaab1492d45638de0d3', chains: ROBINHOOD },
+            { label: 'PositionManager', role: 'Base, Uniswap v4', address: '0x7c5f5a4bbd8fd63184577525326123b519429bdc', chains: [8453] },
+            { label: 'NonfungiblePositionManager', role: 'Base, Uniswap v3', address: '0x03a520b32c04bf3beef7beb72e919cf822ed34f1', chains: [8453] },
+            { label: 'PositionManager', role: 'Arbitrum One, Uniswap v4', address: '0xd88f38f930b7952f2db2432cb002e7abbf3dd869', chains: [42161] },
+            { label: 'NonfungiblePositionManager', role: 'Arbitrum One, Uniswap v3', address: '0xc36442b4a4522e871399cd717abdd847ab11fe88', chains: [42161] },
           ],
         },
         p('Permit2 has the same address on all three networks.'),
@@ -289,6 +294,7 @@ export const GLOSSARY: DocPage = {
             { id: 'range', term: 'Range', text: ['The lowest and highest price a position provides liquidity between.'] },
             { id: 'tick', term: 'Tick', text: ['Uniswap’s price step, 0.01%. Ranges end on multiples of a pool’s tick spacing.'] },
             { id: 'in-range', term: 'In range', text: ['The pool price is inside a position’s range. Only then does it earn fees.'] },
+            { id: 'out-of-range', term: 'Out of range', text: ['The pool price is outside a position’s range. It holds one token only and earns no fees.'] },
             { id: 'position-nft', term: 'Position NFT', text: ['The standard Uniswap token that stands for a position. Positions lists the ones your wallet created with Domino.'] },
             { id: 'principal', term: 'Principal', text: ['What a position holds, not counting its fees: its Position value.'] },
           ],
@@ -306,7 +312,7 @@ export const GLOSSARY: DocPage = {
             // 2026-09-27: the product's words (Fees ready to collect), and the owner's point 4, Your APR.
             { id: 'fees-ready-to-collect', term: 'Fees ready to collect', text: ['Earned fees not yet collected. Collect fees sends them to your wallet.'] },
             { id: 'your-apr', term: 'Your APR', text: ['A position’s own fees as a yearly rate. Not the pool’s APR, and not a promise.'] },
-            { id: 'service-fee', term: 'Service fee', text: ['Domino’s fee on automation: Auto-compound 2%, Domino-compound 4% of the earned fees used, once.'] },
+            { id: 'service-fee', term: 'Service fee', text: ['Domino’s fee on automation: Auto-compound 2%, Domino-compound 4% of the earned fees it uses, each time.'] },
             { id: 'assisted-swap-fee', term: 'Assisted swap fee', text: ['0.65% of the amount swapped, when an action needs a swap.'] },
             { id: 'domino-history', term: 'Domino history', text: ['Domino’s own record of a pool’s last 24 hours, where the deployment provides it. Figures from it are marked Domino history.'] },
             { id: 'tvl', term: 'TVL', text: ['Total value locked: what the tokens in a pool are worth, from Domino history or, where it has none, a market data provider.'] },
@@ -353,6 +359,7 @@ export const GLOSSARY: DocPage = {
             { id: 'sign-in', term: 'Sign-in', text: ['A signature that proves you control an address. It authorizes no transaction and no automation.'] },
             { id: 'session', term: 'Session', text: ['What signing in starts. It ends after 30 minutes idle, at its end time, or when you sign out.'] },
             { id: 'receipt', term: 'Receipt', text: ['A record of what you or your automation did.'] },
+            { id: 'bridge', term: 'Bridge', text: ['A service that moves tokens from one network to another. Domino uses Relay or Across.'] },
           ],
         },
       ],

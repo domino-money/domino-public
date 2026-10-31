@@ -31,6 +31,16 @@ export function quoteRankOn(chainId: V2ChainId, address: string): number {
 export const priceInvertedOn = (chainId: V2ChainId, currency0: string, currency1: string): boolean => quoteRankOn(chainId, currency0) > quoteRankOn(chainId, currency1)
 
 /**
+ * Added 2026-10-30 (QA round 2, Q24): a pool's two of anything (its tokens, their labels), in pool order, put in the order
+ * its price is written: the base, then the quote ("TOKEN / ETH" beside "1 TOKEN = … ETH"), as Markets, the pool page and
+ * the owner's steps name a pair (lib/read/orientation.ts pricePair). Display only: ticks, amounts and calls keep the
+ * pool's order.
+ */
+export function pricedPair<T>(chainId: V2ChainId, currency0: string, currency1: string, pair: readonly [T, T]): readonly [T, T] {
+  return priceInvertedOn(chainId, currency0, currency1) ? [pair[1], pair[0]] : pair
+}
+
+/**
  * A V2 token in the read layer's display shape, for the range helpers and SymbolText only (they read its symbol and
  * nothing of its chain). Never handed to TokenMark, whose artwork lookup is Robinhood Chain's: the journey draws V2
  * tokens with its own mark (../parts.tsx TokenDisc).

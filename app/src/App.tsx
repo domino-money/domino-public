@@ -12,7 +12,7 @@ import { appMarketsProvider } from './lib/read/buildMode'
 import { MarketsContext } from './lib/read/useMarkets'
 import { LocalDevelopmentBanner } from './components/read/LocalDevelopmentBanner'
 import { recovering } from './lib/staleRelease'
-import { MARKETS_TOKEN, ROUTES, type RoutedPage } from './routeTable'
+import { MARKETS_TOKEN, pendingTitle, ROUTES, type RoutedPage } from './routeTable'
 import { ELYSIUM_STATUS } from './config/chainIdentity'
 import { sectionLinked } from './chains/elysium/mode'
 import { parseMarketsNetworkHash, parseNewNetworkHash } from './components/explore/routes'
@@ -72,8 +72,55 @@ const Elysium = deferred<object>(recovering(() => import('./chains/elysium/ui/El
  * is an unknown route like any other: the page shows Not found, never asks for the section's chunk, and names no chain.
  */
 const ELYSIUM_OPEN = typeof location !== 'undefined' && sectionLinked(location.origin, ELYSIUM_STATUS)
-/** What a screen shows until its chunk is in: the page frame, at its full height (shell.css .dm-page). */
-const PENDING = <main className="dm-page dm-page-pending" aria-busy="true" />
+
+/**
+ * What a screen shows until its chunk is in: the page frame, at its full height (shell.css .dm-page). Changed on purpose
+ * 2026-10-30 (QA round 2, Q2, the owner: a discreet V4 skeleton while a route chunk loads): the frame was empty, so a
+ * slow chunk left a dark gap between the header and the footer and testers thought their click had failed. It now holds
+ * the V4 skeleton of a page's first blocks, the title's bar and a card's outline (styles/v4-system.css .dm-pend-*),
+ * wordless and hidden from assistive technology while the page stays aria-busy. It fades in only after a quarter of a
+ * second, so a chunk that is already in or close never flashes it. The tab takes the route's name at once, as the screen
+ * will (a screen that knows more renames it as it draws, and announces the move then, lib/routeTitle.ts). `narrow` for a
+ * screen drawn in the narrow column (the flagged screens), so the skeleton stands where that screen lands.
+ */
+function Pending({ title, narrow = false }: { title: string | null; narrow?: boolean }) {
+  useEffect(() => {
+    if (title === null) return
+    const before = document.title
+    document.title = title
+    return () => {
+      document.title = before
+    }
+  }, [title])
+  return (
+    <main className={narrow ? 'dm-page dm-page--narrow dm-page-pending' : 'dm-page dm-page-pending'} aria-busy="true">
+      <span aria-hidden="true" className="dm-skel dm-pend-title" />
+      <span aria-hidden="true" className="dm-pend-card" />
+    </main>
+  )
+}
+
+/**
+ * Skip to content (2026-10-30, QA round 2, N85): the page's first Tab stop, out of sight until the keyboard reaches it
+ * (shell.css .dm-skip). It moves focus to the screen's own main, past the header. A button rather than a `#main` link,
+ * which would be a route of its own here (parseHash).
+ */
+function SkipLink() {
+  return (
+    <button
+      type="button"
+      className="dm-skip"
+      onClick={() => {
+        const main = document.querySelector<HTMLElement>('#root main')
+        if (!main) return
+        if (!main.hasAttribute('tabindex')) main.tabIndex = -1
+        main.focus()
+      }}
+    >
+      Skip to content
+    </button>
+  )
+}
 
 /**
  * Asks for the chunk of the screen the page opens on before React draws anything (main.tsx), so the first draw can be
@@ -156,61 +203,72 @@ function useHashLocation() {
       // would silently skip the scroll entirely.
       setTimeout(() => scrollToSection(next.section), 0)
     }
+    // A section link to the very hash already open changes nothing the browser reports, so a second tap on the footer's
+    // or the menu's "How it works" did nothing (2026-10-30, QA round 2, Q16): it scrolls there again, as the docs' own
+    // contents list does (DocsToc, which handles its links itself first).
+    const onClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+      const href = event.target instanceof Element ? event.target.closest('a[href]')?.getAttribute('href') : null
+      if (!href || href !== window.location.hash) return
+      const { section } = parseHash(href)
+      if (!section) return
+      event.preventDefault()
+      scrollToSection(section)
+    }
     window.addEventListener('hashchange', onChange)
-    return () => window.removeEventListener('hashchange', onChange)
+    document.addEventListener('click', onClick)
+    return () => {
+      window.removeEventListener('hashchange', onChange)
+      document.removeEventListener('click', onClick)
+    }
   }, [])
   return location
 }
 
-/** The loading line's domino (V4, states/System.html .ld): its five pips light in turn (styles/v4-system.css). Decoration only. */
-const LoadingTile = () => (
-  <svg aria-hidden="true" width="16" height="28" viewBox="0 0 16 28" fill="none" className="dm-sys-ld">
-    <rect x=".75" y=".75" width="14.5" height="26.5" rx="3.6" stroke="rgb(255 236 220 / .3)" strokeWidth="1.2" />
-    <path d="M3.4 14h9.2" stroke="rgb(255 236 220 / .24)" strokeWidth="1.1" strokeLinecap="round" />
-    <circle className="dm-sys-lp" cx="5" cy="4.6" r="1.5" />
-    <circle className="dm-sys-lp" cx="11" cy="9.4" r="1.5" />
-    <circle className="dm-sys-lp" cx="4.6" cy="17.6" r="1.5" />
-    <circle className="dm-sys-lp" cx="8" cy="20.6" r="1.5" />
-    <circle className="dm-sys-lp" cx="11.4" cy="23.6" r="1.5" />
-  </svg>
-)
-
-/** A lazily loaded screen behind its build flag; null when the build does not carry it, so the route is not found. */
-function Flagged({ screen: Lazy, loading }: { screen: React.LazyExoticComponent<() => React.ReactNode> | null; loading: string }) {
+/**
+ * A lazily loaded screen behind its build flag; null when the build does not carry it, so the route is not found.
+ * Changed on purpose 2026-10-30 (QA round 2, Q2): while it loads it shows the same skeleton as every other screen's chunk
+ * (Pending), where it said "Loading your sequence…" beside a lit domino, so a route change looks the same wherever it goes;
+ * in the narrow column these screens draw in, as that line was.
+ */
+function Flagged({ screen: Lazy, title }: { screen: React.LazyExoticComponent<() => React.ReactNode> | null; title: string | null }) {
   if (!Lazy) return <NotFound />
   return (
-    <Suspense fallback={<main className="dm-page dm-page--narrow"><p role="status" className="text-body text-fg-muted"><LoadingTile />{loading}</p></main>}>
+    <Suspense fallback={<Pending title={title} narrow />}>
       <Lazy />
     </Suspense>
   )
 }
 
 function Screen({ page, param }: { page: Page; param: string }) {
+  // The tab's name until the screen is in (routeTable.ts pendingTitle, final review shell-2: the screens' own names).
+  const title = pendingTitle(page, param, window.location.hash, __DOMINO_V2__)
+  const pending = <Pending title={title} />
   switch (page) {
     case 'overview':
       return <Landing />
     case 'markets':
-      return <Explore fallback={PENDING} />
+      return <Explore fallback={pending} />
     case 'pool':
-      return <PoolDetail poolId={param} fallback={PENDING} />
+      return <PoolDetail poolId={param} fallback={pending} />
     case 'positions':
-      return <Positions param={param} fallback={PENDING} />
+      return <Positions param={param} fallback={pending} />
     case 'new':
-      return <NewPosition poolId={param} fallback={PENDING} />
+      return <NewPosition poolId={param} fallback={pending} />
     case 'automate':
-      return <Automate fallback={PENDING} />
+      return <Automate fallback={pending} />
     case 'docs':
-      return <Docs slug={param} fallback={PENDING} />
+      return <Docs slug={param} fallback={pending} />
     case 'sequence':
-      return <Flagged screen={Sequence} loading="Loading your sequence…" />
+      return <Flagged screen={Sequence} title={title} />
     case 'setup':
-      return <Flagged screen={Setup} loading="Loading position setup…" />
+      return <Flagged screen={Setup} title={title} />
     case 'elysium':
-      return <Elysium fallback={PENDING} />
+      return <Elysium fallback={pending} />
     default:
       // Only the build that carries a consumer screen names it; elsewhere the whole branch folds away.
-      if (__DOMINO_ONBOARDING_PREVIEW__ && page === 'live-preview') return <Flagged screen={LivePreview} loading="Loading the preview…" />
-      if (__DOMINO_DEPOSIT_LAB__ && page === 'deposits') return <Flagged screen={Deposits} loading="Loading deposits…" />
+      if (__DOMINO_ONBOARDING_PREVIEW__ && page === 'live-preview') return <Flagged screen={LivePreview} title={title} />
+      if (__DOMINO_DEPOSIT_LAB__ && page === 'deposits') return <Flagged screen={Deposits} title={title} />
       if (__DOMINO_TEST_HOOKS__ && page === 'position-lab' && PositionLab) return <Suspense fallback={null}><PositionLab spec={param} /></Suspense>
       if (__DOMINO_TEST_HOOKS__ && page === 'sequence-lab' && Sequence) return <Suspense fallback={null}><Sequence lab={param} /></Suspense>
       return <NotFound />
@@ -276,6 +334,7 @@ export default function App() {
     <MarketsContext.Provider value={markets}>
     <div className="min-h-screen">
       <EmberLight />
+      <SkipLink />
       {__DOMINO_LOCAL_LIVE__ ? <LocalDevelopmentBanner /> : !__DOMINO_DEPLOYABLE__ && <BuildBanner mode={__DOMINO_READ_MODE__} />}
       <Header page={page} />
       {/* 2026-10-14 (incident X1): a screen that throws as it draws no longer blanks the page; the header and the footer stay. */}

@@ -1,8 +1,9 @@
 import { useEffect, useId, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react'
-import type { HistoryResponse } from 'api-contracts/read-v3/types'
+import type { HistoryResponse, RatioCandle } from 'api-contracts/read-v3/types'
 import type { Market } from '../../../lib/markets'
 import { watchPublicHistory, type HistoryEvent } from '../../../lib/read/historyRead'
-import { ratioCandleText, ratioGeometry, ratioText } from '../../../lib/read/ratioSeries'
+import { marketPoolPrice, plainClose } from '../../../lib/read/marketPrice'
+import { ratioGeometry, ratioText } from '../../../lib/read/ratioSeries'
 import type { PoolOption } from '../../../lib/read/screens/poolsList'
 import type { ReadSource } from '../../../lib/read/types'
 import { useNow } from '../../../lib/read/useNow'
@@ -33,6 +34,18 @@ const CHIP_CLEARANCE = 12
 
 /** A close as the header shows it: the exact ratio text, its whole part grouped in thousands ("2,656.07"). */
 const grouped = (text: string) => text.replace(/^\d+/, (whole) => whole.replace(/\B(?=(\d{3})+(?!\d))/g, ','))
+
+/**
+ * One hour as the slider says it (QA round 2, N16): "10-29 21:00 UTC, close 2,280.37 USDG, high 2,290.1, low 2,270.05,
+ * 262 swaps", every price as the header writes it (plainClose, the table's form). It used to read each raw decimal, up
+ * to 160 digits, with the open and "complete interval" (ratioSeries.ts ratioCandleText): over 700 characters a screen
+ * reader spelled out.
+ */
+function hourText(candle: RatioCandle, unit: string | null): string {
+  const price = plainClose
+  const swaps = `${candle.swapCount} ${candle.swapCount === 1 ? 'swap' : 'swaps'}`
+  return `${at(candle.startTimestamp)}, close ${price(candle.close)}${unit ? ` ${unit}` : ''}, high ${price(candle.high)}, low ${price(candle.low)}, ${swaps}`
+}
 
 /**
  * The points of each of the plot's paths: every ratioGeometry path is one run of consecutive points, in order, so a
@@ -232,7 +245,14 @@ export function PoolHistoryChart({ source, option, market, loading, quote: quote
   // window, so a partial window never claims a whole one.
   const first = data?.candles[0]
   const opensWindow = !!data && !!first && first.startTimestamp - data.requestedWindow.startTimestamp <= data.resolutionSeconds
-  const change = point && first && opensWindow && data && data.candles.length > 1 ? percentChange(first.close, point.candle.close) : null
+  // QA round 2, N9: at rest (no hour read) the header's price is the pool's own price, the one the Markets table and the
+  // figures sheet write for its row (marketPoolPrice), so one pool never reads two prices on one screen; the last close
+  // where the row has none, or writes it the other way round (the chart flipped). An hour read shows its own close.
+  const pool = market && point && !inspecting ? marketPoolPrice(market, now) : null
+  const live = pool?.state === 'usable' && pool.base.address.toLowerCase() === currency.address.toLowerCase() && pool.quote.address.toLowerCase() === quote.address.toLowerCase() ? pool : null
+  // Changed on purpose 2026-10-30 (QA round 2, final review read-4): measured to that price unrounded (`exact`), never to
+  // its written digits (four significant ones below 1), so a pool that did not move reads 0.00%, not a red 0.03%.
+  const change = point && first && opensWindow && data && data.candles.length > 1 ? percentChange(first.close, live ? live.exact : point.candle.close) : null
 
   // The latest point, and the open hour joined to the closed one before it (lighter), so the line never ends in a detached dot.
   const last = plot ? plot.points[plot.points.length - 1] : null
@@ -261,7 +281,9 @@ export function PoolHistoryChart({ source, option, market, loading, quote: quote
     event.preventDefault()
     setInspected({ key, index: event.key === 'Home' ? 0 : event.key === 'End' ? plot.points.length - 1 : Math.max(0, Math.min(plot.points.length - 1, index + (event.key === 'ArrowLeft' ? -1 : 1))) })
   }
-  const verified = data?.snapshot ? ` Verified through block ${data.snapshot.number}.` : ''
+  // Changed on purpose 2026-10-30 (QA round 2, N16): no title on the header's price any more. It read the raw close (about
+  // 120 digits), "Prices from swaps on Robinhood Chain." and " Verified through block N.": a source caption and a block
+  // number, off the screen's words by the owner's rules.
   // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the price's title no longer adds " Showing the
   // last stored prices." / " Stored prices, not the latest.", and its date no longer has the title "Last available history;
   // this is not a current price.". `data-ratio-stale` keeps the state, as data.
@@ -275,7 +297,9 @@ export function PoolHistoryChart({ source, option, market, loading, quote: quote
       </div>
       {point && <div className="dm-pool-chart-figure" aria-live="off" data-tick={flips ? '' : undefined}>
         <div className="dm-pool-chart-price">
-          <p className="dm-fig-xl dm-pool-chart-close" title={`${point.candle.close}. Prices from swaps on Robinhood Chain.${verified}`}>{grouped(ratioText(point.candle.close))}</p>
+          {/* QA round 2 review (N9): an hour read is written as the pool's price is (plainClose, the table's form, as the
+              Markets cards do), so the figure keeps its form under the pointer. */}
+          <p className="dm-fig-xl dm-pool-chart-close" data-chart-price={live ? 'pool' : 'close'}>{live ? live.text : plainClose(point.candle.close)}</p>
           <span className="dm-pool-chart-unit"><PoolTokenLabel token={quote} /> for 1 <PoolTokenLabel token={currency} /></span>
           {change && (
             <span className="dm-delta dm-delta--md" data-sign={change.sign} data-variant="text">
@@ -285,7 +309,9 @@ export function PoolHistoryChart({ source, option, market, loading, quote: quote
             </span>
           )}
         </div>
-        <p className="dm-pool-chart-date">{inspecting ? `${at(point.candle.startTimestamp)} · ${point.candle.swapCount} swaps` : at(point.candle.startTimestamp)}</p>
+        {/* QA round 2 review (N9): the pool's price now has no hour of its own, so the line under it is the hour only for a
+            close (the one read, or the last where the row has no price); a no-break space keeps its height. */}
+        <p className="dm-pool-chart-date">{inspecting ? `${at(point.candle.startTimestamp)} · ${point.candle.swapCount} swaps` : live ? '\u00a0' : at(point.candle.startTimestamp)}</p>
       </div>}
       {!point && reading && <div aria-hidden="true" className="dm-pool-skel-figure"><Skeleton className="dm-pool-skel-price" /><Skeleton className="dm-pool-skel-date" /></div>}
       <div className="dm-pool-chart-body" data-ratio-unit="quote_per_base">
@@ -306,7 +332,7 @@ export function PoolHistoryChart({ source, option, market, loading, quote: quote
             <div className="dm-pool-canvas" data-swap={swapped ? '' : undefined}>
               <svg width="100%" height="15rem" viewBox={`0 0 ${plot.width} ${plot.height}`} preserveAspectRatio="none" role="slider"
                 aria-label="Inspect the pool’s price by hour" aria-valuemin={1} aria-valuemax={plot.points.length} aria-valuenow={index + 1}
-                aria-valuetext={ratioCandleText(point.candle)} tabIndex={0} className="dm-pool-chart-svg"
+                aria-valuetext={hourText(point.candle, quote.symbol)} tabIndex={0} className="dm-pool-chart-svg"
                 onPointerMove={inspectAt} onPointerDown={event => { event.currentTarget.focus({ preventScroll: true }); inspectAt(event) }}
                 onPointerLeave={event => { if (event.pointerType !== 'touch') setInspected(null) }} onPointerCancel={() => setInspected(null)}
                 onKeyDown={inspectByKey} onBlur={() => setInspected(null)}>

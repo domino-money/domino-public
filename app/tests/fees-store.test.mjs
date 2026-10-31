@@ -604,6 +604,111 @@ test('a `reading` ledger that answers after the last screen left is asked again 
   page();
 });
 
+// Added 2026-10-30 (QA round 2, N45 a): the Fees card and the list's APR stayed a skeleton for the visit when the ledger
+// kept answering `reading`, or when its fresh read for the newest state still did not hold a settlement (a close by
+// Auto-exit or a vault). Both now show Fees ready to collect only, `why: 'unseen'`; the store keeps asking.
+test('N45 a: a ledger still `reading` past MAX_READING answers in a row shows Fees ready to collect only (unseen); the ladder asks on and verifies once read through', async () => {
+  const { store, svc, time } = storeWith();
+  for (let i = 0; i <= MAX_READING; i++) svc.scripted.push({ ok: true, value: READING, bytes: 10 });
+  const stop = store.subscribeHistory([ID], 'page', () => {});
+  await until(() => svc.ledgers.length === 1 && time.pending.some((entry) => !entry.cancelled && entry.ms === LEDGER_READING_MS), 'the first reading retry');
+  for (let i = 1; i <= MAX_READING; i++) {
+    assert.equal(store.view(ID).phase, 'loading', `still read after ${i} answers`);
+    assert.equal(time.fire('later', LEDGER_READING_MS), 1);
+    await until(() => svc.ledgers.length === i + 1 && time.pending.some((entry) => !entry.cancelled && entry.kind === 'later' && entry.ms === LEDGER_READING_MS), `reading answer ${i + 1}`);
+  }
+  const view = store.view(ID);
+  assert.deepEqual([view.phase, view.reason, view.why, view.state?.block > 0], ['unclaimed-only', 'not_exact', 'unseen', true], 'no skeleton for the visit');
+  assert.equal(view.events, undefined, 'no settlements claimed');
+  // The ladder's next ask (RETRY_MS[0], the same 2 s) reads it through: verified.
+  assert.equal(RETRY_MS[0], LEDGER_READING_MS);
+  assert.equal(time.fire('later', RETRY_MS[0]), 1);
+  await until(() => store.view(ID).phase === 'verified', 'verified');
+  assert.equal(svc.ledgers.length, MAX_READING + 2);
+  stop();
+});
+
+test('N45 a: a fresh ledger that still does not hold the newest state’s settlement shows Fees ready to collect only (unseen), never a skeleton; a drawn history stays', async () => {
+  const position = ANSWERS.state.positions[0];
+  const collected = { unclaimed0: '0', unclaimed1: '0', feeGrowthInside0LastX128: position.feeGrowthInside0X128, feeGrowthInside1LastX128: position.feeGrowthInside1X128 };
+  // A first visit after a settlement the ledger does not hold: the fresh read answers the same older ledger.
+  const { store, svc, time } = storeWith();
+  svc.state = laterState(ANSWERS.state, 600, collected);
+  // Each ledger read answers when the test says: the first once the newest state is known, then the fresh one.
+  let first;
+  let release;
+  svc.postLedger = (ids, fresh) => {
+    svc.ledgers.push({ ids: [...ids], fresh });
+    return new Promise((done) => {
+      const answer = () => done({ ok: true, value: svc.ledger, bytes: 100 });
+      if (fresh) release = answer;
+      else first = answer;
+    });
+  };
+  const stop = store.subscribeHistory([ID], 'page', () => {});
+  await until(() => first && store.position(ID)?.block === svc.state.block, 'the newest state, the ledger on its way');
+  first();
+  await until(() => release, 'the fresh ledger read on its way');
+  assert.equal(store.view(ID).phase, 'loading', 'a skeleton while the fresh read is on its way');
+  release();
+  await until(() => store.view(ID).phase === 'unclaimed-only', 'Fees ready to collect only');
+  const view = store.view(ID);
+  assert.deepEqual([view.reason, view.why, view.state.block, view.state.unclaimed], ['not_exact', 'unseen', svc.state.block, [0n, 0n]]);
+  assert.deepEqual(svc.ledgers.map((one) => one.fresh), [false, true], 'one fresh read for this state');
+  // The same state again: no other read, the view unchanged.
+  assert.equal(time.fire('later', STATE_REFRESH_MS), 1);
+  await settle();
+  assert.equal(store.view(ID), view);
+  assert.equal(svc.ledgers.length, 2);
+  // A newer state the ledger agrees with: verified.
+  svc.state = laterState(ANSWERS.state, 1_200);
+  assert.equal(time.fire('later', STATE_REFRESH_MS), 1);
+  await until(() => store.view(ID).phase === 'verified', 'verified');
+  stop();
+
+  // A verified card whose newer state shows a settlement the fresh ledger still does not hold: the card stays.
+  const drawn = storeWith();
+  const shown = drawn.store.subscribeHistory([ID], 'page', () => {});
+  await until(() => drawn.store.view(ID).phase === 'verified', 'verified');
+  const before = drawn.store.view(ID);
+  drawn.svc.state = laterState(ANSWERS.state, 600, collected);
+  assert.equal(drawn.time.fire('later', STATE_REFRESH_MS), 1);
+  await until(() => drawn.svc.ledgers.length === 2, 'the fresh ledger read');
+  await settle();
+  await settle();
+  assert.equal(drawn.svc.ledgers[1].fresh, true);
+  assert.equal(drawn.store.view(ID), before, 'the drawn history stays');
+  shown();
+});
+
+// Fixed 2026-10-30 after review (N45 a): a fresh question asked while a failed ledger read's retry waits was dropped, so
+// the card took `unseen` before any fresh read for that state, and the retry asked a ledger that may predate it.
+test('N45 a: a fresh question asked while a retry waits is asked by that retry, and the card shows unseen only once it answered', async () => {
+  const position = ANSWERS.state.positions[0];
+  const collected = { unclaimed0: '0', unclaimed1: '0', feeGrowthInside0LastX128: position.feeGrowthInside0X128, feeGrowthInside1LastX128: position.feeGrowthInside1X128 };
+  const { store, svc, time } = storeWith();
+  // A first visit after a settlement the ledger does not hold; the fresh read for it fails once.
+  svc.state = laterState(ANSWERS.state, 600, collected);
+  svc.scripted.push(null, { ok: false, failure: 'unavailable', retryAfterMs: 0 });
+  const stop = store.subscribeHistory([ID], 'page', () => {});
+  await until(() => svc.ledgers.length === 2 && time.pending.some((entry) => !entry.cancelled && entry.kind === 'later' && entry.ms === RETRY_MS[0]), 'the failed fresh read, its retry waiting');
+  assert.deepEqual(svc.ledgers.map((one) => one.fresh), [false, true]);
+  assert.deepEqual([store.view(ID).phase, store.view(ID).reason], ['unclaimed-only', 'rpc_unavailable'], 'the unclaimed figure, calmly');
+  // A newer state that still disagrees, while the retry waits: nothing asked yet, and not unseen before a fresh read.
+  svc.state = laterState(ANSWERS.state, 1_200, collected);
+  assert.equal(time.fire('later', STATE_REFRESH_MS), 1);
+  await until(() => store.position(ID)?.block === svc.state.block, 'the newer state');
+  await settle();
+  assert.equal(svc.ledgers.length, 2, 'the retry still waits');
+  assert.notEqual(store.view(ID).why, 'unseen', 'no fresh read for this state yet');
+  // The retry asks fresh; its answer still lacks the settlement: unseen.
+  assert.equal(time.fire('later', RETRY_MS[0]), 1);
+  await until(() => store.view(ID).why === 'unseen', 'unseen once the fresh read answered');
+  assert.deepEqual(svc.ledgers.map((one) => one.fresh), [false, true, true], 'the retry asked fresh');
+  assert.equal(store.view(ID).state.block, svc.state.block);
+  stop();
+});
+
 // 2026-10-02 (the chart's periods back, lib/fees/pastReads.ts): every ledger answer keeps its own state as one of this
 // browser's readings (a measured point at no cost), and the store folds a position's view again when a read at a past
 // block was kept (`redraw`), with the reads too old to keep that the runner holds (`pastReadings`). Changed on purpose

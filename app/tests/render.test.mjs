@@ -193,14 +193,15 @@ test('every route in the header renders', async (t) => {
   await context.route('https://api.dexscreener.com/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
   for (const [route, expected, settled] of [
     ['/', /Earn fees\.\s*Keep control\./],
-    ['/markets', /Markets[\s\S]*Token name or address[\s\S]*Selected pools/],
+    // Changed on purpose 2026-10-30 (QA round 2, N102): the token search's one label, as in New position.
+    ['/markets', /Markets[\s\S]*Search a token[\s\S]*Selected pools/],
     [`/markets/0x${'1'.repeat(40)}`, /Markets[\s\S]*Search the pool catalogue/],
     // Changed on purpose 2026-10-01 (audit B8): a pool page with no token, for a pool outside the list, says in plain words
     // how to open it once the list has answered and nothing can verify it by its id (no read service behind this
     // server): no "selected six", no hex id.
     [`/pool/0x${'2'.repeat(64)}`, /Open this pool from Markets[\s\S]*This link doesn’t say which token to check the pool with\./],
-    ['/explore', /Markets[\s\S]*Token name or address[\s\S]*Selected pools/],
-    ['/pools', /Markets[\s\S]*Token name or address[\s\S]*Selected pools/],
+    ['/explore', /Markets[\s\S]*Search a token[\s\S]*Selected pools/],
+    ['/pools', /Markets[\s\S]*Search a token[\s\S]*Selected pools/],
     ['/positions', /Positions[\s\S]*Your positions[\s\S]*Receipts/],
     ['/app', /Positions[\s\S]*Your positions[\s\S]*Receipts/],
     ['/portfolio', /Wallet/],
@@ -234,9 +235,10 @@ test('every route in the header renders', async (t) => {
 });
 
 test('the header names the three places, each at its route, and marks the one that is open', async () => {
-  // Markets is lit on its page and its older spellings; Positions on its own, its older spellings and the flow it leads to; Home and the docs light nothing,
+  // Markets is lit on its page and its older spellings; Positions on its own and its older spellings; Home, the docs and the new-position flow light nothing
+  // (changed on purpose 2026-10-30, QA round 2, Q25: the flow lit Positions),
   // and so does `/settings`, an older spelling of the docs since the owner removed Settings (2026-09-27, round 6, point 6).
-  const LIT = { '/': null, '/markets': 'Markets', '/explore': 'Markets', '/pools': 'Markets', '/positions': 'Positions', '/app': 'Positions', '/portfolio': 'Positions', '/new': 'Positions', '/automate': 'Automate', '/settings': null, '/docs': null, '/docs/non-custodial': null, '/setup': 'Automate', '/sequence': 'Automate' };
+  const LIT = { '/': null, '/markets': 'Markets', '/explore': 'Markets', '/pools': 'Markets', '/positions': 'Positions', '/app': 'Positions', '/portfolio': 'Positions', '/new': null, '/automate': 'Automate', '/settings': null, '/docs': null, '/docs/non-custodial': null, '/setup': 'Automate', '/sequence': 'Automate' };
   for (const route of ROUTES) {
     const page = await open(route);
     // One nav in the header: the phone list lives in the menu, which renders only when open.
@@ -312,7 +314,7 @@ test('the mobile Positions screen leads to Markets: reachable, bounded to the vi
 
   // The main token search is the only text search; typing a Robinhood address reads nothing until it is chosen.
   const address = '0x1111111111111111111111111111111111111111';
-  const combobox = page.getByRole('combobox', { name: 'Token name or address' });
+  const combobox = page.getByRole('combobox', { name: 'Search a token' });
   assert.equal(await combobox.isVisible(), true);
   assert.equal(await page.getByRole('combobox', { name: 'Asset', exact: true }).isVisible(), true, 'the token filter remains available');
   assert.equal(await page.getByPlaceholder('Pair', { exact: true }).count(), 0, 'no second text filter beneath Top pools');
@@ -661,12 +663,13 @@ test('every footer and navigation link goes somewhere this app has: no "#/" plac
   // Changed on purpose (2026-09-27, the owner's round 6, point 6): Settings is gone from the footer with its page.
   assert.deepEqual(
     links.filter((l) => l.footer && l.href.startsWith('#')).map((l) => l.text),
-    ['Markets', 'Positions', 'Automate', 'New position', 'Docs', 'How it works', 'Ranges', 'Risks'],
-    'the footer names the product pages, the docs and the guides on the landing',
+    // Changed on purpose 2026-10-30 (QA round 2, Q16): the menu's guide names, and Risks opens the docs' Risks page.
+    ['Markets', 'Positions', 'Automate', 'New position', 'Docs', 'How it works', 'Price ranges', 'Risks'],
+    'the footer names the product pages, the docs and the guides',
   );
   // The routes App.tsx wires, with the older spellings it keeps: `#/explore` and `#/pools` are Markets, `#/app` is Positions.
-  // No link names `/settings` any more (2026-09-27): it is only an older spelling of the docs.
-  const ROUTES = ['/', '/markets', '/explore', '/pools', '/pool', '/positions', '/app', '/portfolio', '/new', '/automate', '/docs'];
+  // No link names `/settings` any more (2026-09-27): it is only an older spelling of the docs. `/docs/risks`: the guides' Risks.
+  const ROUTES = ['/', '/markets', '/explore', '/pools', '/pool', '/positions', '/app', '/portfolio', '/new', '/automate', '/docs', '/docs/risks'];
   for (const link of links) {
     if (link.footer && link.href === 'https://x.com/dominomoney') continue
     const label = `${link.footer ? 'footer' : 'header'} link "${link.text}" (${link.href})`;
@@ -846,7 +849,28 @@ test('the compact range scene keeps the correct token mix and fixed range withou
     assert.equal(overflow.scrollWidth <= overflow.width, true, 'no overflow at ' + width + ': ' + JSON.stringify(overflow));
     if (width < 768) {
       const tileHeights = await page.locator('#pools tbody tr').evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height));
-      assert.ok(tileHeights.every(height => height < 128), `Home pool tiles do not inherit table cell heights: ${tileHeights}`);
+      // Changed on purpose 2026-10-30 (QA round 2, final review read-2; Q23, the network on every pool): a phone tile's tag
+      // keeps the network and wraps whole segments rather than cutting one, so at 320px a two-line name over the network's
+      // own two lines and the fee measures 146px (about 108 with the fee alone). A tile that inherited the table's 70px
+      // cells is 168 or more (two 70px rows, the gap and the padding), so the bound is 160 (it was 128).
+      assert.ok(tileHeights.every(height => height < 160), `Home pool tiles do not inherit table cell heights: ${tileHeights}`);
+      // Added 2026-10-30 (QA round 2, final review read-2; Q23): every phone tile names its network, whole and inside its
+      // pool cell; under 520px the exchange gives way to it, and no segment of the tag is cut.
+      const tags = await page.locator('#pools tbody tr').evaluateAll(rows => rows.map((row) => {
+        const net = row.querySelector('.dm-fee-net');
+        const venue = row.querySelector('.dm-fee-venue:not(.dm-fee-net)');
+        const cell = net?.closest('td')?.getBoundingClientRect();
+        const box = net?.getBoundingClientRect();
+        const tag = net?.parentElement;
+        return {
+          net: box ? Math.round(box.width) : 0,
+          inside: Boolean(box && cell && box.left >= cell.left - 1 && box.right <= cell.right + 1),
+          venue: venue ? getComputedStyle(venue).display : 'none',
+          cut: tag ? tag.scrollWidth > tag.clientWidth + 1 : true,
+        };
+      }));
+      assert.ok(tags.length > 0 && tags.every(tag => tag.net > 0 && tag.inside && !tag.cut), `every Home tile names its network at ${width}: ${JSON.stringify(tags)}`);
+      if (width < 520) assert.ok(tags.every(tag => tag.venue === 'none'), `the exchange gives way to the network at ${width}`);
     }
     // The card's plot height follows the width through a media query read in script, a render after the resize: on a
     // slow runner it can still hold the phone layout two frames in, so its compact height is awaited (5 s at most).
@@ -1297,13 +1321,15 @@ test('selected pools and New position read their public catalogue; disconnected 
 test('a pool page that could not be verified states no fee tier, and its chart names the provider only in the plot’s title and data', async () => {
   const page = await open(`/pool/${SELECTED[0]}`);
   await page.locator('[data-pool-verification]:not([data-pool-verification="verifying"])').waitFor();
-  assert.deepEqual(await page.locator('main .dm-chip').allInnerTexts(), ['Uniswap'], 'no fee in the chip');
+  // Changed on purpose 2026-10-30 (QA round 2, Q23): the network beside it, which the route already fixes.
+  assert.deepEqual(await page.locator('main .dm-chip').allInnerTexts(), ['Uniswap', 'Robinhood Chain'], 'no fee in the chip');
   const main = await page.locator('main').innerText();
   // Changed on purpose 2026-10-16 (V4, the owner-approved prototype): a stat's label is in sentence case (24h volume, Price).
   for (const label of ['APR', '24H VOLUME', 'TVL', 'PRICE']) assert.match(main, new RegExp(`${label}\\s+—`, 'i'), `the ${label} stat is a dash`);
   assert.doesNotMatch(main, /%|GeckoTerminal|Hourly candles/, 'no fee tier and no caption anywhere on the page');
   const plot = page.locator('main .dm-card', { hasText: 'Price history' }).locator('.dm-pool-plot');
-  assert.deepEqual([await plot.getAttribute('title'), await plot.getAttribute('data-chart-provider')], ['Prices from swaps on Robinhood Chain.', null]);
+  // Changed on purpose 2026-10-30 (QA round 2 review, N16): no source caption as the resting plot's title either.
+  assert.deepEqual([await plot.getAttribute('title'), await plot.getAttribute('data-chart-provider')], [null, null]);
   clean(page, 'unverified pool page');
   await close(page);
 });
@@ -1371,9 +1397,10 @@ test('Settings is gone: an old link opens the docs with no error, and neither th
   assert.deepEqual(entries, [
     ['New position', '#/new', null],
     ['Docs', '#/docs', 'page'],
+    // Changed on purpose 2026-10-30 (QA round 2, Q16): the footer's guide names and places.
     ['How it works', '#/#learn', null],
-    ['Ranges explained', '#/#ranges', null],
-    ['What Domino does not do', '#/#limits', null],
+    ['Price ranges', '#/#ranges', null],
+    ['Risks', '#/docs/risks', null],
   ]);
   // Each entry wears a mark of its own: the book is the docs'.
   const marks = await items.evaluateAll((els) => els.map((a) => a.querySelector('svg')?.innerHTML ?? ''));
@@ -1405,12 +1432,24 @@ test('Automate connects three visual choices to their guarded flows and keeps ex
   assert.equal(await page.locator('main .dm-inset, main .dm-acct-auto-note').count(), 0, 'no panel under the cards');
   assert.doesNotMatch(await page.locator('main').innerText(), /Setup checks the deployment/, 'no note under the cards');
   // Changed on purpose 2026-10-01 (audit E4, live note L12): plain words, no "consumed", and no promise about the APR.
-  assert.deepEqual(await page.locator('main .dm-automation-choice-fee').allInnerTexts(), ['No automation fee', '2% of earned fees used, once', '4% of earned fees used, once', '0.2% of the position, only when it closes']);
+  // Changed on purpose 2026-10-30 (QA round 2, the owner's Q1 and N29): one wording per fee, "each time" rather than "once"
+  // (read as a one-time charge), Auto-exit's base named, and when a run happens and who pays its network fee.
+  assert.deepEqual(await page.locator('main .dm-automation-choice-fee').allInnerTexts(), [
+    'No automation fee',
+    '2% of the earned fees it uses, each time. Runs when enough fees have built up. Domino pays the network fee.',
+    '4% of the earned fees it uses, each time. Runs when enough fees have built up. Domino pays the network fee.',
+    '0.2% of the position’s value, only if it closes',
+  ]);
   assert.equal(await page.locator('[data-automation-card="compound"] .dm-automation-choice-description').innerText(), 'Adds earned fees back into the same position, in the same range.');
   assert.equal(await page.locator('main .dm-automation-choice-description').count(), 4, 'one short explanation per choice');
   assert.doesNotMatch(await page.locator('main').innerText(), /improving|consumed|hold’s/, 'no broken possessive, no "consumed", no promise');
   const plain = page.locator('main [data-feature="plain"]');
-  assert.match(await plain.locator('.dm-automation-choice-body').innerText(), /^New position\s+Choose a pool, add your tokens and start earning fees\.\s+No automation fee\s+New position\s+How it works$/);
+  // Changed on purpose 2026-10-30 (QA round 2, the owner's decision on N11): the name stays New position; its line reads as
+  // the step before the automations, not a fourth, free mode.
+  assert.match(await plain.locator('.dm-automation-choice-body').innerText(), /^New position\s+Start here: choose a pool and add your tokens\. The automations below work on a position you already have\.\s+No automation fee\s+New position\s+How it works$/);
+  // N12, N47, N70 (QA round 2): Auto-exit's card says no price is typed, that it lasts a year, and that it is never combined
+  // with compounding, in its own line (no note under the cards, above).
+  assert.equal(await page.locator('[data-automation-card="protection"] .dm-automation-choice-description').innerText(), 'Closes at the end of your range, with no price to set, and sends the tokens to your wallet. Lasts a year, then turn it on again. Can’t be combined with Auto-compound or Domino-compound.');
   assert.doesNotMatch(await plain.innerText(), /\bfree\b/i, 'no claim that a plain position has no costs');
   assert.deepEqual(await plain.getByRole('link').evaluateAll((links) => links.map((a) => [a.textContent, a.getAttribute('href')])), [['New position', '#/new'], ['How it works', '#/docs/new-position']]);
   assert.deepEqual(await page.locator('main .dm-automation-choice-grid [data-automation-card]').evaluateAll((cards) => cards.map((card) => card.getAttribute('data-automation-card'))), ['compound', 'domino', 'protection']);
@@ -1504,11 +1543,11 @@ test('the positions screen without a wallet shows one receipts summary, no manag
   const receipts = page.locator('section[aria-labelledby="receipts-title"]');
   await receipts.locator('[data-signed-out="no_wallet"]').waitFor();
   const text = await page.locator('#root').innerText();
-  assert.match(text, /Your positions\s+Connect a wallet to see your positions\s+Connect wallet/);
+  assert.match(text, /Your positions\s+Connect a wallet to see your positions\.\s+Connect wallet/);
   assert.doesNotMatch(text, /Look up|Position NFTs|Enter its ID|NFT ids?\b/i, 'no typed ids asked for, anywhere');
   assert.equal(await page.locator('details[data-lookup-disclosure], #nft-ids, #chain-lookup').count(), 0, 'no lookup by NFT id at all');
-  assert.equal(await receipts.getByText('Connect your wallet to see your receipts.', { exact: true }).count(), 1);
-  assert.doesNotMatch(text, /Automated positions and activity|Connect your wallet to see your automated positions/);
+  assert.equal(await receipts.getByText('Connect a wallet to see your receipts.', { exact: true }).count(), 1);
+  assert.doesNotMatch(text, /Automated positions and activity|Connect a wallet to see your automated positions/);
   assert.equal(await page.locator('[data-automation-cards="integrated"]').count(), 1);
   assert.equal(await receipts.locator('button').count(), 0, 'connecting is the header’s and the list’s own Connect wallet');
   assert.equal(await page.locator('section[aria-labelledby="managed-title"]').count(), 0, 'automation state is integrated into positions, without an empty managed wall');
@@ -1518,7 +1557,7 @@ test('the positions screen without a wallet shows one receipts summary, no manag
   // 2026-09-27 (round 5): the Receipts card is a short Recent list; its See all opens every receipt on a page of its own.
   assert.equal(await page.locator('[data-receipts-all]').getAttribute('href'), '#/positions/receipts');
   assert.doesNotMatch(text, /Canonical receipts|unavailable values|never shown as completed|Sent exactly as typed|checksum|proves nothing/i, 'no caption about data states');
-  assert.equal(await page.locator('#portfolio-address-input').getAttribute('title'), 'Sent exactly as typed; a checksum is not required. Viewing an address proves nothing about who controls it.');
+  assert.equal(await page.locator('#portfolio-address-input').getAttribute('title'), 'Spaces at the ends are removed. Viewing an address proves nothing about who controls it.');
   assert.doesNotMatch(text, /practice|reinvested|awaiting|\$\s?\d|[0-9]+%/i);
   assert.equal(await page.locator('[role="dialog"]').count(), 0);
   // Nothing reads on load without a wallet, and the screen shows no figure of its own.
@@ -1549,7 +1588,7 @@ test('the receipts page keeps Positions lit, and with no wallet asks for one and
   // The hash changes before the page is drawn, and Positions' own Receipts card says the same sentence: wait for the
   // page's heading first (audit H3; finance.browser read "Positions" there on CI, 2026-09-28).
   await page.getByRole('heading', { level: 1, name: 'Receipts', exact: true }).waitFor();
-  await page.getByText('Connect your wallet to see your receipts.', { exact: true }).waitFor();
+  await page.getByText('Connect a wallet to see your receipts.', { exact: true }).waitFor();
   assert.equal(await page.getByRole('heading', { level: 1 }).innerText(), 'Receipts');
   assert.equal(await page.getByRole('heading', { level: 2, name: 'All receipts' }).count(), 1);
   const nav = await page.locator('header nav[aria-label="Main"] a').evaluateAll((els) => els.map((a) => [a.textContent.trim(), a.getAttribute('aria-current')]));
@@ -1571,7 +1610,12 @@ test('Home connects funding, pools, three automations and risks, with the option
   }
   // Changed on purpose 2026-10-17 (the approved V4 prototype puts Top pools under the strip, before the story).
   assert.deepEqual(await page.locator('main section[id]').evaluateAll(sections => sections.map(section => section.id)), ['pools', 'funding', 'learn', 'limits'], 'the page follows a readable sequence from the pools to managing the position');
-  assert.deepEqual(await page.locator('.dm-hero-funding li > span:last-child').allInnerTexts(), ['Ethereum', 'Base', 'Arbitrum One', 'OP Mainnet', 'Robinhood Chain'], 'the hero names all five funding networks');
+  assert.deepEqual(await page.locator('.dm-hero-funding li > a > span:last-child').allInnerTexts(), ['Ethereum', 'Base', 'Arbitrum One', 'OP Mainnet', 'Robinhood Chain'], 'the hero names all five funding networks');
+  // Changed on purpose 2026-10-30 (QA round 2, N20): each chip leads to Home's funding section, in a named group.
+  assert.deepEqual(await page.locator('.dm-hero-funding li > a').evaluateAll((links) => [...new Set(links.map((a) => a.getAttribute('href')))]), ['#/#funding']);
+  assert.equal(await page.getByRole('group', { name: 'Networks to bring funds from', exact: true }).count(), 1);
+  // QA round 2, Q7 (the owner's exact line): the hero says what Domino is under the headline.
+  assert.equal(await page.locator('.dm-hero-lede').innerText(), 'Put two tokens in a pool and earn its trading fees.');
   assert.deepEqual(await page.locator('#learn article h3').allInnerTexts(), ['Auto-compound', 'Domino-compound', 'Auto-exit']);
   for (const article of await page.locator('#learn article').all()) assert.equal(await article.isVisible(), true, 'each automation is visible without choosing a tab');
   assert.equal(await page.locator('#limits details:not([open])').count(), 4, 'risk explanations stay available without overwhelming the page');
@@ -1671,14 +1715,27 @@ test('the docs: every page opens from the sidebar with its title and its link ma
 
     const pager = await page.locator('nav[aria-label="Previous and next pages"] a').evaluateAll((anchors) => anchors.map((a) => a.getAttribute('href')));
     assert.deepEqual(pager, [pages[index - 1]?.[1], pages[index + 1]?.[1]].filter(Boolean), `${href}: previous and next are its sidebar neighbours`);
-    assert.equal(await page.locator('main a[href^="http"], main a[href="#"]').count(), 0, `${href}: no link leaves the app`);
+    // Changed on purpose 2026-10-30 (QA round 2, the owner's decision on N24): Contracts links each address to its network's
+    // block explorer, in a new tab; no other link leaves the app.
+    assert.equal(await page.locator('main a[href^="http"]:not([data-docs-explorer]), main a[href="#"]').count(), 0, `${href}: no link leaves the app`);
+    if (href === '#/docs/contracts') {
+      const explorers = await page.locator('main a[data-docs-explorer]').evaluateAll((anchors) => anchors.map((a) => [new URL(a.href).origin, a.target, a.rel]));
+      assert.ok(explorers.length >= 25, `${explorers.length} explorer links`);
+      for (const [origin, target, rel] of explorers) {
+        assert.ok(['https://robinhoodchain.blockscout.com', 'https://robin.etherscan.io', 'https://basescan.org', 'https://arbiscan.io'].includes(origin), origin);
+        assert.deepEqual([target, rel], ['_blank', 'noreferrer noopener']);
+      }
+    } else assert.equal(await page.locator('main a[data-docs-explorer]').count(), 0, `${href}: explorer links only on Contracts`);
     assert.equal(await page.locator('[data-metric], [data-apr-estimate]').count(), 0, `${href}: no figure`);
     assert.deepEqual(await duplicateIds(page), [], `${href}: every id is unique`);
   }
 
-  // A slug that names no page shows the index, with no error.
+  // Changed on purpose 2026-10-30 (QA round 2, N40): a slug that names no page shows the app's own page for a link that
+  // names no page, as an unknown route does; it showed the index as if the link had worked. No error banner either way.
   await go(page, '/docs/constructor');
-  assert.equal(await page.locator('h1').innerText(), 'Docs');
+  await page.locator('[data-not-found]').waitFor();
+  assert.equal(await page.locator('[data-docs]').count(), 0);
+  await page.waitForFunction(() => document.title === 'Page not found · Domino');
   assert.equal(await page.locator('[role="alert"]').count(), 0);
   assert.deepEqual(apiOf(page), [[]], 'the docs read nothing');
   clean(page, 'docs pages');
@@ -1842,9 +1899,11 @@ test('Home funding examples preserve consent, show available networks and disclo
   assert.match(await funding.locator('details').innerText(), /Review swaps, transfer costs and network fees before you approve in your wallet/);
   const automations = page.locator('#learn');
   for (const [name, fee, href] of [
-    ['Auto-compound', '2% of earned fees used, once. Your original deposit is not charged.', '#/automate'],
-    ['Domino-compound', '4% of earned fees used, once. Your original deposit is not charged.', '#/automate'],
-    ['Auto-exit', '0.2% of the position, only when it closes.', '#/docs/auto-exit'],
+    // Changed on purpose 2026-10-30 (QA round 2, Q16): each "How it works" opens its own docs page.
+    // Changed on purpose 2026-10-30 (QA round 2, Q1): one fee wording everywhere.
+    ['Auto-compound', '2% of the earned fees it uses, each time. Your original deposit is not charged.', '#/docs/auto-compound'],
+    ['Domino-compound', '4% of the earned fees it uses, each time. Your original deposit is not charged.', '#/docs/domino-compound'],
+    ['Auto-exit', '0.2% of the position’s value, only if it closes.', '#/docs/auto-exit'],
   ]) {
     const card = automations.getByRole('article').filter({ has: page.getByRole('heading', { name, exact: true }) });
     assert.equal(await card.isVisible(), true, name + ' is presented without a carousel or tab');
@@ -1894,6 +1953,9 @@ test('the docs on a phone: nothing spills sideways, nothing sticks, the docs men
   await menu.locator('summary').click();
   assert.equal(await menu.evaluate((element) => element.open), true, 'the docs menu opens');
   leaving(page);
+  // Chosen while the list is still opening, as a quick reader does. Changed on purpose 2026-10-30 (QA round 2, final review,
+  // the CI failure here): the fold clips (docs.css, overflow: clip) instead of hiding, so the click's scroll into view no
+  // longer shifts the list inside the growing box; the list slid away between press and release, and the hash never moved.
   await menu.getByRole('link', { name: 'Fees', exact: true }).click();
   await page.waitForFunction(() => location.hash === '#/docs/fees');
   await page.waitForFunction(() => document.querySelector('h1')?.textContent === 'Fees');
@@ -1903,7 +1965,23 @@ test('the docs on a phone: nothing spills sideways, nothing sticks, the docs men
   const again = page.locator('details[data-docs-menu]');
   await again.locator('summary').click();
   assert.equal(await again.evaluate((element) => element.open), true);
+  // 2026-10-30 (QA round 2, final review, CI): a link scrolled into view while the list opens stays where it is until the
+  // list has opened; a press and its release land on the same link.
+  const moved = await again.getByRole('link', { name: 'Fees', exact: true }).evaluate(async (link) => {
+    link.scrollIntoView({ block: 'end', behavior: 'instant' });
+    const top = link.getBoundingClientRect().top;
+    let most = 0;
+    for (let frame = 0; frame < 40; frame += 1) {
+      await new Promise((done) => requestAnimationFrame(done));
+      most = Math.max(most, Math.abs(link.getBoundingClientRect().top - top));
+    }
+    return most;
+  });
+  assert.ok(moved <= 1, `the menu's Fees link moved ${moved}px while the menu opened`);
   await again.getByRole('link', { name: 'Fees', exact: true }).click();
+  // Changed on purpose 2026-10-30 (QA round 2, CI): wait (bounded) for the menu to close instead of reading it at once. The
+  // final review found what had kept it open on a slow runner: the click lost under a sliding list (above), now fixed.
+  await page.waitForFunction(() => document.querySelector('details[data-docs-menu]')?.open === false, null, { timeout: 2_000 }).catch(() => {});
   assert.equal(await again.evaluate((element) => element.open), false, 'choosing the open page closes the menu');
 
   const disclosure = page.locator('details', { has: page.locator('nav[aria-label="On this page"]') });
@@ -2011,7 +2089,7 @@ test('each route names its tab, gives Home its own name back, and a move to anot
   const page = await open('/markets');
   await page.waitForFunction(() => document.title === 'Markets · Domino');
   assert.equal(await page.locator('[data-route-announcer]').count(), 0, 'the first screen of a visit is not announced: the browser reads its title');
-  for (const [route, title] of [['/automate', 'Automate · Domino'], ['/positions', 'Positions · Domino'], ['/new', 'New position · Domino'], ['/docs/privacy', 'Privacy · Domino docs'], ['/', 'Domino']]) {
+  for (const [route, title] of [['/automate', 'Automate · Domino'], ['/positions', 'Positions · Domino'], ['/new', 'New position · Domino'], ['/docs/privacy', 'Privacy · Docs · Domino'], ['/', 'Domino']]) {
     await go(page, route);
     await page.waitForFunction((want) => document.title === want, title, { timeout: 10_000 });
   }
@@ -2021,7 +2099,8 @@ test('each route names its tab, gives Home its own name back, and a move to anot
   await page.waitForFunction(() => document.querySelector('[data-route-announcer]')?.textContent === 'Domino');
   // The older docs slug still opens Domino-compound (live note L12).
   await go(page, '/docs/domino-compounder');
-  await page.waitForFunction(() => document.title === 'Domino-compound · Domino docs');
+  // Changed on purpose 2026-10-30 (QA round 2, N25): the docs' tabs follow every screen's pattern, "<page> · Docs · Domino".
+  await page.waitForFunction(() => document.title === 'Domino-compound · Docs · Domino');
   assert.equal(await page.locator('h1').innerText(), 'Domino-compound');
   clean(page, 'tab titles');
   await close(page);

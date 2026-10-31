@@ -37,8 +37,9 @@
  *   holds its turn (and the site gate's lease) until it settles, and no second wide scan starts beside it;
  * - a 429 or a 503 (nginx's answer past the token's limit) rests every POST for a staged while (rule 1 of §1).
  * One invocation makes at most LOCAL_RPC_POSTS_PER_INVOCATION POSTs. Per isolate: a token bucket paces the POSTs; a node
- * that cannot be reached is let alone for a growing while; a refused token is let alone for a minute; a node on another
- * chain is not asked for ten minutes. Each is told to the chain code the way it already understands (a 429 to wait out, a
+ * that could not be reached three times in a row is let alone for a short while (10 s, then 20 s and 30 s at the most
+ * while the one probe let through at each window's end fails too: LOCAL_RPC_DOWN, 2026-10-30); a refused token is let
+ * alone for a minute; a node on another chain is not asked for ten minutes. Each is told to the chain code the way it already understands (a 429 to wait out, a
  * 502 to stop, a thrown error), and the route reads health() to answer the browser with the calm "source unavailable".
  */
 import { CHAIN_ID, MULTICALL3, REPLY_CUT, RPC_URL, SELECTOR, SETUP_DEPLOY_BLOCK, SETUP_MINTED_TOPIC, bodyWithin, hex } from './owned'
@@ -78,7 +79,15 @@ export const LOCAL_RPC_REPLY_BYTES = 8 * 1024 * 1024 // one POST's reply, and on
  */
 export const LOCAL_RPC_RATE = { perSecond: 50, burst: 20, waitMs: 1_000 } as const
 export const LOCAL_RPC_REST = { firstMs: 2_000, maxMs: 30_000 } as const // after the node's 429/503, or its -32002
-export const LOCAL_RPC_DOWN = { firstMs: 15_000, maxMs: 300_000 } as const // after the tunnel/node is unreachable
+/**
+ * After the tunnel/node is unreachable (a network failure, 502, 504, 520 to 530). Changed on purpose 2026-10-30 (launch
+ * capacity study, item 7: one blip took an isolate with five calls in flight straight to 240 s, since the window doubled
+ * for every failed call, and the calls let out together when it ended could push it to five minutes): the isolate is
+ * marked down only after `failures` such POSTs in a row (any reply of the node's ends the run); the window is `firstMs`,
+ * and doubles only when the one probe let through at its end fails too, never for calls that were in flight, up to
+ * `maxMs` (it was 15 s doubling to 300 s, at the first failure).
+ */
+export const LOCAL_RPC_DOWN = { failures: 3, firstMs: 10_000, maxMs: 30_000 } as const
 export const LOCAL_RPC_REFUSED_MS = 60_000 // after 401/403/404 (token refused)
 export const LOCAL_RPC_TRUST_MS = 600_000 // the chain id check's life
 /**
@@ -123,6 +132,8 @@ export interface LocalRpc {
   spent(): { posts: number; items: number; ms: number }
   /** The isolate's view of the node after the last call. */
   health(): SourceHealth
+  /** (2026-10-30) While the node is down for this isolate: how much of its window is left, in ms (0 while its probe is on its way); else 0. */
+  downForMs(): number
   /** Whether a call of this invocation was refused for its visitor's spent share of the node (LocalRpcOptions.reserve). */
   refused(): boolean
   /** The limit that last answered a call of this invocation with a 429; null when none did. It only reports. */
@@ -224,7 +235,18 @@ export interface LocalRpcMemory {
   wrongUntil: number
   refusedUntil: number
   downUntil: number
+  /**
+   * The last down window's length; 0 once the node replied again (the outage is over), or (2026-10-30) once the window
+   * ended LOCAL_RPC_DOWN.maxMs ago with no probe on its way.
+   */
   downMs: number
+  /** (2026-10-30) POSTs in a row that could not reach the node, since its last reply or the last time it was marked down. */
+  downFailures: number
+  /**
+   * (2026-10-30) When the probe let through at the end of a down window began; 0 when none is on its way. Every other POST
+   * waits for its verdict as down, while it is younger than its life (a probe whose request was cut off never holds it).
+   */
+  probeAt: number
   restUntil: number
   restMs: number
   /** The token bucket, as the theoretical arrival time of the next POST (GCRA). */
@@ -235,7 +257,7 @@ export interface LocalRpcMemory {
   wideBusy: { done: Promise<void>; started: number } | null
 }
 
-export const localRpcMemory = (): LocalRpcMemory => ({ trustedUntil: 0, checking: null, wrongUntil: 0, refusedUntil: 0, downUntil: 0, downMs: 0, restUntil: 0, restMs: 0, tat: 0, wideTat: 0, wideBusy: null })
+export const localRpcMemory = (): LocalRpcMemory => ({ trustedUntil: 0, checking: null, wrongUntil: 0, refusedUntil: 0, downUntil: 0, downMs: 0, downFailures: 0, probeAt: 0, restUntil: 0, restMs: 0, tat: 0, wideTat: 0, wideBusy: null })
 
 const isolate = localRpcMemory()
 
@@ -488,17 +510,46 @@ export function createLocalRpc(endpoint: string, options: LocalRpcOptions): Loca
   const answered = new Map<string, Reply>()
   const windowKey = (item: Item) => `${item.method}|${JSON.stringify(item.params)}`
 
+  /** A down window's probe: one POST, as long as one POST's time-out and a margin (a probe cut off with its request never holds it). */
+  const probeLife = timeoutMs + Math.min(CHECK_MARGIN_MS, timeoutMs)
+  /** Whether the probe at the end of a down window is on its way, at `at`. */
+  const probing = (at: number) => memory.probeAt > 0 && at >= memory.probeAt && at - memory.probeAt < probeLife
+
+  /**
+   * (2026-10-30, review) An outage whose last window ended LOCAL_RPC_DOWN.maxMs ago, with no probe on its way, is over:
+   * the isolate saw no POST in all that time, so its next POSTs go as they would on any day (three failures in a row to
+   * mark it down again, from LOCAL_RPC_DOWN.firstMs) rather than one probe at a time, hours later.
+   */
+  function forget(at: number): void {
+    if (memory.downMs > 0 && memory.downUntil <= at && !probing(at) && at - memory.downUntil >= LOCAL_RPC_DOWN.maxMs) {
+      memory.downMs = 0
+      memory.downFailures = 0
+    }
+  }
+
   function health(): SourceHealth {
     const at = now()
+    forget(at)
     if (memory.wrongUntil > at) return 'wrong_chain'
     if (memory.refusedUntil > at) return 'refused'
-    if (memory.downUntil > at) return 'down'
+    if (memory.downUntil > at || (memory.downMs > 0 && probing(at))) return 'down'
     return 'ok'
   }
 
-  function markDown(): void {
+  /**
+   * A POST that could not reach the node (changed on purpose 2026-10-30, launch item 7). A call that was on its way when
+   * the isolate went down adds nothing. Otherwise the run grows, and its LOCAL_RPC_DOWN.failures-th POST, or the failed
+   * probe at the end of a window, marks the isolate down: for LOCAL_RPC_DOWN.firstMs the first time in an outage, else
+   * the window before it doubled, once, up to LOCAL_RPC_DOWN.maxMs.
+   */
+  function unreachable(probe: boolean): void {
+    const at = now()
+    if (memory.downUntil > at) return
+    memory.downFailures += 1
+    if (!probe && memory.downFailures < LOCAL_RPC_DOWN.failures) return
+    memory.downFailures = 0
     memory.downMs = memory.downMs > 0 ? Math.min(memory.downMs * 2, LOCAL_RPC_DOWN.maxMs) : LOCAL_RPC_DOWN.firstMs
-    memory.downUntil = now() + memory.downMs
+    memory.downUntil = at + memory.downMs
     event('local_rpc_down', { ms: memory.downMs })
   }
 
@@ -520,9 +571,10 @@ export function createLocalRpc(endpoint: string, options: LocalRpcOptions): Loca
   async function post(body: string, signal: AbortSignal | null | undefined, limit = LOCAL_RPC_REPLY_BYTES, cut: AbortSignal | null = null): Promise<Posted> {
     if (spent.posts >= LOCAL_RPC_POSTS_PER_INVOCATION) throw new TypeError('local_rpc_budget')
     const at = now()
+    forget(at)
     if (memory.wrongUntil > at) throw new TypeError('local_rpc_wrong_chain')
     if (memory.refusedUntil > at) return { kind: 'response', response: reply502() }
-    if (memory.downUntil > at) throw new TypeError('local_rpc_down')
+    if (memory.downUntil > at || (memory.downMs > 0 && probing(at))) throw new TypeError('local_rpc_down')
     if (memory.restUntil > at) return { kind: 'response', response: limitedBy('rest', reply429((memory.restUntil - at) / 1000)) }
     // The bucket (GCRA): a POST may go once the burst's tolerance allows; one that would wait longer than waitMs is a 429.
     const interval = 1000 / LOCAL_RPC_RATE.perSecond
@@ -535,6 +587,14 @@ export function createLocalRpc(endpoint: string, options: LocalRpcOptions): Loca
     if (signal?.aborted) throw signal.reason ?? new DOMException('The read was dropped', 'AbortError')
     // A wide call past its life before this POST went: nothing was at the node, so nothing rests.
     if (cut?.aborted) throw tookTooLong()
+    // A down window is over, but the outage is not (no reply since, 2026-10-30): one POST goes, as its probe, and every
+    // other waits for its verdict as down, rather than all of them going at once.
+    let probe = 0
+    if (memory.downMs > 0) {
+      const claimed = now()
+      if (memory.downUntil > claimed || probing(claimed)) throw new TypeError('local_rpc_down')
+      memory.probeAt = probe = claimed
+    }
     spent.posts += 1
     options.onPost?.()
     const controller = new AbortController()
@@ -548,6 +608,9 @@ export function createLocalRpc(endpoint: string, options: LocalRpcOptions): Loca
     const forward = () => controller.abort(signal?.reason)
     signal?.addEventListener('abort', forward, { once: true })
     const started = now()
+    // (2026-10-30, review) Whether this POST is still the probe of an outage that is still on: a reply that came to a call
+    // in flight meanwhile ended the outage (and its probe), after which this POST's failure is one like any other.
+    const asProbe = () => probe > 0 && memory.probeAt === probe && memory.downMs > 0
     // A failure while asking or reading: a time-out, the caller's drop, or a node that cannot be reached.
     // Changed on purpose 2026-10-02 (review of the rules, finding 6): our own time-out comes before the node's 30 s
     // (-32002), so a call the node is slow on rests the isolate too, staged as a 429 or a 503 is; it rested nothing, and
@@ -562,8 +625,10 @@ export function createLocalRpc(endpoint: string, options: LocalRpcOptions): Loca
         throw tookTooLong()
       }
       if (signal?.aborted) throw signal.reason ?? error
-      markDown()
-      throw new TypeError('local_rpc_down')
+      unreachable(asProbe())
+      // (2026-10-30) This POST failed; `local_rpc_down` is for the POSTs refused while the isolate is down. Both stop the
+      // chain code's read the same way (a thrown error: rpc_unreachable).
+      throw new TypeError('local_rpc_unreachable')
     }
     try {
       let response: Response
@@ -577,10 +642,16 @@ export function createLocalRpc(endpoint: string, options: LocalRpcOptions): Loca
       if (status === 429 || status === 503) return { kind: 'response', response: rest(retryAfterMs(response.headers.get('Retry-After'), LOCAL_RPC_REST.maxMs)) }
       memory.restMs = 0
       if (status === 502 || status === 504 || (status >= 520 && status <= 530)) {
-        markDown()
-        throw new TypeError('local_rpc_down')
+        unreachable(asProbe())
+        throw new TypeError('local_rpc_unreachable')
       }
+      // A reply of the node's own: any run of failures, and the outage, are over. (2026-10-30, review) Its window and its
+      // probe too: a call that was in flight when the isolate went down and is answered now ends the dark time at once,
+      // not at the window's end.
       memory.downMs = 0
+      memory.downFailures = 0
+      memory.downUntil = 0
+      memory.probeAt = 0
       if (status === 401 || status === 403 || status === 404) {
         memory.refusedUntil = now() + LOCAL_RPC_REFUSED_MS
         event('local_rpc_refused', { status })
@@ -600,6 +671,9 @@ export function createLocalRpc(endpoint: string, options: LocalRpcOptions): Loca
       cut?.removeEventListener('abort', timeUp)
       signal?.removeEventListener('abort', forward)
       spent.ms += Math.max(0, now() - started)
+      // The probe has its verdict (a reply, a new window, or neither: a time-out's rest, a refusal for load, a visitor's
+      // drop, after which the next POST probes again).
+      if (probe > 0 && memory.probeAt === probe) memory.probeAt = 0
     }
   }
 
@@ -910,6 +984,7 @@ export function createLocalRpc(endpoint: string, options: LocalRpcOptions): Loca
     fetch: fetchChain,
     spent: () => ({ ...spent }),
     health,
+    downForMs: () => Math.max(0, memory.downUntil - now()),
     refused: () => refusals > 0,
     limited: () => limit,
     erred: () => nodeErred,

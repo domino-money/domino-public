@@ -10,6 +10,8 @@ export type PriceInputResult = { ok: true; tick: number } | { ok: false; message
  * bounded integer tick indices use Number. No log/float price conversion.
  */
 export function priceInputToTick(text: string, which: 'lower' | 'upper', range: PracticeRange, price: Usable): PriceInputResult {
+  // A minus sign is a number below zero, not a malformed one: said as zero is (QA round 2, Q18, 2026-10-30).
+  if (/^\s*-/.test(text)) return { ok: false, message: 'Price must be greater than zero.' }
   if (text.length > 320 || !/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(text)) return { ok: false, message: 'Enter a positive decimal price without commas or exponents.' }
   const target = parseDecimal(text)
   if (!target || target.coefficient <= 0n) return { ok: false, message: 'Price must be greater than zero.' }

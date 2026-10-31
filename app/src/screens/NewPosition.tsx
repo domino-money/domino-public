@@ -18,10 +18,12 @@ import { recovering } from '../lib/staleRelease'
  * journey's wrapper (src/v2in/journey): Domino V2's journey wherever the V2 gate opens (Robinhood Chain on domino.money,
  * src/v2in/journey/constants.ts SETUP_STAYS_WHILE_PREVIEW), today's Journey where it stays off. Opened lazily, named
  * once; a wrapper that cannot load leaves today's Journey (lib/staleRelease.ts recovering).
+ * Changed on purpose 2026-10-30 (QA round 2 sweep, rule 3): another network's link it cannot open says so in the gate's
+ * own words, as the wrapper's handoff does (CREATE.token.networkClosed), never that the network "could not be loaded".
  */
 type V2JourneyProps = { flow: number; poolId: string; linkToken: string | null; networkToken: NetworkTokenLocation | null }
 const V2NewPosition = __DOMINO_V2__ ? lazy(recovering(() => import('../v2in/journey/NewPositionV2'), () => ({ default: ({ flow, poolId, linkToken, networkToken }: V2JourneyProps) => networkToken
-  ? <PageShell width="flow"><PageHeader size="display" title={CREATE.page.title} /><p role="status">This network could not be loaded. <a href="#/new">Search again</a></p></PageShell>
+  ? <PageShell width="flow"><PageHeader size="display" title={CREATE.page.title} /><p role="status">{CREATE.token.networkClosed('this network')} <a href="#/new">Search again</a></p></PageShell>
   : <Journey key={flow} poolId={poolId} linkToken={linkToken} /> }))) : null
 
 /**

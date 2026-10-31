@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { build, clone, fixture, flush, lab, OWNER, runtime } from './support/crosschain.mjs';
 
-const { reduceStatus, initialPoll, createStatusPoller, fallbackSeconds, FALLBACK_POLL_SECONDS, MAX_WAIT_SECONDS, UNEXPECTED_RETRIES } = build('polling');
+const { reduceStatus, initialPoll, createStatusPoller, fallbackSeconds, FALLBACK_POLL_SECONDS, MAX_WAIT_SECONDS, MIN_WAIT_SECONDS, UNEXPECTED_RETRIES } = build('polling');
 const { reply } = build('fixtureTransport');
 const { presentStatus, naming } = build('present');
 
@@ -60,23 +60,26 @@ test('the fallback table is the package’s pollSeconds; nextCheckSeconds govern
   assert.equal(fallbackSeconds('relay', 'refund_failed'), 900);
   assert.equal(fallbackSeconds('relay', 'refund_pending'), 5, 'a state the provider never reports falls back to its first interval');
   assert.equal(MAX_WAIT_SECONDS, 300);
+  // Added 2026-10-30 (launch capacity, CAP-5/CAP-11): never sooner than 10 s, whatever an answer or the table says.
+  assert.equal(MIN_WAIT_SECONDS, 10);
   assert.equal(UNEXPECTED_RETRIES, 1);
 });
 
-test('Relay: null → awaiting (5 s) → pending (5 s) → filled, each call carrying the state shown, then nothing more', async () => {
+// Changed on purpose 2026-10-30 (launch capacity, CAP-5/CAP-11): Relay's 5 s is asked after the 10 s floor.
+test('Relay: null → awaiting (5 s, kept at 10 s) → pending (10 s) → filled, each call carrying the state shown, then nothing more', async () => {
   const t = poller(relayRecord());
   t.transport.script('status', reply(200, fixture('variants/status.relay-awaiting.json')), reply(200, relayPending()), reply(200, fixture('variants/status.relay-filled.json')));
   t.poll.start();
   await flush();
   assert.equal(t.updates.at(-1).record.lastState, 'awaiting_deposit');
-  assert.deepEqual(t.clock.pending(), [5_000]);
-  t.clock.advance(4_999);
+  assert.deepEqual(t.clock.pending(), [10_000]);
+  t.clock.advance(9_999);
   await flush();
-  assert.equal(t.sent().length, 1, 'not before nextCheckSeconds');
+  assert.equal(t.sent().length, 1, 'not before nextCheckSeconds, nor before the floor');
   t.clock.advance(1);
   await flush();
   assert.equal(t.updates.at(-1).record.lastState, 'pending');
-  t.clock.advance(5_000);
+  t.clock.advance(10_000);
   await flush();
   const last = t.updates.at(-1);
   assert.equal(last.record.lastState, 'filled');
@@ -173,22 +176,22 @@ test('crosschain_deposit_not_found stops the polling and keeps the hash to show'
   assert.deepEqual(t.clock.pending(), []);
 });
 
-test('busy answers back off: Retry-After, then twice that; an answer resets it; waits never pass five minutes', async () => {
+test('busy answers back off: Retry-After, then twice that; an answer resets it; waits never pass five minutes, nor fall under ten seconds', async () => {
   const t = poller(relayRecord());
   const busy = fixture('errors.json').provider_rate_limited.body;
   t.transport.script('status', reply(429, busy, { retryAfter: '7' }), reply(429, busy, { retryAfter: '7' }), reply(200, fixture('variants/status.relay-awaiting.json')));
   t.poll.start();
   await flush();
-  assert.deepEqual(t.clock.pending(), [7_000]);
+  assert.deepEqual(t.clock.pending(), [10_000], 'a Retry-After under the floor waits the floor');
   assert.equal(t.updates.at(-1).notice.copy, 'Too many requests. Try again in a moment.');
-  t.clock.advance(7_000);
+  t.clock.advance(10_000);
   await flush();
   assert.deepEqual(t.clock.pending(), [14_000]);
   t.clock.advance(14_000);
   await flush();
   assert.equal(t.updates.at(-1).failures, 0);
   assert.equal(t.updates.at(-1).notice, null);
-  assert.deepEqual(t.clock.pending(), [5_000]);
+  assert.deepEqual(t.clock.pending(), [10_000]);
   assert.deepEqual(t.sent().map((b) => b.previousState), [null, null, null], 'nothing was shown, so nothing moved');
 
   // 503s and network failures grow from the fallback interval, capped.
@@ -208,7 +211,7 @@ test('busy answers back off: Retry-After, then twice that; an answer resets it; 
     state = step.state;
     net.push(step.next.ms);
   }
-  assert.deepEqual(net, [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000, 300_000]);
+  assert.deepEqual(net, [10_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000, 300_000]);
   assert.equal(state.stopped, null, 'a deposit in flight is never given up on for a busy service');
 });
 
@@ -218,8 +221,8 @@ test('an unexpected answer gets one more attempt, then the polling stops; the sa
   t.transport.script('status', reply(502, mismatch), reply(502, mismatch));
   t.poll.start();
   await flush();
-  assert.deepEqual(t.clock.pending(), [5_000]);
-  t.clock.advance(5_000);
+  assert.deepEqual(t.clock.pending(), [10_000]);
+  t.clock.advance(10_000);
   await flush();
   assert.equal(t.updates.at(-1).stopped, 'unexpected');
   assert.equal(t.updates.at(-1).notice.copy, 'We got an unexpected answer. Try again.');
@@ -229,7 +232,7 @@ test('an unexpected answer gets one more attempt, then the polling stops; the sa
   v.transport.script('status', reply(200, relayPending(), { contract: '1.0.0-rc.2' }), reply(200, fixture('variants/status.relay-filled.json'), { contract: null, status: 500 }));
   v.poll.start();
   await flush();
-  v.clock.advance(5_000);
+  v.clock.advance(10_000);
   await flush();
   assert.equal(v.updates.at(-1).stopped, 'unexpected');
   assert.equal(v.updates.at(-1).record.lastState, 'pending', 'nothing from a refused answer is shown');

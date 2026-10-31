@@ -22,8 +22,10 @@ export default function AutomateProtection() {
   const pending = [vault4663, exit4663, vault8453, exit8453, vault42161, exit42161].some((gate) => gate === null)
   return (
     <>
+      {/* Changed on purpose 2026-10-30 (QA round 2, the owner's Q33): named as its two siblings and the page it opens
+          (SequenceShell's "Set up Auto-exit"); it said "Choose a position". */}
       {anywhere ? <LinkButton href="#/sequence/protection" variant="outline" data-v2in-protection="">
-        Choose a position
+        Set up Auto-exit
         <ActChevron />
       </LinkButton> : <Button disabled>{pending ? 'Checking availability…' : 'Unavailable right now'}</Button>}
       {/* Kept on purpose 2026-10-15 (pack 7): a gate that says why an action can't be taken stays (the coordinator's rule);

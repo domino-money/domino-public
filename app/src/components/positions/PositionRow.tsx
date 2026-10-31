@@ -143,11 +143,15 @@ export function PositionRow({ card, block, state = null, apr = null, aprQuality 
             </span>
           </span>
         </span>
-        <span className={emptyValue && emptyFees ? 'dm-own-figs dm-own-empty-figure' : 'dm-own-figs'}>
-          <span className={emptyValue ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Money card={card} state={state} which="principal" label="Value" /></span>
-          <span className={emptyFees ? 'dm-own-empty-figure' : 'dm-own-figure-slot'}><Money card={card} state={state} which="unsettledFees" label="Fees to collect" /></span>
-          {card.hasLiquidity && <Apr apr={apr} quality={aprQuality} ledger={ledger} />}
-        </span>
+        {/* (QA round 2, N45) A closed row draws no zero Value or Fees to collect at all (they were hidden for the eye only,
+            and read to a screen reader on every closed row). A closed row that holds dust shows it. */}
+        {!(emptyValue && emptyFees) && (
+          <span className="dm-own-figs">
+            {!emptyValue && <span className="dm-own-figure-slot"><Money card={card} state={state} which="principal" label="Value" /></span>}
+            {!emptyFees && <span className="dm-own-figure-slot"><Money card={card} state={state} which="unsettledFees" label="Fees to collect" /></span>}
+            {card.hasLiquidity && <Apr apr={apr} quality={aprQuality} ledger={ledger} />}
+          </span>
+        )}
         {closed && <span className="dm-own-closed-caption">View history</span>}
         <span className="dm-own-chev">
           <IconChevronRight size={16} />

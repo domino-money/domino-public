@@ -8,7 +8,7 @@ import { v2PageProbe } from '../transports'
 import { ApprovalFact, useZapApproval } from './Approval'
 import { SUCCESSOR_BLOCKED_COPY } from './constants'
 import { COPY } from './copy'
-import { findPosition, fromWalletPosition, positionVault, tokensOfWalletPosition, vaultReservesOf, type ActionPosition, type VaultReserves } from './model'
+import { autoExitRootOf, findPosition, fromWalletPosition, heldInPoolOrder, positionVault, tokensOfWalletPosition, vaultReservesOf, type ActionPosition, type VaultReserves } from './model'
 import { MoreActions, positionMenuItems, type MoreAction } from './MoreActions'
 import { PositionDialog, type PositionMode } from './PositionDialog'
 import { portfolioFor } from './source'
@@ -23,6 +23,11 @@ export interface PositionV2ActionsProps {
   owner: string
   /** The page reads again after an action, with the block it was included in when known (V1's onChanged). */
   onChanged: (block?: bigint) => void
+  /**
+   * (QA round 2, N49) Whether read-v6 lists this position as the root of Auto-exit's own vault (../autoexit/standing.ts
+   * exitVaultOf), for V1's Collect fees and Close position: false until known, and for any other position.
+   */
+  onAutoExitRoot?: (root: boolean) => void
 }
 
 /** The gate for S1 on Robinhood Chain, asked once per page (null while it is asked). */
@@ -51,14 +56,14 @@ function useS1Gate(chainId: number): V2Gate | null {
  * an armed root, the other actions ask for the pause warning; the reserves an exit leaves behind are named); the money
  * clients read the chain again before any send in any case.
  */
-export default function PositionV2Actions({ position, owner, onChanged }: PositionV2ActionsProps) {
+export default function PositionV2Actions({ position, owner, onChanged, onAutoExitRoot }: PositionV2ActionsProps) {
   const gate = useS1Gate(4663)
   const open: OpenGate | null = gate && gate.mode !== 'off' ? gate : null
   const identity = useWalletIdentity()
   const walletOnChain = identity.kind === 'connected' && identity.chainId === 4663
   const base = useMemo(() => fromWalletPosition(position, owner), [position, owner])
   const book = useMemo(() => tokenBook(4663, tokensOfWalletPosition(position)), [position])
-  const [vaultInfo, setVaultInfo] = useState<{ vault: ActionPosition['vault']; reserves: VaultReserves | null } | null>(null)
+  const [vaultInfo, setVaultInfo] = useState<{ vault: ActionPosition['vault']; reserves: VaultReserves | null; exitRoot: boolean } | null>(null)
   const [mode, setMode] = useState<PositionMode | null>(null)
   const action: ActionPosition | null = base ? { ...base, vault: vaultInfo?.vault ?? null } : null
   const approval = useZapApproval(open, action, walletOnChain)
@@ -76,12 +81,18 @@ export default function PositionV2Actions({ position, owner, onChanged }: Positi
       setVaultInfo({
         vault: positionVault(read.reply.body, 4663, vault),
         reserves: vault ? vaultReservesOf(read.reply.body, 4663, vault.address) : null,
+        exitRoot: autoExitRootOf(read.reply.body, 4663, vault),
       })
     }, () => undefined)
     return () => {
       alive = false
     }
   }, [open, owner, tokenId])
+
+  const exitRoot = vaultInfo?.exitRoot ?? false
+  useEffect(() => {
+    onAutoExitRoot?.(exitRoot)
+  }, [exitRoot, onAutoExitRoot])
 
   // The "···" button goes to the end of V1's own actions row, and the approval fact into the page's own Details list (one
   // mount point on the page: this component's), both found from this component's place once it is drawn.
@@ -98,6 +109,7 @@ export default function PositionV2Actions({ position, owner, onChanged }: Positi
   // automation panel's own dialog; the others, this page's action dialog.
   const items = positionMenuItems(action, false)
   const pick = (key: MoreAction['key']) => { if (key !== 'protect') setMode(key) }
+  const available = heldInPoolOrder(position, action.pool.currency0)
   return (
     <>
       {/* Where this component sits (after V1's row): unseen; the button itself goes into V1's row. */}
@@ -115,6 +127,7 @@ export default function PositionV2Actions({ position, owner, onChanged }: Positi
           mode={mode}
           book={book}
           reserves={vaultInfo?.reserves ?? null}
+          available={available}
           onClose={() => setMode(null)}
           onDone={(block) => onChanged(block)}
         />

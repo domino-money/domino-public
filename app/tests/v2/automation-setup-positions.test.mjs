@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import * as runtime from '../../../api-contracts/read-v6/runtime.mjs';
 
 const require = createRequire(import.meta.url);
-const { setupEligibility, setupPositions, setupRetryDelay } = require('../../.test-build/app/src/v2in/automate/setupPositions.js');
+const { SETUP_WAIT_MS, setupEligibility, setupPositions, setupRetryDelay, setupWaiting } = require('../../.test-build/app/src/v2in/automate/setupPositions.js');
 const { v2Chain } = require('../../.test-build/app/src/v2/chains.js');
 const { setupIntent, setupHref } = require('../../.test-build/app/src/v2in/automate/intent.js');
 const ZERO = `0x${'0'.repeat(40)}`;
@@ -131,6 +131,57 @@ test('an empty unavailable inventory is unknown; an unrelated network failure ne
   body.coverage = 'complete';
   assert.equal(runtime.validateResponse('portfolio', body), true);
   assert.deepEqual(setupPositions(body, body.wallet), { positions: [], incomplete: false }, 'only a checked empty inventory is shown as empty');
+});
+
+// 2026-10-30 (QA round 2, final review shell-1): Set up automation (SetupEntry.tsx) keeps its loading rows while one of the
+// wallet's own NFTs on an open network could not be judged, and shows the "No positions available for setup" plate, with
+// New position, only when nothing is waiting: a wallet that truly has no position gets the plate at once.
+test('setup with nothing to offer: an NFT not judged yet keeps the loading rows; a wallet with none gets the plate', () => {
+  const open = () => true;
+  const offered = (body) => setupPositions(body, body.wallet).positions.length;
+  // Eligible none, but the wallet's Robinhood NFT could not be judged: its reading or its network is not fresh yet.
+  for (const [why, edit] of [
+    ['a stale reading', (b) => { b.positions[0].state.freshness.status = 'stale'; }],
+    ['a reading not taken yet', (b) => { b.positions[0].state = { status: 'not_read' }; }],
+    ['its network behind', (b) => { b.chains.find((c) => c.chainId === 4663).status = 'stale'; }],
+    ['its network missing from the answer', (b) => { b.chains = b.chains.filter((c) => c.chainId !== 4663); }],
+  ]) {
+    const body = portfolio();
+    edit(body);
+    assert.equal(offered(body), 0, why);
+    assert.equal(setupWaiting(body, body.wallet, offered(body), open), true, `${why}: loading rows, never the plate`);
+    assert.equal(setupWaiting(body, body.wallet, offered(body), (chainId) => chainId !== 4663), false, `${why}: an NFT behind a closed gate is not waited for`);
+  }
+  // Truly none: an empty wallet, even with an unrelated network behind (the fixture's Base and Arbitrum), gets the plate.
+  const empty = portfolio();
+  empty.positions = [];
+  assert.equal(setupPositions(empty, empty.wallet).incomplete, true, 'an unrelated network is still behind');
+  assert.equal(setupWaiting(empty, empty.wallet, 0, open), false, 'no NFT to wait for: the plate at once');
+  // NFTs judged and excluded (closed, transferred, already automated) are a fact too: the plate.
+  for (const edit of [(p) => { p.state.liquidity = '0'; }, (p) => { p.state.owner = OTHER; }, (p) => { p.vault = { address: OTHER, role: 'root' }; }]) {
+    const body = portfolio();
+    edit(body.positions[0]);
+    assert.equal(setupWaiting(body, body.wallet, offered(body), open), false);
+  }
+  // Something to offer: the list, whatever else waits.
+  const body = portfolio();
+  body.positions.push({ ...structuredClone(body.positions[0]), tokenId: '10', state: { status: 'not_read' } });
+  assert.equal(offered(body), 1);
+  assert.equal(setupWaiting(body, body.wallet, offered(body), open), false);
+  // SetupEntry draws the loading rows (data-sequence-positions="failed") on it, before the plate, with the gates it lists by.
+  const entry = readFileSync(new URL('../../src/v2in/automate/SetupEntry.tsx', import.meta.url), 'utf8');
+  // (final review follow-up) For two minutes at most (SETUP_WAIT_MS), in both setup screens: read-v6 can keep an NFT unjudged
+  // for good, and the plate is said then rather than loading rows forever.
+  assert.match(entry, /if \(!body \|\| !list \|\| \(!waitOver && setupWaiting\(body, owner, positions\.length, \(chainId\) => gateOpen\(gates\[chainId\]\)\)\)\) return \(\s*<div className="dm-card dm-acct-block dm-seq-loading" aria-busy="true" data-sequence-positions="failed">/);
+  assert.ok(entry.indexOf('setupWaiting(body') < entry.indexOf('data-sequence-positions="empty"'), 'the waiting check comes before the plate');
+  assert.match(entry, /const waitOver = useSetupWaitOver\(\)/);
+  const protection = readFileSync(new URL('../../src/v2in/automate/ProtectionSetup.tsx', import.meta.url), 'utf8');
+  assert.match(protection, /const waitOver = useSetupWaitOver\(\)/);
+  assert.match(protection, /const waiting = body !== null && !waitOver && setupWaiting\(/);
+  assert.equal(SETUP_WAIT_MS, 120_000);
+  const helper = readFileSync(new URL('../../src/v2in/automate/setupPositions.ts', import.meta.url), 'utf8');
+  assert.match(helper, /window\.setTimeout\(\(\) => setOver\(true\), SETUP_WAIT_MS\)/);
+  assert.match(helper, /return \(\) => window\.clearTimeout\(timer\)/);
 });
 
 test('metadata stays chain-qualified and missing token decimals are never guessed', () => {

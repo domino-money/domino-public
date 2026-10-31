@@ -116,14 +116,15 @@
      button word in the steps reads 16px regular, as approved. */
   .dm-np .dm-flow-foot > .dm-btn:not(.dm-btn--sm) { font-size: 1rem; font-weight: 400; letter-spacing: -0.01em; }
   .dm-np .dm-flow-foot > .dm-btn--primary { padding-inline: 1.75rem; }
-  .dm-np .dm-flow-foot > .dm-btn--primary:disabled:not([data-create-position]) { background: var(--v4-w06); color: var(--subtle); box-shadow: inset 0 0 0 1px var(--line); cursor: not-allowed; }
+  /* Not ready (QA round 2, N89): Continue stays focusable with aria-disabled so its reason is read, and keeps this face. */
+  .dm-np .dm-flow-foot > .dm-btn--primary:is(:disabled, [aria-disabled="true"]):not([data-create-position]) { background: var(--v4-w06); color: var(--subtle); box-shadow: inset 0 0 0 1px var(--line); cursor: not-allowed; }
   /* Back: the outline button with the site chevron turned back; its hover stays neutral (V4 .btn-back). */
   .dm-np .dm-flow-foot > .dm-btn--outline:first-child:not(:disabled) { background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--lip); color: var(--fg); }
   .dm-np .dm-flow-foot > .dm-btn--outline:first-child { gap: 0.625rem; padding: 0 1.375rem 0 1rem; }
   .dm-np .dm-flow-foot > .dm-btn--outline:first-child::before { content: ''; flex: none; width: 0.875rem; height: 0.875rem; background: var(--subtle); -webkit-mask: var(--dm-np-chev) center / contain no-repeat; mask: var(--dm-np-chev) center / contain no-repeat; rotate: 180deg; transition: translate 0.25s var(--e-enter), background-color 0.18s var(--e-std); }
   .dm-np .dm-flow-foot > .dm-btn--outline:first-child:hover:not(:disabled) { background: var(--v4-w05); box-shadow: inset 0 0 0 1px var(--strong); color: var(--fg); }
   .dm-np .dm-flow-foot > .dm-btn--outline:first-child:hover:not(:disabled)::before { background: var(--fg); translate: -2px 0; }
-  .dm-np .dm-flow-foot > .dm-btn:active:not(:disabled) { scale: 0.98; }
+  .dm-np .dm-flow-foot > .dm-btn:active:not(:disabled):not([aria-disabled="true"]) { scale: 0.98; }
   .dm-np .dm-flow-foot:not([data-final]) > .dm-flow-reason { min-height: 1.25rem; margin-top: 0.75rem; }
   .dm-np .dm-flow-reason { font-size: 0.8125rem; line-height: 1.25rem; letter-spacing: -0.01em; color: var(--subtle); }
   /* Check balance again: its own width, so its word lines up on the right with the reason above it. */
@@ -181,6 +182,10 @@
   .dm-np .dm-flow-pv-stats dd { font-weight: 500; color: var(--fg); }
   .dm-np .dm-flow-pv-stats .dm-flow-pv-apr { color: var(--in); }
   .dm-np .dm-flow-pv-fee { margin-top: 0; border-radius: 0.375rem; background: var(--v4-w055); color: var(--subtle); }
+  /* QA round 2, Q23/N37: a pool whose network is named shows its tags under the pair, network then fee, joined as the
+     chosen pool's are ([data-pool-chips] below); the fee's own column goes. */
+  .dm-np .dm-flow-pv-pool:has(.dm-flow-pv-chips) { grid-template-columns: auto minmax(0, 1fr); }
+  .dm-np .dm-flow-pv-chips { display: flex; flex-wrap: wrap; justify-self: start; max-width: 100%; }
   /* The full preview (price and window) and the picture show with panel-in (new.html .pv-full, .pv-il); the pair row
      appears as it is. On the card's hover the pair's discs part (d0 scale 1.04, d1 4px over). */
   .dm-np .dm-flow-pv-live.dm-arrive,
@@ -318,22 +323,25 @@
   }
 
   /* ---- 3. Step 1, Pool (new.html .qblk, .tok, .trow, .plist, .prow, .sel, .mk) ------------------------------------- */
-  /* The search field (V4 §8.5 .field): 54px, the lip ring, a Tangerine ring and halo on focus, the glass turning. */
+  /* The search field (V4 §8.5 .field): 54px, the lip ring, a Tangerine ring and halo on focus, the glass turning.
+     QA round 2, N88 (the owner: the 2px focus ring on every field): every field of the flow takes the site's 2px --ring on
+     focus, and a refused one a 2px red ring. */
   .dm-np .dm-flow-search > .dm-label { display: block; margin: 0.25rem 0 0.625rem; font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.01em; color: var(--subtle); }
   .dm-np .dm-flow-combo-input { height: 3.375rem; padding: 0 1rem 0 2.75rem; border-radius: 0.875rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--lip); font-size: 0.9375rem; font-weight: 500; letter-spacing: -0.01em; transition: box-shadow 0.2s var(--e-std), background-color 0.2s var(--e-std); }
   .dm-np .dm-flow-combo-input::placeholder { color: var(--subtle); font-weight: 400; }
   .dm-np .dm-flow-combo-input:hover { box-shadow: inset 0 0 0 1px var(--strong); }
   .dm-np .dm-flow-combo-input:focus,
-  .dm-np .dm-flow-combo-input:focus-visible { outline: none; background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong), 0 0 0 0.25rem var(--v4-tan-halo); }
-  .dm-np .dm-flow-combo-input[aria-invalid="true"] { box-shadow: inset 0 0 0 1px rgb(244 96 122 / 0.6); }
-  .dm-np .dm-flow-combo-input[aria-invalid="true"]:focus-visible { box-shadow: inset 0 0 0 1px rgb(244 96 122 / 0.7), 0 0 0 0.25rem rgb(244 96 122 / 0.1); }
+  .dm-np .dm-flow-combo-input:focus-visible { outline: none; background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 2px var(--ring), 0 0 0 0.25rem var(--v4-tan-halo); }
+  .dm-np .dm-flow-combo-input[aria-invalid="true"] { box-shadow: inset 0 0 0 2px rgb(244 96 122 / 0.6); }
+  .dm-np .dm-flow-combo-input[aria-invalid="true"]:focus-visible { box-shadow: inset 0 0 0 2px rgb(244 96 122 / 0.7), 0 0 0 0.25rem rgb(244 96 122 / 0.1); }
   .dm-np .dm-flow-combo-icon { top: 1.6875rem; left: 1rem; color: var(--subtle); transition: color 0.2s var(--e-std), rotate 0.3s var(--e-enter); }
   .dm-np .dm-flow-combo:focus-within .dm-flow-combo-icon { color: var(--tan); rotate: -8deg; }
 
   /* The results (new.html .tok): the raised surface under the field, a thin scrollbar, rows of 62px with a pip and a
-     chevron that steps right on hover. */
+     chevron that steps right on hover. QA round 2, N1: the list may run to 28rem, at most 60% of the screen's height, so a
+     tablet shows more rows instead of a short inner scroll box over empty space. */
   .dm-np .dm-flow-listbox { padding: 0.375rem; border-radius: 1.125rem; background: var(--s1); box-shadow: inset 0 0 0 1px rgb(255 236 220 / 0.1), inset 0 1px 0 var(--v4-w06), 0 1.5rem 3.75rem -1.5rem rgb(0 0 0 / 0.9); animation: dm-np-menu 0.28s var(--e-enter) backwards; }
-  .dm-np .dm-flow-listbox-scroll { gap: 2px; max-height: 18.25rem; scrollbar-width: thin; scrollbar-color: var(--strong) transparent; }
+  .dm-np .dm-flow-listbox-scroll { gap: 2px; max-height: min(28rem, 60dvh); scrollbar-width: thin; scrollbar-color: var(--strong) transparent; }
   .dm-np .dm-flow-hit { position: relative; gap: 0.875rem; min-height: 3.875rem; padding: 0.375rem 0.375rem 0.375rem 1.25rem; border-radius: 0.75rem; transition: background-color 0.18s var(--e-std), scale 0.1s var(--e-press); }
   .dm-np .dm-flow-hit:hover, .dm-np .dm-flow-hit[data-active] { background: var(--v4-w045); }
   .dm-np .dm-flow-hit:active:not(.dm-flow-hit--off) { scale: 0.997; }
@@ -372,6 +380,12 @@
   /* Once a token is picked the whole block (label, band, rows; or its resting shape) rises from blur, the rows together
      (new.html .plist panel-in .5s), never one by one. */
   .dm-np .dm-flow-pool-rows > li { animation: none; }
+  /* Top pools under the search (QA round 2, N19): the plain pool rows above, each row a link into New position. */
+  .dm-np [data-top-pools] { display: grid; margin-top: 1.125rem; container: dm-pools / inline-size; }
+  /* Its rows carry no figures: the link is the whole row, with no empty figure column beside it or room under it. */
+  .dm-np [data-top-pools] .dm-mkt-option { grid-template-columns: minmax(0, 1fr); padding-right: 0; padding-bottom: 0; }
+  .dm-np [data-top-pools] > .dm-label { margin: 0 0 0.375rem; font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.01em; color: var(--subtle); }
+  .dm-np [data-top-pools] a.dm-mkt-option-head { color: inherit; text-decoration: none; }
   .dm-np [data-picker-variant="create"] > :is(fieldset, div[aria-hidden="true"]) { animation: dm-np-panel 0.5s var(--e-enter) backwards; }
   /* The column band over the rows (new.html .band.pcols): Pool, TVL, 24h volume, APR, once, so the rows show their
      figures alone. Drawn where the figures stand beside the pair; where they stack (a phone, a narrow list) the rows keep
@@ -492,7 +506,7 @@
   .dm-np .dm-flow-now-price { font-size: 0.9375rem; line-height: normal; font-weight: 500; letter-spacing: -0.01em; color: var(--fg); }
   /* Closer / Wider / Custom (V4 .chs): one framed track of three tall choices, each with its little drawing over its word;
      the chosen one lighter with the lip ring and its band green. The choice is aria-checked (a radio group). */
-  .dm-np .dm-flow-widths { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.1875rem; height: auto; padding: 0.1875rem; border-radius: 1.0625rem; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); }
+  .dm-np .dm-flow-widths { display: grid; grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 0.1875rem; height: auto; padding: 0.1875rem; border-radius: 1.0625rem; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); }
   .dm-np .dm-flow-widths > .dm-seg-item { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.625rem; height: 5.25rem; min-height: 5.25rem; padding: 0 0.5rem; border-radius: 0.875rem; background: transparent; box-shadow: none; font-size: 1rem; font-weight: 400; letter-spacing: normal; color: var(--muted); transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std), box-shadow 0.18s var(--e-std), scale 0.1s var(--e-press); }
   .dm-np .dm-flow-widths > .dm-seg-item:hover { background: var(--v4-w04); box-shadow: none; color: var(--fg); }
   .dm-np .dm-flow-widths > .dm-seg-item[aria-checked="true"],
@@ -510,6 +524,7 @@
   .dm-np .dm-flow-width-art > span::before { left: -0.8px; }
   .dm-np .dm-flow-width-art > span::after { right: -0.8px; }
   .dm-np .dm-flow-width-art[data-width-art="wide"] > span { inset-inline: 16.07%; }
+  .dm-np .dm-flow-widths > .dm-seg-item > span:last-child { text-align: center; }
   .dm-np .dm-flow-width-art[data-width-art="custom"] > span { inset: 0.375rem 21.43% 0.375rem 25%; box-shadow: none; background-image: repeating-linear-gradient(90deg, rgb(255 236 220 / 0.3) 0 2px, transparent 2px 0.25rem), repeating-linear-gradient(90deg, rgb(255 236 220 / 0.3) 0 2px, transparent 2px 0.25rem); background-size: 100% 1px; background-position: 0 0, 0 100%; background-repeat: no-repeat; }
   .dm-np .dm-flow-widths > .dm-seg-item:hover .dm-flow-width-art > span { scale: 1.08 1; }
   .dm-np .dm-seg-item[aria-checked="true"] .dm-flow-width-art > span { background-color: rgb(95 208 154 / 0.16); box-shadow: inset 0 0 0 1px rgb(95 208 154 / 0.6); }
@@ -540,8 +555,8 @@
   .dm-np .dm-flow-bound-unit { font-size: 0.8125rem; color: var(--muted); }
   .dm-np .dm-flow-bound-input { height: 2.5rem; padding: 0 0.75rem; border-radius: 0.75rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--lip); font-size: 0.9375rem; font-weight: 500; transition: box-shadow 0.2s var(--e-std), background-color 0.2s var(--e-std); }
   .dm-np .dm-flow-bound-input:hover { box-shadow: inset 0 0 0 1px var(--strong); }
-  .dm-np .dm-flow-bound-input:focus-visible { outline: none; background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong), 0 0 0 0.25rem var(--v4-tan-halo); }
-  .dm-np .dm-flow-bound-input[aria-invalid] { box-shadow: inset 0 0 0 1px rgb(244 96 122 / 0.6); }
+  .dm-np .dm-flow-bound-input:focus-visible { outline: none; background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 2px var(--ring), 0 0 0 0.25rem var(--v4-tan-halo); }
+  .dm-np .dm-flow-bound-input[aria-invalid] { box-shadow: inset 0 0 0 2px rgb(244 96 122 / 0.6); }
   @media (max-width: 767px) {
     .dm-np .dm-flow-widths > .dm-seg-item { height: 4.75rem; min-height: 4.75rem; }
     .dm-np .dm-flow-bounds { margin: 0 -0.75rem; }
@@ -559,10 +574,10 @@
   @media (hover: hover) {
     .dm-np .dm-flow-amount:hover { box-shadow: inset 0 0 0 1px var(--lip); }
   }
-  .dm-np .dm-flow-amount:focus-within { background: rgb(255 157 98 / 0.03); box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong), 0 0 0 0.25rem var(--v4-tan-halo); }
+  .dm-np .dm-flow-amount:focus-within { background: rgb(255 157 98 / 0.03); box-shadow: inset 0 0 0 2px var(--ring), 0 0 0 0.25rem var(--v4-tan-halo); }
   .dm-np .dm-flow-amount[data-invalid],
-  .dm-np .dm-flow-amount[data-invalid]:hover { box-shadow: inset 0 0 0 1px rgb(244 96 122 / 0.6); }
-  .dm-np .dm-flow-amount[data-invalid]:focus-within { box-shadow: inset 0 0 0 1px rgb(244 96 122 / 0.7), 0 0 0 0.25rem rgb(244 96 122 / 0.1); }
+  .dm-np .dm-flow-amount[data-invalid]:hover { box-shadow: inset 0 0 0 2px rgb(244 96 122 / 0.6); }
+  .dm-np .dm-flow-amount[data-invalid]:focus-within { box-shadow: inset 0 0 0 2px rgb(244 96 122 / 0.7), 0 0 0 0.25rem rgb(244 96 122 / 0.1); }
   .dm-np .dm-flow-pair-row:first-child:not(:only-child) .dm-flow-amount { padding-bottom: 1rem; }
   /* The figure is the serif at 44px, stepping down as it grows longer; the placeholder may be faint only at this size. */
   .dm-np .dm-flow-amount-input { height: 3rem; font-family: var(--font-display); font-size: 2.75rem; line-height: 3rem; font-weight: 400; letter-spacing: -0.02em; }
@@ -591,7 +606,7 @@
   .dm-np .dm-flow-deposit-total { gap: 0.375rem; padding: 0.875rem 0.125rem 0; border: 0; border-radius: 0; background: none; box-shadow: inset 0 1px 0 var(--line); }
   .dm-np .dm-flow-deposit-total-head > span { font-size: 0.84375rem; line-height: 1.25rem; font-weight: 400; letter-spacing: -0.01em; color: var(--subtle); }
   .dm-np .dm-flow-deposit-total-head > strong { font-family: var(--font-display); font-size: 1.75rem; line-height: 1.1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
-  .dm-np .dm-flow-deposit-total[data-amount-total="unavailable"] strong { font-family: var(--font-sans); font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; }
+  .dm-np .dm-flow-deposit-total[data-amount-total="unavailable"] strong { font-family: var(--font-sans); font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; letter-spacing: -0.01em; color: var(--subtle); }
   .dm-np .dm-flow-deposit-total > p { font-size: 0.78125rem; line-height: 1.5; color: var(--subtle); }
 
   /* Pay with another token: the way back to the pool's two tokens is a quiet back link (V4 .back). */
@@ -627,11 +642,20 @@
   .dm-np .dm-flow-slip-mark[data-taken] { background: rgb(255 157 98 / 0.7); }
   .dm-np .dm-flow-slip-thumb { background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / 0.35), inset 0 0 0 1.5px var(--tan); }
   .dm-np .dm-flow-slip-scale { font-size: 0.75rem; color: var(--subtle); }
+  /* QA round 2, N103: the approved desktop board (new.html .slp) has the presets and the exact box only; the track is the
+     phone's (states/PhoneMore.html), so it is drawn there alone. The value and its bound are unchanged. */
+  /* Above a phone (the board's .slp-r): the presets, then the exact box right after them, side by side; they wrap in a
+     narrow column. The track stays a phone's. */
+  @media (min-width: 768px) {
+    .dm-np .dm-flow-slip-rail { display: none; }
+    .dm-np .dm-flow-slip-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 0.5rem; }
+    .dm-np .dm-flow-slip-exact { justify-content: flex-start; }
+  }
   .dm-np .dm-flow-slip-exact-label { font-size: 0.8125rem; color: var(--subtle); }
   .dm-np .dm-flow-slip-exact > .dm-flow-input { width: 11rem; max-width: 100%; height: 2.5rem; border-radius: 0.75rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--lip); color: var(--subtle); transition: box-shadow 0.2s var(--e-std), background-color 0.2s var(--e-std); }
   .dm-np .dm-flow-slip-exact > .dm-flow-input:hover { box-shadow: inset 0 0 0 1px var(--strong); }
-  .dm-np .dm-flow-slip-exact > .dm-flow-input:focus-within { outline: none; background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong), 0 0 0 0.25rem var(--v4-tan-halo); }
-  .dm-np .dm-flow-slip-exact > .dm-flow-input[data-invalid] { box-shadow: inset 0 0 0 1px rgb(244 96 122 / 0.6); }
+  .dm-np .dm-flow-slip-exact > .dm-flow-input:focus-within { outline: none; background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 2px var(--ring), 0 0 0 0.25rem var(--v4-tan-halo); }
+  .dm-np .dm-flow-slip-exact > .dm-flow-input[data-invalid] { box-shadow: inset 0 0 0 2px rgb(244 96 122 / 0.6); }
   .dm-np .dm-flow-slip-exact .dm-flow-input-control { font-size: 0.875rem; font-weight: 500; }
   .dm-np .dm-flow-slip-hint { font-size: 0.78125rem; line-height: 1.5; color: var(--subtle); }
   .dm-np .dm-flow-slip-warn { position: relative; padding-left: 1.125rem; font-size: 0.84375rem; line-height: 1.5; color: var(--fg); }
@@ -652,6 +676,15 @@
     .dm-np .dm-flow-amount-input[data-len="m"] { font-size: 1.875rem; }
     .dm-np .dm-flow-amount-input[data-len="l"] { font-size: 1.625rem; }
     .dm-np .dm-flow-amount-input[data-len="xl"] { font-size: 1.375rem; }
+  }
+  /* QA round 2, Q27: typed text at 16px on a phone or any touch screen, so iOS never zooms into a field in the middle of
+     the flow (the search, a Custom price, the exact slippage, a start price). v3-foundation.css says it for every field;
+     these rules follow the flow's own sizes above, so they say it again. */
+  @media (max-width: 767px), (pointer: coarse) {
+    .dm-np .dm-flow-combo-input,
+    .dm-np .dm-flow-bound-input,
+    .dm-np .dm-flow-input-control,
+    .dm-np .dm-flow-slip-exact .dm-flow-input-control { font-size: 1rem; }
   }
 
   /* ---- 6. Funds from another network and pay with another token (PositionsMore §7 Find funds, §8 Your transfer) ------ */

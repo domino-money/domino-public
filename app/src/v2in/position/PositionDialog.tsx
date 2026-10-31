@@ -16,12 +16,12 @@ import { useDirectExit } from './directRun'
 import { AmountsField, RangeField, RangePicture, ReceiveField, ShareField } from './Fields'
 import { initialAmounts, initialRange, inputsOf, shareOf, ticksOf, type AmountsValue, type RangeValue } from './forms'
 import type { ActionPosition, VaultReserves } from './model'
-import { DirectReceiptView, ZapReceiptView } from './Receipt'
+import { DirectReceiptUnread, DirectReceiptView, ZapReceiptView } from './Receipt'
 import { Review } from './Review'
 import { useActionRun, type RunView } from './run'
 import { Slippage } from './Slippage'
 import { StepButton, StepsList, stepsDone } from './Steps'
-import { amountText, decimalsOf, labelOf, type TokenBook } from './tokens'
+import { decimalsOf, labelOf, shortAmountText, type TokenBook } from './tokens'
 import { ActionDialog, ErrorLine, Locked, Mark, Note, Pair, PairName, Progress, Rows, Tick } from './ui'
 import { offerVault, type VaultHandoff } from './vaultHandoff'
 import type { OpenGate } from './wallet'
@@ -62,7 +62,7 @@ function useKeptReview(view: RunView): KeptReview | null {
 /** "1.5 USDG + 0.001 ETH": a vault's reserves above zero, in their tokens' own units; null when none is. */
 export function reservesText(book: TokenBook, reserves: VaultReserves): string | null {
   const above = (reserves.reserves ?? []).filter((reserve) => reserve.amount > 0n)
-  return above.length ? above.map((reserve) => amountText(book, reserve.token, reserve.amount)).join(' + ') : null
+  return above.length ? above.map((reserve) => shortAmountText(book, reserve.token, reserve.amount)).join(' + ') : null
 }
 
 /**
@@ -87,13 +87,19 @@ export function reservesText(book: TokenBook, reserves: VaultReserves): string |
  * review leads with what moves as token rows, the settings sit under a quiet Advanced at the foot of the form, a waiting
  * Review button says what is missing, and before the deploy the button's place is a locked slot. Same flows and hooks.
  */
-export function PositionDialog({ gate, position, mode, book, reserves = null, onClose, onDone }: {
+export function PositionDialog({ gate, position, mode, book, reserves = null, available = null, onClose, onDone }: {
   gate: OpenGate
   position: ActionPosition
   mode: PositionMode
   book: TokenBook
   /** The vault's reserves as read-v6 read them, when the position is a vault's root (rev3 §2.13). */
   reserves?: VaultReserves | null
+  /**
+   * (QA round 2, WD-MAX) The tokens in the position now, in the pool's order (currency0, currency1), as the page already
+   * read them (its read at the pool's price): shown above Withdraw's How much, rounded down, so the amount All takes out is
+   * in view. Null when the page has none: nothing is drawn, and nothing is read for it.
+   */
+  available?: readonly [bigint, bigint] | null
   onClose: () => void
   /** The action is on chain: the page reads again (with the block it was included in, when known). */
   onDone: (block?: bigint) => void
@@ -314,7 +320,15 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
 
       {phase === 'form' && mode === 'increase' && <AmountsField chainId={chainId} position={position} book={book} value={amounts} onChange={setAmounts} />}
       {phase === 'form' && mode === 'changeRange' && <RangeField position={position} book={book} value={range} onChange={setRange} ticks={ticks} sameRange={sameRange} />}
-      {phase === 'form' && (mode === 'changeRange' || mode === 'exit') && <ShareField value={share} onChange={setShare} label={mode === 'changeRange' ? 'Amount to move' : undefined} />}
+      {/* (QA round 2, WD-MAX) What there is to take out, as token rows; Max (the default) takes every bit of it, by the same
+          full exit as Close position, so nothing is ever typed. */}
+      {phase === 'form' && mode === 'exit' && available && (
+        <div className="dm-pa-field" data-position-available="">
+          <span className="dm-pa-label">{COPY.form.inPosition}</span>
+          <Pair chainId={chainId} book={book} tokens={[pool.currency0, pool.currency1]} amounts={available} />
+        </div>
+      )}
+      {phase === 'form' && (mode === 'changeRange' || mode === 'exit') && <ShareField value={share} onChange={setShare} label={mode === 'changeRange' ? 'Amount to move' : undefined} all={mode === 'exit' ? COPY.form.max : undefined} />}
       {phase === 'form' && mode === 'exit' && (
         <ReceiveField chainId={chainId} book={book} position={position} way={way} convertTo={convertTo} onChange={(nextWay, token) => { setWay(nextWay); setConvertTo(token) }} />
       )}
@@ -371,7 +385,7 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
 
       {phase === 'review' && usesDirect && directReads && (
         <div className="dm-pa-field" data-position-direct={direct.stage}>
-          {!direct.receipt && (
+          {!direct.receipt && !directDone && (
             <div className="dm-pa-field" data-position-receive={mode === 'collect' ? 'collect' : 'close'}>
               <SheetCard caption={COPY.wallet.youReceive}>
                 {direct.prepared ? (
@@ -406,7 +420,8 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
           {direct.prepared?.pausesAutomation != null && !done && gate.mode === 'live' && !quiet && (
             <Tick checked={direct.ticked} disabled={direct.ticked} onChange={(next) => next && direct.tick()} data-position-pause-confirm="">{ROOT_PAUSE_COPY}</Tick>
           )}
-          <ErrorLine error={direct.error} />
+          {/* Done with an error only when the receipt can't be read exactly: said under the receipt's own "Confirmed". */}
+          <ErrorLine error={directDone ? null : direct.error} />
           {switching ? <Progress data-position-progress="switching">Switch to {v2Chain(chainId).name} in your wallet…</Progress> : direct.stage === 'wallet' && <Progress data-position-progress="wallet">{COPY.wallet.inWallet}</Progress>}
           {/* Changed on purpose 2026-10-14 (C3 review): reads failing on the wallet's network or account say to switch back. */}
           {direct.stage === 'sent' && !direct.receipt && <Progress key={direct.away ?? (direct.slow ? 'slow' : 'pending')} data-position-progress="chain">{direct.away === 'chain' ? COPY.wallet.walletAway(v2Chain(chainId).name) : direct.away === 'account' ? COPY.wallet.accountAway : direct.slow ? COPY.wallet.stillWaiting : COPY.wallet.pendingNetwork}</Progress>}
@@ -414,6 +429,7 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, on
           {direct.stage === 'sent' && direct.slow && direct.hash && v2TxUrl(chainId, direct.hash) && <a className="underline" href={v2TxUrl(chainId, direct.hash) ?? undefined} target="_blank" rel="noreferrer noopener" data-step-explorer="">{COPY.wallet.explorer}</a>}
           {direct.stage === 'unknown' && <Note data-position-direct-unknown="">{COPY.wallet.sentUnknown}</Note>}
           {direct.receipt && <DirectReceiptView chainId={chainId} receipt={direct.receipt} book={book} />}
+          {directDone && !direct.receipt && <DirectReceiptUnread code={direct.error?.code ?? 'receipt_invalid'} />}
           {/* V1's Close position: its slippage under a closed Advanced at the foot of the review. */}
           {mode === 'close' && !done && direct.stage !== 'wallet' && direct.stage !== 'sent' && direct.stage !== 'unknown' && (
             <SheetMore label={COPY.form.advanced} value={bps === null ? undefined : `${COPY.form.slippage} ${bps / 100}%`} data-close-advanced="">

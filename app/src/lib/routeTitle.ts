@@ -57,7 +57,9 @@ export function useTabTitle(full: string) {
     if (announcedRoute !== null && announcedRoute !== route) announce(full)
     announcedRoute = route
     return () => {
-      document.title = before
+      // Changed on purpose 2026-10-30 (QA round 2, N25: a stale tab title after Back): the name goes back only while the
+      // tab still shows this screen's; a screen that has already named the tab since keeps its own.
+      if (document.title === full) document.title = before
     }
   }, [full])
 }

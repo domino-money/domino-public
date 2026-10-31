@@ -103,10 +103,10 @@ function servedRead(transport: ReadV6Transport, probe: V2RouteProbe): ReadV6Tran
 function servedPlan(transport: S1PlanTransport, probe: V2RouteProbe): S1PlanTransport {
   return {
     kind: transport.kind,
-    async plan(request) {
+    async plan(request, signal) {
       const state = await probe.state('plan')
       if (!routeServes(state, 'plan')) throw new Error(offReason(state))
-      return transport.plan(request)
+      return transport.plan(request, signal)
     },
   }
 }

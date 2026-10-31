@@ -271,14 +271,25 @@ export interface ProviderTally {
 
 export const FIRST_TALLY: ProviderTally = { reasks: 0, unavailable: 0, waits: 0 }
 
-/** How often a chain card asks again after an answer: the pool chart's own minute (historyRead.ts). */
-export const CHAIN_REFRESH_MS = 60_000
+/**
+ * How often a chain card asks again after an answer. Was the pool chart's minute (historyRead.ts); five minutes since
+ * 2026-10-30 (QA round 2, N104): a card draws 24 hours at one point an hour, so a minute changed nothing on screen and an
+ * idle Markets sent six history reads a minute.
+ */
+export const CHAIN_REFRESH_MS = 300_000
+/**
+ * How often a chain card whose history is still being built (`not_built`) asks again: the minute, as before 2026-10-30
+ * (N104 review). Its first request started the build, and the line can be drawn as soon as it is done
+ * (historyRead.ts HISTORY_EVERY_MS).
+ */
+export const CHAIN_BUILDING_MS = 60_000
 const PROVIDER_PASSING = new Set(['provider_capacity_busy', 'provider_rate_limited', 'provider_unavailable'])
 
 /**
  * How long a card coming back to the page waits before its first read, from
  * what the browser kept for it; null when that answer stands for this visit. A
- * chain series keeps its one-minute rhythm; provider candles still drawn wait
+ * chain series keeps its five-minute rhythm (CHAIN_REFRESH_MS), a history still
+ * being built its minute (CHAIN_BUILDING_MS); provider candles still drawn wait
  * for the read service's limit; a provider refusal that can pass waits a
  * minute from when it came; any other provider answer is final. A failed
  * read waits out its own wait, a minute at the least, and is then asked
@@ -290,7 +301,7 @@ export function keptWaitMs(answer: CardAnswer, now: Instant): number | null {
   const failed = failureWaitMs(answer, now)
   if (answer.data === null) return failed
   const since = elapsedMs(answer, now)
-  if (answer.source === 'chain') return Math.max(0, CHAIN_REFRESH_MS - since, failed)
+  if (answer.source === 'chain') return Math.max(0, (answer.data.status === 'not_built' ? CHAIN_BUILDING_MS : CHAIN_REFRESH_MS) - since, failed)
   const history = answer.data.priceHistory
   if (history.status === 'available' || history.status === 'stale') {
     return Math.max(0, (history.cache.maxStaleSeconds - providerAge(history.cache.ageSeconds, answer, now).seconds) * 1000, failed)

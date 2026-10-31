@@ -146,6 +146,8 @@
   .dm-pa .dm-slip-choice > .dm-seg > .dm-seg-item[aria-pressed="true"] { background: var(--v4-w08); box-shadow: inset 0 0 0 1px var(--border-lip); }
   .dm-pa .dm-slip-choice > label { position: relative; gap: 0.25rem; margin: 0; font-size: 0.6875rem; line-height: 0.875rem; font-weight: 500; color: var(--fg-subtle); }
   .dm-pa .dm-slip-choice > label > .dm-field { height: 2.5rem; padding-right: 1.625rem; font-family: var(--font-sans); font-size: 0.875rem; font-variant-numeric: lining-nums tabular-nums; text-align: right; }
+  /* 16px typed text on a phone or a touch screen, so iOS never zooms into it (QA round 2, Q27). */
+  @media (max-width: 767px), (pointer: coarse) { .dm-pa .dm-slip-choice > label > .dm-field { font-size: 1rem; } }
   .dm-pa .dm-slip-choice > label::after { content: '%'; position: absolute; right: 0.75rem; bottom: 0.625rem; font-size: 0.875rem; line-height: 1.25rem; color: var(--fg-subtle); pointer-events: none; }
   .dm-pa .dm-slip-choice > :is(.dm-error, .dm-hint) { grid-column: 1 / -1; margin: 0; }
 

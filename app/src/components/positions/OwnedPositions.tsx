@@ -173,7 +173,7 @@ export default function OwnedPositions({ identity, deposits, onEmptyAction, view
       <Frame data={{ 'data-owned': 'no-wallet' }}>
         <EmptyState
           icon={<EmptyDomino />}
-          title="Connect a wallet to see your positions"
+          title="Connect a wallet to see your positions."
           action={
             <Button type="button" onClick={openWallet}>
               <IconWalletLine size={16} className="dm-own-wl" />

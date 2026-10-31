@@ -67,7 +67,7 @@ test('Markets searches names and contracts on every creation network, keeps same
   const s = await markets({ live: [8453, 42161] });
   try {
     const { page, chain, chainReads } = s;
-    const search = page.getByRole('combobox', { name: 'Token name or address', exact: true });
+    const search = page.getByRole('combobox', { name: 'Search a token', exact: true });
     await search.fill('Network Cat');
     for (const id of [8453, 42161]) await page.locator(`[data-token-network-option="${id}:${TOKEN}"]`).waitFor();
     assert.equal((await page.locator(`[data-token-network-option="8453:${TOKEN}"] [data-chain-chip]`).innerText()).trim(), 'Base');
@@ -76,9 +76,18 @@ test('Markets searches names and contracts on every creation network, keeps same
     await page.locator('[data-network-token-view="8453"] h1').filter({ hasText: 'CAT' }).waitFor();
     const pools = page.locator('[data-picker-network="8453"]');
     await pools.locator('[data-pool-key]').waitFor({ timeout: 30_000 });
-    assert.equal(await pools.locator('input, button').count(), 0, 'Markets rows compare verified pools without a dead deposit selection');
+    // Changed on purpose 2026-10-30 (QA round 2, N5, the owner's yes): each row opens New position on its network with
+    // that pool proposed (a button that says so), never a deposit selection here.
+    assert.equal(await pools.locator('input').count(), 0, 'Markets rows compare verified pools without a dead deposit selection');
+    assert.ok(await pools.locator('button[data-open-pool]').count() > 0, 'each row opens New position with its pool');
+    assert.match(await pools.locator('button[data-open-pool]').first().textContent(), /Create a position in this pool/, 'the row says where it leads');
     assert.equal(await page.locator('[data-network-new-position]').getAttribute('href'), `#/new/network/8453/${TOKEN}`);
     await inspectSizes(page);
+    const poolKey = await pools.locator('[data-pool-key]').first().getAttribute('data-pool-key');
+    await pools.locator('button[data-open-pool]').first().click();
+    await page.waitForFunction(expected => window.location.hash === expected, `#/new/network/8453/${TOKEN}/${poolKey}`);
+    await page.evaluate(token => { window.location.hash = `#/markets/network/8453/${token}`; }, TOKEN);
+    await page.locator('[data-network-token-view="8453"] h1').filter({ hasText: 'CAT' }).waitFor();
     // A direct chain change with the same contract must immediately drop the old token metadata.
     await page.evaluate(token => { window.location.hash = `#/markets/network/42161/${token}`; }, TOKEN);
     await page.locator('[data-network-token-view="42161"] h1').filter({ hasText: 'ARBCAT' }).waitFor();
@@ -101,18 +110,21 @@ test('Markets searches names and contracts on every creation network, keeps same
 test('Markets public discovery works with creation in preview, and a closed origin never offers unavailable networks', async () => {
   const s = await markets();
   try {
-    await s.page.getByRole('combobox', { name: 'Token name or address', exact: true }).fill('Network Cat');
+    await s.page.getByRole('combobox', { name: 'Search a token', exact: true }).fill('Network Cat');
     await s.page.locator(`[data-token-network-option="8453:${TOKEN}"]`).click();
     await s.page.locator('[data-picker-network="8453"] [data-pool-key]').waitFor({ timeout: 30_000 });
     noWalletActions(s.chain);
   } finally { await s.close(); }
   const closed = await markets({ originOpen: false });
   try {
-    await closed.page.getByRole('combobox', { name: 'Token name or address', exact: true }).fill(TOKEN);
+    await closed.page.getByRole('combobox', { name: 'Search a token', exact: true }).fill(TOKEN);
     await closed.page.locator('[role="listbox"]').waitFor();
     assert.equal(await closed.page.locator('[data-token-network-option]').count(), 0);
     await closed.page.evaluate(token => { window.location.hash = `#/markets/network/8453/${token}`; }, TOKEN);
-    await closed.page.getByText('Pool discovery is unavailable on this network.', { exact: true }).waitFor();
+    // Changed on purpose 2026-10-30 (QA round 2, the owner's rule: no "unavailable" line on a read surface): the closed
+    // network's state is data only; "Pool discovery is unavailable on this network." is gone.
+    await closed.page.locator('[data-network-token-view="8453"] [data-network-token-state="closed"]').waitFor({ state: 'attached' });
+    assert.doesNotMatch(await closed.page.locator('main').innerText(), /unavailable/i);
     assert.equal(await closed.page.locator('[data-network-new-position]').count(), 0);
     noWalletActions(closed.chain);
   } finally { await closed.close(); }
@@ -122,9 +134,12 @@ test('Markets keeps service failure distinct from no pools and never falls back 
   const s = await markets({ live: [8453, 42161], failed: true });
   try {
     await s.page.evaluate(token => { window.location.hash = `#/markets/network/8453/${token}`; }, TOKEN);
-    // (2026-10-15, pack 7 review): the failure settled first (its Try again); the loading line's words are gone (no status
-    // notices), so filtering on them no longer waited for anything.
-    await s.page.getByRole('button', { name: 'Try again', exact: true }).waitFor({ timeout: 30_000 });
+    // (2026-10-15, pack 7 review): the failure settled first; the loading line's words are gone (no status notices), so
+    // filtering on them no longer waited for anything. Changed on purpose 2026-10-30 (QA round 2, the owner's rule: no
+    // Try again on a read surface): the token is read again on its own, quietly; its failure is data, and the page rests.
+    await s.page.locator('[data-network-token-view="8453"] [data-network-token-state]:not([data-network-token-state="reading"]):not([data-network-token-state="checking"])').waitFor({ state: 'attached', timeout: 30_000 });
+    assert.equal(await s.page.getByRole('button', { name: /Try again|Retry/ }).count(), 0, 'no Try again on a read surface');
+    assert.doesNotMatch(await s.page.locator('main').innerText(), /unavailable|could not be verified/i);
     assert.equal(await s.page.locator('[data-pools-empty]').count(), 0, 'an unavailable lookup is never an empty-pool result');
     assert.equal(await s.page.locator('[data-network-new-position]').count(), 0);
     noWalletActions(s.chain);

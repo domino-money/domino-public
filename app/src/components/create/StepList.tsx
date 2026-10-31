@@ -1,14 +1,16 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { CREATE } from '../../lib/create/copy'
 import type { JourneyState, Stage, TickRange } from '../../lib/create/journey'
-import { boundPrice, shownPrice, shownRange, type PoolPrice } from '../../lib/read/screens/poolRange'
+import { pricePair } from '../../lib/read/orientation'
+import { shownPrice, shownRange, type PoolPrice } from '../../lib/read/screens/poolRange'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import { plainFigure } from '../../lib/create/plain'
 import { feeWords } from '../../lib/format/fee'
+import { FEE_MEANING } from '../explore/feeMeaning'
 import { AmountText } from '../figures'
 import { SymbolText } from '../read/screens/SymbolText'
 import { StepMarker } from '../ui'
-import type { Held } from './valuation'
+import { endPrice, type Held } from './valuation'
 // Whether motion is stilled (reduced motion, or the footer's Pause motion): moved to lib/motion in V2 (DESIGN-V2 §5.4).
 import { stilled } from '../../lib/motion/stilled'
 import { rootScale } from '../../lib/rootScale'
@@ -41,11 +43,20 @@ export interface StepView {
 
 type Usable = Extract<PoolPrice, { state: 'usable' }>
 
-/** "WETH / USDG · 0.02% fee", symbols as untrusted text; the fee as every screen writes it (lib/format/fee.ts, audit E21). */
-export function PoolPair({ option }: { option: PoolOption }) {
+/**
+ * "WETH / USDG · 0.02% fee", symbols as untrusted text; the fee as every screen writes it (lib/format/fee.ts, audit E21).
+ * Changed on purpose 2026-10-30 (QA round 2, Q24): the pair in the order its price is written (lib/read/orientation.ts
+ * pricePair, "PRIORS / USDG"), as Markets and the pool page name it, never the pool's own order. Display only.
+ * Changed on purpose 2026-10-30 (QA round 2, Q23/N37, the owner: the network on every pool): with `network`, the pool's
+ * network before the fee ("WETH / USDC · Base · 0.05% fee"), where the chosen pool's panel shows it (other networks offered).
+ * Q28: the fee says what it is on hover, as every fee chip does.
+ */
+export function PoolPair({ option, network = null }: { option: PoolOption; network?: string | null }) {
+  const pair = pricePair(option.currencies[0], option.currencies[1])
   return (
     <>
-      <SymbolText token={option.currencies[0]} /> / <SymbolText token={option.currencies[1]} /> · {feeWords(option.fee)}
+      <SymbolText token={pair.base} /> / <SymbolText token={pair.quote} /> · {network !== null && <><span data-chain-chip={option.currencies[0].chainId}>{network}</span> · </>}
+      <span title={FEE_MEANING}>{feeWords(option.fee)}</span>
     </>
   )
 }
@@ -54,9 +65,9 @@ export function PoolPair({ option }: { option: PoolOption }) {
  * "WETH / USDG · 0.02%". Changed on purpose (round 6, 2026-09-27): no "deposit WETH" after it. A position holds both
  * tokens and the amount step takes an amount in either, so which one step 1 started from is not a choice to show.
  */
-export function PoolSummary({ state }: { state: JourneyState }) {
+export function PoolSummary({ state, network = null }: { state: JourneyState; network?: string | null }) {
   if (!state.pool || !state.token) return null
-  return <PoolPair option={state.pool} />
+  return <PoolPair option={state.pool} network={network} />
 }
 
 /**
@@ -67,10 +78,11 @@ export function PoolSummary({ state }: { state: JourneyState }) {
 export function RangeSummary({ range, price }: { range: TickRange; price: Usable }) {
   const shown = shownPrice(price)
   const view = shownRange(range, price.inverted === true)
-  const words = (tick: number) => plainFigure(boundPrice(tick, shown) ?? CREATE.review.summary.beyondDisplay)
+  // A full-range end reads 0 or ∞ (QA round 2, N73), as the range step writes it.
+  const words = (tick: number, which: 'lower' | 'upper') => plainFigure(endPrice(tick, which, shown) ?? CREATE.review.summary.beyondDisplay)
   return (
     <>
-      1 <SymbolText token={price.base} /> = {words(view.lower)} to {words(view.upper)} <SymbolText token={price.quote} />
+      1 <SymbolText token={price.base} /> = {words(view.lower, 'lower')} to {words(view.upper, 'upper')} <SymbolText token={price.quote} />
     </>
   )
 }
@@ -143,10 +155,22 @@ export function StepList({ steps, onOpen, locked = false }: { steps: readonly St
         // A person may already be pressing a control while the panel settles. Do not move that control between
         // pointer-down and pointer-up: the gesture would end elsewhere and its click would be lost.
         if (document.activeElement !== heading) return
-        const top = heading.getBoundingClientRect().top
         const header = Math.max(0, document.querySelector('header')?.getBoundingClientRect().bottom ?? 0)
         const air = rootScale()
-        if (top < header + 8 * air || top > window.innerHeight * 0.6) {
+        // QA round 2, Q6 and N14 (2026-10-30): Review's In your wallet card holds Connect wallet / Create position. On a
+        // wide screen it stands beside the done rows, 12rem above Review's title (styles/v4-newposition.css §8): the scroll
+        // takes the higher of the two, so its button never ends under the header. Under 900px the card is stacked under
+        // the steps: the scroll brings its button up to just under the header, so it is in reach when Review opens.
+        const card = heading.closest<HTMLElement>('[data-stage-card="review"]')
+        const side = card?.querySelector<HTMLElement>('[data-stage="review"] > section[aria-labelledby$="steps-heading"], :scope > [data-journey-footer][data-final]') ?? null
+        const action = card?.querySelector<HTMLElement>(':scope > [data-journey-footer][data-final]') ?? null
+        const sideTop = side ? side.getBoundingClientRect().top : Infinity
+        const headingTop = heading.getBoundingClientRect().top
+        const wide = sideTop < headingTop
+        const below = !wide && action ? action.getBoundingClientRect() : null
+        const top = below ? below.top : Math.min(headingTop, sideTop)
+        const out = below ? below.top < header + 8 * air || below.bottom > window.innerHeight : top < header + 8 * air || top > window.innerHeight * 0.6
+        if (out) {
           window.scrollTo({ top: Math.max(0, window.scrollY + top - header - 24 * air), behavior: still ? 'auto' : 'smooth' })
         }
       },

@@ -16,6 +16,8 @@
   .dm-seq > .dm-acct-block { margin-top: 2.75rem; }
   .dm-seq > .dm-acct-note + .dm-acct-block, .dm-seq > .dm-acct-note + .dm-acct-note { margin-top: 0.75rem; }
   .dm-seq > .dm-seq-create + .dm-acct-block { margin-top: 1.5rem; }
+  /* 2026-10-30 (QA round 2, N13): the wallet plate's Back sits as close under it as under the setup's cards. */
+  .dm-seq > .dm-empty.dm-acct-block + .dm-acct-block { margin-top: 1.5rem; }
 
   /* The setup: two cards, the steps and the aside (no outer card; .seq). The aside is not sticky: with the review open it can
      be taller than the window, and a sticky aside would then hide its own button (map R6). */
@@ -43,7 +45,8 @@
   .dm-seq .dm-seq-loading-row.dm-skel { height: 4rem; border-radius: 0.875rem; background-color: var(--v4-w03); background-image: none; animation: none; }
 
   /* One-line states (.card.slot with a status dot): unavailable, failed (+ Try again), Auto-exit's own with Back. */
-  .dm-seq > :is([data-v2in-setup="unavailable"], [data-sequence-positions="failed"], div.dm-acct-block:not(.dm-card):has(> p.text-body)) { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1rem; padding: 1.375rem 1.5rem; border-radius: 1.625rem; background: var(--v4-card-lift), var(--card); box-shadow: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 var(--v4-w06), var(--v4-card-drop); font-size: 0.875rem; line-height: 1.5; color: var(--fg-muted); }
+  /* 2026-10-30 (QA round 2): a portfolio not read yet is the loading rows (.dm-seq-loading, still marked failed), never this box. */
+  .dm-seq > :is([data-v2in-setup="unavailable"], [data-sequence-positions="failed"]:not(.dm-seq-loading), div.dm-acct-block:not(.dm-card):has(> p.text-body)) { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1rem; padding: 1.375rem 1.5rem; border-radius: 1.625rem; background: var(--v4-card-lift), var(--card); box-shadow: inset 0 0 0 1px var(--v4-card-ring), inset 0 1px 0 var(--v4-w06), var(--v4-card-drop); font-size: 0.875rem; line-height: 1.5; color: var(--fg-muted); }
   .dm-seq > [data-v2in-setup="unavailable"]::before, .dm-seq > :is([data-sequence-positions="failed"], div.dm-acct-block:not(.dm-card)) > p.text-body::before { content: ''; display: inline-block; width: 0.375rem; height: 0.375rem; margin-right: 0.625rem; border-radius: 50%; background: var(--fg-subtle); vertical-align: 0.125rem; }
   .dm-seq > :is([data-sequence-positions="failed"], div.dm-acct-block:not(.dm-card)) > p.text-body { flex: 1 1 16rem; margin: 0; font-size: 0.875rem; line-height: 1.5; color: var(--fg-muted); }
 
@@ -71,6 +74,10 @@
   .dm-seq > .dm-empty.dm-acct-block > .dm-empty-action > .dm-btn--primary { height: 3.375rem; padding: 0 1.75rem; border-radius: 0.875rem; font-size: 0.96875rem; line-height: 1.25rem; }
   /* A <button> takes the block's font in the prototype (.v4c button {font: inherit}): Connect wallet reads 16px, regular. */
   .dm-seq > .dm-empty.dm-acct-block > .dm-empty-action > button.dm-btn--primary { font-size: 1rem; font-weight: 400; line-height: normal; }
+  /* 2026-10-30 (QA round 2, N13): the large outline beside it (New position, View positions) at the same height, its icon's
+     side as Automate's New position button. */
+  .dm-seq > .dm-empty.dm-acct-block > .dm-empty-action > .dm-btn--outline.dm-btn--lg { height: 3.375rem; }
+  .dm-seq > .dm-empty.dm-acct-block > .dm-empty-action > .dm-btn--outline.dm-btn--lg:has(> svg) { padding-left: 1.125rem; }
   .dm-seq > .dm-empty.dm-acct-block[data-sequence-positions="empty"] { grid-template-columns: 7.5rem minmax(0, 1fr); column-gap: 1.75rem; max-width: none; padding: 1.75rem; }
   .dm-seq > .dm-empty.dm-acct-block[data-sequence-positions="empty"] > .dm-empty-art { height: 7.5rem; }
   .dm-seq > .dm-empty.dm-acct-block[data-sequence-positions="empty"] > .dm-empty-title { font-size: 2rem; }
@@ -226,9 +233,11 @@
   .dm-seq-create .dm-seq-limit > .dm-acct-lf > .dm-seq-limit-unit { grid-column: 2; grid-row: 1 / -1; align-self: start; justify-self: end; display: flex; align-items: center; height: 2.875rem; padding-right: 0.875rem; font-size: 0.875rem; font-weight: 400; letter-spacing: normal; color: var(--fg-subtle); translate: 0 0.125rem; pointer-events: none; }
   .dm-seq-create .dm-seq-limit > .dm-acct-lf > .dm-field:has(+ .dm-seq-limit-unit) { padding-right: 1.9375rem; }
   .dm-seq-create .dm-seq-limit > .dm-acct-lf > .dm-field:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--border-strong); }
-  .dm-seq-create .dm-seq-limit > .dm-acct-lf > .dm-field:focus-visible { outline: none; background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong), 0 0 0 0.25rem var(--v4-tan-halo); }
+  .dm-seq-create .dm-seq-limit > .dm-acct-lf > .dm-field:focus-visible { outline: none; background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 2px var(--ring), 0 0 0 0.25rem var(--v4-tan-halo); }
   .dm-seq-create .dm-seq-limit[data-invalid] > .dm-acct-lf > .dm-field { background: rgb(244 96 122 / 0.04); box-shadow: inset 0 0 0 1px rgb(244 96 122 / 0.6); }
-  .dm-seq-create .dm-seq-limit[data-invalid] > .dm-acct-lf > .dm-field:focus-visible { box-shadow: inset 0 0 0 1px rgb(244 96 122 / 0.7), 0 0 0 0.25rem rgb(244 96 122 / 0.1); }
+  .dm-seq-create .dm-seq-limit[data-invalid] > .dm-acct-lf > .dm-field:focus-visible { box-shadow: inset 0 0 0 2px var(--money-out), 0 0 0 0.25rem rgb(244 96 122 / 0.1); }
+  /* (2026-10-30, QA round 2, Q27) 16px on a phone or a touch screen, where a smaller field makes iOS zoom in on focus. */
+  @media (max-width: 767px), (pointer: coarse) { .dm-seq-create .dm-seq-limit > .dm-acct-lf > .dm-field { font-size: 1rem; } }
   .dm-seq-create .dm-seq-limit > .dm-seq-hint { grid-column: 1; grid-row: 2; max-width: 60ch; margin: 0.375rem 0 0; font-size: 0.8125rem; line-height: 1.5; color: var(--fg-subtle); }
   .dm-seq-create .dm-seq-limit > .dm-seq-limit-why { grid-column: 1; grid-row: 3; margin: 0.375rem 0 0; font-size: 0.8125rem; line-height: 1.5; color: var(--money-out); animation: dm-v4-seq-why 0.25s var(--e-enter) backwards; }
   /* More limits (.acc-h): a 3.625rem row on a hairline, the circled plus of the foundation's details turning 45° open. */
@@ -493,10 +502,11 @@
   [data-automate] .dm-automation-choice-doc:is(:hover, :focus-visible) { background: var(--v4-w04); color: var(--fg); }
   [data-automate] .dm-automation-choice-doc:hover > svg { color: var(--primary); transform: translateY(-1px) rotate(-8deg); }
   [data-automate] .dm-automation-choice-doc:active { scale: 0.97; }
-  /* A finger gets a 44px target without the pill growing (the prototype's phone .how::after). */
+  /* A finger gets a 44px target without the pill growing (the prototype's phone .how::after): 44 CSS px whatever the
+     root's scale (rem over --vwk; 768-859px with a mouse keeps the desktop root). */
   @media (pointer: coarse), (max-width: 859px) {
     [data-automate] .dm-automation-choice-doc { white-space: nowrap; }
-    [data-automate] .dm-automation-choice-doc::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 2.75rem; margin-top: -1.375rem; }
+    [data-automate] .dm-automation-choice-doc::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: max(2.75rem, calc(2.75rem / var(--vwk))); translate: 0 -50%; }
   }
 
   /* The function list (.fx): the rows card in the first column, the stage (35 x 33.75rem) at the right. */
@@ -692,7 +702,7 @@
      button on its own line; the rows' actions side by side when they fit. */
   @media (max-width: 859px) {
     main[data-automate] { row-gap: 1.375rem; padding-bottom: 0; }
-    main[data-automate] > :first-child { padding-top: 0.75rem; }
+    main[data-automate] > :first-child { padding-top: 0.75rem; flex: 0 0 100%; }
     [data-automate] .dm-automation-start > .dm-automation-choice { grid-template-columns: 2.5rem minmax(0, 1fr); gap: 0.875rem; align-items: center; padding: 1rem 1rem 5rem; }
     [data-automate] .dm-automation-start .dm-automation-choice-art { width: 2.5rem; height: 3.875rem; justify-self: auto; }
     [data-automate] .dm-automation-start .dm-automation-choice-body { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; }
@@ -712,7 +722,13 @@
     [data-automate] .dm-automation-choice-grid .dm-automation-choice-body::after { top: -1.375rem; }
     [data-automate] .dm-automation-choice-grid :is(.dm-automation-choice-heading, .dm-automation-choice-description, .dm-automation-choice-fee) { flex: 0 0 100%; }
     [data-automate] .dm-automation-choice-grid .dm-automation-choice-heading > h2 { font-size: 1.75rem; text-wrap: balance; }
-    [data-automate] .dm-automation-choice-grid .dm-automation-choice-fee { margin-bottom: 0.25rem; white-space: nowrap; font-size: 0.78125rem; }
+    /* Changed on purpose 2026-10-30 (QA round 2, Q1 and N29): the fee line wraps, now that it also says when a run happens and
+       who pays its network fee; it was kept on one line. */
+    [data-automate] .dm-automation-choice-grid .dm-automation-choice-fee { margin-bottom: 0.25rem; white-space: normal; text-wrap: pretty; font-size: 0.78125rem; }
+    /* The owner's decision on N80 (2026-10-30): the stage's words read at about 12px on a phone. The drawing keeps its .6 scale,
+       size and motion; only the labels' own size is counter-scaled (13px and 14px at .6 drew about 8px). */
+    [data-automate] .dm-automate-stage .lb { font-size: 20px; }
+    [data-automate] .dm-automate-stage .lb.hi { font-size: 21px; }
     [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry { margin: 0.75rem 0 0; }
     [data-automate] .dm-automation-choice-grid .dm-automation-choice-doc { margin: 0.75rem 0 0 -0.25rem; }
     [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry > .dm-btn { height: 2.75rem; }
@@ -723,6 +739,9 @@
     [data-automate] .dm-automate-stage { width: 17.5rem; height: 16.875rem; }
     [data-automate] .dm-automate-stage .sbox { transform: scale(0.5); }
     [data-automate] .dm-automation-choice-grid .dm-automation-choice-art { width: 17.5rem; height: 16.875rem; }
+    /* N80: at .5, the labels counter-scaled again to about 12px. */
+    [data-automate] .dm-automate-stage .lb { font-size: 24px; }
+    [data-automate] .dm-automate-stage .lb.hi { font-size: 25px; }
   }
   @media (max-width: 359px) { [data-automate] .dm-automation-choice-grid .dm-automation-choice-fee { white-space: normal; } }
   @media (max-width: 767px) { main[data-automate] { padding-bottom: 2rem; } }
@@ -735,8 +754,15 @@
      the vault dialogs' fields. The sheet's frame, head and foot are the foundation's (v4-sheets.css); the action row's
      layout is the position area's. ===== */
   [data-automation-control] > .dm-automation-funds-dot { flex: none; width: 0.375rem; height: 0.375rem; border-radius: 50%; background: var(--money-in); box-shadow: 0 0 0 0.1875rem rgb(95 208 154 / 0.16); }
-  [data-automation-control] > svg { flex: none; transition: transform 0.3s var(--e-enter); }
-  [data-automation-control]:hover:not(:disabled) > svg { transform: rotate(-8deg); }
+  /* Changed on purpose 2026-10-30 (QA round 2, review of N68): the control's own turn only off the action row; in the row
+     the turn is the row's (v4-position.css, -8deg), which this transform used to double. */
+  .dm-position-automation [data-automation-control] > svg { flex: none; transition: transform 0.3s var(--e-enter); }
+  .dm-position-automation [data-automation-control]:hover:not(:disabled) > svg { transform: rotate(-8deg); }
+  /* Added 2026-10-30 (QA round 2, review of N68): Auto-exit · Off beside the control tilts its shield as the control does
+     (the prototype's .a-ax:hover .ai), and on a phone takes a row of its own, as the automation does on Base and Arbitrum,
+     so no outline sits alone beside an empty cell. */
+  [data-position-detail] .dm-pos-actions [data-automation-exit-entry]:hover:not(:disabled):not([aria-disabled="true"]) > svg { rotate: -8deg; }
+  @media (max-width: 767px) { [data-position-detail] .dm-pos-actions [data-automation-exit-entry] { grid-column: 1 / -1; } }
   /* The management sheet (.vc): one flat summary, the status as words with its dot (never a filled badge), the held
      figure in serif, small buttons, then the details. */
   [data-automation-management] .dm-automation-panel { display: grid; gap: 0.875rem; }
@@ -772,8 +798,11 @@
   [data-v2in-dialog^="vault-"] .dm-v2in-field { font-size: 0.875rem; line-height: 1.4; font-weight: 500; color: var(--fg); }
   [data-v2in-dialog^="vault-"] .dm-v2in-field > .dm-field { height: 2.875rem; min-height: 0; padding: 0 0.875rem; border-radius: 0.75rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border-lip); font-size: 0.9375rem; font-weight: 500; }
   [data-v2in-dialog^="vault-"] .dm-v2in-field > .dm-field:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--border-strong); }
-  [data-v2in-dialog^="vault-"] .dm-v2in-field > .dm-field:focus-visible { outline: none; background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong), 0 0 0 0.25rem var(--v4-tan-halo); }
+  [data-v2in-dialog^="vault-"] .dm-v2in-field > .dm-field:focus-visible { outline: none; background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 2px var(--ring), 0 0 0 0.25rem var(--v4-tan-halo); }
   [data-v2in-dialog^="vault-"] .dm-v2in-field > .dm-field[aria-invalid="true"] { background: rgb(244 96 122 / 0.04); box-shadow: inset 0 0 0 1px rgb(244 96 122 / 0.6); }
+  /* (2026-10-30, QA round 2, N88) Focused while invalid: the firm 2px ring in money-out with its halo (shell.css). */
+  [data-v2in-dialog^="vault-"] .dm-v2in-field > .dm-field[aria-invalid="true"]:focus-visible { box-shadow: inset 0 0 0 2px var(--money-out), 0 0 0 0.25rem rgb(244 96 122 / 0.1); }
+  @media (max-width: 767px), (pointer: coarse) { [data-v2in-dialog^="vault-"] .dm-v2in-field > .dm-field { font-size: 1rem; } }
   [data-v2in-dialog^="vault-"] .dm-v2in-field > .dm-hint { font-size: 0.78125rem; line-height: 1.5; font-weight: 400; color: var(--fg-subtle); }
   [data-v2in-dialog^="vault-"] .dm-v2in-field > .dm-error { font-size: 0.78125rem; line-height: 1.5; font-weight: 400; color: #f78a9d; }
   [data-v2in-dialog^="vault-"] .dm-seq-consent.dm-acct-check { display: grid; grid-template-columns: 1.375rem minmax(0, 1fr); align-items: start; gap: 0.875rem; padding: 1rem 1rem 1rem 0.875rem; border-radius: 1rem; background: rgb(255 236 220 / 0.025); box-shadow: inset 0 0 0 1px var(--border); color: var(--fg-muted); font-size: 0.875rem; line-height: 1.55; cursor: pointer; }
@@ -797,7 +826,7 @@
     .dm-seq > .dm-empty.dm-acct-block > .dm-empty-art { grid-column: 1; grid-row: auto; height: 7.5rem; margin-bottom: 1.25rem; }
     .dm-seq > .dm-empty.dm-acct-block > :is(.dm-empty-title, .dm-empty-body, .dm-empty-action) { grid-column: 1; }
     .dm-seq > .dm-empty.dm-acct-block > .dm-empty-title { font-size: 2.125rem; }
-    .dm-seq > :is([data-v2in-setup="unavailable"], [data-sequence-positions="failed"], div.dm-acct-block:not(.dm-card):has(> p.text-body)) { padding: 1.125rem 1.25rem; border-radius: 1.25rem; }
+    .dm-seq > :is([data-v2in-setup="unavailable"], [data-sequence-positions="failed"]:not(.dm-seq-loading), div.dm-acct-block:not(.dm-card):has(> p.text-body)) { padding: 1.125rem 1.25rem; border-radius: 1.25rem; }
   }
   /* ----- Set up automation's motion (approved site/sequence.html, the kit's fast inner-page timings) ----- */
   /* The load moment, on every visit: the lede rises, then the content block. */
@@ -866,8 +895,8 @@
     .dm-seq-create .dm-seq-pick:active { scale: none; }
     .dm-seq-create .dm-seq-mode.dm-btn[aria-checked="true"]::after { animation: none; }
     .dm-seq-create .dm-seq-mode.dm-btn:active { scale: none; }
-    [data-automation-control] > svg { transition: none; }
-    [data-automation-control]:hover:not(:disabled) > svg { transform: none; }
+    .dm-position-automation [data-automation-control] > svg { transition: none; }
+    .dm-position-automation [data-automation-control]:hover:not(:disabled) > svg { transform: none; }
     [data-automate] .dm-automation-start .dm-automation-choice-entry > .dm-btn:hover > svg, [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry > a.dm-btn:hover > svg, [data-automate] .dm-automation-choice-doc:hover > svg { transform: none; }
     [data-automate] .dm-automation-start .dm-automation-choice-entry > .dm-btn > svg, [data-automate] .dm-automation-choice-doc > svg, [data-automate] .dm-automation-choice-grid .dm-automation-choice-entry > .dm-btn > svg, [data-automate] .dm-automation-start .dm-npb-tile .npb-t { transition-property: opacity, color, background-color, box-shadow; transform: none; }
     [data-automate] .dm-automation-choice-grid .dm-automation-choice-body::before { transition-property: opacity; }

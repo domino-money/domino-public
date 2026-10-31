@@ -1,19 +1,29 @@
-import { useEffect, useRef, useState } from 'react'
-import { catalogueTokens } from '../../config/selectedPoolCatalogue'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { catalogueTokens, type PoolCatalogueEntry } from '../../config/selectedPoolCatalogue'
 import { CREATE } from '../../lib/create/copy'
 import { networkCandidate, type NetworkToken, type OtherChains } from '../../lib/create/otherChains'
 import { dropCreatePools, startCreatePools, warmPoolHints } from '../../lib/create/poolsAhead'
 import { stilled } from '../../lib/motion/stilled'
 import { rootScale } from '../../lib/rootScale'
 import type { JourneyState } from '../../lib/create/journey'
+import { priceInverted } from '../../lib/read/orientation'
 import { shortAddress, type AddressKey } from '../../lib/read/screens/identity'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import type { StatusLine } from '../../lib/read/screens/statusLine'
 import { knownTokens } from '../../lib/read/screens/tokenSearch'
 import { mergeCandidates, type TokenCandidate } from '../../lib/read/screens/tokens'
 import type { ReadSource } from '../../lib/read/types'
-import { TokenSearch, type NetworkChoice } from '../read/screens/TokenSearch'
+import { SEARCH_EVERY_NETWORK_UNDER_LABEL, SEARCH_LABEL, SEARCH_PLACEHOLDER, TokenSearch, type NetworkChoice } from '../read/screens/TokenSearch'
+import { FEE_MEANING } from '../explore/feeMeaning'
+import { newPositionHref } from '../explore/routes'
+import { CatalogueLabel } from '../PoolCatalogueIdentity'
+import { TokenIcon, TokenMark } from '../TokenIcon'
 import { Button, Skeleton } from '../ui'
+import { feeWords } from '../../lib/format/fee'
+import { unreadToken } from '../../lib/read/project'
+import { rem } from '../../lib/rootScale'
+import { tokenArtwork } from '../../lib/tokenArtwork'
+import { tokenHue } from '../../lib/format/tokenHue'
 import { ChosenPool, PoolList } from './StagePool'
 
 /** What the pool id in the link came to, while the person picks a token. */
@@ -45,8 +55,10 @@ function preselectWords(status: PreselectStatus): string {
       return `${CREATE.token.preselectHeading}: ${CREATE.token.preselectNotFound}`
     case 'unsupported':
       return `${CREATE.token.preselectHeading}: ${status.reason === 'dynamic' ? CREATE.pool.unsupportedDynamic : CREATE.pool.unsupportedHooks}`
+    // Changed on purpose 2026-10-30 (QA round 2, N42 and the sweep): a read that asking again may fix is asked again quietly,
+    // so it is said as the check it still is; nothing says the pool's data is unavailable.
     case 'failed':
-      return `${CREATE.token.preselectHeading}: ${status.line.title}.`
+      return `${CREATE.token.preselectHeading}: ${status.line.retry ? CREATE.token.preselectChecking : CREATE.token.preselectNotFound}`
     case 'withdrawn':
       return `${CREATE.token.preselectHeading}: ${CREATE.token.preselectWithdrawn}`
     default:
@@ -61,6 +73,89 @@ const searchName = (candidate: TokenCandidate) => {
   return symbol.length > 24 ? `${symbol.slice(0, 24)}…` : symbol
 }
 
+/** How many of the list's pools step 1 offers under the search: as many as Home's Top pools leads with (the owner, N19). */
+const TOP_POOLS = 4
+
+/**
+ * A list entry turned the way its price is written (lib/read/orientation.ts, "PONS / USDG"), labels and marks together;
+ * an entry without addresses keeps the order its labels were written in. Display only.
+ */
+function oriented(entry: PoolCatalogueEntry): PoolCatalogueEntry {
+  const addresses = entry.addresses
+  if (!addresses || !priceInverted(addresses[0], addresses[1])) return entry
+  return { ...entry, labels: [entry.labels[1], entry.labels[0]], artwork: [entry.artwork[1], entry.artwork[0]], addresses: [addresses[1], addresses[0]] }
+}
+
+/**
+ * Added 2026-10-30 (QA round 2, N19, the owner's yes, no badge): while nothing is chosen, the list's first pools under the
+ * search, as Home's Top pools names them, each a link that opens New position on that pool exactly as a pool page's link
+ * does (it is verified there before it is chosen). Nothing is read for it: the list is the one the page already holds
+ * (lib/read/featuredSource.ts, handed in by the journey), and it is drawn only once that list has settled, so it never
+ * swaps under the person. No order but the list's own and no row marked above another. Robinhood Chain's for now.
+ */
+/** One of them, drawn as New position's plain pool row draws a pool (read/screens/PoolPicker.tsx PoolRow): the marks, the pair, its fee chip and network. */
+function TopPoolLink({ entry, network }: { entry: PoolCatalogueEntry; network: string | null }) {
+  const size = 32
+  // QA round 2, Q28: what the fee is, as every fee chip says it on hover.
+  const fee = <span className="dm-chip shrink-0" data-fee="" title={FEE_MEANING}>{feeWords(entry.fee)}</span>
+  return (
+    <a className="dm-mkt-option-head" href={newPositionHref(entry.poolId)}>
+      <span className="inline-flex shrink-0 items-center" aria-hidden="true">
+        {entry.artwork.map((artwork, index) => {
+          const style = { marginLeft: index ? rem(-size * 0.3) : 0 }
+          const token = !artwork && entry.addresses ? unreadToken(entry.addresses[index]) : null
+          // QA round 2 review (N19): a token without bundled artwork gets the artwork this page already holds, or the plain
+          // disc; nothing is asked for it here (a mark the resolver does not know yet would read it on step 1's first paint).
+          return artwork ? (
+            <TokenIcon key={index} symbol={artwork} size={size} ring="var(--card)" style={style} />
+          ) : token && tokenArtwork.peek(token.chainId, token.address) !== undefined ? (
+            <TokenMark key={index} token={token} size={size} ring="var(--card)" style={style} />
+          ) : token ? (
+            <span
+              key={index}
+              className="dm-token-disc"
+              data-token-mark="unknown"
+              style={{ width: rem(size), height: rem(size), borderRadius: '50%', border: '2px solid var(--card)', display: 'inline-block', flexShrink: 0, '--mark-h': tokenHue(token.address), ...style } as CSSProperties}
+            />
+          ) : (
+            <span key={index} className="inline-block rounded-full bg-surface-3" style={{ width: rem(size), height: rem(size), boxShadow: '0 0 0 2px var(--card)', ...style }} />
+          )
+        })}
+      </span>
+      <span className="dm-flow-pool-id">
+        <span className="dm-flow-pool-pair">
+          <CatalogueLabel text={entry.labels[0]} /> / <CatalogueLabel text={entry.labels[1]} />
+        </span>
+        {network !== null && (
+          <span className="dm-flow-pool-chips">
+            <span className="dm-chip dm-flow-pool-net">{network}</span>
+            {fee}
+          </span>
+        )}
+      </span>
+      {network === null && fee}
+    </a>
+  )
+}
+
+function TopPools({ entries, network, server }: { entries: readonly PoolCatalogueEntry[]; network: string | null; server: boolean }) {
+  if (entries.length === 0) return null
+  return (
+    <section className="dm-flow-top" aria-labelledby="create-top-pools" data-picker-variant="create" data-top-pools="">
+      <h3 id="create-top-pools" className="dm-label">
+        {CREATE.token.topPools(server)}
+      </h3>
+      <ul className="dm-flow-pool-rows">
+        {entries.map((entry) => (
+          <li key={entry.poolId} className="dm-mkt-option" data-top-pool={entry.poolId}>
+            <TopPoolLink entry={oriented(entry)} network={network} />
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 /**
  * Step 1, Pool: the pool the position goes into.
  *
@@ -69,7 +164,10 @@ const searchName = (candidate: TokenCandidate) => {
  * name or a contract address, then the existing pools for the chosen token.
  * Nothing else: the field is the whole way in. Nothing is read until a person
  * asks — the search reads a token only when one is chosen, and the pool list
- * reads once it mounts for a chosen token.
+ * reads once it mounts for a chosen token. Changed on purpose 2026-10-30 (QA
+ * round 2, N19, the owner's yes): under the field, while nothing is chosen,
+ * the featured list's first pools (TopPools above), from the list the page
+ * already holds, with nothing read for them.
  *
  * Changed on purpose 2026-09-28 (speed wave, study items 27 and 30): the pool
  * list's read is asked the moment the token is chosen, beside the token read,
@@ -100,6 +198,9 @@ export function StageToken({
   onPool,
   onPreview,
   others = null,
+  top = [],
+  topServer = false,
+  initialPool = null,
 }: {
   source: ReadSource | null
   state: JourneyState
@@ -115,8 +216,26 @@ export function StageToken({
    * that carries V2; null everywhere else, where this step is exactly today's.
    */
   others?: OtherChains | null
+  /** The featured list's pools, once settled (QA round 2, N19): offered under the search while nothing is chosen. */
+  top?: readonly PoolCatalogueEntry[]
+  /** Whether that list is the server's (named Top pools) or the bundled one (Selected pools), as Home names it. */
+  topServer?: boolean
+  /**
+   * QA round 2, N5: the pool another network's link proposes (#/new/network/<chain>/<token>/<pool>), untrusted: that
+   * network's list chooses it once, only when its own read lists exactly that pool, never over a choice already made.
+   */
+  initialPool?: string | null
 }) {
   const [changing, setChanging] = useState(false)
+  // QA round 2, N57 (2026-10-30): Change pool and Keep this pool swap the panel the focus was on for another, so the focus
+  // moves with them: to the search, or back to the chosen pool's button, never to the page's start.
+  const focusNext = useRef<'search' | 'chosen' | null>(null)
+  useEffect(() => {
+    const next = focusNext.current
+    focusNext.current = null
+    if (next === 'search') document.getElementById('create-token-search')?.focus()
+    else if (next === 'chosen') document.querySelector<HTMLElement>('[data-chosen-pool] button')?.focus()
+  }, [changing])
   const known = knownTokens({ catalogue: catalogueTokens(), candidates })
   // Another network's pasted address, read through the wallet once chosen; a newer choice, or leaving, stops it.
   const resolving = useRef<AbortController | null>(null)
@@ -195,12 +314,29 @@ export function StageToken({
           </div>
         </div>
       ) : chosen ? (
-        <ChosenPool option={chosen} onChange={() => setChanging(true)} network={others?.name(chosen.currencies[0].chainId) ?? null} />
+        <ChosenPool
+          option={chosen}
+          onChange={(event) => {
+            // Only from the keyboard (a click's detail is 0): the search opens its list on focus, which a mouse click on
+            // Change pool should not do over the pools it means to show (QA round 2 review, N57).
+            if (event.detail === 0) focusNext.current = 'search'
+            setChanging(true)
+          }}
+          network={others?.name(chosen.currencies[0].chainId) ?? null}
+        />
       ) : (
         <>
           {state.pool && (
             <div className="flex justify-end">
-              <Button type="button" variant="ghost" size="sm" onClick={() => setChanging(false)}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  focusNext.current = 'chosen'
+                  setChanging(false)
+                }}
+              >
                 {CREATE.pool.keep}
               </Button>
             </div>
@@ -211,8 +347,10 @@ export function StageToken({
               known={known}
               onFound={fromSearch}
               id="create-token-search"
-              label={CREATE.token.searchLabel}
-              placeholder={CREATE.token.searchPlaceholder}
+              // QA round 2, N33/N102: the one label and placeholder of every search; where other networks are searched too,
+              // the placeholder says so without repeating the label shown above it.
+              label={SEARCH_LABEL}
+              placeholder={others ? SEARCH_EVERY_NETWORK_UNDER_LABEL : SEARCH_PLACEHOLDER}
               initialValue={state.token ? searchName(state.token) : undefined}
               onChoose={choosing}
               onPoint={warmPoolHints}
@@ -226,11 +364,13 @@ export function StageToken({
               {CREATE.page.sourceLoading}
             </p>
           )}
-          {source && state.token && <PoolList source={source} state={state} onPool={pickPool} onPreview={onPreview} others={others} />}
+          {source && state.token && <PoolList source={source} state={state} onPool={pickPool} onPreview={onPreview} others={others} hint={initialPool} />}
+          {source && !state.token && !state.pool && <TopPools entries={top.slice(0, TOP_POOLS)} network={others?.home ?? null} server={topServer} />}
         </>
       )}
+      {/* Changed on purpose 2026-10-30 (QA round 2 sweep): in the gate's own words, as the V2 journey says a closed network. */}
       {browsingOnly && <p className="dm-hint" role="status" data-network-creation="unavailable">
-        Creating positions on {others?.name(selectedNetwork)} is unavailable right now. You can still explore its pools.
+        {CREATE.token.networkClosed(others?.name(selectedNetwork) ?? 'this network')} {CREATE.token.exploreStill}
       </p>}
     </div>
   )

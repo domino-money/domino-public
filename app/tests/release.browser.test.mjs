@@ -517,7 +517,8 @@ test('(d) reads enabled: one capabilities GET per namespace and the lean load in
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 900 });
       const heads = await page.locator('#pools thead th').evaluateAll((ths) => ths.map((th) => th.textContent.replace(/\s+/g, ' ').trim()));
-      assert.deepEqual(heads, ['Pool', 'Price', 'TVL reported by a market data provider', '24h volume reported by a market data provider', 'APR', 'Details'], `${width}px`);
+      // Changed on purpose 2026-10-30 (QA round 2, N105): no sr-only " reported by a market data provider" after the headers.
+      assert.deepEqual(heads, ['Pool', 'Price', 'TVL', '24h volume', 'APR', 'Details'], `${width}px`);
       assert.equal(await page.locator('#pools thead').isVisible(), width >= 768, 'headers and their help controls enter or leave layout together');
       assert.equal(await rows.first().locator('td').nth(1).isVisible(), false, 'Home does not repeat the price column');
       assert.equal(await rows.first().locator('td').nth(2).isVisible(), true, 'TVL remains visible');
@@ -1136,7 +1137,7 @@ test('(v) Markets with a short list: today’s table alone and the catalogue sea
     assert.deepEqual(await page.locator('main [data-selected-pools] tbody tr').evaluateAll((trs) => trs.map((tr) => tr.querySelector('a').getAttribute('href'))), SERVED_LINKS, 'today’s pools, in its order, and nothing else');
     // V3 keeps the catalogue search in the header for every list length, without a disclosure or an invented count.
     assert.equal(await page.locator('main [data-featured-count]').count(), 0, 'no count beside the title');
-    const search = page.locator('[data-catalogue-search]').getByRole('combobox', { name: 'Token name or address', exact: true });
+    const search = page.locator('[data-catalogue-search]').getByRole('combobox', { name: 'Search a token', exact: true });
     assert.equal(await search.isVisible(), true, 'the catalogue search is visible without opening a disclosure');
     assert.equal(await search.isEditable(), true, 'the wider catalogue remains reachable with a short list');
     await search.focus();

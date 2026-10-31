@@ -60,7 +60,8 @@
  *   tokens (`knownHeld`, six today at most) are asked past that bound whenever
  *   they appear (review of D2, 2026-10-14).
  */
-import { MAIN_TOKENS } from '../config/mainTokens'
+import { ROBINHOOD_ID } from '../config/chainIdentity'
+import { MAIN_TOKENS, RESERVED_SYMBOLS } from '../config/mainTokens'
 import { catalogueTokens } from '../config/selectedPoolCatalogue'
 import type { WalletRow } from './read/pagers'
 import { parseScaled } from './format/decimal'
@@ -115,15 +116,31 @@ const MAIN_BY_READING: ReadonlyMap<string, string> = new Map([
   ...MAIN_TOKENS.map((token) => [symbolReading(token.symbol), token.address] as const),
 ])
 
-/** A token whose symbol reads as a main token's but lives at another address. */
+/** Every address the main tokens above are bound to: the addresses Domino knows on Robinhood Chain. */
+const KNOWN_ADDRESSES: ReadonlySet<string> = new Set(MAIN_BY_READING.values())
+/** How the reserved symbols (config/mainTokens.ts RESERVED_SYMBOLS) read. */
+const RESERVED_READINGS: ReadonlySet<string> = new Set(RESERVED_SYMBOLS.map(symbolReading))
+/** A symbol of plain capital letters, which reads as a reserved one only by being it (isLookAlike). */
+const PLAIN_CAPITALS = /^[A-Z]+$/
+
+/**
+ * A token whose symbol reads as a main token's but lives at another address. Since 2026-10-30 (QA round 2, N64: an
+ * airdropped "USDC 45 = $0.01" on the Wallet card) also a Robinhood Chain token whose symbol reads as a reserved one
+ * (USDC, USDT, DAI, WBTC, EURC) at an address Domino does not know. A symbol of plain capital letters counts only when
+ * it is that very symbol: the reading maps L to I because a small l passes for a capital I, which a capital L never
+ * does, so a real ticker such as DAL is listed while "DAl", "dai", "DA1" or a "USDC" with a Cyrillic C are not.
+ */
 export function isLookAlike(row: WalletRow): boolean {
   if (row.token.symbol === null) return false
   // A misleading name, or one with a format character that can reorder the text beside it, is left out too (audit I2).
   if (unsafeSymbol(row.token.symbol)) return true
-  const owner = MAIN_BY_READING.get(symbolReading(row.token.symbol))
-  // Native ETH and WETH both read as ether: either address is the real one for either symbol.
-  if (owner === undefined) return false
+  const reading = symbolReading(row.token.symbol)
+  const owner = MAIN_BY_READING.get(reading)
   const address = row.token.address.toLowerCase()
+  if (owner === undefined) {
+    return row.token.chainId === ROBINHOOD_ID && RESERVED_READINGS.has(reading) && !KNOWN_ADDRESSES.has(address) && (!PLAIN_CAPITALS.test(row.token.symbol) || RESERVED_SYMBOLS.includes(row.token.symbol))
+  }
+  // Native ETH and WETH both read as ether: either address is the real one for either symbol.
   if (owner === NATIVE || owner === WETH) return address !== NATIVE && address !== WETH
   return address !== owner
 }

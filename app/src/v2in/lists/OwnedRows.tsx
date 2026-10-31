@@ -84,6 +84,9 @@ export function OwnedCollection({ owner, readOnly = false, deposits, onEmptyActi
   const partial = own.reply?.kind === 'ok' && own.reply.body.truncated.positions
   const settled = historical.phase === 'ready' && own.reply?.kind === 'ok'
   const empty = settled && rows.length === 0 && !note && !partial
+  // (QA round 2, N63) The tabs and the status line count nothing until something is known: they said "Open 0 · Closed 0"
+  // for seconds while the two inventories were still on their way (the rows keep their loading rows meanwhile).
+  const counted = rows.length > 0 || empty
   const failed = historical.phase === 'failed'
   useLayoutEffect(() => {
     onEmptyAction?.(empty && !readOnly)
@@ -97,13 +100,13 @@ export function OwnedCollection({ owner, readOnly = false, deposits, onEmptyActi
         <h2 id="own-title" className="dm-title">{readOnly ? <>Positions of <span title={owner}>{shortAddress(owner)}</span></> : 'Your positions'}</h2>
         <div className="dm-own-tools flex items-center gap-2 flex-wrap justify-end">
           {!readOnly && <BulkClosePositions key={owner} owner={owner} rows={rows} />}
-          <Tabs label="Positions by state" value={tab} onChange={setChosen} items={[{ key: 'open', label: 'Open', count: counts.open }, { key: 'closed', label: 'Closed', count: counts.closed }]} />
+          <Tabs label="Positions by state" value={tab} onChange={setChosen} items={[{ key: 'open', label: 'Open', count: counted ? counts.open : undefined }, { key: 'closed', label: 'Closed', count: counted ? counts.closed : undefined }]} />
         </div>
       </div>
       {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the count no longer adds "N positions still
           being checked" (their number is data-owned-pending), and no line says "Some positions are still being checked.
           Available positions are shown below." The rows read go on being shown, and the others join them as they are read. */}
-      <p role="status" aria-live="polite" className="sr-only" data-owned-status="" data-owned-pending={counts.pending || undefined}>{counts.open} open and {counts.closed} closed positions.</p>
+      <p role="status" aria-live="polite" className="sr-only" data-owned-status="" data-owned-pending={counts.pending || undefined}>{counted ? `${counts.open} open and ${counts.closed} closed positions.` : null}</p>
       {note && <Note note={note} inGrid={false} />}
       {shown.length ? <div className="dm-own-list" role="tabpanel" aria-labelledby="own-title" data-owned-rows={tab}>
         <div className="dm-collection-head" data-collection-tab={tab} aria-hidden="true"><span>Pool</span>{tab === 'closed' ? <span>Position history</span> : <><span>Value</span><span>Fees to collect</span><span>Your APR</span></>}</div>

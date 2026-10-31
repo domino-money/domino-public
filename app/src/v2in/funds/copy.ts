@@ -28,6 +28,13 @@ export const FUNDS_TEXT = {
   /** A new deposit in place of the typed one (the zap path): reviewed again. */
   asNewDeposit: (token: string) => `Use ${token} as a new deposit, then review the swap.`,
   bringFrom: 'Bring it from:',
+  /**
+   * Added 2026-10-30 (QA round 2, N22's review): what a screen reader hears of the no-wallet line's "How it works", which
+   * opens the docs' Bring funds page, beside the amount step's own "How it works" (its docs step). Changed on purpose
+   * 2026-10-30 (QA round 2, final review journey-3): heard after the visible words, "How it works: bringing funds from
+   * another network", so the link's name starts with what it shows (WCAG 2.5.3); it was a name of its own.
+   */
+  howBringingWorks: 'bringing funds from another network',
   // Added 2026-10-06 (the owner's point 1: "only before an amount, and only when the person has money on another network";
   // "a visual sign that she has a token there and that we will bridge it"): the discreet line under the two amounts.
   /** "You have 100 USDC on Arbitrum One". */

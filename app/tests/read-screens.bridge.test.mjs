@@ -235,7 +235,7 @@ const POOL = '0x0911afcb281d7bcae2d71443ceaeebd0f89b4537708449970d797622b4b4c941
  */
 async function search(page, address) {
   await poolsSettled(page);
-  const combobox = page.getByRole('combobox', { name: 'Token name or address' });
+  const combobox = page.getByRole('combobox', { name: 'Search a token' });
   await combobox.waitFor();
   await combobox.fill(address);
   assert.equal(await combobox.inputValue(), address);
@@ -282,7 +282,7 @@ test('Markets reads the searched token, then its pools and the catalogue only on
     // Changed on purpose 2026-09-28 (speed wave, item 1): the budget it shares is the gateway's, no longer 1.1 s apart.
     assert.ok(cardIndex > 0, 'the independent card reads after the table');
     assertWithinBudget(posts());
-    const combobox = page.getByRole('combobox', { name: 'Token name or address' });
+    const combobox = page.getByRole('combobox', { name: 'Search a token' });
     await combobox.waitFor();
     await combobox.fill(TOKEN);
     assert.equal(await combobox.inputValue(), TOKEN, 'the main search keeps the pasted address');
@@ -571,7 +571,7 @@ test('the pool page never shows activity months behind the chain as the last 24 
     assert.equal(await card.locator('[role="status"]').textContent(), '', 'the live region says nothing');
     const shown = await visibleText(card);
     assert.equal(shown.replace(/[^—]/g, '').length, 10, `every figure is a dash: ${shown}`);
-    assert.doesNotMatch(shown, /Older than 24 h|24 h covered|observed|10 to 700|stale|behind|indexed chain events/i, 'no window, pool age, blocks or reason on the card');
+    assert.doesNotMatch(shown, /Older than 24 ?h|24 ?h covered|observed|10 to 700|stale|behind|indexed chain events/i, 'no window, pool age, blocks or reason on the card');
     assert.equal(await card.locator('h3').getAttribute('title'), 'Swaps and fees over the 24 hours up to the last indexed block, from indexed chain events.');
     assert.equal(posts().filter((r) => r.path.endsWith('/pool-activity')).length, 1, 'one read, not asked again');
     assert.deepEqual(errors, []);
@@ -640,7 +640,9 @@ test('a partial wallet page lists what was read with no notice, checks the selec
 
       const text = await list.innerText();
       assert.doesNotMatch(text, /All pages loaded|weren’t checked|skipped|partial/i, 'the partial coverage is not printed, and nothing calls the list complete');
-      assert.match(text, /3 tokens listed/);
+      // Changed on purpose 2026-10-30 (QA round 2, N64): the listing count is the markup's data only, never a visible line.
+      assert.doesNotMatch(text, /tokens listed/);
+      assert.match(await list.locator('.dm-acct-tokens-count').textContent(), /3 tokens listed/);
       assert.equal(await list.locator('[data-screen-status], .dm-inset, .text-money-wait, .dm-acct-tokens-foot').count(), 0, 'no status panel, footnote or yellow');
       assert.equal(await list.getByRole('button', { name: /Retry|Refresh|Load more|All pages loaded/ }).count(), 0, 'nothing to press: the page has no next one');
       await page.waitForTimeout(1500);
@@ -818,7 +820,8 @@ test('the Wallet card: the total, then the top 3 by USD value from shared token-
       assert.deepEqual(await list.locator('[data-usd]').allTextContents(), ['$3,000.00', '$20.00', '$5.50', '$0.10']);
       assert.equal(await visibleText(list.locator(`[data-wallet-row="${UNPRICED}"] [data-no-price]`)), '', 'no price: preserve the value slot without a visible placeholder');
       assert.equal(await list.locator(`[data-wallet-row="${UNPRICED}"] [data-no-price] .sr-only`).textContent(), 'No price', 'and words for a screen reader');
-      assert.equal(await list.locator('[data-wallet-unpriced-note]').innerText(), 'No price found');
+      // Changed on purpose 2026-10-30 (QA round 2, N64): one wording, the row's own ("No price").
+      assert.equal(await list.locator('[data-wallet-unpriced-note]').innerText(), 'No price');
       assert.equal(await list.getByRole('button', { name: 'Show less' }).getAttribute('aria-expanded'), 'true');
       assert.equal(await list.locator(`[data-wallet-row="${FAKE_USDG}"]`).count(), 0, 'the second USDG never');
 
@@ -1373,7 +1376,9 @@ const delayedPrices = (asked, delay) => async (context) => {
     const url = route.request().url();
     asked.push(url);
     const prices = url.includes('/token-pairs/v1/');
-    if (prices && delay() > 0) await sleep(delay());
+    // `delay` is a pause in ms, or a promise the prices wait for (held until the test releases it).
+    const wait = prices ? delay() : 0;
+    if (typeof wait === 'number' ? wait > 0 : wait) await (typeof wait === 'number' ? sleep(wait) : wait);
     const reply = prices ? [...twoPagePrices(url), providerPair(NEWDROP, '0.01', 1e6), providerPair(NEWER, '0.001', 1e6)] : [];
     return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(reply) });
   });
@@ -1490,15 +1495,20 @@ test('a later visit replaces the remembered total only after new holdings receiv
       const list = page.locator('[data-portfolio-tokens]');
       await page.locator('[data-portfolio-tokens][data-wallet-prices="ok"] [data-wallet-total]').waitFor({ timeout: 30_000 });
       assert.equal(await totalBecomes(page, '$2,038.50'), '$2,038.50');
-      // The next visit: its first page names NEWER (1,000 at $0.001), every price answered 2.5 s after it is asked.
-      // Changed on purpose 2026-10-17 (it was 800 ms): on a slow runner the reload could take longer than that to draw, so
-      // the new price landed before the remembered total was read (seen on main 38655740202 and on V4's runs). The same
-      // order is checked: the remembered total at once, then the new one once its price comes.
+      // The next visit: its first page names NEWER (1,000 at $0.001), and every price waits until the test releases it.
+      // Changed on purpose 2026-10-17 (it was 800 ms) and again 2026-10-30 (QA round 2, CI): a 2.5 s pause still lost the
+      // race on a slow runner, the reload taking longer than that to draw (seen on main 38655740202, on V4's runs and on
+      // PR #430), so the new price landed before the remembered total was read. The prices are now held until it is read
+      // and until NEWER's discovery has put the total's slot on its placeholder: the same order is checked, the remembered
+      // total at once, the slot waiting for the new holding, then the new total once its price comes.
       extras = [[NEWDROP, 'NEWDROP'], [NEWER, 'NEWER']];
-      delay = 2500;
+      let releasePrices;
+      delay = new Promise((resolve) => { releasePrices = resolve; });
       await page.reload();
       await list.locator('[data-wallet-total]').waitFor({ timeout: 5_000 });
       assert.equal(await list.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$2,038.50', 'the remembered total, at once');
+      await page.waitForFunction(() => window.__placeholders >= 1, null, { timeout: 10_000 });
+      releasePrices();
       assert.equal(await totalBecomes(page, '$2,039.50'), '$2,039.50', 'NEWER counted once its price came');
       await page.locator('[data-portfolio-tokens][data-wallet-prices="ok"][data-wallet-source="read"]').waitFor({ timeout: 30_000 });
       assert.equal(await page.evaluate(() => window.__totalGone), 1, 'a newly discovered nonzero holding invalidates the remembered total');

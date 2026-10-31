@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { poolListings } from '../../config/selectedPoolCatalogue'
 import { agedMarket, feeLabel, percentText, presentMetric, type Instant, type Market } from '../../lib/markets'
 import { feeWords } from '../../lib/format/fee'
+import { networkName } from '../../lib/networkName'
 import { useFeatured } from '../../lib/read/featuredSource'
 import { pricePair } from '../../lib/read/orientation'
 import { poolAprPresentation } from '../../lib/read/poolAprPresentation'
@@ -20,19 +21,23 @@ const NO_MARKETS: readonly Market[] = []
  * A row's APR exactly as the Top pools table writes it (MarketsTable's Row: Domino's qualified history, else the
  * stand-in estimate, else the read service's estimate, each "est."), or null where the table has no figure: a pool
  * without one is left out of the strip, never shown with a dash or an invented value.
+ *
+ * Changed on purpose 2026-10-30 (QA round 2, N81): the figure alone said nothing about what it is, so the strip writes
+ * its plain unit beside it, "a year", and "a year, est." for an estimate ("1,590% a year, est."). The figure and how it
+ * is reached are unchanged (D9).
  */
-function aprWords(m: Market, now: Instant): string | null {
+function aprWords(m: Market, now: Instant): { figure: string; unit: string } | null {
   const apr = poolAprPresentation(m, now)
   if (apr.qualified) {
     const shown = presentMetric(m.feeAprPercent, (metric) => (percentText(metric) === null ? '—' : `${percentText(metric)}%`))
-    return shown.kind === 'value' && shown.text !== '—' ? shown.text : null
+    return shown.kind === 'value' && shown.text !== '—' ? { figure: shown.text, unit: 'a year' } : null
   }
   if (apr.pending) return null
   if (apr.fallback) {
     const text = fallbackPercent(apr.fallback)
-    return text === null ? null : `${text}% est.`
+    return text === null ? null : { figure: `${text}%`, unit: 'a year, est.' }
   }
-  return apr.estimate.text === null ? null : `${apr.estimate.text}% est.`
+  return apr.estimate.text === null ? null : { figure: `${apr.estimate.text}%`, unit: 'a year, est.' }
 }
 
 /** The site's decorative separator (V4 §5.5): a mini domino in outline. */
@@ -69,24 +74,31 @@ export function HomeMarquee() {
     const apr = aprWords(m, now)
     if (apr === null) return []
     const pair = pricePair(m.tokens.base, m.tokens.quote)
-    return [{ key: m.key, href: poolHref(m.poolId, token), apr, fee: feeWords(feeLabel(m)), pair }]
+    return [{ key: m.key, href: poolHref(m.poolId, token), apr, network: networkName(pair.base.chainId), fee: feeWords(feeLabel(m)), pair }]
   })
 
   const item = (pool: (typeof pools)[number], copy: string | null): ReactNode => (
     <a key={copy === null ? pool.key : `${copy}-${pool.key}`} href={pool.href} className={cx('dm-mq-item', copy !== null && 'dm-mq-copy')} tabIndex={copy === null ? undefined : -1} aria-hidden={copy === null ? undefined : true}>
       <span className="dm-mq-pair"><PoolTokenLabel token={pool.pair.base} />/<PoolTokenLabel token={pool.pair.quote} /></span>
-      <span className="dm-mq-apr tnum">{pool.apr}</span>
-      <span className="dm-mq-fee tnum">{pool.fee}</span>
+      <span className="dm-mq-apr tnum">{pool.apr.figure}</span>
+      <span className="dm-mq-unit">{pool.apr.unit}</span>
+      {/* QA round 2, Q23 (the owner: the network on every pool, this strip included): "Robinhood Chain · 0.30% fee", as
+          a pool card writes it under its pair. */}
+      <span className="dm-mq-fee tnum">{pool.network} · {pool.fee}</span>
       {SEPARATOR}
     </a>
   )
   const repeats = pools.length === 0 ? 0 : Math.ceil(FILL / pools.length) - 1
+  // The run (--mq-dur below) takes 16 s a pool, 11 s before QA round 2: each now carries its unit and its network, about
+  // half as long again, so the strip keeps the approved pace instead of running faster.
   const fill = (half: string) => Array.from({ length: repeats }, (_, round) => pools.map((pool) => item(pool, `${half}${round}`)))
 
   return (
-    <div ref={ref} className={cx('dm-home-marquee dm-k-mq', inView && 'is-running')} data-home-marquee="">
+    // A keyboard in the strip stops it at its start and the browser scrolls the focused pool into view (v4-home.css, QA
+    // round 2, N85); once focus leaves, the strip goes back to its start, so the run resumes where it should.
+    <div ref={ref} className={cx('dm-home-marquee dm-k-mq', inView && 'is-running')} data-home-marquee="" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) event.currentTarget.scrollLeft = 0 }}>
       {pools.length > 0 && (
-        <div className="dm-mq-track" style={{ '--mq-dur': `${(pools.length + repeats * pools.length) * 11}s` } as CSSProperties}>
+        <div className="dm-mq-track" style={{ '--mq-dur': `${(pools.length + repeats * pools.length) * 16}s` } as CSSProperties}>
           <div className="dm-mq-set">
             {pools.map((pool) => item(pool, null))}
             {fill('a')}

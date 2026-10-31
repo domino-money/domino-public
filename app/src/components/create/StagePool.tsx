@@ -1,8 +1,11 @@
+import type { MouseEvent } from 'react'
 import { CREATE } from '../../lib/create/copy'
 import type { JourneyState } from '../../lib/create/journey'
 import { onOtherChain, type OtherChains } from '../../lib/create/otherChains'
+import { pricePair } from '../../lib/read/orientation'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import type { ReadSource } from '../../lib/read/types'
+import { FEE_MEANING } from '../explore/feeMeaning'
 import { IconCheck } from '../icons'
 import { NetworkPoolPicker, PoolPicker } from '../read/screens/PoolPicker'
 import { SymbolText } from '../read/screens/SymbolText'
@@ -20,7 +23,9 @@ import { Button, Chip } from '../ui'
  * amount is typed in is the independent one (PairedAmounts.tsx). A currency
  * the read could not identify is said there, on its own row.
  */
-export function ChosenPool({ option, onChange, network = null }: { option: PoolOption; onChange: () => void; network?: string | null }) {
+export function ChosenPool({ option, onChange, network = null }: { option: PoolOption; onChange: (event: MouseEvent<HTMLButtonElement>) => void; network?: string | null }) {
+  // QA round 2, Q24: named as Markets and the pool page name it (the order its price is written), icons matched to the names.
+  const pair = pricePair(option.currencies[0], option.currencies[1])
   return (
     <div className="dm-flow-panel" data-chosen-pool={option.key}>
       <div className="dm-flow-pool-head">
@@ -28,16 +33,17 @@ export function ChosenPool({ option, onChange, network = null }: { option: PoolO
         <span aria-hidden="true" className="dm-flow-chosen-check">
           <IconCheck size={12} />
         </span>
-        <TokenMarkPair base={option.currencies[0]} quote={option.currencies[1]} size={32} />
+        <TokenMarkPair base={pair.base} quote={pair.quote} size={32} />
         <div className="dm-flow-pool-name">
           <p className="dm-flow-pool-pair">
-            <SymbolText token={option.currencies[0]} /> / <SymbolText token={option.currencies[1]} />
+            <SymbolText token={pair.base} /> / <SymbolText token={pair.quote} />
           </p>
           <p className="flex flex-wrap items-center gap-1.5">
             {/* 2026-10-05 (New position on Base and Arbitrum One): the pool's network, once other networks are offered. */}
             {network !== null && <Chip data-chain-chip={option.currencies[0].chainId}>{network}</Chip>}
-            {/* Changed on purpose (round 6, 2026-09-27): the fee in plain words, "0.30% fee"; Uniswap is every pool's. */}
-            <Chip>{CREATE.pool.fee(option.fee)}</Chip>
+            {/* Changed on purpose (round 6, 2026-09-27): the fee in plain words, "0.30% fee"; Uniswap is every pool's. QA round 2,
+                Q28: what the fee is, on hover, as every fee chip says it. */}
+            <Chip title={FEE_MEANING}>{CREATE.pool.fee(option.fee)}</Chip>
           </p>
         </div>
         <Button type="button" variant="ghost" size="sm" onClick={onChange}>
@@ -64,6 +70,7 @@ export function PoolList({
   onPool,
   onPreview,
   others = null,
+  hint = null,
 }: {
   source: ReadSource
   state: JourneyState
@@ -71,6 +78,8 @@ export function PoolList({
   onPreview?: (option: PoolOption | null) => void
   /** The other networks New position offers (2026-10-05): another network's token lists that network's pools. */
   others?: OtherChains | null
+  /** QA round 2, N5: another network's link's proposed pool, chosen once by that network's list when its read lists it. */
+  hint?: string | null
 }) {
   const token = state.token
   if (!token) return null
@@ -85,6 +94,7 @@ export function PoolList({
         pending={state.pool}
         onPending={onPool}
         onPreview={onPreview}
+        hint={hint}
       />
     )
   }

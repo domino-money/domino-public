@@ -37,8 +37,8 @@
   @media (forced-colors: active) { .dm-lit::before, .dm-lit::after { content: none; } }
 
   /* Buttons that must beat the v3 layer's frames. Working (V4 .is-busy): the pressed Tangerine keeps its highlight and
-     shade, not the disabled ring. The wallet sheet's foot keeps the kit's dark label (.ch-go .btn-pri), the one solid
-     Tangerine button that does not take the page's cream ink (shell.css). The header's buttons speak at the page's 16px /
+     shade, not the disabled ring. The wallet sheet's foot keeps the kit's dark label (.ch-go .btn-pri), which every solid
+     Tangerine button now wears too (shell.css, 2026-10-30, QA round 2, N31). The header's buttons speak at the page's 16px /
      400 (the prototype's buttons inherit its font); on a phone they are its 38px even on a touch screen, and their ::after
      reaches 3px above and below (shell.css), a 44px target. */
   :is(.dm-btn--primary, .dm-btn--accent)[aria-busy="true"]:disabled { box-shadow: inset 0 1px 0 rgb(255 240 228 / 0.35), inset 0 -1px 0 rgb(120 50 15 / 0.25); }
@@ -47,6 +47,17 @@
   @media (max-width: 859px) {
     .dm-header-actions .dm-btn { height: 2.375rem; min-height: 0; line-height: 1.25rem; }
     .dm-header-actions .dm-wallet-addr { font-size: 0.78125rem; }
+  }
+
+  /* Hit areas (2026-10-30, QA round 2, N17): a small control takes a mouse press over at least 24 CSS px and a finger's
+     over 44, through a transparent layer centred on it; what is drawn keeps its approved size. Sized in CSS px whatever
+     the desktop root's 67.5% (rem over --vwk, the root's own scale). Markets' header tips draw their glyph with both
+     pseudo-elements and are left as they are; a dialog's X is positioned already. The screens' own small controls are
+     screen-refinement.css's (loaded with the screens). */
+  :is(.dm-info-tip-trigger, .dm-menu-trigger) { position: relative; }
+  :is(.dm-info-tip-trigger:not([data-markets] .dm-mkt-table thead *), .dm-menu-trigger, .dm-dialog-close, .dm-wd-close)::after { content: ''; position: absolute; left: 50%; top: 50%; width: max(100%, calc(1.5rem / var(--vwk))); height: max(100%, calc(1.5rem / var(--vwk))); translate: -50% -50%; }
+  @media (pointer: coarse) {
+    :is(.dm-info-tip-trigger:not([data-markets] .dm-mkt-table thead *), .dm-menu-trigger, .dm-dialog-close, .dm-wd-close)::after { width: max(100%, calc(2.75rem / var(--vwk))); height: max(100%, calc(2.75rem / var(--vwk))); }
   }
 
   /* An empty state with the double-blank domino (V4 System 'Empty' .es): left aligned, at least 400 design px tall, the
@@ -114,7 +125,8 @@
   /* No wallet in this browser: a dotted plate with the wallet in its ring above the words (V4 .plate). */
   .dm-wd p:has(+ .dm-wallet-get) { font-size: 0.90625rem; line-height: 1.5; color: var(--muted); }
   .dm-wd p:has(+ .dm-wallet-get)::before { content: ''; display: block; height: 6.5rem; margin: 0.875rem 0.25rem 0.75rem; border-radius: 1.125rem; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'%3E%3Ccircle cx='30' cy='30' r='30' fill='%23161411'/%3E%3Ccircle cx='30' cy='30' r='21.5' fill='%23161411' stroke='rgb(255 236 220 / 0.16)'/%3E%3Cg transform='translate(22 22)' fill='none' stroke='%239b9289' stroke-linecap='round'%3E%3Crect x='1.75' y='3.25' width='12.5' height='9.5' rx='2.25' stroke-width='1.4'/%3E%3Cpath d='M10.5 8h1.5' stroke-width='1.6'/%3E%3C/g%3E%3C/svg%3E") center / 3.75rem no-repeat, radial-gradient(circle, rgb(255 214 186 / 0.2) 0 0.0625rem, transparent 0.09375rem) 0 0 / 0.8125rem 0.8125rem; -webkit-mask-image: radial-gradient(closest-side, #000 40%, transparent); mask-image: radial-gradient(closest-side, #000 40%, transparent); }
-  .dm-wd .dm-wallet-get { font-size: 0.84375rem; color: var(--subtle); }
+  /* What to do next, in the same ink as the phone's line under it (QA round 2, N4). */
+  .dm-wd .dm-wallet-get { font-size: 0.84375rem; color: var(--muted); }
   /* The sheet catches the ember (V4 .ch-edge 640px, .ch-cwash 900px) where it is a centred sheet; a phone's bottom sheet
      keeps its grab pill there. A closing dialog under reduced motion is simply gone. */
   @media (hover: hover) and (pointer: fine) and (min-width: 640px) {

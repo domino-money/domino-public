@@ -1,4 +1,5 @@
 import { v2Chain } from '../../../v2/chains'
+import { feeTierText } from '../../../v2/plan/present'
 import { ZERO_ADDRESS, type Address, type Dex, type Hex, type PoolRef, type V2ChainId } from '../../../v2/types'
 import { JOURNEY_HOOKED_POOLS_SHOWN, V4_NEW_POOL_TIERS } from '../constants'
 import type { JourneyToken } from '../tokens'
@@ -67,11 +68,11 @@ export const poolKey = (chainId: V2ChainId, pool: PoolRef): string => `${chainId
 /** "Uniswap v3" / "Uniswap v4": for a `title`, a data attribute, and the pool finder's own control alone (never a word on screen otherwise). */
 export const dexName = (dex: Dex): string => `Uniswap v${dex}`
 
-/** A pool's fee in pips as a percent: 3000 → "0.3%", 200 → "0.02%". */
-export function feePercent(pips: number): string {
-  const percent = pips / 10_000
-  return `${Number(percent.toFixed(4)).toString()}%`
-}
+/**
+ * A pool's fee in pips as a percent: 3000 → "0.30%", 200 → "0.02%". Changed on purpose 2026-10-30 (QA round 2, N2): the
+ * one fee format of every screen (v2/plan/present.ts feeTierText); it was "0.3%" and "1%" here alone.
+ */
+export const feePercent = (pips: number): string => feeTierText(pips)
 
 /**
  * A pool of V1's list on Robinhood Chain (lib/read/screens/poolsList.ts PoolOption: Uniswap v4, read through rugged97's

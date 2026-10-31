@@ -100,8 +100,12 @@
     .dm-dialog-title { font-size: 1.75rem; }
     .dm-wd-foot > .dm-btn { height: 3.125rem; }
     .dm-dialog-close { top: 0.875rem; right: 0.75rem; }
-    .dm-field, .dm-search-input, .dm-flow-combo-input { font-size: 1rem; }
     .dm-table-head > .dm-title, .dm-empty-title { font-size: 1.75rem; }
+  }
+  /* Typed text at 16px on a phone or any touch screen, so iOS never zooms into a field on focus (2026-10-30, QA round 2,
+     Q27: it covered three kinds of field and phones only; an iPad zoomed too). A screen's own v4 field rules follow it. */
+  @media (max-width: 767px), (pointer: coarse) {
+    .dm-field, .dm-search-input, .dm-flow-combo-input, .dm-flow-input-control, .dm-flow-bound-input { font-size: 1rem; }
   }
   @media (pointer: coarse) {
     .dm-btn, .dm-icon-btn { min-height: 2.75rem; }

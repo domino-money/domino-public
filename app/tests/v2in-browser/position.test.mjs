@@ -299,6 +299,45 @@ test('(b) live on Base: the same page from read-v6, no USD and no APR; Domino\'s
   } finally { await s.close(); }
 });
 
+// Added 2026-10-30 (QA round 2, final review pos-connect-flash-1): while the wallet island has not said what it found, the
+// page waits in its frame (src/v2in/position/PositionPage.tsx), as the Positions list does (audit C5). A returning owner
+// whose wallet reconnects saw a filled "Connect wallet" for that moment, then the page; here the wallet takes 1.5 s to
+// answer which accounts it has after the reload, so that moment is long enough to see.
+test('(b2) a returning owner’s reload never shows "Connect wallet" while the wallet reconnects; a visitor with no wallet is still asked to connect', async () => {
+  let slow = false;
+  const intercept = async (method) => {
+    if (slow && method === 'eth_accounts') await new Promise((done) => setTimeout(done, 1500));
+    return undefined;
+  };
+  const s = await openPositionPage(browser, chainOf(), { hash: '#/positions/base-v4-5100001', read6: READ6, intercept });
+  try {
+    const page = s.page;
+    const detail = page.locator('[data-position-detail][data-position-v2="base-v4"][data-position-id="5100001"]');
+    await detail.waitFor({ timeout: 30_000 });
+    await page.addInitScript(() => {
+      window.__connectSeen = [];
+      window.__waitingSeen = false;
+      new MutationObserver(() => {
+        if (document.querySelector('[data-position-connect], [data-position-reason="connect_wallet"]')) window.__connectSeen.push(Date.now());
+        if (document.querySelector('[data-position-loading]')) window.__waitingSeen = true;
+      }).observe(document, { childList: true, subtree: true, attributes: true });
+    });
+    slow = true;
+    await page.reload();
+    await page.waitForFunction(() => ['signed_out', 'wrong_network'].includes(window.__dominoSessionProbe?.view().status), null, { timeout: 30_000 });
+    await detail.waitFor({ timeout: 30_000 });
+    assert.deepEqual(await page.evaluate(() => window.__connectSeen), [], 'no Connect wallet while the wallet was being found');
+    assert.equal(await page.evaluate(() => window.__waitingSeen), true, 'the page’s frame waited meanwhile');
+  } finally { await s.close(); }
+  // No wallet authorizes this site (it lists no account): the island says so, and the page asks to connect, as before.
+  const visitor = await openPositionPage(browser, chainOf(), { hash: '#/positions/base-v4-5100001', read6: READ6, connect: false, intercept: (method) => (method === 'eth_accounts' ? { result: [] } : undefined) });
+  try {
+    const empty = visitor.page.locator('[data-empty="position-v2"][data-position-reason="connect_wallet"]');
+    await empty.waitFor({ timeout: 30_000 });
+    assert.equal(await empty.locator('[data-position-connect]').count(), 1);
+  } finally { await visitor.close(); }
+});
+
 test('(c) Add liquidity with a swap: the review shows the route, the fee and its base, how much smaller, the L1 data fee; the steps are the NFT approval and the add', async () => {
   const chain = chainOf();
   const s = await openPositionPage(browser, chain, { hash: '#/positions/base-v4-5100005', read6: READ6, planner: plannerFor() });
@@ -807,6 +846,9 @@ test('(f) Withdraw to both tokens goes straight to Uniswap: no Domino fee, one t
     await detail.waitFor({ timeout: 30_000 });
     await pick(detail, 'exit');
     const dialog = page.locator('[role="dialog"][data-position-dialog="v2-exit"]');
+    // Added 2026-10-30 (QA round 2, WD-MAX, the owner): nothing is typed; the whole position is "Max", chosen already.
+    assert.deepEqual(await dialog.locator('.dm-pa-share').getByRole('radio').allInnerTexts(), ['Max', '50%', '25%']);
+    assert.equal(await dialog.getByRole('radio', { name: 'Max', exact: true }).getAttribute('aria-checked'), 'true');
     await dialog.locator('[data-position-continue="exit"]').click();
     await dialog.locator('[data-position-direct="ready"]').waitFor({ timeout: 30_000 });
     const receive = dialog.locator('[data-position-receive="close"]');

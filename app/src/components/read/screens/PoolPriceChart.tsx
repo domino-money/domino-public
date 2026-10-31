@@ -2,7 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent
 import type { Candle } from 'api-contracts/read-v1/types'
 import type { Market } from '../../../lib/markets'
 import { candleDescription, chartMatches } from '../../../lib/read/chart'
-import { compare, formatUsdPrice, toFixed } from '../../../lib/read/decimal'
+import { compare, formatUsdCompact, formatUsdPrice, toFixed } from '../../../lib/read/decimal'
 import { areaGeometry, changeOverWindow, midpoint, volumeGeometry, windowCandles, type AreaGeometry, type BarGeometry } from '../../../lib/read/priceSeries'
 import { unreadToken } from '../../../lib/read/project'
 import { useNow } from '../../../lib/read/useNow'
@@ -26,6 +26,17 @@ export const CANDLES_TITLE = 'Hourly candles reported by a market data provider.
 const CHANGE_TITLE = 'Domino’s calculation from a market data provider’s hourly candles: first open to last close of the shown window. Not a return.'
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const INSPECT_KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End']
+/**
+ * One hour as the slider says it (QA round 2, N16): "10-29 21:00 UTC, close $2,280.37, high …, low …, volume $1.2M",
+ * every figure as the screen writes it. It read every raw decimal and an ISO time (lib/read/chart.ts candleDescription),
+ * which stays in the closed "Source and exact candle values" list only.
+ */
+function hourWords(candle: Candle): string {
+  const usd = (value: string) => formatUsdPrice(value) ?? value
+  const at = new Date(candle.startTimestamp * 1000).toISOString().slice(5, 16).replace('T', ' ')
+  return `${at} UTC, close ${usd(candle.closeUsd)}, high ${usd(candle.highUsd)}, low ${usd(candle.lowUsd)}, volume ${formatUsdCompact(candle.volumeUsd) ?? candle.volumeUsd}`
+}
+
 /** Room left of the first hour, so its bar never touches the plot's edge. */
 const EDGE = 8
 /** The line keeps clear of its band's top and bottom by these. */
@@ -362,7 +373,7 @@ export function PoolPriceChart({ market, autoLoad = false, control }: { market: 
               aria-valuemin={1}
               aria-valuemax={points.length}
               aria-valuenow={Math.max(1, index + 1)}
-              aria-valuetext={candleDescription(current.candle)}
+              aria-valuetext={hourWords(current.candle)}
               tabIndex={0}
               className="dm-pool-chart-svg"
               aria-busy={reading || undefined}

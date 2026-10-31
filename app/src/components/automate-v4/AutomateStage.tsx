@@ -140,7 +140,9 @@ export function AutomateStage({ chosen, run, dd, lift = '', tilt = 'l', labels =
           </div>
         )}
 
-        {/* Auto-exit: the price reaches your limit, the position closes, the tokens go to your wallet. */}
+        {/* Auto-exit: the price reaches the end of the range, the position closes, the tokens go to your wallet. Changed on
+            purpose 2026-10-30 (QA round 2, N12): the label names the range's end, the app's one word for the trigger, as the
+            card says; it said "your limit", read as a price to type. Position, class and animation unchanged. */}
         {scenes.includes('autoexit') && (
           <div className={on('autoexit')} data-scene="autoexit">
             <svg width="100%" height="100%" viewBox="0 0 560 540" focusable="false">
@@ -166,7 +168,7 @@ export function AutomateStage({ chosen, run, dd, lift = '', tilt = 'l', labels =
               <circle className="popc an w235" cx="462" cy="335" r="5.5" fill="#d8d4c8" />
               <circle className="popc an w250" cx="475" cy="335" r="5.5" fill="#7aa85a" />
               <path className="arc" d="M290 296C304 176 424 176 432 282" markerEnd={url(head)} />
-              {labels && <text className="lb hi" x="362" y="162">Price reaches your limit</text>}
+              {labels && <text className="lb hi" x="362" y="162">Price reaches range end</text>}
               {labels && <text className="lb" x="170" y="446">Position closes</text>}
               {labels && <text className="lb" x="434" y="410">Your wallet</text>}
               <Token style={TOKEN_A} delay="w135" fill="#d8d4c8" />

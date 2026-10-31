@@ -4,6 +4,7 @@ import { agedMarket, feeLabel, presentMetric, providerStale, retrievedAgeSeconds
 import { presentAprEstimate } from '../lib/read/aprEstimate'
 import { poolAprPresentation } from '../lib/read/poolAprPresentation'
 import { FEE_VENUE, feeWords } from '../lib/format/fee'
+import { networkName } from '../lib/networkName'
 import { featuredTitle } from '../lib/read/featuredList'
 import { useFeatured } from '../lib/read/featuredSource'
 import { pricePair } from '../lib/read/orientation'
@@ -18,9 +19,10 @@ import type { TokenDisplay } from '../lib/read/types'
 import { shownResult, useMarkets } from '../lib/read/useMarkets'
 import { useNow } from '../lib/read/useNow'
 import { useLoadMilestone } from '../lib/useLoadMilestone'
+import { FEE_MEANING } from './explore/feeMeaning'
 import { MetricCell, PendingFigure } from './explore/MetricCell'
 import { InfoTip } from './InfoTip'
-import { marketsHref, poolHref } from './explore/routes'
+import { marketsHref, newPositionHref, poolHref } from './explore/routes'
 import { IconChevronRight, IconInfo } from './icons'
 import { PoolCatalogueIdentity, PoolTokenLabel } from './PoolCatalogueIdentity'
 import { ReadStatus, marketsStatus } from './read/ReadStatus'
@@ -169,7 +171,7 @@ function PriceCell({ market, now }: { market: Market; now: Instant }) {
   )
 }
 
-function Row({ m: read, now, full, home, onFigures, poolToken, pinned, revealed = false }: { m: Market; now: Instant; full: boolean; home: boolean; onFigures: () => void; poolToken?: string | null; pinned: boolean; revealed?: boolean }) {
+function Row({ m: read, now, full, home, onFigures, poolToken, pinned, revealed = false, withdrawn = false }: { m: Market; now: Instant; full: boolean; home: boolean; onFigures: (href: string) => void; poolToken?: string | null; pinned: boolean; revealed?: boolean; withdrawn?: boolean }) {
   const p = read.provenance
   const age = p ? retrievedAgeSeconds(p.market, now) : null
   const stale = p ? providerStale(p.market, now) : false
@@ -196,6 +198,9 @@ function Row({ m: read, now, full, home, onFigures, poolToken, pinned, revealed 
   // Named as its price is written, "TOKEN/USDG" beside "1 TOKEN = X USDG" (audit E21).
   const pair = pricePair(m.tokens.base, m.tokens.quote)
   const flags = rowFlags(m)
+  // QA round 2, N58 (the owner's yes to the approved Home row): Home's rows offer New position in that pool on hover, only
+  // for a pool Domino opens positions in with no flag (hooks, a fee that changes, a very high fee) and never withdrawn.
+  const offersNewPosition = home && openable(m) && flags.length === 0 && !withdrawn
   const name = (
     <>
       <PoolTokenLabel token={pair.base} />/<PoolTokenLabel token={pair.quote} />
@@ -217,10 +222,16 @@ function Row({ m: read, now, full, home, onFigures, poolToken, pinned, revealed 
               <span className="font-medium">{name}</span>
             </a>
             {/* The fee as every chip writes it (lib/format/fee.ts, audit E21): "Uniswap · 0.30% fee". V4 draws it as two joined
-                segments (.tag), the "·" kept in the text and unseen; Home's phone rows still drop "Uniswap · ". */}
+                segments (.tag), the "·" kept in the text and unseen; Home's phone rows still drop "Uniswap · ". QA round 2,
+                Q23 (the owner: the network on every pool): the pool's network is the middle segment, drawn as the
+                exchange's is; Q28: what the fee is, in the fee's own title (not over the network's or the exchange's).
+                Home's rows too: a phone tile under 520px drops the exchange and keeps the network and the fee, wrapping
+                whole segments rather than cutting one off (v4-home.css; changed on purpose 2026-10-30, QA round 2, final
+                review read-2: it hid the network). */}
             <Chip className="dm-mkt-venue">
               <span className="dm-fee-venue">{FEE_VENUE}</span><span className="dm-fee-sep"> · </span>
-              <span className="dm-fee-value">{feeWords(feeLabel(m))}</span>
+              <span className="dm-fee-venue dm-fee-net" data-chain-chip={pair.base.chainId}>{networkName(pair.base.chainId)}</span><span className="dm-fee-sep"> · </span>
+              <span className="dm-fee-value" title={FEE_MEANING}>{feeWords(feeLabel(m))}</span>
             </Chip>
             {pinned && <PinnedChip />}
             {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no sr-only "Last available <figures>;
@@ -245,7 +256,8 @@ function Row({ m: read, now, full, home, onFigures, poolToken, pinned, revealed 
         {coming(m.volume24hUsd) ? <PendingFigure label="24h volume" data={{ 'data-metric': 'pending' }} /> : <MetricCell metric={m.volume24hUsd} />}
       </Td>
       <Td numeric className="dm-mkt-num dm-mkt-apr">
-        {home && <span className="dm-home-pool-label">APR</span>}
+        {/* QA round 2, N81: a phone tile names the figure in plain words (v4-home.css shows only a data-plain-label). */}
+        {home && <span className="dm-home-pool-label" data-plain-label>Yearly fees</span>}
         {qualified ? (
           <MetricCell metric={m.feeAprPercent} percent tone="in" />
         ) : aprComing ? (
@@ -259,13 +271,19 @@ function Row({ m: read, now, full, home, onFigures, poolToken, pinned, revealed 
       <Td numeric className="dm-mkt-end">
         <span className="dm-row-end">
           <span className="dm-row-actions">
+            {offersNewPosition && (
+              <a className="dm-row-np" href={newPositionHref(m.poolId, poolToken ?? null)}>
+                <svg viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M6 1.5v9M1.5 6h9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+                New position<span className="sr-only"> in {name}</span>
+              </a>
+            )}
             {/* The pool's figures, with their sources and ages, on demand. Nothing is read to open them. */}
             <button
               type="button"
               data-pool-figures=""
               onClick={(event) => {
                 event.stopPropagation()
-                onFigures()
+                onFigures(href)
               }}
               className="dm-icon-btn dm-icon-btn--ghost dm-icon-btn--sm dm-press-icon"
             >
@@ -354,7 +372,7 @@ function CatalogueRow({ poolId, entry, full, home, loading, token, pinned, stand
     <tr className="dm-mkt-row" data-pool-catalogue={poolId} data-pool-row={full ? poolId : undefined} data-row-loading={loading ? '' : undefined} data-revealed={revealed ? '' : undefined} onClick={(event) => followRow(event, href)}>
       <Td>
         <a href={href} className="dm-mkt-pool dm-mkt-name" title="Listed on Uniswap.">
-          <PoolCatalogueIdentity entry={entry} />
+          <PoolCatalogueIdentity entry={entry} network />
         </a>
         {pinned && <PinnedChip />}
       </Td>
@@ -370,7 +388,7 @@ function CatalogueRow({ poolId, entry, full, home, loading, token, pinned, stand
         {volume ? <MetricCell metric={volume} /> : loading ? bubble('dm-mkt-bubble--figure') : <FigureDash />}
       </Td>
       <Td numeric>
-        {home && <span className="dm-home-pool-label">APR</span>}
+        {home && <span className="dm-home-pool-label" data-plain-label>Yearly fees</span>}
         {apr ? <FallbackApr apr={apr} compact /> : loading ? bubble('dm-mkt-bubble--apr') : <FigureDash />}
       </Td>
       <Td numeric className="dm-mkt-end">
@@ -450,8 +468,10 @@ export function MarketsTable({
   // The pool whose figures are open, held by key rather than by value: the
   // projection is taken again on every tick, so an open dialog ages with the
   // row behind it instead of keeping the market as it was when it opened.
-  const [figuresKey, setFiguresKey] = useState<string | null>(null)
-  const figures = figuresKey === null ? null : (markets.find((m) => m.key === figuresKey) ?? null)
+  // QA round 2, Q19: with the row's own link to its pool page, so the sheet can open the pool (an unlisted pool's link
+  // keeps its token).
+  const [figuresOpen, setFiguresOpen] = useState<{ key: string; href: string } | null>(null)
+  const figures = figuresOpen === null ? null : (markets.find((m) => m.key === figuresOpen.key) ?? null)
   // Folded away in every build but the fixture one, with the words it would show.
   const fixtures = __DOMINO_READ_MODE__ === 'fixture' && provider.kind === 'fixture'
 
@@ -495,7 +515,6 @@ export function MarketsTable({
     counted.current?.(matchCount, total)
   }, [matchCount, total])
 
-  const lean = markets.length > 0 && markets.every((m) => m.provenance?.metrics === 'not_requested')
   // A filter that changes which pools are listed remounts the rows, so they cross-fade in rather than jump;
   // A daily reorder keeps those rows mounted, preserving focus on a surviving pool.
   const filtering = full ? matches.map((listing) => listing.poolId).sort().join(',') : 'all'
@@ -566,16 +585,18 @@ export function MarketsTable({
             Price
           </Th>
           <Th numeric className="dm-mkt-col-tvl">
-            {/* What the letters stand for, in a title (audit E5, 2026-10-01): the pool page says it under its own TVL. */}
+            {/* What the letters stand for, in a title (audit E5, 2026-10-01): the pool page says it under its own TVL.
+                Changed on purpose 2026-10-30 (QA round 2, N105): no sr-only " reported by a market data provider" after the
+                header any more; each figure's source is in its row's figures sheet (the (i) button). */}
             <InfoTip label="About TVL" text="Estimated value held in this pool.">TVL</InfoTip>
-            {lean && <span className="sr-only">{' reported by a market data provider'}</span>}
           </Th>
           <Th numeric col="wide" className="dm-mkt-col-volume">
-            24h volume{lean && <span className="sr-only">{' reported by a market data provider'}</span>}
+            24h volume
           </Th>
-          {/* APR stays on a phone: it is the figure people come for (DESIGN-V2 §8.4). */}
+          {/* APR stays on a phone: it is the figure people come for (DESIGN-V2 §8.4). Changed on purpose 2026-10-30 (QA round
+              2, Q29): its tip in plain words, no "Annualized"; the figure itself is unchanged (D9). */}
           <Th numeric className="dm-mkt-col-apr">
-            <InfoTip label="About pool APR" text="Annualized pool fees from the last 24 hours. Estimates are marked ‘est.’ Not a forecast.">APR</InfoTip>
+            <InfoTip label="About pool APR" text="The pool’s fees from the last 24 hours, as a yearly rate on the money in it. ‘est.’ means estimated. Not a forecast.">APR</InfoTip>
           </Th>
           <Th numeric className="dm-mkt-end">
             <span className="sr-only">Details</span>
@@ -586,7 +607,7 @@ export function MarketsTable({
         <tbody key={filtering} className={full ? 'animate-fade' : undefined} data-refilter={full && refiltered ? '' : undefined}>
           {matches.map(({ poolId, market, catalogue, token }) =>
             market ? (
-              <Row key={poolId} m={market} now={now} full={full} home={home} onFigures={() => setFiguresKey(market.key)} poolToken={poolToken ?? token} pinned={ranked && catalogue?.pinned === true} revealed={revealed?.has(poolId) === true} />
+              <Row key={poolId} m={market} now={now} full={full} home={home} onFigures={(href) => setFiguresOpen({ key: market.key, href })} poolToken={poolToken ?? token} pinned={ranked && catalogue?.pinned === true} revealed={revealed?.has(poolId) === true} withdrawn={featured.withdrawn?.has(poolId.toLowerCase()) === true} />
             ) : catalogue ? (
               // A pool the store is about to collect for the first time keeps its placeholder briefly (marketsProvider.ts).
               <CatalogueRow key={poolId} poolId={poolId} entry={catalogue} full={full} home={home} loading={state.phase === 'loading' || (state.phase === 'ready' && state.placeholders?.includes(poolId.toLowerCase()) === true)} token={token} pinned={ranked && catalogue.pinned === true} standIn={standIns.get(poolId)} revealed={revealed?.has(poolId) === true} />
@@ -639,10 +660,10 @@ export function MarketsTable({
       ) : (
         table
       )}
-      {figures && PoolFiguresSlot && SlotBoundary && SlotFailed && (
+      {figures && figuresOpen && PoolFiguresSlot && SlotBoundary && SlotFailed && (
         <SlotBoundary fallback={<SlotFailed />}>
           <Suspense fallback={null}>
-            <PoolFiguresSlot market={agedMarket(figures, now)} onClose={() => setFiguresKey(null)} />
+            <PoolFiguresSlot market={agedMarket(figures, now)} action={<LinkButton href={figuresOpen.href} size="lg" data-pool-figures-open="">Open pool</LinkButton>} onClose={() => setFiguresOpen(null)} />
           </Suspense>
         </SlotBoundary>
       )}

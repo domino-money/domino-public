@@ -5,6 +5,7 @@ import {
   SLIPPAGE_STEPS,
   slippageFromPercent,
   slippageIndex,
+  slippageBpsFrom,
   slippageMark,
   slippagePercent,
   slippageValue,
@@ -24,14 +25,24 @@ import { SlippagePresets } from './SlippagePresets'
  *
  * The native range input carries the position, so the pointer, the keyboard
  * and assistive technology all drive the same control; the track, the marks
- * and the thumb under it only draw where that position is.
+ * and the thumb under it only draw where that position is. On a wide screen
+ * the track is not drawn (QA round 2, N103: the approved desktop board has
+ * the presets and the box only; styles/v4-newposition.css); a phone keeps it.
+ *
+ * Changed on purpose 2026-10-30 (QA round 2, N28): a percentage the box
+ * refuses is kept as no tolerance at all (''), as Setup's control does
+ * (SlippageChoice.tsx), so Continue holds with its reason instead of going on
+ * with the last good value unseen. The presets and the track keep drawing that
+ * last good value meanwhile.
  */
 export function SlippageSlider({ bps, onSlippage }: { bps: string; onSlippage: (text: string) => void }) {
   // The percentage while it is being typed, against the value it was typed
-  // for, so the box keeps its text until the kept value moves under it.
-  const [draft, setDraft] = useState<{ bps: string; text: string } | null>(null)
-  const value = slippageValue(bps)
-  const typed = draft?.bps === bps ? draft.text : slippagePercent(value)
+  // for, so the box keeps its text until the kept value moves under it; and
+  // the last good value, which the presets and the track go on drawing.
+  const [draft, setDraft] = useState<{ bps: string; text: string; last: number } | null>(null)
+  const kept = slippageBpsFrom(bps)
+  const value = kept ?? (draft?.bps === bps ? draft.last : slippageValue(bps))
+  const typed = draft?.bps === bps ? draft.text : kept === null ? '' : slippagePercent(kept)
   const exact = slippageFromPercent(typed)
   const last = SLIPPAGE_STEPS.length - 1
   const at = (position: number) => `${(position * 100) / last}%`
@@ -43,8 +54,9 @@ export function SlippageSlider({ bps, onSlippage }: { bps: string; onSlippage: (
 
   const type = (text: string) => {
     const next = slippageFromPercent(text)
-    setDraft({ bps: next === null ? bps : String(next), text })
-    if (next !== null) onSlippage(String(next))
+    const nextBps = next === null ? '' : String(next)
+    setDraft({ bps: nextBps, text, last: next ?? value })
+    onSlippage(nextBps)
   }
 
   const hintId = 'create-slippage-exact-hint'
@@ -56,12 +68,12 @@ export function SlippageSlider({ bps, onSlippage }: { bps: string; onSlippage: (
           {CREATE.amount.slippageLabel}
         </label>
         <span className="dm-flow-slip-value dm-fig-sm" data-slippage-percent="">
-          {slippageWritten(value)}
+          {kept === null ? CREATE.page.notChosen : slippageWritten(kept)}
         </span>
       </div>
       {/* One line on a wide step: the presets, the track between them and the exact box; stacked on a phone. */}
       <div className="dm-flow-slip-line">
-        <SlippagePresets value={value} onChoose={change} label={CREATE.amount.slippagePresets} />
+        <SlippagePresets value={kept} onChoose={change} label={CREATE.amount.slippagePresets} />
         <div className="dm-flow-slip-rail">
           <span aria-hidden="true" className="dm-flow-slip-track">
             <span className="dm-flow-slip-fill" style={{ width: at(slippageIndex(value)) }} />
@@ -128,7 +140,7 @@ export function SlippageSlider({ bps, onSlippage }: { bps: string; onSlippage: (
           {CREATE.amount.slippageExactInvalid}
         </p>
       )}
-      {slippageWarns(value) && (
+      {kept !== null && slippageWarns(kept) && (
         <p role="status" className="dm-flow-slip-warn" data-slippage-warning="">
           {CREATE.amount.slippageWarning}
         </p>

@@ -7,13 +7,15 @@ import type { CardSeries } from '../../lib/read/cardSeries'
 import { formatUsdCompact } from '../../lib/read/decimal'
 import { pricePair } from '../../lib/read/orientation'
 import { unreadToken } from '../../lib/read/project'
-import { plainClose } from '../../lib/read/marketPrice'
+import { marketPoolPrice, plainClose } from '../../lib/read/marketPrice'
 import { percentChange } from '../../lib/format/change'
 import { feeWords } from '../../lib/format/fee'
+import { networkName } from '../../lib/networkName'
 import { shortTime } from '../../lib/format/time'
 import { PriceLineSvg } from '../charts/PriceLine'
 import { VolumeBarsSvg } from '../charts/VolumeBars'
 import { MetricCell } from '../explore/MetricCell'
+import { FEE_MEANING } from '../explore/feeMeaning'
 import { poolHref } from '../explore/routes'
 import { CatalogueLabel, PoolTokenLabel } from '../PoolCatalogueIdentity'
 import { TokenIcon, TokenMark, TokenMarkPair } from '../TokenIcon'
@@ -35,6 +37,9 @@ const BARS_HEIGHT = 164
  */
 const LINE_PAD = { left: 0, right: 0, top: 8, bottom: 8 }
 
+/** One token, by address, whatever its case. */
+const sameToken = (a: { address: string }, b: { address: string }) => a.address.toLowerCase() === b.address.toLowerCase()
+
 /** Bundled artwork by address where the catalogue has it; a read-token mark for other bound addresses; a plain disc otherwise. */
 function CatalogueMarks({ entry }: { entry: PoolCatalogueEntry }) {
   return (
@@ -49,6 +54,15 @@ function CatalogueMarks({ entry }: { entry: PoolCatalogueEntry }) {
   )
 }
 
+/** QA round 2, Q23 and Q28: under the pair, the pool's network, then its fee with what the fee is in its title. */
+function NetworkAndFee({ chainId, fee }: { chainId: number; fee: string }) {
+  return (
+    <span className="dm-mkt-pair-fee">
+      <span data-chain-chip={chainId}>{networkName(chainId)}</span> · <span title={FEE_MEANING}>{feeWords(fee)}</span>
+    </span>
+  )
+}
+
 function Pair({ market, catalogue }: { market: Market | null; catalogue?: PoolCatalogueEntry }) {
   if (market) {
     const fee = feeLabel(market)
@@ -59,7 +73,7 @@ function Pair({ market, catalogue }: { market: Market | null; catalogue?: PoolCa
         <TokenMarkPair base={pair.base} quote={pair.quote} size={32} ring="var(--card)" />
         <span className="dm-mkt-pair-identity">
           <span className="dm-mkt-pair-name"><PoolTokenLabel token={pair.base} /> / <PoolTokenLabel token={pair.quote} /></span>
-          <span className="dm-mkt-pair-fee">{feeWords(fee)}</span>
+          <NetworkAndFee chainId={pair.base.chainId} fee={fee} />
         </span>
       </span>
     )
@@ -70,7 +84,7 @@ function Pair({ market, catalogue }: { market: Market | null; catalogue?: PoolCa
       <CatalogueMarks entry={catalogue} />
       <span className="dm-mkt-pair-identity">
         <span className="dm-mkt-pair-name"><CatalogueLabel text={catalogue.labels[0]} /> / <CatalogueLabel text={catalogue.labels[1]} /></span>
-        <span className="dm-mkt-pair-fee">{feeWords(catalogue.fee)}</span>
+        <NetworkAndFee chainId={4663} fee={catalogue.fee} />
       </span>
     </span>
   )
@@ -137,11 +151,21 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
   const candles = line ? line.history.candles : []
   const first = candles[0]
   const last = candles[candles.length - 1]
-  const shown = shownPoint ?? last
+  // QA round 2, N9: at rest the price is the pool's own price the table writes for this row (marketPoolPrice), so a
+  // card and its row never read two prices for one pool; the last close only where the row has none to give, or writes
+  // it the other way round. A pointer on the line still reads that hour's close.
+  const pool = line && market ? marketPoolPrice(market, now) : null
+  const live = pool?.state === 'usable' && line && sameToken(pool.base, line.base) && sameToken(pool.quote, line.quote) ? pool : null
+  const restText = live ? live.text : last ? plainClose(last.close) : ''
+  // Changed on purpose 2026-10-30 (QA round 2, final review read-4): the change and the line's colour measure to the
+  // pool price unrounded (`exact`), never to the four digits written below 1, so a pool that did not move reads 0.00%.
+  const restValue = live ? live.exact : last?.close ?? ''
+  const shownText = shownPoint ? plainClose(shownPoint.close) : restText
   const whole = !!line && !!first && first.startTimestamp - line.history.requestedWindow.startTimestamp <= line.history.resolutionSeconds
-  const change = whole && candles.length > 1 ? percentChange(first.close, shown.close) : null
-  // The line's colour is the window's own direction, first close to latest (the badge at rest); Tangerine without one.
-  const direction = whole && candles.length > 1 ? percentChange(first.close, last.close) : null
+  const change = whole && candles.length > 1 ? percentChange(first.close, shownPoint ? shownPoint.close : restValue) : null
+  // The line's colour is the window's own direction, first close to the price at rest (the badge at rest); Tangerine
+  // without one.
+  const direction = whole && candles.length > 1 ? percentChange(first.close, restValue) : null
   const tone = direction ? (direction.sign > 0 ? 'up' : direction.sign < 0 ? 'down' : 'flat') : undefined
 
   let plot = <span aria-hidden="true" className="dm-mkt-baseline" />
@@ -170,7 +194,7 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
   if (line) {
     price = (
       <div className="dm-mkt-card-price">
-        <span className="dm-mkt-card-close dm-fig-lg">{plainClose(shown.close)}</span>
+        <span data-card-price={shownPoint ? 'hour' : live ? 'pool' : 'close'} className="dm-mkt-card-close dm-fig-lg">{shownText}</span>
         {change && (
           <span className="dm-delta dm-mkt-card-delta" data-sign={change.sign} data-variant="pill">
             <span className="dm-delta-arrow" aria-hidden="true" />

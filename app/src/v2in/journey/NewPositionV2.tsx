@@ -8,6 +8,7 @@ import { PoolPricesContext } from '../../lib/create/poolPrices'
 import { SlotBoundary, SlotFailed } from '../../lib/read/screens/slots'
 import type { V2ChainId } from '../../v2/types'
 import { JourneyNetworkContext, type JourneyNetwork } from './context'
+import { JOURNEY } from './copy'
 import { JOURNEY_STAYS_ON_ROBINHOOD, SETUP_STAYS_WHILE_PREVIEW } from './constants'
 import { robinhoodFinderOpen, routeFor, ROBINHOOD, type GateMode } from './model/routing'
 import { poolPricesFor } from './poolPrices'
@@ -61,7 +62,8 @@ export default function NewPositionV2({ flow, poolId, linkToken, networkToken = 
     void linkedReader.resolve({ chainId: linkedChainId, network, unread: true, token: { origin: 'read', chainId: linkedChainId, address: linkedAddress, symbol: null, decimals: null, readStatus: 'unavailable', artwork: null } }, controller.signal).then((result) => {
       if (!controller.signal.aborted) setLinked({ key: linkKey, result })
     }, () => {
-      if (!controller.signal.aborted) setLinked({ key: linkKey, result: { ok: false, code: 'network_search_unavailable', reason: `Pool search on ${network} is unavailable right now.` } })
+      // Changed on purpose 2026-10-30 (QA round 2, SWEEP): the way on, never "Pool search on … is unavailable right now."
+      if (!controller.signal.aborted) setLinked({ key: linkKey, result: { ok: false, code: 'network_search_unavailable', reason: JOURNEY.pool.poolsAgain(network) } })
     })
     return () => controller.abort()
   // Route identity, rather than the parsed object's reference, owns this read.
@@ -93,6 +95,10 @@ export default function NewPositionV2({ flow, poolId, linkToken, networkToken = 
     s1: gate,
     gates: gates ?? undefined,
   }
+  // QA round 2, N5 (the owner's yes): a Base or Arbitrum One token page's pool row opens New position with that pool
+  // proposed (`initialPool`, a hint the journey's own pools read on that network must list before it is chosen: today's
+  // components/create/Journey.tsx). Handed as a spread, so this build stands whether or not that prop has landed yet.
+  const journeyLink = { poolId, linkToken, initialToken: linkedCandidate, initialPool: networkToken?.pool ?? null }
   // A pool the finder read that today's journey opens (a v4 pool with a price): today's own link, #/new/<id>.
   const onListed = (id: string) => {
     setFinder(false)
@@ -102,7 +108,8 @@ export default function NewPositionV2({ flow, poolId, linkToken, networkToken = 
     <PageShell width="flow">
       <PageHeader size="display" title={CREATE.page.title} />
       <p className="dm-hint" role="status" data-network-handoff={linkedResult?.ok === false || (gates && !linkedReader) ? 'unavailable' : 'loading'}>
-        {linkedResult?.ok === false ? linkedResult.reason : gates && !linkedReader ? 'This network is unavailable right now.' : 'Finding pools on this network…'}
+        {/* With no other network's gate open, the gate's own status (the review of QA round 2: searching again cannot open it). */}
+        {linkedResult?.ok === false ? linkedResult.reason : gates && !linkedReader ? JOURNEY.pool.networkClosed('this network') : 'Finding pools on this network…'}
       </p>
       {(linkedResult?.ok === false || (gates && !linkedReader)) && <a href="#/new">Search again</a>}
     </PageShell>
@@ -111,7 +118,7 @@ export default function NewPositionV2({ flow, poolId, linkToken, networkToken = 
   ) : (
     <OtherChainsContext.Provider value={others}>
       <PoolPricesContext.Provider value={prices}>
-        <Journey key={`${flow}:${linkKey}`} poolId={poolId} linkToken={linkToken} initialToken={linkedCandidate} />
+        <Journey key={`${flow}:${linkKey}`} {...journeyLink} />
       </PoolPricesContext.Provider>
     </OtherChainsContext.Provider>
   )

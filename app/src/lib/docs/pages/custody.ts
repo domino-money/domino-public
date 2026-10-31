@@ -81,8 +81,17 @@ export const NON_CUSTODIAL: DocPage = {
             { label: 'Turn off Auto-exit', value: 'You', note: 'Ends it for good.' },
           ],
         },
-        p('Each is a transaction your wallet signs, with no Domino fee, and none waits on Domino’s service. They are on the position’s page, and in Managed positions on Positions.'),
+        p('Each is a transaction your wallet signs, with no Domino fee, and none waits on Domino’s service. They are on the position’s page, and in Automated positions on Positions.'),
         p(doc('Signing in', 'wallet', 'sign-in'), ' grants none of them.'),
+      ],
+    },
+    {
+      // 2026-10-30 (QA2 N59): exitAll is Leave automation (onlyOwner); Robin Etherscan, as v2/explorers.ts says.
+      id: 'if-domino-is-down',
+      title: 'If Domino’s site is down',
+      blocks: [
+        p('Your position is a standard Uniswap position NFT in your wallet, so you can collect its fees or close it with any app that manages Uniswap positions on its network, or through that network’s Uniswap contract on ', doc('Contracts', 'contracts'), '.'),
+        p('Your automation can be emptied from a block explorer: Robin Etherscan on Robinhood Chain, Basescan or Arbiscan. The transaction that set it up, in your wallet’s activity, shows its address: open that address on the explorer, connect your wallet and call ', { mono: 'exitAll' }, ', as Leave automation does. Only your wallet can call it, and everything goes to your wallet.'),
       ],
     },
   ],
@@ -112,6 +121,8 @@ export const RISKS: DocPage = {
       title: 'No promised return',
       blocks: [
         p('Fees are not profit. A position can collect fees for weeks and still be worth less than holding the assets.'),
+        // 2026-10-30 (QA2 N106): a worked example, in tokens (a Uniswap v3/v4 range; no dollar figures).
+        p('An example: at 1 ETH = 2,000 USDG you add 1 ETH and 2,000 USDG, with a range of 1,000 to 4,000 USDG. At 4,000 the position holds only USDG, about 4,830; holding the two tokens instead would be worth 6,000. Fees have to cover that gap.'),
         // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): an exit is a limit, not a promise (2026-10-06: Auto-exit).
         p('Automation adds earned fees to positions. It does not stop a token falling, and Auto-exit limits a fall only when it closes the position: see ', doc('Auto-exit', 'auto-exit', 'warnings'), '.'),
       ],
@@ -121,9 +132,10 @@ export const RISKS: DocPage = {
       title: 'Automation can stop',
       blocks: [
         // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): spec F7 §1.5, §2.13, §5.3, §5.4.
-        p('Automation stops for a position if you change it, move it or approve another app on it. Collect fees, Close position, Add liquidity and Withdraw count as changes too.'),
+        // 2026-10-30 (QA2 N49): by mode (v2in/position/constants.ts).
+        p('Automation stops for a position if you change it, move it or approve another app on it. For compounding, Collect fees, Close position, Add liquidity and Withdraw count as changes too. Auto-exit pauses only when the position is moved or its approval changes.'),
         p('It stays stopped until you turn it back on: Turn back on, on the position’s page, consents again to the fees the position has not collected, exactly as setting it up did.'),
-        p('Automation can also wait without stopping, for example until fees cover the network cost; its card says why. Domino can stop automation on a network for safety, and your controls keep working.'),
+        p('Automation can also wait without stopping, for example until fees cover the network cost; its card says why. Domino can stop automation on a network for safety, and your controls keep working, even ', doc('without this site', 'non-custodial', 'if-domino-is-down'), '.'),
       ],
     },
     {
@@ -170,7 +182,7 @@ export const PRIVACY: DocPage = {
             // Fix round 1: a viewed address's tokens too (lib/walletMemory.ts).
             { label: 'Your positions', value: 'A day' },
             { label: 'Token balances', value: 'A day', note: 'Of your wallet and of an address you view.' },
-            { label: 'Managed positions', value: '6 hours', note: 'While you are signed in.' },
+            { label: 'Automated positions', value: '6 hours', note: 'While you are signed in.' },
             { label: 'Receipts', value: '30 days', note: 'While you are signed in.' },
             { label: 'A position’s fee history', value: '7 days', note: 'Public chain data, no wallet in it.' },
             { label: 'Token names', value: '30 days', note: 'Public chain data.' },

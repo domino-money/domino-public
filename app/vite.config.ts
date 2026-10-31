@@ -247,14 +247,17 @@ function previewSiteBundleCheck(mode: string, active: boolean): Plugin {
  * chain routes, lib/edge/chainRoutes.ts), so its chunk is no longer preloaded for them.
  */
 export const ROUTE_MODULES: Readonly<Record<string, readonly string[]>> = {
-  markets: ['src/screens/Explore.tsx'],
+  // Changed on purpose (2026-10-30, QA round 2, Q2: Markets and New position loaded in two steps, the screen's chunk and
+  // then the V2 wrapper it opens lazily and draws in every V2 build, so their pages stood empty for seconds): the wrapper's
+  // chunk too, fetched with the route's files, as the positions row does. A build without V2 passes it over.
+  markets: ['src/screens/Explore.tsx', 'src/v2in/journey/MarketsNetworks.tsx'],
   pool: ['src/screens/PoolDetail.tsx'],
   // Changed on purpose (2026-10-15, pack 8, the Positions page's first visit): the V2 collection's chunk too (the list
   // every V2 build draws, which OwnedPositions asks for as it loads): fetched with the route's files, not after them,
   // a chain of three round trips made one. A build without V2 carries no such module and passes it over.
   positions: ['src/screens/Positions.tsx', 'src/components/positions/OwnedPositions.tsx', 'src/v2in/lists/OwnedRows.tsx'],
   position: ['src/screens/Positions.tsx', 'src/screens/PositionDetail.tsx'],
-  new: ['src/screens/NewPosition.tsx'],
+  new: ['src/screens/NewPosition.tsx', 'src/v2in/journey/NewPositionV2.tsx'],
   automate: ['src/screens/Automate.tsx'],
   docs: ['src/screens/Docs.tsx'],
   setup: ['src/screens/Setup.tsx'],

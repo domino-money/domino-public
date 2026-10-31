@@ -10,7 +10,7 @@
   .dm-mkt-dot { width: 0.375rem; height: 0.375rem; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--fg-faint); transition: width var(--dur-dot) var(--ease-fast); }
   .dm-mkt-dot[data-lit] { width: 1.125rem; background: var(--fg); }
   /* A disabled arrow keeps its round card, quieter, so the pair reads as one control at two strengths. */
-  .dm-mkt-arrows .dm-icon-btn--round:disabled { background: var(--card); box-shadow: var(--elev-card); color: var(--fg-subtle); opacity: 0.45; cursor: default; }
+  .dm-mkt-arrows .dm-icon-btn--round:is(:disabled, [aria-disabled="true"]) { background: var(--card); box-shadow: var(--elev-card); color: var(--fg-subtle); opacity: 0.45; cursor: default; }
   .dm-mkt-dots[data-place="rail"] { display: none; }
   @media (max-width: 767px) {
     .dm-mkt-nav { display: none; }

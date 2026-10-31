@@ -1,9 +1,9 @@
 import { amountText } from '../../components/positions/walletSteps'
-import { group } from '../../lib/format/decimal'
+import { edgePrice } from '../autoexit/form'
 import { MAX_TICK, MIN_TICK, sqrtPriceAtTick } from '../../lib/read/screens/poolRange'
 import type { V2Chain } from '../../v2/chains'
 import { safeText } from '../../v2/errors'
-import { orientationOf, priceFromSqrtPriceX96, type PriceOrientation } from '../../v2/trigger'
+import { orientationOf, type PriceOrientation } from '../../v2/trigger'
 import { ZERO_ADDRESS, type Address } from '../../v2/types'
 
 /**
@@ -113,17 +113,16 @@ export function referenceOrientation(pool: { currency0: Address; currency1: Addr
   return null
 }
 
-const priceAtTick = (tick: number, tokens: readonly [TokenView, TokenView], orientation: PriceOrientation): string =>
-  priceFromSqrtPriceX96(sqrtPriceAtTick(tick), { decimals0: tokens[0].decimals, decimals1: tokens[1].decimals }, orientation, { significant: 6 })
-
-/** "2,000" from "2000.5"-like plain decimals: the integer part grouped. */
-const grouped = (text: string): string => {
-  const [integer, fraction] = text.split('.')
-  return fraction === undefined ? group(integer) : `${group(integer)}.${fraction}`
-}
+/**
+ * A tick's price in an orientation, as the screens write a price (autoexit/form.ts edgePrice). Changed on purpose
+ * 2026-10-30 (QA round 2, N2): src/v2/plan/present.ts priceText's rule ("2,998.90", "3.40"), where it was six
+ * significant digits ("2,998.9") beside V2 Review's and the position page's two decimals.
+ */
+const priceAtTick = (tick: number, tokens: readonly [TokenView, TokenView], orientation: PriceOrientation): string | null =>
+  edgePrice(sqrtPriceAtTick(tick), { decimals0: tokens[0].decimals, decimals1: tokens[1].decimals }, orientation)
 
 /**
- * A position's range in the vault's reference orientation (spec §5.5): "1 ETH = 2,000 to 3,500 USDG", lowest price
+ * A position's range in the vault's reference orientation (spec §5.5): "1 ETH = 2,000.00 to 3,500.00 USDG", lowest price
  * first. Null when a token's decimals are unknown (never guessed), the orientation is not one of the pool's two tokens,
  * or a tick is outside Uniswap's bounds.
  */
@@ -133,9 +132,10 @@ export function rangeWords(tickLower: number, tickUpper: number, tokens: readonl
   const a = priceAtTick(tickLower, tokens, orientation)
   const b = priceAtTick(tickUpper, tokens, orientation)
   // Token1 per token0 rises with the tick; the inverse falls. Lowest first either way.
+  if (a === null || b === null) return null
   const [low, high] = orientation === 'token1PerToken0' ? [a, b] : [b, a]
   const [base, quote] = orientation === 'token1PerToken0' ? [tokens[0], tokens[1]] : [tokens[1], tokens[0]]
-  return `1 ${base.label} = ${grouped(low)} to ${grouped(high)} ${quote.label}`
+  return `1 ${base.label} = ${low} to ${high} ${quote.label}`
 }
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']

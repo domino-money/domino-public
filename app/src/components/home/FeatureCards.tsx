@@ -16,22 +16,27 @@ const FEATURES: ReadonlyArray<{
   {
     key: 'compound',
     title: 'Auto-compound',
-    body: 'Put earned fees back into the same position, in the same range.',
-    fee: '2% of earned fees used, once. Your original deposit is not charged.',
-    href: '#/automate',
+    body: 'Adds earned fees back into the same position, in the same range.',
+    // Changed on purpose 2026-10-30 (QA round 2, Q1 and N12): the fees in the words Automate, the docs and the pool page
+    // use (one fee wording everywhere), and "deposit" and "the end of your range" as everywhere else. The body is
+    // Automate's own sentence for the same feature (components/automate/copy.ts), word for word.
+    fee: '2% of the earned fees it uses, each time. Your original deposit is not charged.',
+    // Changed on purpose 2026-10-30 (QA round 2, Q16): each "How it works" opens its own docs page, as Auto-exit's and the
+    // Automate page's do; these two still opened the setup page they linked to before #407 renamed them.
+    href: '#/docs/auto-compound',
   },
   {
     key: 'domino',
     title: 'Domino-compound',
-    body: 'Earned fees can open a higher range. Your original position stays.',
-    fee: '4% of earned fees used, once. Your original deposit is not charged.',
-    href: '#/automate',
+    body: 'Earned fees can open a higher range. Your original deposit stays.',
+    fee: '4% of the earned fees it uses, each time. Your original deposit is not charged.',
+    href: '#/docs/domino-compound',
   },
   {
     key: 'autoexit',
     title: 'Auto-exit',
-    body: 'Close at your range boundary and send the tokens to your wallet.',
-    fee: '0.2% of the position, only when it closes.',
+    body: 'Closes at the end of your range and sends the tokens to your wallet.',
+    fee: '0.2% of the position’s value, only if it closes.',
     href: '#/docs/auto-exit',
   },
 ]

@@ -161,6 +161,17 @@ test('§8.2: a successor\'s sentence says your automation holds it and to withdr
   assert.doesNotMatch(positionConstants.SUCCESSOR_BLOCKED_COPY, /vault/i);
 });
 
+// 2026-10-30 (QA round 2, final review shell-3, the owner's Q1): the position's automation sheet says the service fee in
+// Automate's one wording (components/automate/ModeSummary.tsx), on the same base; it said "2% of reinvested fees".
+test('Q1: the automation sheet names its service fee in Automate\'s words, never "of reinvested fees"', () => {
+  const src = (path) => readFileSync(new URL(`../../src/${path}`, import.meta.url), 'utf8');
+  const automate = src('components/automate/ModeSummary.tsx');
+  assert.match(automate, /<b>\{fee\}<\/b> of the earned fees it uses, each time/);
+  const card = src('v2in/automate/VaultCard.tsx');
+  assert.match(card, /return `\$\{view\.mode === 2 \? 'Domino-compound' : 'Auto-compound'\}: \$\{automationFeeText\(view\.mode === 2 \? 2 : 1\)\} of the earned fees it uses, each time`/);
+  assert.doesNotMatch(card.replace(/\/\/.*$/gm, ''), /reinvested fees/);
+});
+
 test('item 8 (5 Oct): a reserves return someone else sent is in the vault\'s history, in the words its vault_event had', () => {
   const activity = JSON.parse(readFileSync(join(CONTRACTS, 'read-v6', 'fixtures', 'valid', 'activity.json'), 'utf8'));
   assert.equal(runtime.validateResponse('activity', activity), true);

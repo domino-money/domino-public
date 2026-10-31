@@ -64,6 +64,34 @@ export function authenticatedRetryDelay(header: string | null, now: number): num
   return Number.isFinite(delay) && delay > 0 ? Math.min(delay, 300_000) : WINDOW_MS
 }
 
+/**
+ * Added 2026-10-30 (launch capacity, CAP-6): how long a "busy" refusal holds, before the next ask. The services answer
+ * every capacity-busy code (position_plan_capacity_busy, crosschain_capacity_busy, session_capacity_busy,
+ * onboarding_capacity_busy) with Retry-After 60, while the slot they wait for frees in a few seconds (the planner's p50
+ * is 3.8 s). So a capacity-busy refusal is asked again after CAPACITY_BUSY_WAIT_MS and up to a quarter more at random
+ * (so the tabs it reached do not all come back in the same second), never later than its Retry-After; the callers ask
+ * again quietly at most twice. A rate limit (*_rate_limited) keeps its Retry-After.
+ */
+export const CAPACITY_BUSY_WAIT_MS = 4_000
+
+/** Whether a refusal's code is a capacity-busy one (a worker slot taken), not a rate limit. */
+export const isCapacityBusy = (code: string | null | undefined): boolean => typeof code === 'string' && code.endsWith('_capacity_busy')
+
+/** CAPACITY_BUSY_WAIT_MS and up to a quarter more, at random (`random` as Math.random, for the tests). */
+export function capacityBusyWait(random: () => number = Math.random): number {
+  const draw = random()
+  return CAPACITY_BUSY_WAIT_MS + Math.floor(CAPACITY_BUSY_WAIT_MS * 0.25 * (Number.isFinite(draw) ? Math.min(Math.max(draw, 0), 1) : 0))
+}
+
+/**
+ * How long one wallet's authenticated requests wait after a refusal (429, or 503 with Retry-After): its Retry-After, or
+ * for a capacity-busy code (`code`, read from the reply's body) the short wait above when that is sooner.
+ */
+export function refusalDelay(header: string | null, code: string | null, now: number, random: () => number = Math.random): number {
+  const named = authenticatedRetryDelay(header, now)
+  return isCapacityBusy(code) ? Math.min(named, capacityBusyWait(random)) : named
+}
+
 /** Injectable clock and atomic storage make account limits and multiple tabs testable without HTTP. */
 export function createAuthenticatedRequestCoordinator({
   clock, storage, lock,

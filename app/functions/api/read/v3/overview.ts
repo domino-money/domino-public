@@ -1,7 +1,11 @@
 /**
  * POST /api/read/v3/overview: the stored overview of a list of pools or of a token's pools, from the read Worker through
- * the fixed forwarder, a settled answer kept at the edge for a few seconds (functions/_lib/overviewEdge.ts). Added
- * 2026-10-01 (audit A7 b and A14, the owner's OK on more edge caching).
+ * the fixed forwarder, kept at the edge (functions/_lib/overviewEdge.ts has the rules). Added 2026-10-01 (audit A7 b and
+ * A14, the owner's OK on more edge caching). Since 2026-10-30 (launch capacity study, item 4): every answer with something
+ * to show is kept, a settled one fresh 10 s, one still settling 2 s; a kept answer is served at once while it refreshes
+ * for two minutes (ten until the final review's edge-1, 2026-10-30: past the page's 300 s for an APR), and stands in for
+ * the VM's failure up to fifteen, or for a VM that has not answered within 5 s; followers of a miss get the kept answer
+ * rather than a second read of a failing VM.
  *
  * Pages routes this path here, ahead of functions/api/[[path]].ts: a route with only static segments is more specific
  * than the catch-all. Every other /api/read/v3/ path still goes to the catch-all, and so to the same Worker. The beta

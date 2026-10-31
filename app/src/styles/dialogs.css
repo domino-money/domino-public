@@ -36,7 +36,7 @@
   .dm-pa-bound { display: grid; align-content: start; gap: 0.25rem; min-width: 0; padding: 0.75rem 0.875rem; border-radius: 0.875rem; background: var(--pa-well); box-shadow: inset 0 0 0 1px var(--pa-ring); }
   /* Custom: the two ends are fields, lifted to the card's ink with a stronger ring, the figure typed on a rule. */
   .dm-pa-bound[data-editing] { background: var(--card); box-shadow: inset 0 0 0 1px var(--border-strong); cursor: text; }
-  .dm-pa-bound:focus-within { box-shadow: inset 0 0 0 1px var(--primary-line), 0 0 0 0.1875rem var(--primary-wash); }
+  .dm-pa-bound:focus-within { box-shadow: inset 0 0 0 2px var(--ring), 0 0 0 0.1875rem var(--primary-wash); }
   .dm-pa-bound-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; min-width: 0; }
   .dm-pa-bound-away { font-size: 0.75rem; line-height: 1rem; font-weight: 500; letter-spacing: -0.12px; color: var(--fg-muted); font-variant-numeric: lining-nums tabular-nums; }
   .dm-pa-bound-price { margin: 0; min-width: 0; font-size: 1.125rem; line-height: 1.5rem; font-weight: 500; letter-spacing: -0.3px; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; overflow-wrap: anywhere; }

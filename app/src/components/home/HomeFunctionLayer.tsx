@@ -81,7 +81,7 @@ export function HomeFunctionLayer({ kind }: { kind: HomeAutomationKind }) {
             <path className="dm-fx-ar" d="M550.4 311 L550 318 L544.4 313.9" />
           </svg>
           <span className="dm-fx-em dm-fx-x1" /><span className="dm-fx-em dm-fx-x2" />
-          <span className="dm-fx-lb dm-fx-acc dm-fx-lb-x1">Price reaches<br />your limit</span>
+          <span className="dm-fx-lb dm-fx-acc dm-fx-lb-x1">Price reaches<br />range end</span>
           <span className="dm-fx-lb dm-fx-lb-x2">Position closes</span>
           <span className="dm-fx-lb dm-fx-lb-x3">Your wallet</span>
         </>}

@@ -28,7 +28,7 @@
  * Nothing here asks a wallet anything, signs or sends a transaction.
  */
 import { realClock } from '../../lib/clock'
-import { fetchRaw, rawReplyOf, REQUEST_INIT, type TransportResult } from '../../lib/http/rawReply'
+import { fetchRaw, rawReplyOf, REQUEST_INIT, type RawReply, type TransportResult } from '../../lib/http/rawReply'
 import { NO_SESSION } from '../../session/controller'
 import { livePort } from '../../session/livePort'
 import { createHttpCrosschainTransport } from '../../v2/crosschain/httpTransport'
@@ -41,12 +41,27 @@ import { createHttpReadV6Transport } from '../../v2/read/v6HttpTransport'
 import { createV2RouteProbe, type RawGet, type V2RouteProbe } from '../../v2/routes'
 import { sessionController } from '../../wallet/session'
 import { financialFetch } from '../http'
-import { authenticatedRequestPriority, authenticatedRetryDelay } from './requestCoordinator'
+import { authenticatedRequestPriority, refusalDelay } from './requestCoordinator'
 import { coordinatedRequests } from './requestCoordinatorLive'
+
+/** A refusal's `error` code from its JSON body, for how long it holds (requestCoordinator.ts refusalDelay); null otherwise. */
+function refusalCode(reply: RawReply): string | null {
+  if (reply.body.kind !== 'text') return null
+  try {
+    const parsed: unknown = JSON.parse(reply.body.text)
+    const code = typeof parsed === 'object' && parsed !== null ? (parsed as { error?: unknown }).error : null
+    return typeof code === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(code) ? code : null
+  } catch {
+    return null
+  }
+}
 
 /**
  * Admission happens before the per-request timeout and quote's send clock start.
  * Account + epoch are checked again after waiting; no credential is persisted.
+ * Changed on purpose 2026-10-30 (launch capacity, CAP-6): a capacity-busy refusal holds this wallet's requests for a few
+ * seconds (requestCoordinator.ts refusalDelay), no longer the 60 s every 429 is answered with; a rate limit keeps its
+ * Retry-After.
  */
 export const v2Post: RawPost = async (url, init, options) => {
   const priority = authenticatedRequestPriority(url)
@@ -75,7 +90,7 @@ export const v2Post: RawPost = async (url, init, options) => {
       const result = await fetchRaw(financialFetch, url, init, { ...options, signal: controller.signal, clock: realClock })
       if (controller.signal.aborted || !current()) return { kind: 'aborted' } as const
       if (result.kind === 'reply' && (result.reply.status === 429 || (result.reply.status === 503 && result.reply.retryAfterHeader !== null))) {
-        await coordinator.defer(owner, authenticatedRetryDelay(result.reply.retryAfterHeader, realClock.wallMs()))
+        await coordinator.defer(owner, refusalDelay(result.reply.retryAfterHeader, refusalCode(result.reply), realClock.wallMs()))
       }
       return result
     })

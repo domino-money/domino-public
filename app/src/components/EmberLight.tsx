@@ -31,8 +31,10 @@ function restPoint(scale: number): [number, number] | null {
  * [data-ember-rest]: just above its top left corner (6 right, 34 up, in design px), or at the offsets it gives,
  * data-ember-rest-x / -y from that corner, or a value "x,y" from its centre. The rest is looked up again whenever the
  * screen's elements change (a lazily loaded screen mounts after the layer), and the page's first rest is taken at once,
- * without the glide, as the prototype's light starts where its page puts it. Reduced motion keeps it, without the glide
- * (tokens.css). Data that refreshes never moves it.
+ * without the glide, as the prototype's light starts where its page puts it. Data that refreshes never moves it.
+ * Changed on purpose 2026-10-30 (QA round 2, N90): under reduced motion (or html.dm-still) the light no longer follows the
+ * pointer, which made the glow jump on every frame without its glide; it rests where the screen puts it, as Home's own
+ * lights do. Everyone else sees no change.
  */
 export function EmberLight() {
   const layer = useRef<HTMLDivElement>(null)
@@ -41,6 +43,8 @@ export function EmberLight() {
     const light = layer.current
     if (!light || typeof window.matchMedia !== 'function' || typeof requestAnimationFrame !== 'function') return
     const touch = window.matchMedia('(hover: none)').matches
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const still = () => reduced.matches || document.documentElement.classList.contains('dm-still')
     let on = false
     let x = 0
     let y = 0
@@ -108,7 +112,7 @@ export function EmberLight() {
       if (!frame) frame = requestAnimationFrame(draw)
     }
     const move = (event: PointerEvent) => {
-      if (event.pointerType === 'touch') return
+      if (event.pointerType === 'touch' || still()) return
       on = true
       firstRest = false
       x = event.clientX
@@ -135,6 +139,13 @@ export function EmberLight() {
       window.addEventListener('pointermove', move, { passive: true })
       document.addEventListener('pointerout', out, { passive: true })
     }
+    // Reduced motion turned on while the page is open: the light goes back to its rest at once.
+    const calm = () => {
+      if (!still()) return
+      on = false
+      schedule()
+    }
+    reduced.addEventListener?.('change', calm)
     window.addEventListener('hashchange', routed)
     window.addEventListener('resize', schedule, { passive: true })
     // The glow stays under a still pointer while the page scrolls under it.
@@ -151,6 +162,7 @@ export function EmberLight() {
       cancelAnimationFrame(frame)
       window.removeEventListener('pointermove', move)
       document.removeEventListener('pointerout', out)
+      reduced.removeEventListener?.('change', calm)
       window.removeEventListener('hashchange', routed)
       window.removeEventListener('resize', schedule)
       window.removeEventListener('scroll', schedule)

@@ -52,6 +52,11 @@ function harness({ own = () => false, delay = (attempt) => (attempt < 2 ? 1000 *
 
 test('the text asked: two characters at least, or a whole address in lower case', () => {
   assert.deepEqual(['e', ' us ', '0x12', TOKEN.toUpperCase().replace('0X', '0x'), 'Virtual Protocol'].map(searchable), [null, 'us', null, TOKEN, 'Virtual Protocol']);
+  // Added 2026-10-30 (QA round 2, N98): never more than read-v6 chain-tokens' 96 characters, so junk text asks no network
+  // (it was refused by the contract's check and said as the networks' search being unavailable).
+  assert.equal(searchable('a'.repeat(96)), 'a'.repeat(96));
+  assert.equal(searchable('a'.repeat(97)), null);
+  assert.equal(searchable(` ${'b'.repeat(221)} `), null);
 });
 
 test('only the newest text is asked, one read at a time per network; an answer to an older text is ignored', async () => {

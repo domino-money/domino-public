@@ -11,11 +11,13 @@ import { useWalletIdentity } from '../../lib/walletIdentity'
 import { v2Chain } from '../../v2/chains'
 import type { V2Gate } from '../../v2/gate'
 import { priceText, rangeBothWays } from '../../v2/plan/present'
+import { usableTicks } from '../../lib/read/screens/poolRange'
 import type { V2ChainId } from '../../v2/types'
 import { AmountStage } from './AmountStage'
 import { JOURNEY } from './copy'
 import { useLinkedPool } from './linkedPool'
 import { feePercent, poolFromList, type JourneyPool } from './model/pools'
+import { priceInvertedOn } from './model/price'
 import {
   back, canContinue, canOpen, createRequest, goTo, initialJourney, inputsOf, journeyPrice, next, stepIndex,
   withAmounts, withPool, withRange, withSlippage, withStart, type JourneyState, type JourneyStep,
@@ -77,6 +79,13 @@ export function ZapJourney({ chainId, gate, finderOnly, onListed, poolId = '', l
   })
   const [confirmed, setConfirmed] = useState(false)
   const [raceReading, setRaceReading] = useState(false)
+  // QA round 2, Q18 (as the owner's journey): a Custom price typed or refused in either field holds Continue, with the
+  // field's own reason (./RangeStage.tsx Bound onBlock).
+  const [rangeBlock, setRangeBlock] = useState<{ lower?: string | null; upper?: string | null }>({})
+  const onRangeBlock = useCallback((which: 'lower' | 'upper', reason: string | null) => {
+    setRangeBlock((was) => ((was[which] ?? null) === reason ? was : { ...was, [which]: reason }))
+  }, [])
+  const blocked = rangeBlock.lower ?? rangeBlock.upper ?? null
   const book = tokenBook(chainId, state.pool ? [...state.pool.tokens] : [])
   const inputs = inputsOf(state) ?? []
   const run = useJourneyRun({
@@ -117,6 +126,7 @@ export function ZapJourney({ chainId, gate, finderOnly, onListed, poolId = '', l
     setState(updated)
   }
   const forward = () => {
+    if (state.step === 'range' && blocked) return
     const moved = next(state)
     if (moved.step === state.step) return
     open(moved)
@@ -171,10 +181,11 @@ export function ZapJourney({ chainId, gate, finderOnly, onListed, poolId = '', l
     }
   }
 
+  const rangeCheck: ReturnType<typeof canContinue> = !canContinue('pool', state).ok ? canContinue('pool', state) : blocked ? { ok: false, reason: blocked } : canContinue('range', state)
   const checks: Record<JourneyStep, ReturnType<typeof canContinue>> = {
     pool: canContinue('pool', state),
-    range: canContinue('pool', state).ok ? canContinue('range', state) : canContinue('pool', state),
-    amount: canContinue('range', state).ok ? canContinue('amount', state) : canContinue('range', state),
+    range: rangeCheck,
+    amount: rangeCheck.ok ? canContinue('amount', state) : rangeCheck,
     review: canContinue('review', state),
   }
   const check = checks[current]
@@ -204,7 +215,17 @@ export function ZapJourney({ chainId, gate, finderOnly, onListed, poolId = '', l
         />
       ) : (
         <>
-          <Button type="button" variant="primary" size="lg" disabled={!check.ok || fundingWait} aria-describedby={check.ok && !fundingWait ? undefined : 'continue-reason'} onClick={current === 'amount' ? () => void continueAmount() : forward} data-zap-continue={current}>
+          {/* QA round 2, N89 (as the owner's journey): not ready, Continue is aria-disabled rather than disabled, so Tab still
+              reaches it and its reason is read with it; pressed then, it does nothing. It keeps its quiet face. */}
+          <Button
+            type="button"
+            variant="primary"
+            size="lg"
+            aria-disabled={!check.ok || fundingWait || undefined}
+            aria-describedby={check.ok && !fundingWait ? undefined : 'continue-reason'}
+            onClick={check.ok && !fundingWait ? (current === 'amount' ? () => void continueAmount() : forward) : undefined}
+            data-zap-continue={current}
+          >
             {CREATE.page.next}
           </Button>
           <p id="continue-reason" role="status" className="dm-flow-reason">
@@ -231,7 +252,7 @@ export function ZapJourney({ chainId, gate, finderOnly, onListed, poolId = '', l
           />
         )
       case 'range':
-        return <RangeStage state={state} price={price} onRange={(range) => setState((was) => withRange(was, range))} />
+        return <RangeStage state={state} price={price} onRange={(range) => setState((was) => withRange(was, range))} onBlock={onRangeBlock} />
       case 'amount':
         return <AmountStage state={state} flowKey={fundingFlowKey} onContinuationChange={receiveFunding} onAmounts={(amounts) => setState((was) => withAmounts(was, amounts))} onSlippage={(text) => setState((was) => withSlippage(was, text))} />
       case 'review':
@@ -246,6 +267,7 @@ export function ZapJourney({ chainId, gate, finderOnly, onListed, poolId = '', l
             onRejected={run.forgetUnsettled}
             onNewPool={offerNewPool}
             onPoolRace={() => void continueOnExisting()}
+            connected={identity.kind === 'connected'}
           />
         )
       default:
@@ -256,16 +278,25 @@ export function ZapJourney({ chainId, gate, finderOnly, onListed, poolId = '', l
   const summaryOf = (step: JourneyStep): ReactNode => {
     const pool = state.pool
     if (!pool) return null
+    const flip = priceInvertedOn(chainId, pool.pool.currency0, pool.pool.currency1)
+    const [l0, l1] = [labelOf(book, pool.pool.currency0), labelOf(book, pool.pool.currency1)]
     switch (step) {
-      case 'pool':
-        // The DEX as ./parts.tsx PoolChips says it: never its version; nothing at all for a v4 pool on Robinhood Chain.
-        return [`${labelOf(book, pool.pool.currency0)} / ${labelOf(book, pool.pool.currency1)}`, v2Chain(chainId).name, ...(chainId === 4663 && pool.pool.dex === 4 ? [] : ['Uniswap']), feePercent(pool.pool.fee)].join(' · ')
+      case 'pool': {
+        // The DEX as ./parts.tsx PoolChips says it: never its version; nothing at all for a v4 pool on Robinhood Chain. The
+        // pair as its price is written, base then quote (QA round 2, Q24).
+        const [base, quote] = flip ? [l1, l0] : [l0, l1]
+        return [`${base} / ${quote}`, v2Chain(chainId).name, ...(chainId === 4663 && pool.pool.dex === 4 ? [] : ['Uniswap']), feePercent(pool.pool.fee)].join(' · ')
+      }
       case 'range': {
         if (!state.range) return null
+        // The price's own reading (Q24), and an end at the pool's usable tick limit as 0 or ∞ (N73), as Review writes it.
         const both = rangeBothWays(state.range.lower, state.range.upper, decimalsOf(book, pool.pool.currency0), decimalsOf(book, pool.pool.currency1))
-        const low = priceText(both.forward.low)
-        const high = priceText(both.forward.high)
-        return low && high ? `1 ${labelOf(book, pool.pool.currency0)} = ${low} to ${high} ${labelOf(book, pool.pool.currency1)}` : CREATE.review.summary.rangeTicks(state.range.lower, state.range.upper)
+        const limits = usableTicks(pool.pool.tickSpacing)
+        const lowAtLimit = state.range.lower <= limits.min
+        const highAtLimit = state.range.upper >= limits.max
+        const low = flip ? (highAtLimit ? '0' : priceText(both.inverse.low)) : lowAtLimit ? '0' : priceText(both.forward.low)
+        const high = flip ? (lowAtLimit ? '∞' : priceText(both.inverse.high)) : highAtLimit ? '∞' : priceText(both.forward.high)
+        return low && high ? `1 ${flip ? l1 : l0} = ${low} to ${high} ${flip ? l0 : l1}` : CREATE.review.summary.rangeTicks(state.range.lower, state.range.upper)
       }
       case 'amount':
         return inputs.map((input) => amountText(book, input.token, input.amount)).join(' + ')

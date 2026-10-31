@@ -764,23 +764,63 @@ export function createZapClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Co
     const zapAddress = zap.toLowerCase() as Address
     const inputs = inputsOf(zapPlan)
 
-    return t.bounded(async (rpc) => {
+    // INST-2 (2026-10-30): the reads one review asks together, and its end held until they are all in when it fails.
+    const asked: Promise<unknown>[] = []
+    const settledFirst = (error: unknown): Promise<never> => Promise.allSettled(asked).then(() => {
+      throw error
+    })
+    return t.bounded((rpc) => (async () => {
       await t.identity(rpc)
       // F3: nothing new is reviewed while an action of this owner handed to the wallet may still run on this chain.
       await settleHeld(rpc)
       const block = await t.latestBlock(rpc)
-      const { hookedPoolsAllowed } = await verifyDeployment(rpc, dex, block.tag)
+      // Changed on purpose 2026-10-30 (QA round 2, INST-2: a review asked 11-17 wallet reads one after another): every read
+      // below is pinned to `block` and none needs another's answer (but takesEth, which waits for the account's code), so
+      // they are all asked at once; their answers are then checked in the very order they were read before, so the
+      // failures, their order and any error thrown are the same. Reads only. A review that fails waits for every read it
+      // asked before it ends (`asked`, settledFirst), so none outlives the wallet operation.
+      const together = <T,>(work: Promise<T>): Promise<T> => {
+        asked.push(work)
+        work.catch(() => undefined)
+        return work
+      }
+      const tokens = [...new Set(legs.flatMap((leg) => [leg.tokenIn.toLowerCase(), leg.tokenOut.toLowerCase()]))]
+      const routers = [...new Set(legs.filter((leg) => leg.kind === 1).map((leg) => leg.router.toLowerCase()))]
+      const init = zapPlan.action === 'create' ? zapPlan.plan.initSqrtPriceX96 : 0n
+      const spender = consent === 'direct' ? zapAddress : chain.permit2
+      const erc20 = inputs.filter((item) => !isNative(item.token)).map((item) => ({ token: item.token.toLowerCase() as Address, amount: item.amount }))
+      const permit = consent === 'permit2' && (zapPlan.action === 'create' || zapPlan.action === 'increase') ? permitOf(zapPlan) : null
+      const touchesNative = inputs.some((item) => isNative(item.token)) || isNative(pool.currency0) || legs.some((leg) => isNative(leg.tokenIn) || isNative(leg.tokenOut))
+      const deploymentRead = together(verifyDeployment(rpc, dex, block.tag))
+      const accountRead = together(readAccountCode((method, params) => rpc(method, params), owner, block.tag))
+      const rankReads = tokens.map((token) => together(read<number>(rpc, registry(), REGISTRY_ABI, 'chargeCurrencyRank', [token], block.tag)))
+      const versionReads = routers.map((router) => together(read<number>(rpc, registry(), REGISTRY_ABI, 'routerVersion', [router], block.tag)))
+      // The position, its vault root and its holder: one after another, as each needs the one before.
+      const positionRead = zapPlan.action === 'create' ? null : together((async () => {
+        const found = await positionAt(rpc, dex, intent.tokenId, block.tag)
+        if (typeof found === 'string') return { found, root: null, successor: false }
+        const root = await vaultRootOf(rpc, dex, intent.tokenId, found.approved, block.tag)
+        const successor = !same(found.position.owner, owner) && (await isDominoVault(rpc, found.position.owner, block.tag))
+        return { found, root, successor }
+      })())
+      const spacingRead = init !== 0n && dex === 3 ? together(v3SpacingOf(rpc, pool.fee, block.tag)) : null
+      const poolRead = together(poolAt(rpc, pool, block.tag, block.number))
+      const allowanceReads = erc20.map((item) => together(allowanceOf(rpc, item.token, spender, block.tag)))
+      const usedRead = permit ? together(bitUsed(rpc, chain.permit2, PERMIT2_ABI, intent.nonce, block.tag)) : null
+      const ethRead = touchesNative && same(intent.recipient, owner) ? together(accountRead.then((account) => takesEth(rpc, account, block.tag))) : null
+
+      const { hookedPoolsAllowed } = await deploymentRead
       const failures: string[] = []
 
       // The account's code on THIS chain (EIP-7702 delegation is per chain): only a plain account signs a Permit2
       // permit; any delegated or contract account is direct only (spec §2.5.4, open point 8).
-      const account = await readAccountCode((method, params) => rpc(method, params), owner, block.tag)
+      const account = await accountRead
       if (consent === 'permit2' && account.kind !== 'plain') failures.push('permit2_account_not_plain')
 
       // The registry's ranks for every token the legs touch; for the profile's charge currencies they must agree.
       const ranks = new Map<string, number>()
-      for (const token of new Set(legs.flatMap((leg) => [leg.tokenIn.toLowerCase(), leg.tokenOut.toLowerCase()]))) {
-        const rank = Number(await read<number>(rpc, registry(), REGISTRY_ABI, 'chargeCurrencyRank', [token], block.tag))
+      for (const [i, token] of tokens.entries()) {
+        const rank = Number(await rankReads[i])
         const profile = profileRank(chain, token)
         if (profile !== 0 && rank !== profile) failures.push('registry_rank_mismatch')
         ranks.set(token, rank)
@@ -791,74 +831,64 @@ export function createZapClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Co
         if (named.size !== quote.ranks.length || named.size !== ranks.size || [...ranks].some(([token, rank]) => named.get(token) !== rank)) failures.push('plan_fee_ranks')
       }
       const versions = new Map<string, number>()
-      for (const router of new Set(legs.filter((leg) => leg.kind === 1).map((leg) => leg.router.toLowerCase()))) {
-        versions.set(router, Number(await read<number>(rpc, registry(), REGISTRY_ABI, 'routerVersion', [router], block.tag)))
-      }
+      for (const [i, router] of routers.entries()) versions.set(router, Number(await versionReads[i]))
 
       // The position acted on, and its approval.
       let position: PositionOnChain | undefined
       let approved: Address | null = null
       let pausesAutomation: Address | null = null
       let vaultRoot: Address | null = null
-      if (zapPlan.action !== 'create') {
-        const found = await positionAt(rpc, dex, intent.tokenId, block.tag)
-        if (typeof found === 'string') failures.push(found)
-        else ({ position, approved } = found)
+      if (positionRead) {
+        const onChainPosition = await positionRead
+        if (typeof onChainPosition.found === 'string') failures.push(onChainPosition.found)
+        else ({ position, approved } = onChainPosition.found)
         // A position under automation (rev2 §2.13, decision #5). A successor is held by a vault: no zap action (the
         // owner withdraws it from the vault first). A root (its individual approval, or on v4 its subscriber, is a vault
         // of either of this chain's Domino factories, whose `root()` is this position): when that vault reads it ARMED
         // (`rootArmed()`, L2), a change of range is refused and an increase or an exit pauses its automation, allowed only
         // once the person acknowledges it (`acknowledgePause`); a disarmed root pauses nothing.
         if (position) {
-          const root = await vaultRootOf(rpc, dex, intent.tokenId, approved, block.tag)
+          const root = onChainPosition.root
           if (root) {
             vaultRoot = root.vault
             if (root.armed) pausesAutomation = root.vault
           }
           if (pausesAutomation !== null && zapPlan.action === 'changeRange') failures.push('position_vault_root')
-          if (!same(position.owner, owner) && (await isDominoVault(rpc, position.owner, block.tag))) failures.push('position_vault_successor')
+          if (onChainPosition.successor) failures.push('position_vault_successor')
         }
       }
       // Check 13 (rev2 §2.4, §2.6.5): a plan that initializes a pool does so only on a pool the chain reads unpriced at
       // this block, at exactly the price the app computed from what the person typed.
       let createsPool = false
       if (zapPlan.action === 'create') {
-        const init = zapPlan.plan.initSqrtPriceX96
         if (init !== 0n) {
           createsPool = true
           if (input.initSqrtPriceX96 === undefined || input.initSqrtPriceX96 !== init) failures.push('plan_init_price_mismatch')
-          if (dex === 3 && (await v3SpacingOf(rpc, pool.fee, block.tag)) !== pool.tickSpacing) failures.push('plan_pool_spacing')
-          if ((await poolAt(rpc, pool, block.tag, block.number)).initialized) failures.push('plan_pool_has_price')
+          if (spacingRead && (await spacingRead) !== pool.tickSpacing) failures.push('plan_pool_spacing')
+          if ((await poolRead).initialized) failures.push('plan_pool_has_price')
         } else if (input.initSqrtPriceX96 !== undefined) failures.push('plan_init_price_mismatch')
       }
       // F4 (Domino V2 rev2 review): the plan's minimums were computed from its own reading of the chain. The pool's price
       // read here, at this block, through the wallet, must be inside the ±s band around the price they used (for a
       // removal, exactly its removal band), and the position's range and liquidity must be the ones its removal minimums
       // used; the action's own simulation is checked against the plan when it is prepared and right before it is sent.
-      const poolNow = createsPool ? null : await poolAt(rpc, pool, block.tag, block.number)
+      const poolNow = createsPool ? null : await poolRead
       failures.push(...basisProblems(zapPlan, quote.basis, { poolSqrtPriceX96: poolNow && poolNow.initialized ? poolNow.sqrtPriceX96 : null, position: position ?? null }, createsPool))
       const needsNft = (zapPlan.action === 'increase' && dex === 4) || zapPlan.action === 'changeRange' || zapPlan.action === 'exit'
       const manager = managerOf(dex)
 
       // The allowances each ERC-20 input needs: to the zap (direct), or to Permit2.
-      const spender = consent === 'direct' ? zapAddress : chain.permit2
       const allowances: { token: Address; amount: bigint; allowance: bigint }[] = []
-      for (const item of inputs) {
-        if (isNative(item.token)) continue
-        const token = item.token.toLowerCase() as Address
-        allowances.push({ token, amount: item.amount, allowance: await allowanceOf(rpc, token, spender, block.tag) })
-      }
+      for (const [i, item] of erc20.entries()) allowances.push({ token: item.token, amount: item.amount, allowance: await allowanceReads[i] })
 
       // Permit2's nonce: free in its bitmap and not held in this page's journal (spec §2.5.2).
-      const permit = consent === 'permit2' && (zapPlan.action === 'create' || zapPlan.action === 'increase') ? permitOf(zapPlan) : null
-      if (permit) {
-        const used = await bitUsed(rpc, chain.permit2, PERMIT2_ABI, intent.nonce, block.tag)
+      if (permit && usedRead) {
+        const used = await usedRead
         if (used || wallet.signatures.held(entryOf('permit2', chain.permit2, intent.nonce))) failures.push('plan_nonce_used')
       }
 
       // Native ETH paid out to the owner (refunds, a v4 ETH pool's withdrawal): never to an account that refuses it.
-      const touchesNative = inputs.some((item) => isNative(item.token)) || isNative(pool.currency0) || legs.some((leg) => isNative(leg.tokenIn) || isNative(leg.tokenOut))
-      if (touchesNative && same(intent.recipient, owner) && !(await takesEth(rpc, account, block.tag))) failures.push('native_eth_refused')
+      if (ethRead && !(await ethRead)) failures.push('native_eth_refused')
 
       const context: PlanContext = {
         chain, contracts, owner, consent, now: now(), quoteRequestedAt: quote.requestedAt, quoteExpiresAt: quote.expiresAt,
@@ -927,7 +957,7 @@ export function createZapClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Co
       })
       reviews.set(result, { plan: zapPlan, context, basis: quote.basis, permit, manager, needsNft, signature: null, pauseAcknowledged: false })
       return result
-    })
+    })().catch(settledFirst))
   }
 
   const stateOf = (review: ZapReview): ReviewState => reviews.get(review) ?? fail('review_not_from_this_client')

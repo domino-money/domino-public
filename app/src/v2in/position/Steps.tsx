@@ -1,12 +1,12 @@
 import { Button, StepMarker } from '../../components/ui'
 import { v2Chain } from '../../v2/chains'
 import { v2TxUrl } from '../../v2/explorers'
-import { EXACT_FRACTION, SHOWN_FRACTION } from '../../v2/plan/present'
+import { EXACT_FRACTION } from '../../v2/plan/present'
 import type { ActionName, Address, V2ChainId } from '../../v2/types'
 import { COPY } from './copy'
 import { stepLabel, type RunView } from './run'
 import { ErrorLine, Note } from './ui'
-import { amountText, labelOf, type TokenBook } from './tokens'
+import { amountText, labelOf, shortAmountText, type TokenBook } from './tokens'
 
 /**
  * The line under a step: its live state. Changed on purpose 2026-10-06 (the owner's point 4, as New position's wallet
@@ -40,7 +40,8 @@ export function stepsDone(view: RunView): boolean {
  * (`StepButton`). Changed on purpose 2026-10-03 (the owner, point 9): drawn as New position's wallet steps, a timeline
  * whose done steps turn green with a check and whose step under way turns its arc. Changed on purpose 2026-10-06 (the
  * owner's point 4: little text): no network fee on each step, the review above says it once (./Review.tsx); no line
- * under a step until it is under way; an amount to allow rounded up (as the wallet asks for it), every digit in its title.
+ * under a step until it is under way; an amount to allow rounded up (as the wallet asks for it), every digit in its title
+ * (at six significant digits since 2026-10-30, QA round 2 N2, as New position's steps).
  * Changed on purpose 2026-10-14 (incident C1; the owner's decision D0): a step that is in a block says "Confirmed", and
  * keeps that word when its block is final (./copy.ts wallet.included and wallet.finalized, the receipt's own words).
  */
@@ -54,7 +55,7 @@ export function StepsList({ chainId, view, action, book, onCancelSignature, onKe
       <ol className="dm-flow-wsteps">
         {view.steps.map((step, i) => {
           const state = i < view.current || step.status === 'included' || step.status === 'finalized' ? 'done' : i === view.current ? 'current' : 'upcoming'
-          const label = stepLabel(step, action, (token, raw) => amountText(book, token, raw, SHOWN_FRACTION, 'up'), (token) => labelOf(book, token), permit2)
+          const label = stepLabel(step, action, (token, raw) => shortAmountText(book, token, raw, 'up'), (token) => labelOf(book, token), permit2)
           const whole = stepLabel(step, action, (token, raw) => amountText(book, token, raw, EXACT_FRACTION), (token) => labelOf(book, token), permit2)
           // Added 2026-10-14 (incident C3: waiting never locks): a step sent 20 s ago whose block is not seen yet (./run.ts);
           // before it (C3 review), a sent step whose reads fail on the wallet's network or account says to switch back.

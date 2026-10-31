@@ -5,7 +5,7 @@ import type { DocPage } from '../types'
 export const MARKETS: DocPage = {
   slug: 'markets',
   title: 'Markets',
-  summary: 'Find pools on Robinhood Chain, Base and Arbitrum One, and understand their figures.',
+  summary: 'Browse today’s Robinhood Chain pools, search tokens on Base and Arbitrum One, and understand their figures.',
   sections: [
     {
       id: 'pools-table',
@@ -170,7 +170,7 @@ export const NEW_POSITION: DocPage = {
       title: 'Create position',
       blocks: [
         p(b('Create position'), ' is the last step: your wallet allows each token for the exact amount, if needed, then one transaction puts your tokens in, makes any swap and sends you the position NFT, with anything the range doesn’t use. Domino’s contract keeps nothing afterwards. Some wallets confirm it all at once: see ', doc('Wallet requests', 'wallet-requests'), '.'),
-        p('Domino V1 on Robinhood Chain lists approval, deposit and creation as separate wallet steps.'),
+        p('On Robinhood Chain, Review lists approval, deposit and creation as separate wallet steps.'),
         note(['No Domino fee unless a swap is needed: then 0.65% of the amount swapped, shown on Review. Network gas still applies.']),
       ],
     },
@@ -266,7 +266,7 @@ export const POSITIONS: DocPage = {
           [b('Current price'), ': the pool’s price now, on a bar between your range’s two ends.'],
           ['Automation controls sit below the title. Below the figures: price and fee charts, Activity and technical Details.'],
         ),
-        p('Figures and charts update automatically as new chain data arrives. Zero fees show a flat chart; missing history is never filled with invented values.'),
+        p('Zero fees show a flat chart; missing history is never filled with invented values.'),
       ],
     },
     {
@@ -282,7 +282,7 @@ export const POSITIONS: DocPage = {
       id: 'managed-positions',
       title: 'What automation did',
       blocks: [
-        p('Automation is shown with its position. Open the position to set up, pause or stop it, or recover tokens it holds. ', b('Receipts'), ' lists what you and your automation did, each action with its fees and what came back. For the full list, select ', b('Receipts'), ' beside New position or the card’s ', b('See all'), '.'),
+        p('Automation is shown with its position. Open the position to set up, pause or stop it, or recover tokens it holds. ', b('Receipts'), ' lists what you and your automation did, each action with its fees and what came back. Once your wallet is connected, select ', b('Receipts'), ' beside New position, or the card’s ', b('See all'), ', for the full list.'),
         shot('receipts', 'Receipts: each time automation added fees back.'),
         p('Public on-chain activity needs no signature. Additional account history may ask you to sign in. A receipt is final only once its network settles it.'),
       ],
@@ -312,7 +312,7 @@ export const MANAGE_POSITION: DocPage = {
       id: 'from-its-page',
       title: 'From a position’s page',
       blocks: [
-        p('The available actions are shown below the position’s title: ', b('Collect fees'), ', ', b('Add liquidity'), ', ', b('Change range'), ', ', b('Withdraw'), ' and ', doc('Auto-exit', 'auto-exit'), '. Robinhood Chain’s Uniswap v4 positions also offer ', b('Close position'), '.'),
+        p('The available actions are shown below the position’s title: ', b('Collect fees'), ', ', b('Add liquidity'), ', ', b('Change range'), ', ', b('Withdraw'), ', ', doc('Auto-exit', 'auto-exit'), ' and ', b('Close position'), '.'),
         p('Each opens a dialog: your choice, then Review with what you receive, then your wallet. Each action is a single transaction, and Domino’s contract keeps nothing afterwards. No Domino fee unless it needs a swap: then 0.65% of the amount swapped. A quote needs sign-in and lasts 3 minutes.'),
       ],
     },
@@ -359,7 +359,8 @@ export const MANAGE_POSITION: DocPage = {
       id: 'with-automation',
       title: 'With automation on',
       blocks: [
-        p('While a position is automated, ', b('Change range'), ' isn’t available, and Add liquidity, Withdraw and Collect fees first ask you to tick that this pauses it; ', b('Turn automation back on'), ' restarts it afterwards.'),
+        // 2026-10-30 (QA2 N49): by mode (v2in/position/constants.ts).
+        p('While a position is automated, ', b('Change range'), ' isn’t available. With compounding, Add liquidity, Withdraw and Collect fees first ask you to tick that this pauses it; ', b('Turn automation back on'), ' restarts it. With Auto-exit, Collect fees and Withdraw in both tokens leave it on; Add liquidity on Uniswap v4 and Withdraw in one token pause it until you approve the position again.'),
         p('A position Domino-compound opened has no actions of its own until withdrawn from your automation. Withdrawing an automated position leaves its collected fees with your automation, and the page takes you to withdrawing them.'),
       ],
     },

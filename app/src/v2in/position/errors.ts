@@ -8,6 +8,7 @@
  * Pure: no React, no wallet.
  */
 import { CONTRACTS_NOT_LIVE, contractsNotLiveCopy } from '../../finance/v2/liveLock'
+import { capacityBusyWait, isCapacityBusy } from '../../finance/v2/requestCoordinator'
 import { v2Chain } from '../../v2/chains'
 import { GENERIC_COPY, decodeRevertData, decodeV2Error, type ErrorLabels, type Recovery } from '../../v2/errors'
 import type { S1PlanResult } from '../../v2/plan/types'
@@ -21,9 +22,14 @@ export interface ActionError {
   /**
    * What the dialog does next: `requote` goes back to a fresh quote by itself; the plan API's own (rev2 §2.4):
    * `quiet-requote` asks again without a word (preview_expired, an answer past its expiry), `direct-retry` asks again
-   * for the direct path without a word (consent_unsupported), `offer-both` offers the exit in both tokens.
+   * for the direct path without a word (consent_unsupported), `offer-both` offers the exit in both tokens. `retry-later`
+   * (QA round 2, CAP-5b, as New position's run): a busy or rate-limited plan service, asked again by itself after its
+   * Retry-After (`retryAfterSeconds`; a capacity-busy one after 4 to 5 s, retryLaterWait), twice at most, before the busy
+   * sentence is said.
    */
-  recovery: Recovery | 'none' | 'quiet-requote' | 'direct-retry' | 'offer-new-pool' | 'offer-both' | 'pool-race'
+  recovery: Recovery | 'none' | 'quiet-requote' | 'retry-later' | 'direct-retry' | 'offer-new-pool' | 'offer-both' | 'pool-race'
+  /** The service's Retry-After, in whole seconds, when it named one (`retry-later`). */
+  retryAfterSeconds?: number
 }
 
 /** A wallet outcome said in words (a switch the wallet refused, a network it does not know), with its code. */
@@ -126,7 +132,14 @@ export function planFailure(result: Exclude<S1PlanResult, { kind: 'ok' }>, chain
         case 'position_plan_pool_not_initialized': return { copy: E.position_plan_pool_not_initialized, code, recovery: 'none' }
         case 'position_plan_pool_initialized': return { copy: E.position_plan_pool_initialized, code, recovery: 'none' }
         case 'position_plan_nothing_to_convert': return { copy: E.position_plan_nothing_to_convert, code, recovery: 'offer-both' }
-        case 'invalid_request': case 'position_plan_capacity_busy': case 'position_plan_not_owner': case 'position_plan_position_not_found':
+        // (QA round 2, CAP-5b; launch study item 5) A busy planner and the session's own rate limits are one state: asked
+        // again by itself after the service's Retry-After, a capacity-busy one after 4 to 5 s (./run.ts, retryLaterWait),
+        // then "Busy right now. Try again in a moment." They
+        // said "The planning service isn’t available yet." with nothing more, as if the feature did not exist.
+        case 'position_plan_capacity_busy': case 'session_rate_limited': case 'session_capacity_busy': case 'onboarding_rate_limited':
+        case 'onboarding_capacity_busy':
+          return { copy: E.position_plan_capacity_busy, code, recovery: 'retry-later', ...(result.retryAfterSeconds !== undefined ? { retryAfterSeconds: result.retryAfterSeconds } : {}) }
+        case 'invalid_request': case 'position_plan_not_owner': case 'position_plan_position_not_found':
         case 'position_plan_pool_invalid': case 'position_plan_hooked_pool': case 'position_plan_price_invalid': case 'position_plan_price_decimals_mismatch':
         case 'position_plan_range_invalid': case 'position_plan_liquidity_invalid': case 'position_plan_burn_needs_all':
         case 'position_plan_inputs_unsupported': case 'position_plan_no_route': case 'position_plan_amount_too_small':
@@ -139,6 +152,20 @@ export function planFailure(result: Exclude<S1PlanResult, { kind: 'ok' }>, chain
       }
     }
   }
+}
+
+/**
+ * How long a `retry-later` refusal waits before the quote is asked again (./run.ts), `attempt` being 0 for the first quiet
+ * retry and 1 for the second: 4 s, then 8 s, or the service's Retry-After when that is longer. Changed on purpose
+ * 2026-10-30 (QA round 2, final review pos-run-1): a capacity-busy refusal (position_plan_capacity_busy and the like)
+ * waits 4 to 5 s (finance/v2/requestCoordinator.ts capacityBusyWait), whatever Retry-After it names, as New position's
+ * run does (../journey/run.ts): every one says 60 s while the planner's slot frees in a few seconds, so Add liquidity,
+ * Change range and Withdraw in one token sat on their quote for two minutes at peak load. A rate limit
+ * (session_rate_limited, onboarding_rate_limited) keeps its Retry-After. `random` as Math.random, for the tests.
+ */
+export function retryLaterWait(view: Pick<ActionError, 'code' | 'retryAfterSeconds'>, attempt: number, random: () => number = Math.random): number {
+  if (isCapacityBusy(view.code)) return capacityBusyWait(random)
+  return Math.max(4000 * 2 ** attempt, (view.retryAfterSeconds ?? 0) * 1000)
 }
 
 /** Any thrown failure of an action, said. */

@@ -409,7 +409,9 @@ test('New position’s Review keeps Your choices and Wallet steps, asks the onbo
   // and Review's two sections named for a beginner: the position, then what the wallet asks.
   assert.equal(await page.locator('#create-reason').innerText(), 'Connect a wallet to create this position.');
   const review = page.locator('[data-stage="review"]');
-  assert.deepEqual(await review.locator('h3').allInnerTexts(), ['Your position', 'In your wallet'], 'the two sections Review keeps');
+  // Changed on purpose 2026-10-30 (QA round 2, Q31): with no wallet connected the second section says what to do next, as
+  // V2's Review does; "In your wallet" once one is (below).
+  assert.deepEqual(await review.locator('h3').allInnerTexts(), ['Your position', 'Next: connect your wallet'], 'the two sections Review keeps');
   assert.equal(await page.locator('section[data-stage="balance"], [data-balance-row], [data-amount-cell]').count(), 0, 'no deposit amounts section');
   const signedOut = await page.locator('main').innerText();
   assert.doesNotMatch(signedOut, /Deposit amounts per token|Sign in with your wallet to see these amounts\.|Exact amounts are calculated/);

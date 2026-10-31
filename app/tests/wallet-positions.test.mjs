@@ -295,7 +295,8 @@ test('the pool price on a card is the same read’s: checked against its square 
   const at = (tick) => positions.chainPoolPrice(card, { sqrtPriceX96: String(require('../.test-build/app/src/lib/read/screens/poolRange.js').sqrtPriceAtTick(tick)), tick, block: 9 });
   const inside = at(0);
   assert.deepEqual([inside.state, inside.position, inside.block], ['usable', 'inside', 9]);
-  assert.equal(inside.text, '≈1');
+  // Changed on purpose 2026-10-30 (QA round 2, N2): a price from 1 up has at least two decimals, as V2's Review writes it.
+  assert.equal(inside.text, '≈1.00');
   // Changed on purpose 2026-09-28 (one-sided): USDG is this pool's currency0, and the page writes UFG's price in USDG
   // (lib/read/orientation.ts), so a pool tick under the range (UFG dearer) is a price above it, and the other way round.
   assert.equal(inside.inverted, true);

@@ -15,8 +15,9 @@ type Limitation = PoolAprEstimate['limitations'][number]
 
 /**
  * The producer's limitations, each as one sentence. Every estimate carries
- * its own list, so what an estimate is not is said from the payload, never
- * from a caveat written here.
+ * its own list. Since 2026-10-30 (QA round 2, N105/Q29) no product screen
+ * shows them: the figure's title is ESTIMATE_SCOPE (estimateTitle) and the
+ * method is the Pool details Method row. limitationText keeps them readable.
  */
 const LIMITATIONS: Record<Limitation, string> = {
   provider_reported_volume_and_tvl_unreconciled: 'From a market data provider’s reported 24h volume and TVL, not reconciled.',
@@ -30,8 +31,13 @@ const LIMITATIONS: Record<Limitation, string> = {
   not_a_return_forecast_or_recommendation: 'Not a return forecast or a recommendation.',
 }
 
-/** What any estimate is, said when there is none to carry its own limitations. */
-export const ESTIMATE_SCOPE = 'Pool estimate, not position APR, APY or a return forecast.'
+/**
+ * What every APR estimate is, in plain words: the title of each "est." figure, the read service's (estimateTitle) and a
+ * stand-in's (FallbackApr) alike. Changed 2026-10-30 (QA round 2, N105/Q29, approved by the owner): it was "Pool
+ * estimate, not position APR, APY or a return forecast.", and a current estimate's title listed every limitation its
+ * payload carried, nine sentences of method. The method stays in the pool page's collapsed Pool details.
+ */
+export const ESTIMATE_SCOPE = 'Estimate from the last 24 hours of trading fees. Your earnings depend on your price range.'
 
 /** A limitation code as its sentence; a code this build does not know, as plain words. */
 export const limitationText = (code: string) => LIMITATIONS[code as Limitation] ?? `${code.replace(/_/g, ' ')}.`
@@ -83,14 +89,15 @@ const REASONS: Record<string, string> = {
 export const aprReason = (reason: string) => REASONS[reason] ?? reason.replace(/_/g, ' ')
 
 /**
- * The estimate's title: its own limitations. With no estimate at all, what the figure would have been.
+ * The estimate's title: what the figure is, in one plain sentence (ESTIMATE_SCOPE), the same for every estimate.
  *
  * Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the basis only. Why an estimate is unavailable
  * or kept (its reasons, aprReason: "A refresh failed; this estimate is retained and is not current.", "Provider inputs
  * are stale.", "Estimated APR is not enabled on this connection.", …) and "Stale, not current." are no longer added;
  * the reasons stay as data (`data-apr-reasons`), and the title no longer depends on the time (`now` is gone).
+ * Changed on purpose 2026-10-30 (QA round 2, N105/Q29): no longer the payload's limitations joined (a wall of nine
+ * technical sentences in a tooltip); the figure, its formula and its format are untouched (D9).
  */
-export function estimateTitle(observation: AprEstimateObservation | undefined): string {
-  const limits = observation?.data ? observation.data.limitations.map(limitationText) : [ESTIMATE_SCOPE]
-  return limits.join(' ')
+export function estimateTitle(_observation?: AprEstimateObservation): string {
+  return ESTIMATE_SCOPE
 }

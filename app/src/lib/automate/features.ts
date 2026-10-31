@@ -41,5 +41,6 @@ export const FEATURE_ORDER: readonly FeatureKey[] = ['plain', 'compound', 'domin
 export const AUTO_EXIT_FEATURE = Object.freeze({
   name: 'Auto-exit',
   line: 'Closes it at the end of its range and sends the tokens to your wallet.',
-  fee: '0.2% if it closes',
+  // Changed on purpose 2026-10-30 (QA round 2, Q1): Auto-exit's fee in the one wording every screen uses, its base named.
+  fee: '0.2% of the position’s value, only if it closes',
 } as const)

@@ -155,12 +155,14 @@ function UnclaimedRow({ state, basis, large = false }: { state: PositionState; b
  * line over it says why, in plain words. No button: the page asks again itself.
  */
 function QuietPlot({ why }: { why?: string }) {
+  // (QA round 2, SWEEP) Its plot is named for what it is, "Fees earned chart"; a screen reader heard "Fee history awaiting
+  // measurements" (or "… awaiting valuation") over an empty grid.
   // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the flat plot says nothing over it; its line said why there was no history ("Your fee history
   // can’t be read right now. Fees ready to collect is exact.", quietNote, FEW_POINTS_NOTE, PERIOD_NOTE, "Updating fee
   // history…"). Why is data-fees-quiet's (and the card's data-fees-reason).
   return (
     <div className="dm-fees-plot dm-fees-quiet" data-fees-quiet={why ?? ''}>
-      <PendingPlot label="Fee history awaiting measurements" />
+      <PendingPlot label="Fees earned chart" />
     </div>
   )
 }
@@ -204,7 +206,14 @@ export function FeesCard({ source, bandPresent, quoteIndex, tokens, standalone =
   const offered = useMemo<readonly FeesPeriod[]>(() => {
     return view ? periodsFor(view.span, true) : INITIAL_PERIODS
   }, [view])
-  const fallback = view ? defaultPeriodFor(view.span) : 'all'
+  // (QA round 2, N44) The card opens on a timed period only when its start is measured already: a 7D (or 24H) whose start
+  // needs a read at a past block opened on an empty grid under the all-time hero, where All had its line. That start is
+  // read when the period is chosen. Picked once, from the first history drawn, so no tab ever switches by itself.
+  const bySpan = view ? defaultPeriodFor(view.span) : 'all'
+  const measured: FeesPeriod = bySpan !== 'all' && drawn && periodStart(drawn.history, bySpan) === null ? 'all' : bySpan
+  const [opening, setOpening] = useState<FeesPeriod | null>(null)
+  if (opening === null && view !== null) setOpening(measured)
+  const fallback = opening ?? measured
   const period: FeesPeriod = chosen && offered.includes(chosen) ? chosen : offered.includes(fallback) ? fallback : 'all'
   const periodState = usePastReads(drawn ? id : null, period)
   const start = drawn ? periodStart(drawn.history, period) : null
@@ -259,7 +268,7 @@ export function FeesCard({ source, bandPresent, quoteIndex, tokens, standalone =
           {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the dash and the plot say nothing ("Fees not available yet", "Fee history is temporarily
               unavailable. Retrying automatically.", "Fee history isn’t available for this position.", "Updating fee history…"). */}
           <div className="dm-fees-summary">{state ? <UnclaimedRow state={state} basis={loadingBasis} /> : <span className="dm-fig-hero">—</span>}</div>
-          <PendingPlot label="Fee history awaiting measurements" busy={first.phase !== 'unavailable'} />
+          <PendingPlot label="Fees earned chart" busy={first.phase !== 'unavailable'} />
         </div>
       </>,
     )
@@ -282,7 +291,7 @@ export function FeesCard({ source, bandPresent, quoteIndex, tokens, standalone =
     )
   }
 
-  if (!view || !basis) return root('unavailable', <><Head titleId={titleId} state={state} tokens={tokens} tabs={tabs} /><PendingPlot label="Fee history awaiting valuation" /></>)
+  if (!view || !basis) return root('unavailable', <><Head titleId={titleId} state={state} tokens={tokens} tabs={tabs} /><PendingPlot label="Fees earned chart" /></>)
   const lead = view.sources[0].state
   const blockTitle = savedTitle ?? `Pool price at block ${basis.block}`
   const bucket = inspected === null || !pv ? null : (pv.buckets[inspected] ?? null)

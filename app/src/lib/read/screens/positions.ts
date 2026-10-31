@@ -78,15 +78,32 @@ export type ChainPositionCard =
     }
 
 /**
- * 1.0001^tick × 10^(dec0 − dec1): currency1 per currency0, to six significant digits, never an exponent. Null past
- * 10^24 or under 10^−24. Changed on purpose 2026-09-28 (one-sided): the floor was 10^−12, and the app now writes many
- * pools the other way round (lib/read/orientation.ts, the same tick with its decimals swapped and negated), so the floor
- * mirrors the ceiling: a price the pages could write one way round, they can write the other way round too.
+ * 1.0001^tick × 10^(dec0 − dec1): currency1 per currency0, never an exponent (priceDigits). Null past 10^24 or under
+ * 10^−24. Changed on purpose 2026-09-28 (one-sided): the floor was 10^−12, and the app now writes many pools the other
+ * way round (lib/read/orientation.ts, the same tick with its decimals swapped and negated), so the floor mirrors the
+ * ceiling: a price the pages could write one way round, they can write the other way round too.
  */
 export function tickPriceText(tick: number, decimals0: number, decimals1: number): string | null {
   const value = Math.pow(1.0001, tick) * Math.pow(10, decimals0 - decimals1)
   if (!isFinite(value) || value < 1e-24 || value > 1e24) return null
-  return `≈${numberFormat({ maximumSignificantDigits: 6 }).format(value)}`
+  return `≈${priceDigits(value)}`
+}
+
+/**
+ * A price's digits, by the rule V2's Review and the position pages write prices with (v2/plan/present.ts priceText;
+ * changed on purpose 2026-10-30, QA round 2, N2: range labels read "1,590.87" beside "3,411.8"): from 1,000 up, exactly
+ * two decimals ("3,411.80"); from 1 to 1,000, six significant digits with at least two decimals ("3.40", "1.00045");
+ * below 1, six significant digits as before ("0.000697689"). From a billion up the price keeps its six significant
+ * digits ("994,018,000,000"), as before: two decimals there would print digits the number does not hold, and the
+ * position chart writes it in billions anyway (lib/chart/priceFacts.ts readablePrice). Exported for the Markets price
+ * (lib/read/marketPrice.ts plainAmount), so a pool's price reads the same on Markets, Home and its own page.
+ */
+export function priceDigits(value: number): string {
+  if (value >= 1000 && value < 1e9) return numberFormat({ minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)
+  const text = numberFormat({ maximumSignificantDigits: 6 }).format(value)
+  if (value < 1 || value >= 1e9) return text
+  const point = text.indexOf('.')
+  return point === -1 ? `${text}.00` : text.length - point - 1 < 2 ? `${text}0` : text
 }
 
 /** One end of a position's range as a card writes it. */

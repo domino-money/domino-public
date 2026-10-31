@@ -1,5 +1,12 @@
 import type { CSSProperties, ReactNode } from 'react'
+import { numberFormat } from '../../lib/format/numberFormat'
 import { logShare, numberOf, type DaySpan, type RangeGuide } from './plain'
+
+/**
+ * A price as the range's ends write it, six significant digits (QA round 2, N16: the title read 2233.295334248859, and
+ * the bar's accessible name the pool price the same way).
+ */
+const priceText = (value: number) => numberFormat({ maximumSignificantDigits: 6 }).format(value)
 
 /** Left and width of a stretch of the bar, in percent. */
 const stretch = (from: number, to: number): CSSProperties => ({ left: `${from * 100}%`, width: `${Math.max(0.6, (to - from) * 100)}%` })
@@ -42,9 +49,9 @@ export function PoolRangeGuide({ guide, day, unit, saved = false }: { guide: Ran
       <div className="dm-pool-guide-plot">
         {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): "the pool price" whether or not it was kept
             from an earlier read; it used to say "the saved price". */}
-        <div className="dm-pool-guide-bar" role="img" aria-label={`Starting range from ${guide.low} to ${guide.high}, with the pool price at ${values.now}.`} data-saved-data={saved ? 'price' : undefined}>
+        <div className="dm-pool-guide-bar" role="img" aria-label={`Starting range from ${guide.low} to ${guide.high}, with the pool price at ${priceText(values.now)}.`} data-saved-data={saved ? 'price' : undefined}>
           <span className="dm-pool-guide-band" style={stretch(at(values.low), at(values.high))} />
-          {moved && <span className="dm-pool-guide-day" style={stretch(at(moved.low), at(moved.high))} title={`Last day: ${day?.low} to ${day?.high}`} />}
+          {moved && <span className="dm-pool-guide-day" style={stretch(at(moved.low), at(moved.high))} title={`Last day: ${priceText(moved.low)} to ${priceText(moved.high)}`} />}
           <span className="dm-pool-guide-now" style={{ left: `${at(values.now) * 100}%` }} />
         </div>
         {/* V4 (pool.html .rg-ends): each end's price and distance sit centred under the band's edge (v4-pool.css). */}

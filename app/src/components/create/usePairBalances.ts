@@ -28,6 +28,15 @@ import { useWalletIdentity } from '../../lib/walletIdentity'
  *
  * A read that fails is not asked again from here: the caller shows what it
  * has, and what depends on a budget goes on without one.
+ *
+ * Changed on purpose 2026-10-30 (launch capacity, item 9a): `tick` reads the
+ * same balances again in the background. Until its answer is in, the last
+ * answer stays (still `ready`, with `refreshing`), so nothing on screen flips
+ * back to loading and Continue is not held. Its review: a background answer
+ * replaces the last one only when it read both balances, or when the last one
+ * had not; one that read nothing keeps the balances on screen, and the next
+ * tick asks again. A new `revision` is a deliberate read again, which shows as
+ * loading until it answers and then shows whatever it answered, as before.
  */
 export interface PairBalancesState {
   status: 'disconnected' | 'waiting' | 'loading' | 'ready'
@@ -35,9 +44,16 @@ export interface PairBalancesState {
   balances: readonly [CurrencyBalance, CurrencyBalance] | null
   /** The optional preview fields these balances support; empty until then. */
   budgets: BudgetFields
+  /** A background read of the same balances is out (launch capacity 9a): what is shown stays until it answers. */
+  refreshing?: boolean
 }
 
 const NOTHING: PairBalancesState = { status: 'waiting', balances: null, budgets: {} }
+
+type Balances = readonly [CurrencyBalance, CurrencyBalance]
+
+/** Both balances read to a figure (zero included): what a background read must bring to replace one that had them. */
+const readBoth = (balances: Balances | null): boolean => balances !== null && balances.every((side) => side.raw !== null)
 
 /**
  * Changed on purpose 2026-10-05 (New position on Base and Arbitrum One, lib/create/otherChains.ts): a pool on another
@@ -53,6 +69,8 @@ export function usePairBalances(
    * balances again, as when funds arrived from another network. 0 by default: read once, as before.
    */
   revision = 0,
+  /** A new number reads them again in the background, keeping the last answer on screen meanwhile (launch capacity 9a). */
+  tick = 0,
 ): PairBalancesState {
   const identity = useWalletIdentity()
   const connected = identity.kind === 'connected' ? identity.address : null
@@ -62,9 +80,11 @@ export function usePairBalances(
   const tokensKey = pool ? pairTokens(pool).join(',') : ''
   const network = pool && poolOnOtherChain(pool) ? pool.currencies[0].chainId : null
   // Keyed by what the read was about: a page for another wallet or pool is never shown (another network's, with its chain).
+  // Not by `tick`: a background read's answer stands for the same target, and the one it answered for (`tick`) says whether
+  // a background read is still out.
   const target = `${network === null ? `${wallet ?? ''}|${poolKey ?? ''}|${tokensKey}` : `${wallet ?? ''}|${network}|${poolKey ?? ''}|${tokensKey}`}#${revision}`
-  const [page, setPage] = useState<{ target: string; snapshot: WalletSnapshot | null } | null>(null)
-  const [read, setRead] = useState<{ target: string; balances: readonly [CurrencyBalance, CurrencyBalance] | null } | null>(null)
+  const [page, setPage] = useState<{ target: string; tick: number; snapshot: WalletSnapshot | null } | null>(null)
+  const [read, setRead] = useState<{ target: string; tick: number; balances: Balances | null } | null>(null)
   // The pool as of the last draw, for the other network's read, which goes by the keys above, not by each new pool value.
   const latest = useRef(pool)
   useEffect(() => {
@@ -76,23 +96,24 @@ export function usePairBalances(
     if (network === null || !others || wallet === null || poolKey === null || tokensKey === '' || !current) return
     const controller = new AbortController()
     const at = `${wallet}|${network}|${poolKey}|${tokensKey}#${revision}`
-    void others.balances(current, wallet, controller.signal).then(
-      (balances) => {
-        if (!controller.signal.aborted) setRead({ target: at, balances })
-      },
-      () => {
-        if (!controller.signal.aborted) setRead({ target: at, balances: null })
-      },
-    )
+    // A background read that read nothing keeps the balances the last one read (the class comment).
+    const settle = (balances: Balances | null) => {
+      if (controller.signal.aborted) return
+      setRead((was) => ({ target: at, tick, balances: was?.target === at && readBoth(was.balances) && !readBoth(balances) ? was.balances : balances }))
+    }
+    void others.balances(current, wallet, controller.signal).then(settle, () => settle(null))
     return () => controller.abort()
-  }, [others, network, wallet, poolKey, tokensKey, revision])
+  }, [others, network, wallet, poolKey, tokensKey, revision, tick])
 
   useEffect(() => {
     if (!source || wallet === null || poolKey === null || tokensKey === '' || network !== null) return
     const controller = new AbortController()
     const at = `${wallet}|${poolKey}|${tokensKey}#${revision}`
+    const readable = (snapshot: WalletSnapshot | null) => snapshot !== null && latest.current !== null && readBoth(pairBalances(snapshot, latest.current))
+    // A background read that read nothing keeps the page the last one read (the class comment).
     const settle = (snapshot: WalletSnapshot | null) => {
-      if (!controller.signal.aborted) setPage({ target: at, snapshot })
+      if (controller.signal.aborted) return
+      setPage((was) => ({ target: at, tick, snapshot: was?.target === at && readable(was.snapshot) && !readable(snapshot) ? was.snapshot : snapshot }))
     }
     const session = createWalletSession(source, { wallet, tokens: tokensKey.split(','), discover: false })
     // A read that could not even answer settles as answering nothing, never as a
@@ -102,16 +123,16 @@ export function usePairBalances(
       .then(settle)
       .catch(() => settle(null))
     return () => controller.abort()
-  }, [source, wallet, poolKey, tokensKey, network, revision])
+  }, [source, wallet, poolKey, tokensKey, network, revision, tick])
 
   if (connected === null || wallet === null) return { ...NOTHING, status: 'disconnected' }
   if (network !== null) {
     if (!others || !pool) return NOTHING
     if (read?.target !== target) return { ...NOTHING, status: 'loading' }
-    return { status: 'ready', balances: read.balances, budgets: read.balances ? budgetFields(read.balances) : {} }
+    return { status: 'ready', balances: read.balances, budgets: read.balances ? budgetFields(read.balances) : {}, refreshing: read.tick !== tick }
   }
   if (!source || !pool) return NOTHING
   if (page?.target !== target) return { ...NOTHING, status: 'loading' }
   const balances = page.snapshot ? pairBalances(page.snapshot, pool) : null
-  return { status: 'ready', balances, budgets: balances ? budgetFields(balances) : {} }
+  return { status: 'ready', balances, budgets: balances ? budgetFields(balances) : {}, refreshing: page.tick !== tick }
 }

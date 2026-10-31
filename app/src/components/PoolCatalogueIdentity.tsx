@@ -1,5 +1,8 @@
 import { catalogueTokenLabel, type PoolCatalogueEntry } from '../config/selectedPoolCatalogue'
+import { ROBINHOOD_ID } from '../config/chainIdentity'
 import { FEE_VENUE, feeWords } from '../lib/format/fee'
+import { networkName } from '../lib/networkName'
+import { FEE_MEANING } from './explore/feeMeaning'
 import type { TokenDisplay } from '../lib/read/types'
 import { TokenLabel } from './read/TokenLabel'
 import { TokenIcon, TokenMark } from './TokenIcon'
@@ -26,7 +29,7 @@ export function CatalogueLabel({ text }: { text: string }) {
  * Full size in a table row or a pool heading (pair over a "Uniswap · fee" chip);
  * compact in the ticker (small marks, pair, fee).
  */
-export function PoolCatalogueIdentity({ entry, compact = false }: { entry: PoolCatalogueEntry; compact?: boolean }) {
+export function PoolCatalogueIdentity({ entry, compact = false, network = true }: { entry: PoolCatalogueEntry; compact?: boolean; network?: boolean }) {
   const size = compact ? 16 : 30
   const ring = compact ? 'var(--bg)' : 'var(--card)'
   return <>
@@ -41,11 +44,15 @@ export function PoolCatalogueIdentity({ entry, compact = false }: { entry: PoolC
     </span>
     <span className={compact ? 'font-medium text-fg' : 'min-w-0 font-medium'}><CatalogueLabel text={entry.labels[0]} />/<CatalogueLabel text={entry.labels[1]} />
       {/* The fee as every chip writes it (lib/format/fee.ts, audit E21): "Uniswap · 0.30% fee". V4 draws it as two joined
-          segments (.tag), the "·" kept in the text and unseen; Home's phone rows still drop "Uniswap · ". */}
+          segments (.tag), the "·" kept in the text and unseen; Home's phone rows still drop "Uniswap · ". QA round 2: the
+          pool's network as the middle segment, as the read row draws it (Q23; every listed pool is Robinhood Chain's;
+          Home's rows too, its phone tiles included since the final review, read-2), and what the fee is in the fee's own
+          title (Q28). */}
       {!compact && (
         <span className="dm-chip mt-1 flex w-fit font-sans font-medium">
           <span className="dm-fee-venue">{FEE_VENUE}</span><span className="dm-fee-sep"> · </span>
-          <span className="dm-fee-value">{feeWords(entry.fee)}</span>
+          {network && <><span className="dm-fee-venue dm-fee-net" data-chain-chip={ROBINHOOD_ID}>{networkName(ROBINHOOD_ID)}</span><span className="dm-fee-sep"> · </span></>}
+          <span className="dm-fee-value" title={FEE_MEANING}>{feeWords(entry.fee)}</span>
         </span>
       )}
     </span>

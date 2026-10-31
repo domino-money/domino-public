@@ -107,7 +107,8 @@ export function planFailure(result: Exclude<S1PlanResult, { kind: 'ok' }>, chain
   switch (result.kind) {
     case 'expired': return { copy: EXPIRED_COPY, code: 'plan_answer_expired', recovery: 'quiet-requote' }
     case 'invalid': return { copy: JOURNEY.review.planInvalid, code: codeOf(`plan_reply_${result.detail}`), recovery: 'none' }
-    case 'unavailable': return { copy: 'The quote service could not be reached. Your amount is unchanged.', code: codeOf(`plan_${result.reason}`), recovery: result.reason === 'network' ? 'retry-later' : 'none', ...(result.retryAfterSeconds !== undefined ? { retryAfterSeconds: result.retryAfterSeconds } : {}) }
+    // A transport's own deadline (`timeout`, 2026-10-30, INST-2) is asked again as a dropped connection is (./run.ts).
+    case 'unavailable': return { copy: 'The quote service could not be reached. Your amount is unchanged.', code: codeOf(`plan_${result.reason}`), recovery: result.reason === 'network' || result.reason === 'timeout' ? 'retry-later' : 'none', ...(result.retryAfterSeconds !== undefined ? { retryAfterSeconds: result.retryAfterSeconds } : {}) }
     case 'unsimulated': return { copy: PLAN_COPY, code: codeOf(`plan_simulation_${result.reason}`), recovery: 'none' }
     case 'reverted': {
       const decoded = result.selector ? decodeRevertData(result.selector, 'zap', { chainId, token }) : null
@@ -129,8 +130,12 @@ export function planFailure(result: Exclude<S1PlanResult, { kind: 'ok' }>, chain
           return { copy: E[code], code, recovery: 'none' }
         case 'position_plan_fee_not_backed': case 'upstream_invalid_response': case 'upstream_contract_mismatch': return { copy: E.planning_failed, code, recovery: 'none' }
         case 'position_plan_chain_unavailable': return { copy: E.not_available(chain), code, recovery: 'none' }
+        // Changed on purpose 2026-10-30 (launch capacity, CAP-5): the session and onboarding limits too (a refusal of the
+        // shared sign-in budget, not of the plan), which fell to "The planning service isn’t available yet." and were never
+        // asked again: the same busy sentence, asked again quietly after a short wait or the limit's Retry-After (./run.ts).
         case 'position_plan_capacity_busy': case 'position_plan_unavailable': case 'upstream_unavailable':
         case 'request_timeout': case 'upstream_timeout':
+        case 'session_rate_limited': case 'session_capacity_busy': case 'onboarding_rate_limited': case 'onboarding_capacity_busy':
           return { copy: 'The quote service is temporarily busy. Your amount is unchanged.', code, recovery: 'retry-later', ...(result.retryAfterSeconds !== undefined ? { retryAfterSeconds: result.retryAfterSeconds } : {}) }
         case 'session_required': case 'csrf_invalid': return { copy: E.session, code, recovery: 'none' }
         default: return { copy: JOURNEY.review.planUnavailable, code, recovery: 'none' }

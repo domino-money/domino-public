@@ -127,7 +127,9 @@ test('(b2) a pool’s link opens the zap journey with that pool chosen, verified
     await zap.waitFor();
     const chosen = zap.locator(`[data-chosen-pool="${FIXTURE_POOL}"][data-pool-source="list"]`);
     await chosen.waitFor({ timeout: 30_000 });
-    assert.match(await chosen.innerText(), /ETH \/ TOKEN/);
+    // Changed on purpose 2026-10-30 (QA round 2, Q24): the pair as its price is written, base then quote (TOKEN priced in
+    // ETH on Robinhood Chain, src/v2in/journey/model/price.ts pricedPair), as Markets and the pool page name it.
+    assert.match(await chosen.innerText(), /TOKEN \/ ETH/);
     // The pool pair's wrapping (2026-10-06) on the zap path's chosen pool: one line, as before, on a desktop and a phone.
     await s.page.screenshot({ path: join(shots(), 'journey-zap-chosen-1280.png') });
     await s.page.setViewportSize({ width: 390, height: 844 });
@@ -157,10 +159,11 @@ test('(c) Robinhood live fake-chain creation: review, exact approve and create o
     await finder.locator('summary').click();
     assert.equal(await finder.getByRole('radiogroup', { name: 'Uniswap version' }).getByRole('radio', { name: 'Uniswap v4' }).getAttribute('aria-checked'), 'true');
     const tiers = await finder.getByRole('radiogroup', { name: 'Fee tier' }).getByRole('radio').allInnerTexts();
-    assert.deepEqual(tiers.map((t) => t.trim()), ['0.01%', '0.05%', '0.3%', '1%'], 'v4: the four pairs (decision #26)');
+    // Changed on purpose 2026-10-30 (QA round 2, N2): the fee format of every other screen ("0.30%", "1.00%").
+    assert.deepEqual(tiers.map((t) => t.trim()), ['0.01%', '0.05%', '0.30%', '1.00%'], 'v4: the four pairs (decision #26)');
     await finder.getByRole('radiogroup', { name: 'Uniswap version' }).getByRole('radio', { name: 'Uniswap v3' }).click();
     const v3Tiers = await finder.getByRole('radiogroup', { name: 'Fee tier' }).getByRole('radio').allInnerTexts();
-    assert.deepEqual(v3Tiers.map((t) => t.trim()), ['0.01%', '0.05%', '0.3%', '1%'], 'Robinhood Chain\'s extra v3 tiers');
+    assert.deepEqual(v3Tiers.map((t) => t.trim()), ['0.01%', '0.05%', '0.30%', '1.00%'], 'Robinhood Chain\'s extra v3 tiers');
     await finder.getByRole('radiogroup', { name: 'Uniswap version' }).getByRole('radio', { name: 'Uniswap v4' }).click();
     await finder.getByRole('radiogroup', { name: 'First token' }).getByRole('radio', { name: 'ETH', exact: true }).click();
     await finder.getByRole('radiogroup', { name: 'Second token' }).getByRole('radio', { name: 'USDG', exact: true }).click();
@@ -207,7 +210,9 @@ test('(c) Robinhood live fake-chain creation: review, exact approve and create o
     await review.locator('[data-review-network-fee="about"]').waitFor({ timeout: 30_000 });
     // Changed on purpose 2026-10-06 (the review of point 4): the plan's own cost (500,000 gas at the wallet's 0.2 gwei,
     // 0.0001 ETH) and the approval, a transaction of its own (prepared at 600,000 gas, 0.00012 ETH), together.
-    assert.equal(await networkFee.innerText(), 'Network fee: about 0.00022 ETH');
+    // Changed on purpose 2026-10-30 (QA round 2, Q5): in dollars too where the pool prices ETH (ETH/USDG does).
+    assert.match(await networkFee.innerText(), /^Network fee: about 0\.00022 ETH(?: \((?:<\$0\.01|\$[\d,]+(?:\.\d+)?)\))?$/);
+    if (await networkFee.getAttribute('data-review-network-usd')) assert.match(await networkFee.innerText(), /\(<?\$/);
     assert.equal(await networkFee.getAttribute('data-review-network-wei'), '220000000000000');
     assert.equal(await networkFee.getAttribute('data-review-network-others'), null, 'every approval prepared: no dash');
     assert.equal(await networkFee.getAttribute('data-review-l1-fee'), '0', 'Robinhood Chain: a measured zero, part of the figure');
@@ -389,7 +394,8 @@ test('(d) the owner’s journey on V2: his steps, his preview and balances, the 
     await page.locator('[data-picker="pool"] input[name="pool-option"]').first().click({ timeout: 30_000 });
     await page.locator('[data-chosen-pool]').waitFor();
     // Changed on purpose 2026-10-06 (the owner's point 4): the chosen pool's fee chip carries no "Verified at block" tooltip.
-    assert.equal(await page.locator('[data-chosen-pool] .dm-chip[title]').count(), 0);
+    // Changed on purpose 2026-10-30 (QA round 2, Q28): its one title says what the fee is, as every fee chip does.
+    assert.deepEqual(await page.locator('[data-chosen-pool] .dm-chip[title]').evaluateAll((chips) => chips.map((chip) => chip.getAttribute('title'))), ['Traders pay this on every swap. People who add money to the pool, you included, share it. It is never taken from your deposit.']);
     await page.screenshot({ path: join(shots(), 'journey-owner-step1-pool.png'), fullPage: true, animations: 'disabled' });
     const current = (step) => page.locator(`li[data-step="${step}"][aria-current="step"]`);
     await pressContinue(current('pool'));
@@ -682,7 +688,7 @@ for (const outcome of ['reincluded', 'reverted', 'navigation', 'atomic-navigatio
     // (the oracle's upper bound) and the L1 data fee itself are under Details (spec §2.4).
     const networkFee = review.locator(`[data-review-network-fee="${atomic ? 'upTo' : 'about'}"]`);
     await networkFee.waitFor({ timeout: 30_000 });
-    assert.match(await networkFee.innerText(), atomic ? /^Network fee: up to [\d.]+ ETH$/ : /^Network fee: about [\d.]+ ETH$/);
+    assert.match(await networkFee.innerText(), atomic ? /^Network fee: up to [\d.]+ ETH(?: \((?:<\$0\.01|\$[\d,]+(?:\.\d+)?)\))?$/ : /^Network fee: about [\d.]+ ETH(?: \((?:<\$0\.01|\$[\d,]+(?:\.\d+)?)\))?$/);
     assert.equal(await networkFee.getAttribute('data-review-l1-fee'), '10345963635');
     const details = review.locator('[data-review-details]');
     await details.locator('summary').click();
@@ -869,7 +875,7 @@ test('(e2) his journey on Base, a range above the price: the success recommends 
     const exit = success.locator('a[data-created-next="autoexit"]');
     await exit.waitFor({ timeout: 30_000 });
     assert.equal(await exit.getAttribute('data-created-recommended'), '');
-    assert.match(await exit.innerText(), /^Auto-exit · 0\.2% if it closes\s+Recommended\s+Closes it at the end of its range and sends the tokens to your wallet\.\s+Turn on$/);
+    assert.match(await exit.innerText(), /^Auto-exit · 0\.2% of the position’s value, only if it closes\s+Recommended\s+Closes it at the end of its range and sends the tokens to your wallet\.\s+Turn on$/);
     assert.equal(await exit.getAttribute('href'), `#/positions/base-v4-${tokenId}`);
     await success.screenshot({ path: join(shots(), 'journey-base-created-autoexit.png'), animations: 'disabled' });
     await watchEmpty(page);
@@ -961,7 +967,7 @@ test('(f) his journey on Arbitrum One: both networks in his search, each with it
     const networkFee = review.locator('[data-review-network-fee="about"]');
     await networkFee.waitFor({ timeout: 30_000 });
     assert.equal(await networkFee.getAttribute('data-review-network-others'), null, 'every approval read at the review');
-    assert.match(await networkFee.innerText(), /^Network fee: about [\d.]+ ETH$/);
+    assert.match(await networkFee.innerText(), /^Network fee: about [\d.]+ ETH(?: \((?:<\$0\.01|\$[\d,]+(?:\.\d+)?)\))?$/);
     assert.equal(await review.locator('[data-wallet-step="approve"]').count(), 2, 'two approvals');
     await review.locator('[data-review-headline]').screenshot({ path: join(shots(), 'journey-arbitrum-two-approvals.png'), animations: 'disabled' });
     // Changed on purpose 2026-10-06 (the review, money #3): what you put in is the very figure each "Allow" asks for, both
@@ -1141,7 +1147,7 @@ test('(n) his Review on Base when the plan could not read the L1 data fee: the n
     const networkFee = review.locator('[data-review-network-fee="about"]');
     await networkFee.waitFor({ timeout: 30_000 });
     assert.equal(await networkFee.getAttribute('data-review-l1-fee'), 'unavailable');
-    assert.match(await networkFee.innerText(), /^Network fee: about [\d.]+ ETH, plus a little more your wallet shows before you confirm$/, 'the L2 part, and the rest in words');
+    assert.match(await networkFee.innerText(), /^Network fee: about [\d.]+ ETH(?: \((?:<\$0\.01|\$[\d,]+(?:\.\d+)?)\))?, plus a little more your wallet shows before you confirm$/, 'the L2 part, and the rest in words');
     assert.equal(await networkFee.locator('[data-figure="none"]').count(), 0, 'no bare dash in view');
     assert.doesNotMatch(await review.locator('[data-review-headline]').innerText(), /L1/, 'no "L1" in view');
     await review.locator('[data-review-headline]').screenshot({ path: join(shots(), 'journey-base-l1-unavailable.png'), animations: 'disabled' });
@@ -1172,7 +1178,7 @@ test('(n2) an approval that waits for a reset to zero: the network fee line says
     await review.locator('[data-wallet-step="approve-reset"][data-step-status="ready"]').waitFor({ timeout: 30_000 });
     assert.deepEqual(await review.locator('[data-wallet-step]').evaluateAll((items) => items.map((item) => item.getAttribute('data-wallet-step'))), ['approve-reset', 'approve', 'action']);
     const networkFee = review.locator('[data-review-network-fee="about"][data-review-network-others="unprepared"]');
-    assert.match(await networkFee.innerText(), /^Network fee: about [\d.]+ ETH, plus a little more your wallet shows before you confirm$/);
+    assert.match(await networkFee.innerText(), /^Network fee: about [\d.]+ ETH(?: \((?:<\$0\.01|\$[\d,]+(?:\.\d+)?)\))?, plus a little more your wallet shows before you confirm$/);
     assert.equal(await networkFee.locator('[data-figure="none"]').count(), 0, 'no bare dash in view');
     assert.equal(await page.locator('[data-create-position="live"]').isDisabled(), false, 'the reset is ready to confirm');
     await review.locator('[data-review-headline]').screenshot({ path: join(shots(), 'journey-owner-reset-approval.png'), animations: 'disabled' });
@@ -1216,7 +1222,9 @@ test('(n3) Back, then Continue, while Review still reads a later approval’s fe
     const review = page.locator('[data-stage-card="review"] [data-zap-review="live"][data-zap-review-stage="reviewed"]');
     await review.locator('[data-wallet-step="approve-reset"][data-step-status="ready"]').waitFor({ timeout: 30_000 });
     assert.equal(holding, 'released', 'the new review waited for that read');
-    assert.equal(s.planned.length, 2, 'the same choices quoted again, once');
+    // Changed on purpose 2026-10-30 (QA round 2, INST-2: plans kept for the same choices): Review reopened with the same
+    // choices takes the plan already in (well inside its quote's life), reviewed again at a fresh block once that read was in.
+    assert.equal(s.planned.length, 1, 'the same choices: the kept plan, reviewed again, never asked twice');
     assert.equal(await page.locator('[data-zap-review-stage="failed"]').count(), 0);
     assert.equal(await page.getByText(/Another request to your wallet is still open/).count(), 0);
     assert.equal(await page.locator('[data-create-position="live"]').isDisabled(), false, 'the reset is ready to confirm');
@@ -1294,7 +1302,7 @@ test('(o) a fresh quote after the approval went through: the greyed review keeps
     // The new review: the permission is given, so the create alone, and the plan's own cost alone.
     await reviewed.locator('[data-wallet-step="action"][data-step-status="ready"]').waitFor({ timeout: 30_000 });
     assert.deepEqual(await reviewed.locator('[data-wallet-step]').evaluateAll((items) => items.map((item) => item.getAttribute('data-wallet-step'))), ['action']);
-    assert.equal(await reviewed.locator('[data-review-network-fee="about"]').innerText(), 'Network fee: about 0.0001 ETH', 'nothing else to send');
+    assert.match(await reviewed.locator('[data-review-network-fee="about"]').innerText(), /^Network fee: about 0\.0001 ETH(?: \((?:<\$0\.01|\$[\d,]+(?:\.\d+)?)\))?$/, 'nothing else to send');
     await page.locator('[data-create-position="live"]:not([disabled])').click();
     await page.locator('[data-created-position]').waitFor({ timeout: 60_000 });
     assert.equal(chain.sends.length, 2, 'one approval and one create');
@@ -1331,7 +1339,8 @@ test('(p) a wallet short of the amount stays at funding; no quote or wallet tran
     await amount.locator('[data-amount-short]').waitFor({ timeout: 30_000 });
     assert.equal(await footerButton(amount, 'Continue').isDisabled(), true);
     assert.equal(await page.locator('#continue-reason').innerText(), 'Choose how to fund this amount below.');
-    assert.equal(await amount.locator('[data-pair-side="1"] input[inputmode="decimal"]').inputValue(), '1000');
+    // QA round 2, N75 (2026-10-30): a field nobody is typing in shows its amount grouped ("1,000"); the amount is the same.
+    assert.match(await amount.locator('[data-pair-side="1"] input[inputmode="decimal"]').inputValue(), /^1,?000$/);
     assert.equal(await page.locator('[data-zap-review]').count(), 0);
     assert.equal(s.planned.length, 0, 'no quote asked for a wallet that cannot fund it');
     assert.equal(chain.sends.length, 0);
@@ -1369,7 +1378,8 @@ test('(p2) a wallet short of a token no deposit delivers stays at funding, never
     const amount = current(page, 'amount');
     await amount.locator('[data-amount-short]').waitFor({ timeout: 30_000 });
     assert.equal(await footerButton(amount, 'Continue').isDisabled(), true);
-    assert.equal(await amount.locator('[data-pair-side="1"] input[inputmode="decimal"]').inputValue(), '1000');
+    // QA round 2, N75 (2026-10-30): a field nobody is typing in shows its amount grouped ("1,000"); the amount is the same.
+    assert.match(await amount.locator('[data-pair-side="1"] input[inputmode="decimal"]').inputValue(), /^1,?000$/);
     const offers = await page.getByText(/from another network/).allInnerTexts();
     assert.ok(offers.every((line) => !/TOKEN/.test(line)), 'no unsupported token delivery promised');
     assert.ok(s2Asked >= 1);
@@ -1403,7 +1413,7 @@ test('(q) a wallet that batches: one step, the network fee up to the batch’s c
     const line = reviewed.locator('[data-review-network-fee="upTo"]');
     await line.waitFor({ timeout: 30_000 });
     const before = await line.innerText();
-    assert.match(before, /^Network fee: up to [\d.]+ ETH$/, 'the batch’s own ceiling: its calls together');
+    assert.match(before, /^Network fee: up to [\d.]+ ETH(?: \((?:<\$0\.01|\$[\d,]+(?:\.\d+)?)\))?$/, 'the batch’s own ceiling: its calls together');
     assert.deepEqual(await reviewed.locator('[data-wallet-step]').evaluateAll((items) => items.map((item) => item.getAttribute('data-wallet-step'))), ['batch']);
     assert.deepEqual(await reviewed.locator('.dm-flow-wstep-title').allInnerTexts(), ['Approve and create the position, all at once']);
     assert.equal(await page.locator('#create-reason').innerText(), 'Your wallet asks you to confirm once: every step together, or none of them.');
@@ -1548,7 +1558,13 @@ test('(u) no wallet: his Review shows the amounts as typed, never a lone dash; C
     assert.equal(await connect.innerText(), 'Connect wallet');
     assert.equal(await connect.isDisabled(), false);
     assert.equal(Math.round((await connect.boundingBox()).width), Math.round((await footerBox(page)).width), 'in Create position’s place');
-    assert.equal(await page.locator('#create-reason').innerText(), 'Connect a wallet to create this position.');
+    // Changed on purpose 2026-10-30 (QA round 2, Q5 and Q31): what follows Connect wallet, under it, and the wallet card
+    // titled for it (it read "In your wallet" above a Connect wallet button); the cost in view before any wallet.
+    assert.equal(await page.locator('#create-reason').innerText(), 'After connecting, you sign in and confirm each step in your wallet.');
+    assert.equal(await page.locator('[data-stage-card="review"] #zap-steps-heading').innerText(), 'Next: connect your wallet');
+    assert.equal(await review.locator('[data-review-fee="before"]').innerText(), 'Domino fee: None unless a swap is needed, then 0.65% of the amount swapped');
+    assert.equal(await review.locator('[data-review-network-fee="unknown"]').innerText(), 'Network fee: your wallet shows it before you confirm');
+    assert.match(await review.locator('[data-review-slippage]').innerText(), /^Slippage tolerance: [\d.]+%$/);
     assert.equal(await page.getByText('Your wallet will ask you to confirm each step.').count(), 0);
     await page.locator('[data-stage-card="review"]').screenshot({ path: join(shots(), 'journey-owner-no-wallet.png'), animations: 'disabled' });
     assert.equal(s.planned.length, 0);
@@ -1616,15 +1632,21 @@ test('(v) unread Amount balances recover automatically, keep the typed quantity 
     const page = s.page;
     await toReview(page, '1000', USDG_RH, true);
     const amount = current(page, 'amount');
-    await page.locator('#continue-reason').filter({ hasText: 'Your balance could not be checked yet.' }).waitFor({ timeout: 30_000 });
+    // Changed on purpose 2026-10-30 (QA round 2 review, the sweep): a balance not read yet is said as one being checked,
+    // never as one that could not be; the failed read shows as the balance's figure dash.
+    await amount.locator('[data-pair-balance="ready"] bdi.text-fg-subtle').first().waitFor({ timeout: 30_000 });
+    await page.locator('#continue-reason').filter({ hasText: 'Checking your balance…' }).waitFor({ timeout: 30_000 });
     assert.equal(await footerButton(amount, 'Continue').isDisabled(), true);
     assert.equal(s.planned.length, 0);
     failing = false;
+    // Changed on purpose 2026-10-30 (launch capacity 9a, its review): while a read that answered nothing holds Continue, the
+    // balances are asked again 15 s after the last read, then 30 s (a minute otherwise); 31 s covers both steps.
     await page.clock.fastForward('00:31');
     await until(() => held.length > 0, 'the balances automatically read again');
     while (held.length > 0) held.shift()();
     await until(async () => !(await footerButton(amount, 'Continue').isDisabled()), 'funding ready after recovery');
-    assert.equal(await amount.locator('[data-pair-side="1"] input[inputmode="decimal"]').inputValue(), '1000', 'a retry never changes spending intent');
+    // QA round 2, N75 (2026-10-30): a field nobody is typing in shows its amount grouped ("1,000"); the amount is the same.
+    assert.match(await amount.locator('[data-pair-side="1"] input[inputmode="decimal"]').inputValue(), /^1,?000$/, 'a retry never changes spending intent');
     await pressContinue(amount);
     await page.locator('[data-stage-card="review"] [data-zap-review-stage="reviewed"]').waitFor({ timeout: 30_000 });
     assert.equal(s.planned.length, 1);
@@ -2007,11 +2029,13 @@ test('(h) Base like Robinhood Chain: found by name with a pulse while Base is se
     assert.deepEqual(await texts(poolIdOf(VIRTUAL_POOLS.eth)), ['TVL $35.1K', '24h volume $8.8K', 'APR 27.6% est.']);
     assert.equal(await row(V3_KEY).locator('[data-provider="dexscreener"][data-provider-figure="attributed"]').count(), 2, 'attributed to the provider, as Robinhood Chain’s are');
     // Changed on purpose 2026-10-06 (rugged97's delta of 6 Oct §4: the provider's number, with its name and the time it
-    // was read): DEX Screener named in each figure's title, and in the APR's it is worked out from.
+    // was read): DEX Screener named in each figure's title.
     for (const title of await row(V3_KEY).locator('[data-provider-figure]').evaluateAll((cells) => cells.map((cell) => cell.getAttribute('title')))) {
       assert.match(title, /^Reported by DEX Screener, retrieved \d\d:\d\d:\d\d UTC, \d{4}-\d\d-\d\d\. Provider-reported, not reconciled with chain data\.$/);
     }
-    assert.match(await row(V3_KEY).locator('[data-row-apr="estimate"] [title]').getAttribute('title'), /^Estimate from this pool’s fixed LP fee and DEX Screener’s 24h volume and liquidity, retrieved \d\d:\d\d:\d\d UTC, \d{4}-\d\d-\d\d, annualised\./);
+    // Changed on purpose 2026-10-30 (QA round 2, N105): the APR estimate has every "est." figure's one title; its TVL and
+    // 24h volume above still name DEX Screener and when they were read.
+    assert.equal(await row(V3_KEY).locator('[data-row-apr="estimate"] [title]').getAttribute('title'), 'Estimate from the last 24 hours of trading fees. Your earnings depend on your price range.');
     assert.match(await row(V3_KEY).innerText(), /VIRTUAL\s*\/\s*WETH/);
     assert.equal(await pools.getByText(/v3|v4/).count(), 0, 'no version jargon');
     assert.equal(chain.multicalls.length, 0, 'nothing read through the wallet');
@@ -2119,7 +2143,8 @@ test('(h3) a Base pool chosen: the preview shows its DEX Screener figures for th
     await pools.locator(`li[data-pool-key="${V3_KEY}"] input[name="pool-option"]`).click();
     await page.locator(`[data-chosen-pool="${V3_KEY}"]`).waitFor();
     const stats = page.locator('aside[data-preview] .dm-flow-pv-stats');
-    assert.match(await stats.innerText(), /In this pool\s*\$166\.3K[\s\S]*Yearly fee estimate\s*13\.9% est\./);
+    // Changed on purpose 2026-10-30 (QA round 2, N52, the owner's option b): the label says it is the pool's yearly fee rate.
+    assert.match(await stats.innerText(), /In this pool\s*\$166\.3K[\s\S]*Pool fee rate, yearly\s*13\.9% est\./);
     await page.clock.fastForward('09:30');
     await page.waitForTimeout(300);
     assert.match(await stats.innerText(), /\$166\.3K/, 'shown for its ten minutes');
@@ -2181,11 +2206,12 @@ test('(i) a pasted address: named on the network where it is a token, left out w
     assert.equal(await page.getByText('Look up this address').count(), 2);
     assert.equal(await page.locator('[data-token-option]').count(), 0);
     assert.equal(await page.locator('[role="option"][data-active]').count(), 0, 'two networks to look it up on: Enter waits for the person’s choice');
-    // read-v6 has no absence proof: unknown metadata is one honest line, never "No token".
+    // Changed on purpose 2026-10-30 (QA round 2, N98): no metadata and no pool on either network is "No token at this
+    // address.", never the networks' token data being "unavailable right now" (the address could not be used anyway).
     await search.fill(NOWHERE);
     await page.locator('.dm-flow-listbox-empty:not([data-searching])').waitFor();
-    assert.equal(await page.locator('.dm-flow-listbox-empty').innerText(), 'Token data on Base and Arbitrum One is unavailable right now.');
-    assert.equal(await page.getByText('No token at this address.').count(), 0);
+    assert.equal(await page.locator('.dm-flow-listbox-empty').innerText(), 'No token at this address.');
+    assert.equal(await page.locator('[data-search-unavailable]').count(), 0);
     // Added 2026-10-06 (review): Robinhood Chain's read could not get through to the address for the moment (an RPC
     // error), and no other network names it: unread, never "no token". Its plain row stays, the way on there.
     await search.fill(FLAKY);
@@ -2315,8 +2341,9 @@ test('(l) the hit moved to stays highlighted when another network’s answer arr
     release();
     const hit = page.locator(`[data-token-network-option="8453:${VIRTUAL_BASE}"]`);
     await hit.waitFor();
-    // Base's answer lands above it: the highlight, and so Enter's choice, stay on the row moved to.
-    assert.equal(await page.locator('[role="listbox"] [role="option"]').first().getAttribute('data-token-network-option'), `8453:${VIRTUAL_BASE}`);
+    // Base's answer lands above it: the highlight, and so Enter's choice, stay on the row moved to. (QA round 2, N1: groups
+    // follow known liquidity, so Base's row goes above once its DEX figures arrive, a moment after the row itself.)
+    await page.waitForFunction((want) => document.querySelector('[role="listbox"] [role="option"]')?.getAttribute('data-token-network-option') === want, `8453:${VIRTUAL_BASE}`, { timeout: 5_000 });
     assert.equal(await home.getAttribute('data-active'), '');
     assert.equal(await hit.getAttribute('data-active'), null);
     assert.equal(await search.getAttribute('aria-activedescendant'), await home.getAttribute('id'));
@@ -2775,7 +2802,8 @@ test('(z) a pair nothing can bring, the wallet short and holding ETH: one line "
     // The way back keeps the pool's tokens as typed; and forth again.
     await panel.locator('[data-pay-with-back]').click();
     await page.locator('[data-paired-amounts]').waitFor();
-    assert.equal(await page.locator('li[data-step="amount"] [data-pair-side="0"] input[inputmode="decimal"]').inputValue(), '1000');
+    // QA round 2, N75 (2026-10-30): a field nobody is typing in shows its amount grouped ("1,000"); the amount is the same.
+    assert.match(await page.locator('li[data-step="amount"] [data-pair-side="0"] input[inputmode="decimal"]').inputValue(), /^1,?000$/);
     await page.locator(`button[data-pay-with="${ZERO}"]`).click({ timeout: 30_000 });
     await panel.locator('#create-amount-pay').fill('0.5');
     // Continue works as today; Review asks the plan for exactly the one other token, and shows it with its swaps.
@@ -2938,7 +2966,9 @@ test('(g2) automatic balance recovery never switches the wallet away from anothe
   const chain = createV2Chain({ chainId: 8453, timestamp: now(), balances: { [USDC_BASE]: 5_000_000_000n }, pools: [{ pool: POOL_BASE, sqrtPriceX96: SQRT_BASE, tick: TICK_BASE, liquidity: 10n ** 18n }] });
   chain.switchTo(4663);
   const own = createChainReads({ chainId: 8453, tokens: [{ address: ZERO, symbol: 'ETH', decimals: 18 }, { address: USDC_BASE, symbol: 'USDC', decimals: 6 }], pools: [{ pool: POOL_BASE, sqrtPriceX96: SQRT_BASE, tick: TICK_BASE, liquidity: 10n ** 18n }], balances: { [USDC_BASE]: 5_000_000_000n } });
-  let failing = false;
+  // Changed on purpose 2026-10-30 (launch capacity 9a, its review): the service refuses the balances from the start, so the
+  // first read answers nothing; a background read that reads nothing keeps the balances it had (below).
+  let failing = true;
   let refused = 0;
   const chainReads = { answer: (route, request) => {
     if (route === 'chain-balances' && failing) { refused++; return { status: 404, body: { error: 'route_not_available' } }; }
@@ -2959,19 +2989,31 @@ test('(g2) automatic balance recovery never switches the wallet away from anothe
     await amount.locator('[data-pair-balance="ready"]').first().waitFor({ timeout: 30_000 });
     const field = amount.locator('[data-pair-side="1"] input[inputmode="decimal"]');
     await field.fill('1000');
-    failing = true;
-    await page.clock.fastForward('00:31');
-    await until(() => refused > 0, 'the background read tried the service');
-    await page.locator('#continue-reason').filter({ hasText: 'Your balance could not be checked yet.' }).waitFor({ timeout: 30_000 });
+    await until(() => refused > 0, 'the first read tried the service');
+    // Changed on purpose 2026-10-30 (QA round 2 review, the sweep): a balance not read yet is said as one being checked,
+    // never as one that could not be; the failed read shows as the balance's figure dash.
+    await amount.locator('[data-pair-balance="ready"] bdi.text-fg-subtle').first().waitFor({ timeout: 30_000 });
+    await page.locator('#continue-reason').filter({ hasText: 'Checking your balance…' }).waitFor({ timeout: 30_000 });
     assert.equal(chain.chainNow(), 4663);
     assert.equal(chain.log.filter((method) => method === 'wallet_switchEthereumChain').length, 0);
-    assert.equal(await field.inputValue(), '1000');
+    assert.match(await field.inputValue(), /^1,?000$/);
     assert.equal(await footerButton(amount, 'Continue').isDisabled(), true);
     failing = false;
+    // While a read that answered nothing holds Continue, the balances are asked again 15 s after the last read, then 30 s.
     await page.clock.fastForward('00:31');
     await until(async () => !(await footerButton(amount, 'Continue').isDisabled()), 'the next service read recovers');
-    assert.equal(await field.inputValue(), '1000');
+    assert.match(await field.inputValue(), /^1,?000$/);
+    // A background read (every minute) that the service refuses keeps the balances on screen and Continue as it is.
+    failing = true;
+    const refusedBefore = refused;
+    await page.clock.fastForward('01:01');
+    await until(() => refused > refusedBefore, 'the background read tried the service');
+    await amount.locator('[data-pair-balance="ready"]:not([data-pair-refreshing])').first().waitFor({ timeout: 30_000 });
+    assert.equal(await amount.locator('[data-pair-balance="ready"] bdi.text-fg-subtle').count(), 0);
+    assert.equal(await footerButton(amount, 'Continue').isDisabled(), false);
+    assert.match(await field.inputValue(), /^1,?000$/);
     assert.equal(chain.chainNow(), 4663);
+    assert.equal(chain.log.filter((method) => method === 'wallet_switchEthereumChain').length, 0);
     assert.equal(chain.sends.length, 0);
   } finally { await s.close(); }
 });
@@ -2999,10 +3041,11 @@ test('(g3) a price crossing the range keeps the typed token visible and waits fo
     await until(async () => !(await footerButton(amount, 'Continue').isDisabled()), 'the original amount is ready');
     pool.tick = TICK_BASE - 20_000;
     pool.sqrtPriceX96 = String(position.sqrtPriceAtTick(pool.tick));
-    await page.clock.fastForward('00:31');
+    // Changed on purpose 2026-10-30 (launch capacity, item 9a): Amount's reads are asked again every minute, no longer every 30 s.
+    await page.clock.fastForward('01:01');
     await until(async () => (await page.locator('#continue-reason').textContent())?.includes('range'), 'the moved price asks for an explicit range or token change');
     assert.equal(await field.isVisible(), true);
-    assert.equal(await field.inputValue(), '1000');
+    assert.match(await field.inputValue(), /^1,?000$/);
     assert.equal(await footerButton(amount, 'Continue').isDisabled(), true);
     assert.equal(s.planned.length, 0);
     assert.equal(chain.log.filter((method) => method === 'wallet_switchEthereumChain').length, 0);
@@ -3036,7 +3079,8 @@ test('public discovery: a preview finds Base tokens by name and address, and a n
     assert.equal(await page.locator('[data-token-option], [data-token-network-option^="42161:"]').count(), 0);
     await hit.click();
     await page.locator('[data-picker-network="8453"] [data-pool-key]').first().waitFor({ timeout: 30_000 });
-    assert.match(await page.locator('[data-network-creation="unavailable"]').innerText(), /Creating positions on Base is unavailable/);
+    // Changed on purpose 2026-10-30 (QA round 2 sweep): a closed network in the gate's own words.
+    assert.match(await page.locator('[data-network-creation="unavailable"]').innerText(), /New positions on Base aren’t open right now\. You can still explore its pools\./);
     await page.evaluate(token => { window.location.hash = '#/new/network/8453/' + token; }, VIRTUAL_BASE);
     await page.locator('[data-picker-network="8453"] [data-pool-key]').first().waitFor({ timeout: 30_000 });
     assert.equal(await search.inputValue(), 'VIRTUAL');

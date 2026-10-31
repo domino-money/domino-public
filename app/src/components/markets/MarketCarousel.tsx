@@ -161,6 +161,9 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
     const node = rail.current
     if (!node || typeof window.matchMedia !== 'function' || typeof requestAnimationFrame !== 'function') return
     if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return
+    // Asked once here, read on every move: a pointer move makes no media query of its own.
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const still = () => reduce.matches || document.documentElement.classList.contains('dm-still')
     let on = false
     let x = 0
     let y = 0
@@ -183,6 +186,12 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
     }
     const move = (event: PointerEvent) => {
       if (event.pointerType === 'touch') return
+      // QA round 2, N90: under reduced motion (or html.dm-still) the rim light does not follow the pointer; a light already
+      // drawn goes back to rest once, as EmberLight's does.
+      if (still()) {
+        if (on) { on = false; schedule() }
+        return
+      }
       on = true
       x = event.clientX
       y = event.clientY
@@ -323,8 +332,11 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
     <div className="dm-mkt-nav">
       {dots('bar')}
       <div className="dm-mkt-arrows">
-        <IconButton label="Previous pools" icon={<IconChevronLeft />} variant="round" aria-controls="market-rail" disabled={edges.start} onClick={() => scrollPage(-1)} />
-        <IconButton label="Next pools" icon={<IconChevronRight />} variant="round" aria-controls="market-rail" disabled={edges.end} onClick={() => scrollPage(1)} />
+        {/* Changed on purpose 2026-10-30 (QA round 2, N86): aria-disabled at the rail's ends, as the approved prototype does,
+            never disabled: an arrow disabled while it had the keyboard's focus dropped that focus to the page. A press at
+            an end does nothing, as before. */}
+        <IconButton label="Previous pools" icon={<IconChevronLeft />} variant="round" aria-controls="market-rail" aria-disabled={edges.start || undefined} onClick={() => { if (!edges.start) scrollPage(-1) }} />
+        <IconButton label="Next pools" icon={<IconChevronRight />} variant="round" aria-controls="market-rail" aria-disabled={edges.end || undefined} onClick={() => { if (!edges.end) scrollPage(1) }} />
       </div>
     </div>
   )

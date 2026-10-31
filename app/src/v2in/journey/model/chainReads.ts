@@ -81,10 +81,15 @@ export function resolvedOf(chainId: OtherChainId, address: string, answer: Chain
  * pasted contract came as three unnamed "Look up this address" rows): the token, named, where it is one that can be used
  * there (read, with its decimals). Missing metadata cannot prove absence: read-v6 does not distinguish no contract
  * from a failed metadata read, so the search keeps that uncertainty without adding an unnamed duplicate row.
+ *
+ * Changed on purpose 2026-10-30 (QA round 2, N98: "0xdeadbeef…" was said as "Token data on Base and Arbitrum One is
+ * unavailable right now."): with no metadata AND no pool at all, `none`, so the list says "No token at this address."
+ * Such an address could not be used anyway (resolvedOf refuses it without decimals, and it has no pool to open). Missing
+ * metadata beside pools stays unknown, as before; a read that failed is `unread` (../otherChains.ts), as before.
  */
-export function pastedOf(chainId: OtherChainId, address: string, answer: ChainPoolsResponse): { state: 'token'; token: TokenDisplay } | { state: 'metadata_unavailable' } {
+export function pastedOf(chainId: OtherChainId, address: string, answer: ChainPoolsResponse): { state: 'token'; token: TokenDisplay } | { state: 'none' } | { state: 'metadata_unavailable' } {
   const live = answer.tokens.find((token) => token.address.toLowerCase() === address.toLowerCase())
-  if (!live || live.status === 'unavailable' || live.decimals === null) return { state: 'metadata_unavailable' }
+  if (!live || live.status === 'unavailable' || live.decimals === null) return answer.pools.length === 0 ? { state: 'none' } : { state: 'metadata_unavailable' }
   return { state: 'token', token: tokenOf(chainId, live) }
 }
 

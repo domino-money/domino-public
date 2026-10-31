@@ -42,6 +42,10 @@ test('Home compares pools in one responsive surface with visible figures, full i
     for (const width of [1440, 1000, 390, 320, 305]) {
       await page.setViewportSize({ width, height: 900 })
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+      // Changed on purpose 2026-10-30 (QA round 2, CI flake): after a resize from 1000px to 390px the page's computed root
+      // could still be the desktop 67.5% (10.8px) for a frame or two while matchMedia already said otherwise, so the phone's
+      // 2.75rem Details measured 29.7px. The sizes are read once the root follows the window (styles/tokens.css).
+      await page.waitForFunction(() => Number.parseFloat(getComputedStyle(document.documentElement).fontSize) === (matchMedia('(min-width: 768px) and (pointer: fine)').matches ? 10.8 : 16))
       const state = await table.evaluate(surface => {
         const rect = element => { const box = element.getBoundingClientRect(); return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width, height: box.height } }
         const visible = element => getComputedStyle(element).display !== 'none'
@@ -52,7 +56,7 @@ test('Home compares pools in one responsive surface with visible figures, full i
           rows: [...surface.querySelectorAll('tbody tr')].map(row => {
             const cells = row.querySelectorAll('td'), control = row.querySelector('[data-pool-figures]'), name = row.querySelector('.dm-mkt-name')
             return { row: rect(row), name: rect(name), nameClipped: name.scrollWidth > name.clientWidth + 1,
-              font: getComputedStyle(name).fontSize, price: visible(cells[1]), tvl: visible(cells[2]), volume: visible(cells[3]), apr: rect(cells[4]), info: rect(control) }
+              font: getComputedStyle(name).fontSize, price: visible(cells[1]), tvl: visible(cells[2]), volume: visible(cells[3]), apr: rect(cells[4]), info: { ...rect(control), reach: -Number.parseFloat(getComputedStyle(control, '::after').top) || 0 } }
           }),
         }
       })
@@ -69,8 +73,13 @@ test('Home compares pools in one responsive surface with visible figures, full i
         assert.equal(row.nameClipped, false, `${width}px pool identity is not clipped`)
         assert.ok(row.name.right <= row.apr.left + 1, `${width}px identity and APR do not overlap`)
         assert.ok(row.apr.right <= row.info.left + 1, `${width}px APR and Details do not overlap`)
-        const target = width >= 768 ? 3.666667 * state.root : 44
-        assert.ok(row.info.width >= target - 0.1 && row.info.height >= target - 0.1, `${width}px Details keeps its target; touch stays at 44px`)
+        // Changed on purpose 2026-10-30 (QA round 2, N58, the owner's yes to the approved Home row): on a laptop the figures
+        // button is Markets' 34-design-px rounded square (V4 .ib, 2.125rem; it was a 3.666667rem circle), and it takes the
+        // pointer 5 design px around what is drawn (its ::after), so it is still more than a 24px target; touch stays at 44px.
+        if (width >= 768) {
+          assert.ok(row.info.width >= 2.125 * state.root - 0.1 && row.info.height >= 2.125 * state.root - 0.1, `${width}px Details keeps Markets' button size`)
+          assert.ok(Math.min(row.info.width, row.info.height) + 2 * row.info.reach >= 24, `${width}px Details takes the pointer at least 24px across`)
+        } else assert.ok(row.info.width >= 44 - 0.1 && row.info.height >= 44 - 0.1, `${width}px touch Details stays at 44px`)
         if (width >= 768) assert.ok(row.row.height >= 4.375 * state.root - 1 && row.row.height <= 5 * state.root, 'desktop comparison rows keep the approved compact rhythm')
       }
     }
@@ -483,8 +492,9 @@ test('Markets on the deployable build: all six cards draw a real chart within se
     const box = await line.boundingBox()
     await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2)
     // Changed on purpose 2026-09-28 (one-sided): the card asks the history of the token the app prices, TOKEN in ETH
-    // (lib/read/orientation.ts), and the stub answers its fixed close for whichever token is asked.
-    assert.match(await page.locator(`[data-market-card="${SELECTED[0]}"] .dm-mkt-card-caption`).innerText(), /^\d\d:00 UTC · 1 TOKEN = 123\.5 ETH · 4 swaps$/)
+    // (lib/read/orientation.ts), and the stub answers its fixed close for whichever token is asked. Changed on purpose
+    // 2026-10-30 (QA round 2, N2): a price of 1 or more keeps two decimals at least, as the pool page writes it.
+    assert.match(await page.locator(`[data-market-card="${SELECTED[0]}"] .dm-mkt-card-caption`).innerText(), /^\d\d:00 UTC · 1 TOKEN = 123\.50 ETH · 4 swaps$/)
 
     const posts = edge.filter(read => read.method === 'POST')
     assert.equal(posts.filter(read => read.path.startsWith('/api/read/v1/')).length, 0, 'no provider read: no read-v1 pool-market, nothing else of read-v1')

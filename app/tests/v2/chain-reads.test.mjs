@@ -186,11 +186,17 @@ test('a pool read again keeps its figures (they are about the pool, not its pric
   assert.equal(reads.rereadOf(figured, networks.refOf(figured), fixture('chain-pools-paired'), 2_000_000).v3FeeProtocol, 0x44);
 });
 
-test('a pasted address is named where it is a token; missing metadata stays unknown rather than claiming no contract', () => {
+test('a pasted address is named where it is a token; missing metadata beside pools stays unknown; no metadata and no pool is no token', () => {
   const named = reads.pastedOf(8453, LIVE.toUpperCase().replace('0X', '0x'), fixture('chain-pools'));
   assert.equal(named.state, 'token');
   assert.deepEqual([named.token.address, named.token.symbol, named.token.decimals, named.token.chainId], [LIVE, 'LIVE', 18, 8453]);
-  assert.deepEqual(reads.pastedOf(8453, '0x6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f', fixture('chain-pools-none')), { state: 'metadata_unavailable' }, 'the response does not distinguish no contract from unread metadata');
+  // Changed on purpose 2026-10-30 (QA round 2, N98): no metadata and no pool at all is "No token at this address.", never
+  // "Token data on Base … is unavailable right now." (such an address could not be used: no decimals, no pool).
+  assert.equal(fixture('chain-pools-none').pools.length, 0);
+  assert.deepEqual(reads.pastedOf(8453, '0x6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f', fixture('chain-pools-none')), { state: 'none' }, 'no metadata and no pool: not a token there');
+  const pooled = structuredClone(fixture('chain-pools-none'));
+  pooled.pools = structuredClone(fixture('chain-pools').pools);
+  assert.deepEqual(reads.pastedOf(8453, '0x6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f', pooled), { state: 'metadata_unavailable' }, 'with pools, missing metadata cannot prove absence');
   const partial = structuredClone(fixture('chain-pools'));
   const live = partial.tokens.find((token) => token.address === LIVE);
   Object.assign(live, { decimals: null, status: 'partial' });

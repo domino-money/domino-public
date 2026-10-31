@@ -3,7 +3,7 @@
  * the sidebar, "On this page", the breadcrumb, the previous and next links and
  * every anchor come from one registry, so they cannot drift apart.
  *
- * Pure data: no React, no build flags, no markup. Links stay inside this app.
+ * Pure data: no React, no build flags, no markup. Links stay inside this app, but for an address row's explorer (N24).
  */
 
 import type { ShotId } from './shots'
@@ -17,13 +17,17 @@ export type Block =
   | { kind: 'steps'; items: readonly { title: string; body: readonly Inline[] }[] }
   | { kind: 'note'; title?: string; text: readonly Inline[] }
   | { kind: 'facts'; rows: readonly { label: string; value: string; note?: string }[] }
-  | { kind: 'addresses'; rows: readonly { label: string; role: string; address: string }[] }
+  /** `chains`: explorers to link (N24); `domino`: Domino's own contract (Robin Etherscan on Robinhood Chain). */
+  | { kind: 'addresses'; rows: readonly { label: string; role: string; address: string; chains?: readonly DocChain[]; domino?: boolean }[] }
   | { kind: 'split'; columns: readonly { title: string; items: readonly (readonly Inline[])[] }[] }
   | { kind: 'terms'; items: readonly { id: string; term: string; text: readonly Inline[] }[] }
   /** A picture of a screen, from the app's test view with made-up figures (public/docs/<shot>.webp; size and alt in shots.ts). */
   | { kind: 'shot'; shot: ShotId; caption: string }
   /** A drawing of an idea rather than a screen (components/docs/DocsDiagram.tsx), with its plain description. */
   | { kind: 'diagram'; name: DiagramName; caption: string; alt: string }
+
+/** Robinhood Chain, Base or Arbitrum One. */
+export type DocChain = 4663 | 8453 | 42161
 
 /** The docs' drawings: how a position earns fees, and the three ways its fees can be used. */
 export type DiagramName = 'earning' | 'three-ways'

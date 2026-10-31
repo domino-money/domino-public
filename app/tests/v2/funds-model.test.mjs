@@ -198,7 +198,13 @@ test('the form: exact amounts, slippage in the service bounds, destination gas, 
   assert.equal(model.amountRawOf('0.05', 18), '50000000000000000');
   assert.equal(model.amountRawOf('1.0000001', 6), null, 'more places than the token has');
   assert.equal(model.amountRawOf('0', 6), null);
-  assert.equal(model.amountRawOf('1,000', 6), null);
+  // Changed on purpose 2026-10-30 (QA round 2, N99): thousands separators are read as New position's amount step reads
+  // them (a funding amount Domino writes itself is grouped); a decimal comma or a minus is refused.
+  assert.equal(model.amountRawOf('1,000', 6), '1000000000');
+  assert.equal(model.amountRawOf('1,000.50', 6), '1000500000');
+  assert.equal(model.amountRawOf(' 0.5 ', 18), '500000000000000000', 'spaces around it are dropped');
+  assert.equal(model.amountRawOf('0,5', 18), null, 'a decimal comma is refused, never read as 5');
+  assert.equal(model.amountRawOf('-1', 6), null);
   assert.equal(model.amountRawOf('5', null), '5', 'unknown decimals: raw units only');
   assert.equal(model.amountRawOf('0.5', null), null);
   assert.equal(model.slippageBpsOf('0.5'), 50);

@@ -1,4 +1,4 @@
-import { shortAddress } from '../../../lib/read/screens/identity'
+import { shortAddress, shortAddressWith } from '../../../lib/read/screens/identity'
 
 /**
  * An address, pool id or NFT id as identity: monospace, never translated.
@@ -7,11 +7,12 @@ import { shortAddress } from '../../../lib/read/screens/identity'
  * and in its title. The short form keeps the full value in the DOM for
  * assistive technology.
  */
-export function Address({ value, short = false }: { value: string; short?: boolean }) {
+export function Address({ value, short = false, prefix }: { value: string; short?: boolean; prefix?: number }) {
   if (short) {
+    // `prefix`: more leading characters where another address listed beside it reads alike (QA round 2, N30).
     return (
       <span className="font-mono tracking-normal" translate="no">
-        <span aria-hidden="true">{shortAddress(value)}</span>
+        <span aria-hidden="true">{prefix === undefined ? shortAddress(value) : shortAddressWith(value, prefix)}</span>
         <span className="sr-only">{value}</span>
       </span>
     )

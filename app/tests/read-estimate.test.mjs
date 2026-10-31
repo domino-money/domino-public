@@ -104,17 +104,21 @@ test('estimates age on screen, expire after 300 seconds and ignore wall-clock ju
 
 // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the title is the estimate's basis only; why it is
 // stale or unavailable stays as data (its reasons), never words in the title.
-test('G14: an estimate’s title is its own limitations, never why it is stale or unavailable; with none, what it would be', () => {
+// Changed on purpose 2026-10-30 (QA round 2, N105/Q29, approved by the owner): the title is one plain sentence for every
+// estimate, no longer the payload's nine limitation sentences joined; the limitations stay readable (limitationText)
+// for a collapsed Details list, and the figure is untouched (D9).
+test('G14: an estimate’s title is one plain sentence, never its method, why it is stale or unavailable', () => {
   const title = estimateTitle(observe(good.estimate), now(0));
-  assert.deepEqual(good.estimate.limitations.map(limitationText).join(' '), title, 'every limitation the payload carries, in its order, and nothing else while it is current');
-  assert.match(title, /^From a market data provider’s reported 24h volume and TVL, not reconciled\. .* Pool estimate, not position APR or APY\. Not a return forecast or a recommendation\.$/);
-  assert.equal(estimateTitle({ ...observe({ ...good.estimate, limitations: ['no_full_day_coverage_proof'] }) }, now(0)), 'Full-day coverage is not proven.', 'the payload decides, not a caveat written in the app');
+  assert.equal(title, 'Estimate from the last 24 hours of trading fees. Your earnings depend on your price range.');
+  assert.equal(title, ESTIMATE_SCOPE, 'the same words for every estimate');
+  assert.doesNotMatch(title, /reconciled|time-weighted|coverage|forecast|recommendation|provider/i, 'none of the method’s wording');
+  assert.equal(estimateTitle({ ...observe({ ...good.estimate, limitations: ['no_full_day_coverage_proof'] }) }, now(0)), title, 'whatever the payload lists');
   // changed on purpose 2026-10-15 (pack 7, owner: no status notices): a kept estimate's title is the same as a current
   // one's (no " Provider inputs are stale. Stale, not current."), while its state stays stale.
   assert.equal(estimateTitle(observe(good.estimate), now(60)), title);
   assert.equal(presentAprEstimate(observe(good.estimate), now(60)).state, 'stale');
   assert.doesNotMatch(estimateTitle(observe(good.estimate), now(60)), /stale|not current/i);
-  assert.match(estimateTitle(observe(fixture('protocol-fee').estimate), now(0)), /The protocol fee’s effect is not reconciled\./);
+  assert.equal(estimateTitle(observe(fixture('protocol-fee').estimate), now(0)), title);
   // changed on purpose 2026-10-15 (pack 7, owner: no status notices): an estimate with no figure no longer says why in
   // its title; the reason stays in presentAprEstimate's reasons, as data.
   const unavailable = estimateTitle(observe(fixture('invalid-protocol-fee').estimate), now(0));
@@ -126,6 +130,8 @@ test('G14: an estimate’s title is its own limitations, never why it is stale o
     assert.ok(!estimateTitle({ data: null, reason, receivedAt: 0 }, now(0)).includes(words), reason);
   }
   assert.equal(estimateTitle(undefined, now(0)), ESTIMATE_SCOPE);
+  // The payload's limitations stay readable for a collapsed Details list.
+  assert.equal(limitationText('no_full_day_coverage_proof'), 'Full-day coverage is not proven.');
   assert.equal(limitationText('a_future_limitation'), 'a future limitation.', 'a code this build does not know is plain words, never dropped');
 });
 

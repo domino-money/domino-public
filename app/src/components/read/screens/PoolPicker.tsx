@@ -10,12 +10,15 @@ import { dexStore } from '../../../lib/read/dexFigures'
 import { keptCreatePools, readCreatePools, type PoolsAnswer } from '../../../lib/create/poolsAhead'
 import { NATIVE_CURRENCY, type AddressKey, type PoolIdKey } from '../../../lib/read/screens/identity'
 import { pricePair } from '../../../lib/read/orientation'
-import { neutralOrder, poolsRequest, projectPoolsView, type PoolOption, type PoolsView } from '../../../lib/read/screens/poolsList'
-import { failureCode } from '../../../lib/read/screens/quietRead'
+import { neutralOrder, optionAprText, poolsRequest, projectPoolsView, withMarketFigures, type PoolOption, type PoolsView } from '../../../lib/read/screens/poolsList'
+import { useKnownMarketFigures } from '../../../lib/read/screens/knownMarkets'
+import { ESTIMATE_SCOPE } from '../../../lib/read/aprEstimate'
+import { failureCode, whenVisibleAfter } from '../../../lib/read/screens/quietRead'
 import { askAgainLater, readWithin } from '../../../lib/read/screens/screenRead'
 import { asksAgain } from '../../../lib/read/screens/transient'
 import type { ReadSource } from '../../../lib/read/types'
 import { IconChevronRight } from '../../icons'
+import { FEE_MEANING } from '../../explore/feeMeaning'
 import { TokenMarkPair } from '../../TokenIcon'
 import { Button, Skeleton, cx } from '../../ui'
 import { Address } from './Address'
@@ -40,12 +43,13 @@ const plainNotes = (option: PoolOption) =>
  * and APR, always in that order, a dash for a figure nobody reports. No
  * details to open and no note lines: what they said is in titles and data.
  */
-function PoolRow({ option, checked, onPick, name, compact = false, open = false, plain = false, network = null, readOnly = false }: { option: PoolOption; checked: boolean; onPick: () => void; name: string; compact?: boolean; open?: boolean; plain?: boolean; network?: string | null; readOnly?: boolean }) {
+function PoolRow({ option, checked, onPick, name, compact = false, open = false, openLabel, plain = false, network = null, readOnly = false }: { option: PoolOption; checked: boolean; onPick: () => void; name: string; compact?: boolean; open?: boolean; openLabel?: string; plain?: boolean; network?: string | null; readOnly?: boolean }) {
   // New position's plain rows sit flat on the card: 32px marks ringed in the card, the pair over its id, the fee right after them.
   // The pair is named as its price is written, "TOKEN / USDG" (audit E21, lib/read/orientation.ts).
   const pair = pricePair(option.currencies[0], option.currencies[1])
   // The fee as every chip writes it (lib/format/fee.ts, audit E21): "0.30% fee".
-  const fee = <span className="dm-chip shrink-0" data-fee="">{feeWords(option.fee)}</span>
+  // QA round 2, Q28: what the fee is, in its title.
+  const fee = <span className="dm-chip shrink-0" data-fee="" title={FEE_MEANING}>{feeWords(option.fee)}</span>
   const identity = (
     <>
       <TokenMarkPair base={pair.base} quote={pair.quote} size={plain || !compact ? 32 : 28} ring={plain ? 'var(--card)' : 'var(--surface-1)'} />
@@ -69,8 +73,10 @@ function PoolRow({ option, checked, onPick, name, compact = false, open = false,
     </>
   )
   const head = readOnly ? <div className="dm-mkt-option-head">{identity}</div> : open ? (
-    <button type="button" onClick={onPick} className="dm-mkt-option-head" data-open-pool="">
+    <button type="button" onClick={onPick} className="dm-mkt-option-head" data-open-pool="" title={openLabel}>
       {identity}
+      {/* QA round 2 review (N5): where opening a row does something other than open its pool page, the row's name says so. */}
+      {openLabel && <span className="sr-only">{`, ${openLabel}`}</span>}
       <IconChevronRight size={14} />
     </button>
   ) : (
@@ -241,7 +247,8 @@ export function CatalogueCandidates({
         onVerified(result.option)
         setChecking((c) => ({ ...c, [poolId]: { code: 'ok', text: `${COPY.picker.verified} at block ${result.option?.block}.` } }))
       } else {
-        setChecking((c) => ({ ...c, [poolId]: { code: 'not_found', text: 'Not verified: the pools route did not return this pool, so it cannot be chosen.' } }))
+        // Changed on purpose 2026-10-30 (QA round 2, N101): plain words, no "pools route".
+        setChecking((c) => ({ ...c, [poolId]: { code: 'not_found', text: 'We couldn’t find this pool, so it can’t be chosen.' } }))
       }
     })
   }
@@ -349,13 +356,6 @@ type PoolsResult =
   /** `code` is the read's state, `failure` its closed code, `reason` its words; `final` once nothing will ask again. */
   | { kind: 'failed'; code: string; failure: string; reason: string; final: boolean }
 
-/**
- * The row's fee APR estimate, worked out here from the figures this row already
- * carries (rowApr.ts). The service's own estimate, on the pool page, is built on
- * a different provider's reported TVL and volume, so the two can differ for one
- * pool; neither is described as the other. Refusals say which input was missing.
- */
-const ROW_APR_TITLE = 'Estimate from this pool’s fixed LP fee and the 24h volume and liquidity reported in this list, annualised. A pool estimate, not a position’s APR, not APY and not a forecast, and not the pool page’s figure, which a different provider reports.'
 /** Added 2026-10-06: a pool on Base or Arbitrum One whose protocol fee the estimate cannot take (lib/create/otherChains.ts). */
 const PROTOCOL_FEE_UNDESCRIBED_TITLE = 'This pool’s protocol fee can’t be counted in this estimate.'
 /** Added 2026-10-06: how long Base's or Arbitrum One's rows wait for DEX Screener's answer before they are drawn without it. */
@@ -383,7 +383,28 @@ function noAprTitle(option: PoolOption, reason: RowAprReason): string {
   return reported ? PROTOCOL_FEE_UNDESCRIBED_TITLE : rowAprReasonText('missing_reported_tvl')
 }
 
+/**
+ * The row's APR. Where the page already holds the pool's Markets row, the figure Markets shows for it (QA round 2, N8,
+ * poolsList.ts optionAprText): one pool reads one APR on Markets, on its own page and here. Otherwise the row's own fee
+ * APR estimate, worked out from the figures this row already carries (rowApr.ts); a refusal keeps its reason in data
+ * and title. Changed on purpose 2026-10-30 (QA round 2, N105): an estimate's title is the one plain sentence every "est."
+ * figure has (ESTIMATE_SCOPE); it was "Estimate from this pool’s fixed LP fee and the 24h volume and liquidity reported in
+ * this list, annualised. A pool estimate, not a position’s APR, not APY and not a forecast, and not the pool page’s
+ * figure, which a different provider reports."
+ */
 function RowAprFigure({ option, label = 'Pool APR' }: { option: PoolOption; label?: string }) {
+  const shown = option.marketApr
+  if (shown) {
+    // Domino's own history (no "est.") in the gains ink, as the Markets cell draws it; an estimate as every row's.
+    return (
+      <p className="dm-mkt-option-apr" data-row-apr={shown.estimate ? 'estimate' : 'history'} data-row-apr-source="markets">
+        <span className="text-fg-muted">{label}</span>
+        <span className={cx('tnum font-medium', shown.estimate ? 'text-fg' : 'text-money-in')} title={shown.estimate ? ESTIMATE_SCOPE : undefined}>
+          {optionAprText(option)}
+        </span>
+      </p>
+    )
+  }
   const apr = rowApr({
     integration: option.integration,
     currentLpFeePips: option.feePips,
@@ -392,11 +413,13 @@ function RowAprFigure({ option, label = 'Pool APR' }: { option: PoolOption; labe
     liquidity: option.liquidity,
     volume: option.volume,
   })
-  // Changed on purpose 2026-10-06 (rugged97's delta of 6 Oct §4): on a row of Base or Arbitrum One the estimate names DEX
-  // Screener and when its figures were read, and a dash says why DEX Screener gave none (lib/create/otherChains.ts).
+  // Changed on purpose 2026-10-06 (rugged97's delta of 6 Oct §4): on a row of Base or Arbitrum One a dash says why DEX
+  // Screener gave none (lib/create/otherChains.ts); its TVL and 24h volume name DEX Screener and when they were read.
+  // Changed on purpose 2026-10-30 (QA round 2, N105): an estimate there has every "est." figure's one title too
+  // (ESTIMATE_SCOPE); it named the provider, the retrieval time and "not APY", beside Robinhood Chain's plain rows.
   const other = poolOnOtherChain(option)
-  const title = apr.kind === 'estimate' ? ROW_APR_TITLE : noAprTitle(option, apr.reason)
-  const said = other ? networkAprNote(option, apr, title) : title
+  const title = apr.kind === 'estimate' ? ESTIMATE_SCOPE : noAprTitle(option, apr.reason)
+  const said = other && apr.kind !== 'estimate' ? networkAprNote(option, apr, title) : title
   return (
     <p className="dm-mkt-option-apr" data-row-apr={apr.kind === 'estimate' ? (apr.stale ? 'stale' : 'estimate') : 'none'} data-row-apr-reason={apr.kind === 'none' ? apr.reason : undefined}>
       <span className="text-fg-muted">{label}</span>
@@ -504,8 +527,12 @@ export function PoolPicker({
   }, [source, token, paired, question, attempt, create])
 
   const listed = result.kind === 'ok' ? result.view.options : []
-  // New position's list is the reply's own, already in TVL order; it verifies nothing else.
-  const options = create ? listed : neutralOrder([...listed, ...verified.filter((v) => !listed.some((o) => o.key === v.key))])
+  // QA round 2, N10 and N8: the Markets rows this page already holds, read through the shared provider without asking it
+  // for anything (no ensure, no DEX Screener question): a pool Markets shows takes Markets' TVL, 24h volume and APR, so
+  // the list, the preview beside it, Markets and the pool page write one set of figures for it.
+  const known = useKnownMarketFigures(create)
+  // New position's list is the reply's own, in TVL order (with those figures); it verifies nothing else.
+  const options = create ? withMarketFigures(listed, known) : neutralOrder([...listed, ...verified.filter((v) => !listed.some((o) => o.key === v.key))])
   // Still being read, or waiting to be asked again: the rows rest either way.
   const resting = result.kind === 'loading' || (result.kind === 'failed' && !result.final)
   const list = (
@@ -644,6 +671,11 @@ export function PoolPicker({
   )
 }
 
+/** How long a token's page waits before it reads a list again that did not read (QA round 2 review), as its token. */
+const READ_AGAIN_MS = [2_000, 5_000, 15_000, 30_000] as const
+/** The failures a later read can clear: the network's pool search, or a read that threw. */
+const READ_AGAIN_CODES: readonly string[] = ['network_search_unavailable', 'unavailable']
+
 /**
  * New position's pool list for a token of another network (2026-10-05, the owner: New position on Base and Arbitrum One;
  * lib/create/otherChains.ts): the same container, rows, legend, preview handlers and empty line as PoolPicker's
@@ -651,6 +683,12 @@ export function PoolPicker({
  * (no read service exists there yet, spec F7 §6.2), already in the order to show; nothing is asked again on its own. A
  * list that could not be read says why in its own words (a wallet that does not know the network, a refused switch),
  * which are the person's to act on.
+ *
+ * Changed on purpose 2026-10-30 (QA round 2 review, the owner's rule: no "unavailable" line on a read surface): on a
+ * token's page (`browse`) a list that did not read rests as rows and is read again on its own, quietly, a few times
+ * (READ_AGAIN_MS) while the page is visible; after the last one it says "No pools to show for this token.", as the
+ * Robinhood Chain list does, the code kept as data. It used to print the reason ("Pools are temporarily unavailable.",
+ * "Pool search on Base is unavailable right now."). New position's list (`create`) keeps its line.
  *
  * Changed on purpose 2026-10-06 (the owner's point 3: these rows came "dry"; "like Robinhood Chain"): each row shows DEX
  * Screener's TVL and 24h volume where the provider lists that pool, and the APR worked out from them, drawn again as the
@@ -670,6 +708,8 @@ export function NetworkPoolPicker({
   onPending,
   onPreview,
   browse = false,
+  onOpen,
+  hint = null,
 }: {
   read: (signal: AbortSignal) => Promise<NetworkPools>
   network: string | null
@@ -678,6 +718,16 @@ export function NetworkPoolPicker({
   onPreview?: (option: PoolOption | null) => void
   /** Markets can compare the same verified rows without presenting a deposit selection. */
   browse?: boolean
+  /**
+   * QA round 2, N5 (the owner's yes): on a token's page (`browse`), what opening a row does: New position on that network
+   * with the row's pool proposed. The caller's, as every way onward from a read screen is; without it a row reads only.
+   */
+  onOpen?: (option: PoolOption) => void
+  /**
+   * QA round 2, N5: a pool key a link proposed (#/new/network/<chain>/<token>/<pool>), untrusted: chosen once, and only
+   * when this network's own pools read lists exactly that pool, as a Robinhood Chain link's pool is verified.
+   */
+  hint?: string | null
 }) {
   // The read as it was handed in when this list mounted: the caller remounts the list (its key) for another token.
   const reader = useRef(read)
@@ -687,6 +737,8 @@ export function NetworkPoolPicker({
   const owner = identity.kind === 'connected' ? identity.address.toLowerCase() : null
   const [answer, setAnswer] = useState<{ owner: string | null; result: NetworkPools } | null>(null)
   const result: NetworkPools | { kind: 'loading' } = answer !== null && answer.owner === owner ? answer.result : { kind: 'loading' }
+  // Quiet re-asks spent on a token's page (`browse`, QA round 2 review); New position's list asks once.
+  const [attempt, setAttempt] = useState(0)
   useEffect(() => {
     const controller = new AbortController()
     void reader.current(controller.signal).then(
@@ -698,7 +750,15 @@ export function NetworkPoolPicker({
       },
     )
     return () => controller.abort()
-  }, [owner])
+  }, [owner, attempt])
+  // A list that failed for a reason that can pass (the service, not the token or the network's gate) is asked again on a
+  // token's page, quietly, while the page is visible; it rests as rows meanwhile.
+  const failedCode = result.kind === 'failed' ? result.code : null
+  const readingAgain = browse && failedCode !== null && READ_AGAIN_CODES.includes(failedCode) && attempt < READ_AGAIN_MS.length
+  useEffect(() => {
+    if (!readingAgain) return
+    return whenVisibleAfter(READ_AGAIN_MS[attempt], () => { setAnswer(null); setAttempt((value) => value + 1) })
+  }, [readingAgain, attempt])
   // DEX Screener's figures arriving draw the rows again (2026-10-06).
   useSyncExternalStore(dexStore.subscribe, dexStore.version, dexStore.version)
   // The clock the rows' ten minutes count on (Added 2026-10-06, rugged97's delta of 6 Oct §4): read when the list mounts,
@@ -739,20 +799,31 @@ export function NetworkPoolPicker({
       clearTimeout(wake)
     }
   }, [until, chainId, subject, clock])
+  // QA round 2, N5: the proposed pool, chosen once when this network's own read lists it, and never over a choice made.
+  const hinted = useRef(false)
+  const proposed = hint === null || browse ? null : (options.find((option) => option.key.toLowerCase() === hint.toLowerCase()) ?? null)
+  useEffect(() => {
+    if (proposed === null || hinted.current || pending !== null) return
+    hinted.current = true
+    onPending(proposed)
+  }, [proposed, pending, onPending])
+  // QA round 2, N5 (the owner's yes): on a token's page each row opens (onOpen) New position on its network with that
+  // pool proposed; it looked clickable and opened nothing.
+  const opens = browse && onOpen !== undefined
   const list = (
     <ul className="dm-flow-pool-rows">
       {options.map((option) => (
-        <PoolRow key={option.key} option={option} name="pool-option" checked={pending?.key === option.key} onPick={() => onPending(option)} compact plain network={network} readOnly={browse} />
+        <PoolRow key={option.key} option={option} name="pool-option" checked={pending?.key === option.key} onPick={() => (opens ? onOpen(option) : onPending(option))} compact plain network={network} readOnly={browse && !opens} open={opens} openLabel={opens ? 'Create a position in this pool' : undefined} />
       ))}
     </ul>
   )
   return (
     <div className="grid gap-3" data-picker="pool" data-picker-variant="create" data-picker-network={options[0]?.currencies[0].chainId ?? ''} data-pools-state={result.kind === 'failed' ? result.code : waiting ? 'loading' : result.kind}>
-      <p role="status" aria-live="polite" className="sr-only">{result.kind === 'loading' || waiting ? COPY.picker.poolsLoading : result.kind === 'failed' ? result.reason : ''}</p>
-      {(result.kind === 'loading' || waiting) && <RestingCreateRows />}
-      {result.kind === 'failed' && (
+      <p role="status" aria-live="polite" className="sr-only">{result.kind === 'loading' || waiting || readingAgain ? COPY.picker.poolsLoading : result.kind === 'failed' && !browse ? result.reason : ''}</p>
+      {(result.kind === 'loading' || waiting || readingAgain) && <RestingCreateRows />}
+      {result.kind === 'failed' && !readingAgain && (
         <p className="px-1 py-4 text-center text-body text-fg-muted" data-pools-unavailable={result.code}>
-          {result.reason}
+          {browse ? COPY.picker.poolsNone : result.reason}
         </p>
       )}
       {result.kind === 'ok' && !waiting && options.length === 0 && (

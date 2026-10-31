@@ -1,5 +1,5 @@
 import { v2Chain } from '../../v2/chains'
-import { formatUnitsText, shortAddress } from '../../v2/plan/present'
+import { formatUnitsText, shortAddress, significantUnitsText } from '../../v2/plan/present'
 import { ZERO_ADDRESS, type Address, type V2ChainId } from '../../v2/types'
 import { JOURNEY } from './copy'
 
@@ -74,6 +74,19 @@ export function amountText(book: TokenBook, token: Address, raw: bigint, maxFrac
   const label = labelOf(book, token)
   if (decimals === null) return `${formatUnitsText(raw, null)} ${JOURNEY.amount.rawUnits} of ${label}`
   return `${formatUnitsText(raw, decimals, maxFraction, round)} ${label}`
+}
+
+/**
+ * Added 2026-10-30 (QA round 2, N2: one number format): "10,345.7 PRIORS", an amount at six significant digits as the rest
+ * of the app writes one (v2/plan/present.ts significantUnitsText), or raw units when the decimals are unknown (never
+ * guessed). `round` 'up' for a fee or an amount to allow, never shown lower than it is. Review and its receipt draw their
+ * amounts with it; every digit stays in the title (amountText at EXACT_FRACTION).
+ */
+export function shortAmountText(book: TokenBook, token: Address, raw: bigint, round: 'down' | 'up' = 'down'): string {
+  const decimals = decimalsOf(book, token)
+  const label = labelOf(book, token)
+  if (decimals === null) return `${formatUnitsText(raw, null)} ${JOURNEY.amount.rawUnits} of ${label}`
+  return `${significantUnitsText(raw, decimals, round)} ${label}`
 }
 
 /** The figure alone ("1,234.5"), raw digits when the decimals are unknown. */

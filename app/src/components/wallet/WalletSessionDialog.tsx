@@ -11,7 +11,7 @@ import { useDialog } from '../../lib/useDialog'
 import { Button, Card } from '../ui'
 import { IconChevronRight, IconClose } from '../icons'
 import { knownDelegateAt } from '../../finance/delegates'
-import { approveIn, connectNotice, describe, NO_BROWSER_WALLET, OPEN_IN_WALLET_APP, OPEN_IN_WALLET_APP_NOTE, REFRESH_UNAVAILABLE, shortAddress, WALLETCONNECT } from './copy'
+import { approveIn, connectNotice, describe, NO_BROWSER_WALLET, NO_BROWSER_WALLET_PHONE, OPEN_IN_WALLET_APP, OPEN_IN_WALLET_APP_NOTE, shortAddress, WALLETCONNECT } from './copy'
 import { CopyButton } from '../read/screens/CopyButton'
 import { tokenHue } from '../../lib/format/tokenHue'
 import { WalletConnectPanel } from './WalletConnectPanel'
@@ -25,11 +25,32 @@ const walletName = (name: string) => (name.length > MAX_NAME ? `${name.slice(0, 
 
 /**
  * A phone or a tablet, where no wallet extension can be installed (audit C4): its touch screen, or its browser's own
- * word for being one. Read once per dialog; it never selects a wallet, only which advice the dialog gives.
+ * word for being one. Read once per dialog; it never selects a wallet, only which advice the dialog gives. Changed on
+ * purpose 2026-10-30 (QA round 2, N4): an iPad with a keyboard or trackpad calls itself a Mac with a fine pointer, so a
+ * "Mac" with a touch screen counts as a tablet too, and gets the wallet apps rather than extensions it cannot install.
  */
 const onPhone = (): boolean =>
   typeof window !== 'undefined' &&
-  (window.matchMedia?.('(pointer: coarse)').matches === true || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent))
+  (window.matchMedia?.('(pointer: coarse)').matches === true ||
+    /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+    (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1))
+
+/**
+ * The access gate's own pattern for a link back into the site (functions/_lib/gate.ts NEXT_PATTERN, the same text;
+ * tests/wallet-compat.test.mjs holds them equal): a hash route of the site's own shape, nothing else.
+ */
+const NEXT_PATTERN = '^#\\/[A-Za-z0-9\\/_.,-]{0,200}(?:#[A-Za-z0-9_-]{1,64})?$'
+
+/**
+ * The open route, for the wallet app's browser to open after the site's password (2026-10-30, QA round 2, N56: the links
+ * opened Home, and a phone lost the pool it had chosen): only a route the gate itself would go back to, and none for
+ * Home, so a link from Home is exactly the fixed one it always was. Typed amounts and ranges are never carried.
+ */
+function openRoute(): string {
+  const hash = typeof location === 'undefined' ? '' : location.hash
+  const home = (hash.replace(/^#/, '').split('#')[0] || '/') === '/'
+  return !home && new RegExp(NEXT_PATTERN).test(hash) ? hash : ''
+}
 
 /**
  * The service's latest account check in words: a standard wallet account, or one turned into a smart account and the
@@ -76,64 +97,61 @@ function WalletRow({ connector, hint, waiting = false, onPick }: { connector: Co
 }
 
 /**
- * A phone with no wallet in its browser (audit C4): the site opened in a wallet app's own browser instead. Fixed links,
- * each the wallet's documented way to open a site; the page never builds one. Changed on purpose 2026-10-01 (fix round
- * 1): on the gated preview alias (chains/elysium/mode.ts PREVIEW_ALIAS, exactly) they open the preview, where they sent
- * a tester to production; everywhere else, domino.money.
+ * A phone with no wallet in its browser (audit C4): the site opened in a wallet app's own browser instead, by each
+ * wallet's documented link, on a fixed site. Changed on purpose 2026-10-01 (fix round 1): on the gated preview alias
+ * (chains/elysium/mode.ts PREVIEW_ALIAS, exactly) they open the preview, where they sent a tester to production;
+ * everywhere else, domino.money. Changed on purpose 2026-10-30 (QA round 2, N56): each link carries the open route
+ * (openRoute, checked as the gate checks it), so the wallet's browser opens the same screen after the password; from
+ * Home they are the fixed links they always were. Its two lines are the sheet's captions (N77, N79: they sat 12 px left
+ * of the title and rows on a phone, and the password line was the smallest, faintest text in the sheet).
  */
 function WalletApps() {
   const onPreview = typeof location !== 'undefined' && location.origin === PREVIEW_ALIAS
-  const row = (id: string, name: React.ReactNode) => (
-    <>
-      <span className="dm-wallet-logo"><WalletLogo id={id} /></span>
-      <span className="sr-only">{'Open in '}</span>
-      <span className="min-w-0 truncate">{name}</span>
-      <IconChevronRight />
-    </>
-  )
+  const site = onPreview ? 'preview.domino-app-e65.pages.dev' : 'domino.money'
+  const route = openRoute()
+  const page = encodeURIComponent(`https://${site}/${route}`)
+  const apps: ReadonlyArray<readonly [id: string, name: string, href: string]> = [
+    ['io.metamask', 'MetaMask', `https://metamask.app.link/dapp/${site}/${route}`],
+    ['com.coinbase.wallet', 'Coinbase Wallet', `https://go.cb-w.com/dapp?cb_url=${page}`],
+    ['com.trustwallet.app', 'Trust Wallet', `https://link.trustwallet.com/open_url?coin_id=60&url=${page}`],
+  ]
   return (
     <>
-      <p className="text-[0.8125rem] leading-[1.125rem] text-fg-muted">{OPEN_IN_WALLET_APP}</p>
+      <p className="dm-wd-cap text-fg-muted">{OPEN_IN_WALLET_APP}</p>
       <ul className="dm-wallet-list" aria-label="Wallet apps" data-wallet-apps={onPreview ? 'preview' : 'site'}>
-        <li>
-          {onPreview ? (
-            <a className="dm-wallet-row" href="https://metamask.app.link/dapp/preview.domino-app-e65.pages.dev/" rel="noopener noreferrer">{row('io.metamask', <>MetaMask</>)}</a>
-          ) : (
-            <a className="dm-wallet-row" href="https://metamask.app.link/dapp/domino.money/" rel="noopener noreferrer">{row('io.metamask', <>MetaMask</>)}</a>
-          )}
-        </li>
-        <li>
-          {onPreview ? (
-            <a className="dm-wallet-row" href="https://go.cb-w.com/dapp?cb_url=https%3A%2F%2Fpreview.domino-app-e65.pages.dev%2F" rel="noopener noreferrer">{row('com.coinbase.wallet', <>Coinbase Wallet</>)}</a>
-          ) : (
-            <a className="dm-wallet-row" href="https://go.cb-w.com/dapp?cb_url=https%3A%2F%2Fdomino.money%2F" rel="noopener noreferrer">{row('com.coinbase.wallet', <>Coinbase Wallet</>)}</a>
-          )}
-        </li>
-        <li>
-          {onPreview ? (
-            <a className="dm-wallet-row" href="https://link.trustwallet.com/open_url?coin_id=60&url=https%3A%2F%2Fpreview.domino-app-e65.pages.dev%2F" rel="noopener noreferrer">{row('com.trustwallet.app', <>Trust Wallet</>)}</a>
-          ) : (
-            <a className="dm-wallet-row" href="https://link.trustwallet.com/open_url?coin_id=60&url=https%3A%2F%2Fdomino.money%2F" rel="noopener noreferrer">{row('com.trustwallet.app', <>Trust Wallet</>)}</a>
-          )}
-        </li>
+        {apps.map(([id, name, href]) => (
+          <li key={id}>
+            <a className="dm-wallet-row" href={href} rel="noopener noreferrer">
+              <span className="dm-wallet-logo"><WalletLogo id={id} /></span>
+              <span className="sr-only">{'Open in '}</span>
+              <span className="min-w-0 truncate">{name}</span>
+              <IconChevronRight />
+            </a>
+          </li>
+        ))}
       </ul>
-      <p className="text-caption text-fg-subtle">{OPEN_IN_WALLET_APP_NOTE}</p>
+      <p className="dm-wd-cap text-fg-muted">{OPEN_IN_WALLET_APP_NOTE}</p>
     </>
   )
 }
 
-/** A computer with no wallet extension (audit C4): where to get one. Fixed links, each in a new tab. */
+/**
+ * A computer with no wallet extension (audit C4): where to get one. Fixed links, each in a new tab. Changed on purpose
+ * 2026-10-30 (QA round 2, N4, N77): what to do next in plain words, naming the two wallets, and the way on for a phone or
+ * a tablet; the lines are the sheet's captions, in one ink.
+ */
 function GetAWallet() {
   return (
     <>
-      <p className="text-[0.8125rem] leading-[1.125rem] text-fg-muted">{NO_BROWSER_WALLET}</p>
-      <p className="dm-wallet-get text-caption text-fg-subtle">
-        {'Get one: '}
+      <p className="dm-wd-cap text-fg-muted">{NO_BROWSER_WALLET}</p>
+      <p className="dm-wallet-get dm-wd-cap text-fg-muted">
+        {'Install '}
         <a href="https://metamask.io/download/" target="_blank" rel="noopener noreferrer">MetaMask</a>
         {' or '}
         <a href="https://rabby.io/" target="_blank" rel="noopener noreferrer">Rabby</a>
-        {'.'}
+        {', then reload this page.'}
       </p>
+      <p className="dm-wd-cap text-fg-muted">{NO_BROWSER_WALLET_PHONE}</p>
     </>
   )
 }
@@ -400,11 +418,9 @@ export function WalletSessionDialog({
           )}
           {(view.status === 'signed_out' || (view.status === 'wrong_network' && !away) || signing) && <p className="dm-wd-cap text-caption text-fg-subtle">Sign a message to continue. No transaction or network fee.</p>}
 
-          {view.status === 'signed_in' && view.notice === 'refresh_unavailable' && (
-            <p className="text-[0.8125rem] leading-[1.125rem] text-fg-muted" data-testid="refresh-notice">
-              {REFRESH_UNAVAILABLE}
-            </p>
-          )}
+          {/* Changed on purpose 2026-10-30 (QA round 2, the owner's rule: no notices that something could not update): a
+              renewal the service could not serve is asked again in the background with backoff (session/), and the
+              dialog no longer says "could not renew your session just now". */}
 
           {shown && (
             <p role="alert" className="dm-wd-alert text-[0.8125rem] leading-[1.125rem]">

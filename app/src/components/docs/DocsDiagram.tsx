@@ -111,14 +111,16 @@ function ThreeWays({ alt }: { alt: string }) {
           <Way feature={key} />
           <p className="dm-docs-dg-name">{FEATURES[key].name}</p>
           <p className="dm-docs-dg-line">{FEATURES[key].line}</p>
-          {/* The fee in full ink (V4, 2026-10-16): the same words, the share in a <b>. */}
+          {/* The fee in full ink (V4, 2026-10-16), the share in a <b>. Changed on purpose 2026-10-30 (QA round 2): Automate's one
+              wording for the service fee (the owner's Q1), and a plain position's 0.65% when Domino swaps for it (N50), as New
+              position's docs say; it said "No Domino fee". */}
           <p className="dm-docs-dg-fee-line">
             {FEATURES[key].fee ? (
               <>
-                <b>{FEATURES[key].fee}</b> of the fees it uses
+                <b>{FEATURES[key].fee}</b> of the earned fees it uses, each time
               </>
             ) : (
-              'No Domino fee'
+              'No Domino fee unless a swap is needed'
             )}
           </p>
         </li>

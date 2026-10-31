@@ -11,7 +11,7 @@
 import type { ActivityResponse, ChainStatus, PortfolioResponse, Position as V6Position, S1Action } from 'api-contracts/read-v6/types'
 import type { WalletPosition } from '../../lib/walletPositions'
 import { ZERO_ADDRESS, type Address, type Dex, type PoolRef, type V2ChainId } from '../../v2/types'
-import { protectionStanding } from '../autoexit/standing'
+import { exitVaultOf, protectionStanding } from '../autoexit/standing'
 import { USD_SHOWN } from './constants'
 import { cleanSymbol, type PositionToken } from './tokens'
 
@@ -79,6 +79,21 @@ export function fromWalletPosition(position: WalletPosition, owner: string): Act
     vault: null,
     source: 'chain',
   }
+}
+
+/**
+ * (QA round 2, WD-MAX) The page's own read of what the position holds, in the pool's order (V1's read may list its
+ * currencies the other way round), for Withdraw's "In this position"; null when the read gave no amounts, or when its
+ * currencies are not the pool's two (then nothing is drawn: a figure is never put beside the wrong token).
+ */
+export function heldInPoolOrder(position: Pick<WalletPosition, 'principal' | 'currencies'>, currency0: string): readonly [bigint, bigint] | null {
+  const held = position.principal
+  if (!held || !/^\d+$/.test(held[0]) || !/^\d+$/.test(held[1])) return null
+  const amounts: readonly [bigint, bigint] = [BigInt(held[0]), BigInt(held[1])]
+  const [first, second] = position.currencies.map((currency) => currency.address.toLowerCase())
+  const pool0 = currency0.toLowerCase()
+  if (first === pool0) return amounts
+  return second === pool0 ? [amounts[1], amounts[0]] : null
 }
 
 /** The page's tokens as the book takes them (V1's chain read: symbol and decimals as read). */
@@ -186,6 +201,18 @@ export function positionVault(answer: Pick<PortfolioResponse, 'vaults' | 'mandat
   const found = vault.role === 'root' ? answer.vaults.find((one) => one.chainId === chainId && one.address.toLowerCase() === vault.address) : undefined
   const exit = found ? protectionStanding(found, answer.mandates ?? []) : null
   return { ...vault, armed: found ? found.custody.armed : null, exitLive: exit === 'on' || exit === 'paused' }
+}
+
+/**
+ * (QA round 2, N49) Whether `vault` makes the position the root of Auto-exit's own vault, as the listing says
+ * (../autoexit/standing.ts exitVaultOf: paused, with Auto-exit's module on or an order listed on its root). Its subscriber
+ * is then that vault, and collecting fees leaves Auto-exit on, so V1's Collect fees and Close position say nothing of
+ * stopping automation. False for a successor, a vault not listed, and any other vault.
+ */
+export function autoExitRootOf(answer: Pick<PortfolioResponse, 'vaults' | 'mandates'>, chainId: V2ChainId, vault: Pick<PositionVault, 'address' | 'role'> | null): boolean {
+  if (!vault || vault.role !== 'root') return false
+  const found = answer.vaults.find((one) => one.chainId === chainId && one.address.toLowerCase() === vault.address.toLowerCase())
+  return found !== undefined && exitVaultOf(found, answer.mandates ?? [])
 }
 
 /** A read-v6 position as the actions take it: live only (anything else is not acted on). */

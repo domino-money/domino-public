@@ -240,6 +240,7 @@ test('receipts: what moved, the fee with its kind, rate, token, amount and defer
   assert.equal(exit.gas, null, 'a receipt that states no gas: none claimed');
   assert.deepEqual(exit.fees, []);
   assert.ok(exit.lines.some((line) => line.data === 'no-fee' && line.value === 'No Domino fee'));
+  // Changed on purpose 2026-10-30 (QA round 2, N66): every token that moved, in the pool's order (a token in raw units is left out beside a named one).
   assert.equal(exit.amount, '0.049 USDG');
   // The automation's 4%, per pool token; the part still owed to the fee recipient is part of the fee, never the owner's.
   const run = byId['4663:73394000:8'];
@@ -367,4 +368,53 @@ test('a row in Auto-exit\'s own vault: "Auto-exit" while one is on, else Off, Pa
   assert.deepEqual(rowOf(left, (vault) => [order(vault, { status: 'revoked' })]), { role: 'root', name: 'Auto-exit', word: 'Off', running: false }, 'then turned off');
   // A compounding automation Leave automation ended, with nothing of Auto-exit ever on it, keeps its own name.
   assert.notEqual(rowOf(left, () => []).name, 'Auto-exit');
+});
+
+// Added 2026-10-30 (QA round 2, N66): a receipt row's collapsed amount names every token that moved, in the pool's own
+// order (the expanded "Added to the position" line's), where it named the first token only ("0.5 PONS").
+test('a receipt row’s collapsed amount names every token that moved, in the pool’s order', () => {
+  const answer = structuredClone(fixture('activity.json'));
+  answer.tokens.find((token) => token.address === MANY).decimals = 18;
+  const create = answer.items.find((item) => item.kind === 's1_action' && item.action === 'create');
+  create.inputs = [{ token: MANY, amount: '500000000000000000' }, { token: USDG, amount: '141509' }];
+  answer.items = [create];
+  const [view] = model.receiptViews(answer, ALL, null);
+  assert.equal(view.amount, '0.141509 USDG + 0.5 MANY');
+  create.inputs = [{ token: USDG, amount: '141509' }, { token: MANY, amount: '0' }];
+  assert.equal(model.receiptViews(answer, ALL, null)[0].amount, '0.141509 USDG', 'a zero is left out');
+  create.inputs = [];
+  assert.equal(model.receiptViews(answer, ALL, null)[0].amount, null, 'nothing paid in: no amount');
+});
+
+// Added 2026-10-30 (QA round 2, N65): one Auto-exit setup (Auto-exit's own vault, its exit module and the registration, in
+// one transaction) is set up as Auto-exit, never "Automation: Auto-compound", and its receipt says one title.
+test('Auto-exit’s own vault is set up as Auto-exit, and one setup says one title', () => {
+  const answer = structuredClone(fixture('activity.json'));
+  const VAULT = '0xa9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9';
+  const created = structuredClone(answer.items.find((item) => item.kind === 'vault_created'));
+  const tx = created.tx;
+  Object.assign(created, { vault: VAULT, rootTokenId: '7', policy: { ...created.policy, mode: 'simple' } });
+  const module = structuredClone(answer.items.find((item) => item.kind === 'vault_event' && item.events.some((event) => event.event === 'ExitModuleSet')));
+  Object.assign(module, { id: '4663:73391000:5', tx, vault: VAULT, events: module.events.filter((event) => event.event === 'ExitModuleSet') });
+  const registered = structuredClone(answer.items.find((item) => item.kind === 'auto_exit_event' && item.event === 'MandateRegistered'));
+  Object.assign(registered, { id: '4663:73391000:6', tx, vault: VAULT, tokenId: '7' });
+  assert.ok(module.events.length === 1 && module.events[0].module && !/^0x0{40}$/i.test(module.events[0].module), 'the fixture’s module is a real one');
+  answer.items = [registered, module, created];
+  const views = model.receiptViews(answer, ALL, null);
+  const setup = views.find((view) => view.kind === 'vault_created');
+  assert.equal(setup.what, 'Auto-exit set up for position #7');
+  assert.deepEqual(setup.lines.map((line) => [line.data, line.value]), [['mode', 'Auto-exit']]);
+  assert.deepEqual(views.map((view) => [view.kind, model.effectTitled(view, views)]), [['auto_exit_event', true], ['vault_event', false], ['vault_created', false]], 'one title; every event stays in the receipt');
+  // Alone, a vault with Auto-compound's mode is Auto-compound's.
+  answer.items = [created];
+  assert.deepEqual(model.receiptViews(answer, ALL, null).map((view) => [view.what, view.lines[0].value]), [['Automation set up for position #7', 'Auto-compound']]);
+  // A vault the portfolio lists as a running (unpaused) automation is never taken for Auto-exit's.
+  answer.items = [registered, module, created];
+  const portfolio = structuredClone(fixture('portfolio.json'));
+  const listed = portfolio.vaults.find((vault) => vault.state.status === 'read');
+  listed.address = VAULT;
+  assert.equal(model.receiptViews(answer, ALL, portfolio).find((view) => view.kind === 'vault_created').what, 'Automation set up for position #7');
+  // Without the registration, effects keep their own titles.
+  const plain = model.receiptViews({ ...answer, items: [module, created] }, ALL, null);
+  assert.deepEqual(plain.map((view) => model.effectTitled(view, plain)), [true, true]);
 });

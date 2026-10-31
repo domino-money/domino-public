@@ -18,7 +18,7 @@ export function signedOutLine(kind: SessionKind, what: 'receipts' | 'managed' | 
   const things = what === 'history' ? 'more automation history' : what === 'receipts' ? 'your receipts' : what === 'managed' ? 'your automated positions' : 'your automated positions and their receipts'
   switch (kind) {
     case 'no_wallet':
-      return { text: `Connect your wallet to see ${things}.`, action: null }
+      return { text: `Connect a wallet to see ${things}.`, action: null }
     case 'signed_out':
       return { text: `Sign in with your wallet to see ${things}.`, action: 'Sign in' }
     case 'wrong_network':

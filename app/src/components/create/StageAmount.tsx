@@ -3,7 +3,7 @@ import { CREATE } from '../../lib/create/copy'
 import type { JourneyState, PayWith, TickRange } from '../../lib/create/journey'
 import { poolOnOtherChain, type OtherChains } from '../../lib/create/otherChains'
 import type { PayFacts } from '../../lib/create/poolPrices'
-import { slippageValue, slippageWarns, slippageWritten } from '../../lib/create/slippage'
+import { slippageBpsFrom, slippageValue, slippageWarns, slippageWritten } from '../../lib/create/slippage'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import type { ReadSource } from '../../lib/read/types'
 import type { TokenCandidate } from '../../lib/read/screens/tokens'
@@ -56,6 +56,7 @@ export function StageRange({
   onRange,
   onPool,
   others = null,
+  onBlock,
 }: {
   source: ReadSource | null
   state: JourneyState
@@ -63,6 +64,8 @@ export function StageRange({
   onPool: (option: PoolOption) => void
   /** The other networks New position offers (2026-10-05): another network's pool has its price read again there. */
   others?: OtherChains | null
+  /** QA round 2, Q18: a Custom price typed or refused in a field, which holds Continue until it is fixed (RangeStep.tsx). */
+  onBlock?: (which: 'lower' | 'upper', reason: string | null) => void
 }) {
   const token = state.token
   const pool = state.pool
@@ -77,7 +80,7 @@ export function StageRange({
     )
   }
   const reread = others && poolOnOtherChain(pool) ? (signal: AbortSignal) => others.reread(pool, signal) : null
-  return <RangeStep source={source} state={state} pool={pool} token={token.key} onRange={onRange} onPool={onPool} reread={reread} />
+  return <RangeStep source={source} state={state} pool={pool} token={token.key} onRange={onRange} onPool={onPool} reread={reread} onBlock={onBlock} />
 }
 
 /**
@@ -123,6 +126,8 @@ export function StageAmount({
   onFundingPayWith?: (payWith: PayWith | null) => void
 }) {
   const value = slippageValue(state.slippageBps)
+  // QA round 2, N28: a tolerance the box refused is not the one in use, so the summary shows the figure dash for it.
+  const kept = slippageBpsFrom(state.slippageBps)
   // Read once: a disclosure whose open state followed the value would shut under the slider being dragged.
   const [opened] = useState(() => slippageWarns(value))
   const token = state.token
@@ -141,7 +146,7 @@ export function StageAmount({
         <summary>
           <span>{CREATE.amount.advanced}</span>
           <span className="dm-flow-advanced-value">
-            {CREATE.amount.slippageLabel} {slippageWritten(value)}
+            {CREATE.amount.slippageLabel} {kept === null ? CREATE.page.notChosen : slippageWritten(kept)}
           </span>
         </summary>
         <div className="dm-flow-advanced-body">

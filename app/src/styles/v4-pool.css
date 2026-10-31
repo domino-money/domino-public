@@ -170,6 +170,13 @@
   [data-pool-page] .dm-pool-chips .dm-fee-venue { margin-right: 0.125rem; border-radius: 0.375rem 0.125rem 0.125rem 0.375rem; }
   [data-pool-page] .dm-pool-chips .dm-fee-value { border-radius: 0.125rem 0.375rem 0.375rem 0.125rem; }
   [data-pool-page] .dm-pool-chips .dm-fee-sep { display: inline; font-size: 0; }
+  /* QA round 2, Q23: the network, the tag's middle segment, square on both sides (as the Markets rows', v4-markets.css). */
+  [data-pool-page] .dm-pool-chips .dm-fee-net { border-radius: 0.125rem; }
+  /* QA round 2, final review read-1 (Q28): the fee segment is the button of its tip (InfoTip, no (i) mark), on the tag's line as
+     the other segments are, and a step lighter while a pointer or the keyboard is on it, as a chip under a pointer. */
+  [data-pool-page] .dm-pool-chips .dm-info-tip-trigger { vertical-align: top; }
+  [data-pool-page] .dm-pool-chips .dm-info-tip-trigger > .dm-fee-value { transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std); }
+  [data-pool-page] .dm-pool-chips .dm-info-tip-trigger:is(:hover, :focus-visible) > .dm-fee-value { background: var(--v4-w08); color: var(--muted); }
   [data-pool-page] .dm-pool-actions { margin-bottom: 3.5rem; }
   [data-pool-page] .dm-pool-new { height: 3.375rem; padding-inline: 1.75rem; font-size: 0.96875rem; }
   [data-pool-page] .dm-pool-skel-action { width: 13.125rem; height: 3.375rem; }
@@ -219,8 +226,12 @@
   /* The resting chart keeps the drawn one's heights (head, close and date, plot, axis, switch), so nothing below moves
      when the figures arrive. */
   [data-pool-page] .dm-pool-chart > .dm-pool-skel-head { min-height: 5.475rem; align-content: start; }
+  /* QA round 2, N97: the chart's own resting rows too (its reading state and the lazy chunk's stand-in draw the figure
+     and the axis themselves, the axis inside the chart's body), so the cards below never drop when the history lands. */
+  [data-pool-page] .dm-pool-chart > .dm-pool-skel-figure { min-height: 5.475rem; align-content: start; }
   [data-pool-page] .dm-pool-chart-head > .dm-pool-skel-seg { width: 9.96875rem; height: 2.375rem; border-radius: 0.8125rem; }
-  [data-pool-page] .dm-pool-chart > .dm-pool-skel-axis { align-items: flex-start; height: 1.875rem; margin-top: 0.625rem; padding-top: 0.375rem; }
+  [data-pool-page] .dm-pool-chart .dm-pool-skel-axis { align-items: flex-start; height: 1.875rem; margin-top: 0.625rem; padding-top: 0.375rem; }
+  [data-pool-figures-dialog] .dm-pool-chart .dm-pool-skel-axis { align-items: flex-start; height: 1.625rem; margin-top: 0.5rem; padding-top: 0.375rem; }
   [data-pool-page] .dm-pool-chart > .dm-pool-skel-quiet { height: auto; min-height: 3.875rem; padding: 0.875rem 0 0.625rem; }
   [data-pool-page] .dm-pool-chart > .dm-pool-skel-quiet > .dm-pool-skel-seg { width: 8.6875rem; height: 2.375rem; border-radius: 0.8125rem; }
   /* The resting strip: one bubble per figure, no line under it, so the tiles keep the drawn strip's 142px. */
@@ -233,7 +244,8 @@
   [data-pool-page] .dm-pool-earn-ask { margin: 1.5rem 0.875rem 0.625rem; font-size: 0.8125rem; line-height: normal; font-weight: 500; letter-spacing: 0; color: var(--subtle); }
   [data-pool-page] .dm-pool-earn-field { gap: 0.375rem; height: 4.875rem; margin: 0 0.25rem; padding: 0 1.125rem; border-radius: 1.125rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--lip); font-family: var(--font-display); font-size: 2.5rem; line-height: 1; color: var(--subtle); transition: box-shadow 0.2s var(--e-std), background-color 0.2s var(--e-std); }
   [data-pool-page] .dm-pool-earn-field:hover { box-shadow: inset 0 0 0 1px var(--strong); }
-  [data-pool-page] .dm-pool-earn-field:focus-within { outline: none; background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong), 0 0 0 0.25rem var(--v4-tan-halo); }
+  /* QA round 2, N88 (the owner's decision): every typed field's focus ring is 2px, in the ring colour. */
+  [data-pool-page] .dm-pool-earn-field:focus-within { outline: none; background: rgb(255 157 98 / 0.04); box-shadow: inset 0 0 0 2px var(--ring), 0 0 0 0.25rem var(--v4-tan-halo); }
   [data-pool-page] .dm-pool-earn-input { font-family: var(--font-display); font-size: 2.875rem; line-height: 1; letter-spacing: -0.02em; color: var(--fg); }
   [data-pool-page] .dm-pool-earn-input[aria-invalid="true"] { color: var(--muted); }
   [data-pool-page] .dm-pool-earn-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.125rem; margin: 0.625rem 0.25rem 0; padding: 0.1875rem; border-radius: 0.8125rem; background: var(--v4-w035); box-shadow: inset 0 0 0 1px var(--line); }
@@ -250,6 +262,14 @@
   [data-pool-page] .dm-pool-earn-skel-fig { width: 9rem; height: 3.5rem; margin-top: 0.625rem; border-radius: 0.5rem; }
   [data-pool-page] .dm-pool-earn-note { margin: 1.125rem 0.875rem 0; font-size: 0.78125rem; line-height: 1.5; letter-spacing: 0; color: var(--subtle); }
   [data-pool-page] .dm-pool-earn > .dm-pool-disclosure { margin: auto 0.25rem 0; padding: 0.75rem 0 0; border: 0; }
+  /* QA round 2, N84 (the owner's yes): Create a position again under the estimate, on the one-column page only (phone and
+     tablet portrait); outlined and across the card, the title row's button keeping the page's one solid Tangerine. */
+  [data-pool-page] .dm-pool-earn-action { display: grid; margin: 1rem 0.25rem 0; }
+  [data-pool-page] .dm-pool-earn-action > .dm-btn { width: 100%; height: 3.375rem; border-radius: 0.875rem; font-size: 0.96875rem; }
+  [data-pool-page] .dm-pool-skel-earn-action { width: auto; height: 3.375rem; border-radius: 0.875rem; }
+  @media (min-width: 896px) {
+    [data-pool-page] .dm-pool-earn-action { display: none; }
+  }
   /* The small disclosures (.how-h): a 44px row in the button's own type, 16px regular in the page's ink. */
   [data-pool-page] .dm-pool-disclosure > summary { min-height: 2.75rem; padding: 0 0.375rem 0 0.625rem; border-radius: 0.75rem; font-size: 1rem; line-height: normal; font-weight: 400; letter-spacing: normal; color: var(--fg); transition: background-color 0.18s var(--e-std), color 0.18s var(--e-std); }
   [data-pool-page] .dm-pool-disclosure > summary:hover { background: var(--v4-w045); color: var(--fg); }
@@ -357,6 +377,10 @@
   [data-pool-page] .dm-pool-kv dt { font-size: 0.84375rem; letter-spacing: 0; color: var(--subtle); }
   [data-pool-page] .dm-pool-kv dd { font-size: 0.875rem; font-weight: 500; color: var(--fg); }
   [data-pool-page] .dm-pool-kv .dm-hex { font-family: var(--font-mono); font-size: 0.8125rem; font-weight: 400; letter-spacing: 0; color: var(--muted); }
+  /* An address that opens on the network's explorer (QA round 2, N24): the docs' quiet underline (.dm-docs-link), warming
+     under the pointer; the address keeps its own ink. */
+  [data-pool-page] .dm-pool-kv-link { border-radius: 2px; color: inherit; text-decoration-line: underline; text-decoration-color: rgb(255 236 220 / 0.28); text-decoration-thickness: 1px; text-underline-offset: 0.24em; transition: color 0.18s var(--e-std), text-decoration-color 0.18s var(--e-std); }
+  [data-pool-page] .dm-pool-kv-link:hover { color: var(--fg); text-decoration-color: rgb(255 157 98 / 0.85); }
   [data-pool-page] .dm-pool-details > .dm-pool-details-parts { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 2.5rem; row-gap: 1.875rem; margin-top: 2.125rem; padding: 0 1.5rem 1.625rem; border: 0; }
   [data-pool-page] .dm-pool-embedded-title { margin-bottom: 0.875rem; font-family: var(--font-display); font-size: 1.375rem; line-height: 1.1; font-weight: 400; letter-spacing: -0.02em; color: var(--fg); }
   [data-pool-page] [data-apr-inputs] { font-size: 0.78125rem; }
@@ -443,6 +467,8 @@
     [data-pool-page] .dm-pool-marks { zoom: 0.8182; align-self: flex-start; margin-bottom: 0; }
     [data-pool-page] .dm-pool-actions { margin-bottom: 0; }
     [data-pool-page] .dm-pool-new { height: 3.125rem; }
+    /* The second Create a position keeps the title row's height at every width (QA round 2 review, N84). */
+    [data-pool-page] :is(.dm-pool-earn-action > .dm-btn, .dm-pool-skel-earn-action) { height: 3.125rem; }
     [data-pool-page] .dm-pool-skel-action { width: 100%; height: 3.125rem; }
     [data-pool-page] .dm-pool-stats.dm-stats--tiles > .dm-pool-stat { min-height: 7.375rem; padding: 1rem 1rem 1.125rem; }
     [data-pool-page] .dm-pool-stat > dt { padding-bottom: 1.125rem; }
@@ -456,6 +482,8 @@
     [data-pool-page] :is(.dm-pool-chart-head > .dm-title, .dm-pool-chart > .dm-pool-heading) { font-size: 1.75rem; }
     [data-pool-page] :is(.dm-pool-chart-figure, .dm-pool-skel-figure, .dm-pool-skel-head) { padding: 0 0.75rem; }
     [data-pool-page] .dm-pool-chart-close { font-size: 3rem; }
+    /* N97: the resting figure at the phone's close (3rem at 0.9, 0.9rem shorter than the laptop's). */
+    [data-pool-page] .dm-pool-chart > :is(.dm-pool-skel-head, .dm-pool-skel-figure) { min-height: 4.575rem; }
     [data-pool-page] .dm-pool-chart-body { --axis-w: 4.75rem; margin: 1.125rem 0.75rem 0; }
     [data-pool-page] .dm-pool-chart .dm-pool-canvas { height: 12.5rem; }
     [data-pool-page] .dm-pool-chart .dm-pool-plot-empty { min-height: 12.5rem; }

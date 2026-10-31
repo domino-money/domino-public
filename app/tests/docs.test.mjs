@@ -290,7 +290,12 @@ test('the custody page opens with the approved sentence, word for word, then say
     'When you create an automation using Domino, you are the sole owner and only you can control it. Every step is fully automated by a contract whose controller is your signed wallet.',
   );
   // The ids stay, so the links to them still land: a V1 receipt's How to pause opens pause-revoke-withdraw.
-  assert.deepEqual(sectionIds(custody), ['your-wallet', 'sequence-vault', 'operator', 'pause-revoke-withdraw']);
+  // Changed on purpose 2026-10-30 (QA round 2, N59): what still works if Domino's site is down, after the controls.
+  assert.deepEqual(sectionIds(custody), ['your-wallet', 'sequence-vault', 'operator', 'pause-revoke-withdraw', 'if-domino-is-down']);
+  // Robin Etherscan on Robinhood Chain: its Blockscout shows Domino V2's contracts as bytecode (src/v2/explorers.ts), so no Write tab.
+  assert.match(sectionText(custody, 'if-domino-is-down'), /emptied from a block explorer: Robin Etherscan on Robinhood Chain, Basescan or Arbiscan\./);
+  assert.match(sectionText(custody, 'if-domino-is-down'), /call exitAll, as Leave automation does\. Only your wallet can call it, and everything goes to your wallet\./);
+  assert.match(readText(join(REPO, 'contracts/src/v2/vault/DominoV2VaultBase.sol')), /function exitAll\(\) external nonReentrant onlyOwner/, 'the call the section names is the owner’s Leave automation');
   const text = textOf(custody);
   assert.match(text, /that NFT stays in your wallet/);
   assert.match(sectionText(custody, 'your-wallet'), /Each action on it is a single transaction, and Domino’s contract keeps nothing afterwards\./);
@@ -418,7 +423,8 @@ test('Domino-compound names its setup, its limits and what they start at, and Ri
   assert.match(readText(join(APP, 'src/v2in/automate/constants.ts')), /VAULT_DEFAULT_DOMINO = Object\.freeze\(\{ triggerDistanceBps: 500, maxOverlapBps: 2000, maxPositions: 3, upsideBps: 5000 \}/, 'the limits start where the page says');
   // Spec F7 §1.5, §2.13, §5.3: a change outside the automation stops it until the owner turns it back on, consenting again.
   const stops = sectionText(page('risks'), 'automation-stops');
-  assert.match(stops, /Automation stops for a position if you change it, move it or approve another app on it\. Collect fees, Close position, Add liquidity and Withdraw count as changes too\./);
+  // Changed on purpose 2026-10-30 (QA round 2, N49): what counts as a change, by mode (src/v2in/position/constants.ts ROOT_PAUSE_COPY, EXIT_PAUSE_COPY).
+  assert.match(stops, /Automation stops for a position if you change it, move it or approve another app on it\. For compounding, Collect fees, Close position, Add liquidity and Withdraw count as changes too\. Auto-exit pauses only when the position is moved or its approval changes\./);
   assert.match(stops, /It stays stopped until you turn it back on: Turn back on, on the position’s page, consents again to the fees the position has not collected, exactly as setting it up did\./);
   assert.match(stops, /Automation can also wait without stopping, for example until fees cover the network cost; its card says why\./);
   // The setup's own field names and what each starts at.
@@ -438,7 +444,8 @@ test('the wallet, pools, fees, markets, new position, positions, risks and what 
   assert.deepEqual(needs, [
     'A quote: for New position, and for Add liquidity, Change range or a withdrawal in one token on a position’s page.',
     'Bringing funds from another network.',
-    'What Domino V1’s automation did, in Managed positions and Receipts on Positions.',
+    // Changed on purpose 2026-10-30 (QA round 2, N26): the list's name on Positions, and Your automation's section title.
+    'What older automation did, in Automated positions and Receipts on Positions.',
   ]);
   assert.match(sectionText(wallet, 'what-needs-sign-in'), /Public pages need no sign-in, and neither does a step without a quote, such as collecting fees, closing a position, or setting up automation or Auto-exit\./);
   assert.match(readText(join(APP, 'src/v2/plan/httpTransport.ts')), /throw new Error\('session_required'\)/, 'a quote is refused without a session');
@@ -501,7 +508,8 @@ test('the wallet, pools, fees, markets, new position, positions, risks and what 
   assert.match(made, /your wallet allows each token for the exact amount, if needed, then one transaction puts your tokens in, makes any swap and sends you the position NFT, with anything the range doesn’t use\. Domino’s contract keeps nothing afterwards\./);
   assert.match(made, /No Domino fee unless a swap is needed: then 0\.65% of the amount swapped, shown on Review\. Network gas still applies\./);
   // 2026-10-05 (the owner: his New position screens, as he built them): today's Create position again, so its steps again.
-  assert.match(made, /Domino V1 on Robinhood Chain lists approval, deposit and creation as separate wallet steps\./);
+  // Changed on purpose 2026-10-30 (QA round 2, N26): the same fact, without the version's name, which is for Contracts.
+  assert.match(made, /On Robinhood Chain, Review lists approval, deposit and creation as separate wallet steps\./);
   assert.doesNotMatch(textOf(create), /Setup|deposit of both tokens|refunded|deposit-amount estimate|expected to take, and the most it may take|Hover a figure to see until when/);
   for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /deposit-amount estimate|expected to take, and the most it may take|Hover a figure to see until when/, entry.slug);
   // The zap journey's constants: the quote's life and the deadline, the slippage (src/v2in/journey/constants.ts).
@@ -583,14 +591,16 @@ test('the docs use the product’s words for a position’s figures, say what au
   assert.ok(linksOf(page('auto-compound')).some((link) => link.to === '#/docs/positions#managed-positions'));
   const managed = sectionText(positions, 'managed-positions');
   assert.match(managed, /Automation is shown with its position\. Open the position to set up, pause or stop it, or recover tokens it holds\./);
-  assert.match(managed, /For the full list, select Receipts beside New position or the card’s See all\./);
+  // Changed on purpose 2026-10-30 (QA round 2, N107): those two show once the wallet is connected (screens/Positions.tsx).
+  assert.match(managed, /Once your wallet is connected, select Receipts beside New position, or the card’s See all, for the full list\./);
   assert.match(readText(join(APP, 'src/screens/Positions.tsx')), /href=\{receiptsHref\} variant="outline" data-positions-receipts/, 'the connected wallet has a direct receipt entrance');
   assert.match(managed, /Public on-chain activity needs no signature\. Additional account history may ask you to sign in\. A receipt is final only once its network settles it\./);
   // Moved on purpose 2026-10-04 (the owner: docs revalidated for V2) to Manage a position, word for word: only Close has an
   // "At least" row and a slippage choice (PositionActions.tsx).
   assert.match(sectionText(page('manage-position'), 'collect-and-close'), /Each shows what you receive and the network fee before you sign; Close also shows the least you receive within your slippage tolerance\./);
   // The service fee is 2% of the fees used: of 100 used, 2 are the fee and 98 go back (FeeAccounting.sol).
-  assert.match(sectionText(page('auto-compound'), 'service-fee'), /2% of the earned fees it uses, taken once: of 100 USDG of fees it uses, 2 go to the service fee and 98 back into your position\./);
+  // Changed on purpose 2026-10-30 (QA round 2, the owner's Q1): "each time it runs", not "taken once" (read as one charge).
+  assert.match(sectionText(page('auto-compound'), 'service-fee'), /2% of the earned fees it uses, each time it runs: of 100 USDG of fees it uses, 2 go to the service fee and 98 back into your position\./);
   assert.match(sectionText(page('fees'), 'service-fee'), /of 100 USDG of fees Auto-compound uses, 2 go to the service fee and 98 back into your position\./);
   assert.doesNotMatch(all, /fees it puts back, taken once|of fees put back by Auto-compound/);
   // A pair can have several pools of one fee tier, apart by their other settings.
@@ -608,7 +618,10 @@ test('the V2 pages: Manage a position, Bring funds from another network, Auto-ex
   assert.deepEqual(sectionIds(manage), ['from-its-page', 'add-liquidity', 'change-range', 'withdraw', 'collect-and-close', 'permission', 'with-automation']);
   const copy = src('v2in/position/copy.ts');
   for (const words of ["add: 'Add liquidity'", "changeRange: 'Change range'", "withdraw: 'Withdraw'", "youReceive: 'You receive'", "zapApproved: 'Domino can manage this position for you when you ask.'", "rearm: 'Turn automation back on'"]) assert.ok(copy.includes(words), words);
-  assert.match(sectionText(manage, 'from-its-page'), /The available actions are shown below the position’s title: Collect fees, Add liquidity, Change range, Withdraw and Auto-exit\./);
+  // Changed on purpose 2026-10-30 (QA round 2, review of N68): Close position is on every network's position page (Base and
+  // Arbitrum One since 2026-10-15, v2in/position/PositionPage.tsx), so the list names it with the others.
+  assert.match(sectionText(manage, 'from-its-page'), /The available actions are shown below the position’s title: Collect fees, Add liquidity, Change range, Withdraw, Auto-exit and Close position\./);
+  assert.doesNotMatch(sectionText(manage, 'from-its-page'), /Robinhood Chain’s Uniswap v4 positions also offer/, 'not only Robinhood Chain’s');
   assert.doesNotMatch(sectionText(manage, 'from-its-page'), /···|menu/, 'the docs describe the visible actions');
   // v2/f7 ca70c056 (the owner, 2026-10-04: stop-loss and take-profit inside the position): the visible action; its name is
   // Auto-exit since 2026-10-06 (the owner's point 5).
@@ -641,7 +654,8 @@ test('the V2 pages: Manage a position, Bring funds from another network, Auto-ex
   // Changed on purpose 2026-10-06 (the review of point 5): every network's position page, and New position's success on
   // every network (components/create/CreatedNext.tsx on Robinhood Chain's own journey, src/v2in/journey/ReviewStage.tsx
   // CreatedExit elsewhere).
-  assert.match(sectionText(exit, 'turn-it-on'), /On Automate, select Choose a position under Auto-exit, then choose the position\. You can also select Auto-exit below a position’s title, or right after you create a position\. The dialog shows where it closes, the price now and its fee\./);
+  // Changed on purpose 2026-10-30 (QA round 2, the owner's Q33): Automate's button is Set up Auto-exit.
+  assert.match(sectionText(exit, 'turn-it-on'), /On Automate, select Set up Auto-exit, then choose the position\. You can also select Auto-exit below a position’s title, or right after you create a position\. The dialog shows where it closes, the price now and its fee\./);
   assert.match(sectionText(exit, 'turn-it-on'), /Turn on Auto-exit asks your wallet for one signature, then one confirmation when your wallet can send the calls together\./);
   assert.match(sectionText(exit, 'separate'), /A position has compounding or Auto-exit, never both, and one Auto-exit at a time\./);
   assert.doesNotMatch(textOf(exit), /stop-loss|take-profit|order|Protection only/i);
@@ -671,7 +685,8 @@ test('the V2 pages: Manage a position, Bring funds from another network, Auto-ex
   const card = src('v2in/automate/VaultCard.tsx');
   for (const words of ["'Auto-exit'", "'Automation off'", "'Automation on'", "withdraw: 'Withdraw to wallet'", "return: 'Return my reserves'", "rearm: 'Turn back on'", "leave: 'Leave automation'"]) assert.ok(card.includes(words), words);
   assert.match(sectionText(yours, 'waiting-fees'), /Withdraw to wallet sends them to your wallet any time, whatever its state, with no Domino fee\./);
-  assert.match(sectionText(yours, 'domino-v1'), /Domino V1’s automation ends when the new one starts, with no migration/);
+  // Changed on purpose 2026-10-30 (QA round 2, N26): in plain words; the version's name is for Contracts.
+  assert.match(sectionText(yours, 'domino-v1'), /Automation from Domino’s first contracts ends when the new one starts, with no migration/);
 });
 
 // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): ROADMAP's pill, "Starts paused", described Domino
@@ -737,7 +752,8 @@ test('the limits and fees match the contracts: 20% trigger and overlap, a positi
   assert.match(fees['Domino service fee'].note, /Never on principal, never on a direct deposit/);
   assert.equal(fees['Assisted swap fee'].value, '0.65% of the amount swapped');
   assert.equal(fees['Deposit from another network'].value, '0.35% of the amount deposited');
-  assert.equal(fees['Auto-exit fee'].value, '0.2% of the position’s value at exit');
+  // Changed on purpose 2026-10-30 (QA round 2, the owner's Q1): Auto-exit's base said in full, principal included.
+  assert.equal(fees['Auto-exit fee'].value, '0.2% of the position’s value, principal included');
   assert.equal(fees['Network gas'].value, 'Paid by the wallet that sends it');
   assert.deepEqual(Object.keys(fees), ['Assisted swap fee', 'Deposit from another network', 'Domino service fee', 'Auto-exit fee', 'Network gas', 'Pool trading fee']);
   // Spec F7 §1.6 "Sem tarifa Domino": what carries no Domino fee, said once.
@@ -827,7 +843,8 @@ test('Domino V1 is deployed; the docs describe the new automation, which starts 
     assert.deepEqual(Object.keys(entry), ['name', 'status'], `${entry.name} carries no note`);
   }
   assert.match(sectionText(page('what-is-domino'), 'your-wallet-signs'), /It starts once your wallet sets it up\./);
-  assert.match(sectionText(page('your-automation'), 'domino-v1'), /Domino V1’s automation ends when the new one starts, with no migration: withdraw what V1 holds for you with Withdraw to wallet, then set up the new automation\./);
+  // Changed on purpose 2026-10-30 (QA round 2, N26): in plain words; the version's name is for Contracts.
+  assert.match(sectionText(page('your-automation'), 'domino-v1'), /Automation from Domino’s first contracts ends when the new one starts, with no migration: withdraw what it holds with Withdraw to wallet, then set up the new automation\./);
   assert.match(sectionText(page('what-is-domino'), 'built-on-uniswap'), /Domino’s own contracts run beside them on each of its three networks: one acts on your positions, one runs your automation, one carries out Auto-exit\./);
   for (const entry of DOC_PAGES) {
     const text = textOf(entry);
@@ -872,6 +889,7 @@ test('round 6: "added back" everywhere, no Settings, and the docs describe the r
   assert.match(sectionText(create, 'four-steps'), /From a pool’s page, Create a position opens these same four steps, with that pool already chosen\./);
   for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /pool’s page, New position\b/, entry.slug);
   assert.doesNotMatch(textOf(create), /largest TVL first/);
+  // 2026-10-30 (QA round 2): New position's widths in the step's words (a Full range width came and went the same day).
   assert.match(sectionText(create, 'step-range'), /Closer and Wider are ready-made ranges around the pool’s price; Custom takes your own lowest and highest price\./);
   assert.match(sectionText(create, 'step-amount'), /Under Advanced, slippage tolerance is how far the price may move before a step stops\. It starts at 0\.5%; choose 0\.1% to 5%\./);
   // Point 7: technical facts live in Details on a pool's page, which Pools and fee tiers says of the protocol fee too.
@@ -924,7 +942,16 @@ test('titles are short, a summary is one line ending in a period, and every page
     // after the page was shortened elsewhere.
     // Wallet and sign-in is back under 450 (2026-10-01, the copy workstream): what this browser keeps and who sees the
     // address moved to Privacy, and the dated exception of 480 from integration pass 2a is gone.
-    const budget = entry.slug === 'glossary' ? 690 : entry.slug === 'non-custodial' || entry.slug === 'domino-compound' || entry.slug === 'positions' ? 480 : 450;
+    // Changed on purpose 2026-10-30 (QA round 2, the owner's approved items): 720 for the Glossary (N106: Out of range and
+    // Bridge; measured at 717); 570 for Non-custodial (N59: what still works if Domino's site is down; measured at 567);
+    // 470 for Manage a position (N49: what pauses compounding and what pauses Auto-exit, said apart; measured at 467); 460
+    // for Your automation (N48: who holds Domino-compound's positions; the owner's Q1: one fee wording; measured at 457).
+    // Changed on purpose 2026-10-30 (QA round 2, review of N59): 580 for Non-custodial (the explorer that shows the code on
+    // each network, Robin Etherscan on Robinhood Chain; measured at 576); 465 for Your automation (Leave automation links
+    // to it; measured at 464).
+    // Changed on purpose 2026-10-30 (QA round 2, N73): 460 for New position (measured at 454 with a fourth width, Full
+    // range, which came and went the same day; the page is shorter without it).
+    const budget = entry.slug === 'glossary' ? 720 : entry.slug === 'non-custodial' ? 580 : entry.slug === 'manage-position' ? 470 : entry.slug === 'your-automation' ? 465 : entry.slug === 'new-position' ? 460 : entry.slug === 'domino-compound' || entry.slug === 'positions' ? 480 : 450;
     assert.ok(words <= budget, `${entry.slug} has ${words} words`);
   }
 });
@@ -950,8 +977,13 @@ test('the docs source stays inside its budget in the entry bundle', (t) => {
   // successors' rules and the code comments that date them): 30,800 -> 31,000; measured at 30,870 bytes.
   // Changed on purpose 2026-10-06 (rugged97's delta of 5 Oct: the balances Domino reads on the other networks, and dollars
   // on the new contracts' rows): 31,000 -> 31,100; measured at 31,033 bytes.
-  t.diagnostic(`src/lib/docs: ${files.length} files, ${Buffer.byteLength(text)} bytes, ${size} bytes gzip (budget 31100)`);
-  assert.ok(size <= 31_100, `the docs source is ${size} bytes gzip, over the 31,100 byte budget`);
+  // Changed on purpose 2026-10-30 (QA round 2, the owner's approved items Q1, Q32, N24, N26, N48, N49, N59, N70, N71, N106):
+  // 31,100 -> 32,200 for the pages' new sentences, the glossary's two terms, the site-down section and each address row's
+  // networks; measured at 32,151 bytes.
+  // Changed on purpose 2026-10-30 (QA round 2, review): 32,200 -> 32,300 for the site-down section's explorers and Your
+  // automation's link to it; measured at 32,211 bytes.
+  t.diagnostic(`src/lib/docs: ${files.length} files, ${Buffer.byteLength(text)} bytes, ${size} bytes gzip (budget 32300)`);
+  assert.ok(size <= 32_300, `the docs source is ${size} bytes gzip, over the 32,300 byte budget`);
 });
 
 // ---------------------------------------------------------------------------
@@ -1133,7 +1165,7 @@ test('the 2026-10 package: one-sided ranges, the history read at chosen blocks, 
   // Changed on purpose 2026-10-01 (fix round 1): token balances are kept for a viewed address too (lib/walletMemory.ts).
   // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): a deposit from another network is kept until the
   // person removes it (finance/v2/crosschain.ts createDepositJournal: public data only, dropped by "Remove from this list").
-  assert.deepEqual(kept, { 'Your positions': 'A day', 'Token balances': 'A day', 'Managed positions': '6 hours', Receipts: '30 days', 'A position’s fee history': '7 days', 'Token names': '30 days', 'Deposits from another network': 'Until you remove one' });
+  assert.deepEqual(kept, { 'Your positions': 'A day', 'Token balances': 'A day', 'Automated positions': '6 hours', Receipts: '30 days', 'A position’s fee history': '7 days', 'Token names': '30 days', 'Deposits from another network': 'Until you remove one' });
   assert.match(src('finance/v2/crosschain.ts'), /drop\(owner, entry\) \{/);
   assert.match(src('v2in/funds/copy.ts'), /remove: 'Remove from this list'/);
   assert.match(src('lib/walletMemory.ts'), /WALLET_MEMORY_MAX_AGE_MS = 86_400_000|WALLET_MEMORY_MAX_AGE_MS = 24 \* 60 \* 60 \* 1_?000/, 'the Wallet card keeps a day');
@@ -1142,7 +1174,8 @@ test('the 2026-10 package: one-sided ranges, the history read at chosen blocks, 
   const connect = sectionText(page('wallet'), 'connect');
   assert.match(connect, /offers MetaMask, Coinbase Wallet and Trust Wallet to open it in\./);
   const dialog = src('components/wallet/WalletSessionDialog.tsx');
-  for (const app of ['MetaMask', 'Coinbase Wallet', 'Trust Wallet', 'Rabby']) assert.ok(dialog.includes(`>${app}<`), app);
+  // Changed on purpose 2026-10-30 (QA round 2, N56): the wallet apps are one list of [id, name, link] (WalletApps).
+  for (const app of ['MetaMask', 'Coinbase Wallet', 'Trust Wallet', 'Rabby']) assert.ok(dialog.includes(`>${app}<`) || dialog.includes(`', '${app}', \``), app);
   const walletConnect = /^[0-9a-f]{32}$/.test(/WALLETCONNECT_PROJECT_ID = '([^']*)'/.exec(src('config/walletConnect.ts'))[1]);
   assert.equal(/WalletConnect/.test(connect), walletConnect, 'WalletConnect is named where the dialog offers it, and only there');
   // Wallet requests: the buttons by the words they wear (components/create/CreatePosition.tsx, lib/create/copy.ts).

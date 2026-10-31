@@ -185,6 +185,55 @@ test('the route table: every page App draws, the older spellings, and Markets ta
   assert.doesNotMatch(page, /\bimport\(|fetch|localStorage/, 'it reads and loads nothing');
 });
 
+// 2026-10-30 (QA round 2, final review shell-2): while a screen's chunk is on its way (App.tsx Pending), the tab already
+// says what that screen will call itself; the docs said "Domino docs" and both compounding setups "Set up automation".
+test('the tab’s name while a screen loads is the name the screen gives itself', () => {
+  const { pendingTitle } = built('routeTable');
+  const { sequenceIntent } = built('lib/create/sequenceDefaults');
+  // The page and the param as App's parseHash gives them, from the hash alone.
+  const at = (hash, v2 = true) => {
+    const [, first = '', second = ''] = hash.replace(/^#/, '').split('#')[0].split('/');
+    return pendingTitle(Object.hasOwn(ROUTES, first) ? ROUTES[first] : 'not-found', second === 'network' ? '' : second, hash, v2);
+  };
+  // The docs: "Docs · Domino", as screens/Docs.tsx names its index; a page then adds its own title in front.
+  for (const hash of ['#/docs', '#/docs/fees', '#/docs/auto-exit#fee', '#/settings']) assert.equal(at(hash), 'Docs · Domino', hash);
+  const docs = source('screens/Docs.tsx');
+  assert.match(docs, /useRouteTitle\(page \? `\$\{page\.title\} · Docs` : missing \? 'Page not found' : 'Docs'\)/);
+  assert.match(source('lib/routeTitle.ts'), /useTabTitle\(name \? `\$\{name\} · \$\{SITE\}` : SITE\)/);
+  assert.match(source('lib/routeTitle.ts'), /const SITE = 'Domino'/);
+  // Set up automation: the mode chosen on Automate, in either link order, as SequenceShell's Frame names the page (V2).
+  const named = { compound: 'Set up Auto-compound · Domino', domino: 'Set up Domino-compound · Domino' };
+  for (const hash of ['#/sequence', '#/sequence/', '#/sequence/9', '#/sequence/compound', '#/sequence/compound/9', '#/sequence/9/compound', '#/sequence/compound/base-v4-9',
+    '#/sequence/domino', '#/sequence/domino/12', '#/sequence/12/domino', '#/sequence/base-v4-9/domino', '#/sequence/09/domino', '#/sequence/toString', '#/sequence/constructor/compound']) {
+    const { mode } = sequenceIntent(hash.replace(/^#/, '').split('#')[0].split('/').slice(1));
+    assert.equal(at(hash), mode ? named[mode] : 'Set up automation · Domino', hash);
+  }
+  for (const hash of ['#/sequence/protection', '#/sequence/protection/9', '#/sequence/protection/base-v3-9']) assert.equal(at(hash), 'Set up Auto-exit · Domino', hash);
+  const frame = source('screens/SequenceShell.tsx');
+  assert.match(frame, /const title = protection \? 'Set up Auto-exit' : named \? `Set up \$\{named\.title\}` : 'Set up automation'/);
+  const choices = source('components/automate/copy.ts');
+  assert.match(choices, /compound: \{ title: 'Auto-compound',/);
+  assert.match(choices, /domino: \{ title: 'Domino-compound',/);
+  // A build without V2 has one frame title for every setup link (screens/SequenceLegacy.tsx <Frame>).
+  for (const hash of ['#/sequence/compound', '#/sequence/domino/9', '#/sequence/protection']) assert.equal(at(hash, false), 'Set up automation · Domino', hash);
+  // The rest are unchanged.
+  assert.equal(at('#/markets'), 'Markets · Domino');
+  assert.equal(at(`#/markets/0x${'ab'.repeat(20)}`), 'Token pools · Domino');
+  assert.equal(at('#/markets/network/base'), 'Token pools · Domino');
+  assert.equal(at('#/positions/receipts'), 'Receipts · Domino');
+  assert.equal(at('#/positions/4101'), 'Position #4101 · Domino');
+  assert.equal(at('#/positions'), 'Positions · Domino');
+  assert.equal(at('#/new'), 'New position · Domino');
+  assert.equal(at('#/automate'), 'Automate · Domino');
+  assert.equal(at('#/nope'), null);
+  assert.equal(pendingTitle('constructor', '', '#/constructor', true), null, 'only a page’s own name');
+  // App names the pending tab through it, with the build's flag; the entry imports no registry or copy module for it.
+  const app = source('App.tsx');
+  assert.match(app, /const title = pendingTitle\(page, param, window\.location\.hash, __DOMINO_V2__\)/);
+  assert.doesNotMatch(app, /function pendingTitle|Domino docs/);
+  assert.doesNotMatch(source('routeTable.ts'), /^import /m, 'the route table keeps no imports (vite.config.ts and the boot data read it)');
+});
+
 // ---------------------------------------------------------------------------
 // F1, F2, F3: the boot script, and the table the build writes beside it.
 // ---------------------------------------------------------------------------
@@ -405,8 +454,9 @@ test('the docs say what this browser keeps, for how long, and how it goes; nothi
   const DAY = 86_400_000;
   assert.deepEqual([copies.KEPT_MAX_AGE_MS.owned, copies.WALLET_MEMORY_MAX_AGE_MS, copies.KEPT_MAX_AGE_MS.managed, copies.KEPT_MAX_AGE_MS.receipts, copies.KEPT_MAX_AGE_MS.tokens], [DAY, DAY, DAY / 4, 30 * DAY, 30 * DAY], 'the ages the page states');
   // Changed on purpose 2026-10-01 (fix round 1): token balances are kept for a viewed address too, so they have a row of
-  // their own beside your positions.
-  for (const row of ["{ label: 'Your positions', value: 'A day' }", "{ label: 'Token balances', value: 'A day', note: 'Of your wallet and of an address you view.' }", "{ label: 'Managed positions', value: '6 hours'", "{ label: 'Receipts', value: '30 days'", "{ label: 'Token names', value: '30 days'"]) assert.ok(docs.includes(row), row);
+  // their own beside your positions. Changed on purpose 2026-10-30 (QA round 2, N26): the list is Automated positions, as
+  // Positions names it.
+  for (const row of ["{ label: 'Your positions', value: 'A day' }", "{ label: 'Token balances', value: 'A day', note: 'Of your wallet and of an address you view.' }", "{ label: 'Automated positions', value: '6 hours'", "{ label: 'Receipts', value: '30 days'", "{ label: 'Token names', value: '30 days'"]) assert.ok(docs.includes(row), row);
   assert.doesNotMatch(docs, /servers keep nothing about your wallet/, 'the sign-in service knows a signed-in address, for its session');
   assert.doesNotMatch(source('lib/docs/pages/introduction.ts'), /stores nothing about it|keep nothing about it/);
   // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): Positions also lists the rows read from Domino's

@@ -536,19 +536,32 @@ test('a WalletConnect wallet’s reads, refused by the site, stop the step as no
 });
 
 // Fix round 1 (2026-10-01): a phone's wallet-app links open the site they were tapped on when it is the gated preview
-// alias (where they used to send a tester to production), and domino.money from anywhere else: fixed links either way,
-// never one the page builds (tests/session.source-guard.test.mjs). tests/session.browser.test.mjs taps the site's.
-test('the wallet-app links open the preview alias there, domino.money everywhere else, each a fixed link', () => {
+// alias (where they used to send a tester to production), and domino.money from anywhere else. Changed on purpose
+// 2026-10-30 (QA round 2, N56): each wallet's fixed link on that fixed site, followed by the open route only when it
+// passes the access gate's own pattern (the same text as functions/_lib/gate.ts), and none from Home, so Home's links are
+// the fixed ones they were (tests/session.source-guard.test.mjs). tests/session.browser.test.mjs taps the site's.
+test('the wallet-app links open the preview alias there, domino.money everywhere else, each a fixed link plus a checked route', () => {
   const dialog = readFileSync(new URL('../src/components/wallet/WalletSessionDialog.tsx', import.meta.url), 'utf8');
   assert.match(dialog, /const onPreview = typeof location !== 'undefined' && location\.origin === PREVIEW_ALIAS/);
-  for (const [preview, site] of [
-    ['https://metamask.app.link/dapp/preview.domino-app-e65.pages.dev/', 'https://metamask.app.link/dapp/domino.money/'],
-    ['https://go.cb-w.com/dapp?cb_url=https%3A%2F%2Fpreview.domino-app-e65.pages.dev%2F', 'https://go.cb-w.com/dapp?cb_url=https%3A%2F%2Fdomino.money%2F'],
-    ['https://link.trustwallet.com/open_url?coin_id=60&url=https%3A%2F%2Fpreview.domino-app-e65.pages.dev%2F', 'https://link.trustwallet.com/open_url?coin_id=60&url=https%3A%2F%2Fdomino.money%2F'],
-  ]) {
-    assert.ok(dialog.includes(`{onPreview ? (\n            <a className="dm-wallet-row" href="${preview}"`), preview);
-    assert.ok(dialog.includes(`) : (\n            <a className="dm-wallet-row" href="${site}"`), site);
+  assert.match(dialog, /const site = onPreview \? 'preview\.domino-app-e65\.pages\.dev' : 'domino\.money'/);
+  assert.match(dialog, /const page = encodeURIComponent\(`https:\/\/\$\{site\}\/\$\{route\}`\)/);
+  for (const link of [
+    "['io.metamask', 'MetaMask', `https://metamask.app.link/dapp/${site}/${route}`]",
+    "['com.coinbase.wallet', 'Coinbase Wallet', `https://go.cb-w.com/dapp?cb_url=${page}`]",
+    "['com.trustwallet.app', 'Trust Wallet', `https://link.trustwallet.com/open_url?coin_id=60&url=${page}`]",
+  ]) assert.ok(dialog.includes(link), link);
+  // From Home (no route) the links are byte for byte the fixed ones.
+  for (const site of ['preview.domino-app-e65.pages.dev', 'domino.money']) {
+    const page = encodeURIComponent(`https://${site}/`);
+    assert.equal(page, site === 'domino.money' ? 'https%3A%2F%2Fdomino.money%2F' : 'https%3A%2F%2Fpreview.domino-app-e65.pages.dev%2F');
   }
+  // The route is the gate's own pattern, the same text, and Home carries none.
+  const gate = readFileSync(new URL('../functions/_lib/gate.ts', import.meta.url), 'utf8');
+  const pattern = (source) => /const NEXT_PATTERN = ('[^']+')/.exec(source)?.[1];
+  assert.ok(pattern(gate));
+  assert.equal(pattern(dialog), pattern(gate), 'the dialog checks the route with the gate’s own pattern');
+  assert.match(dialog, /const home = \(hash\.replace\(\/\^#\/, ''\)\.split\('#'\)\[0\] \|\| '\/'\) === '\/'/);
+  assert.match(dialog, /return !home && new RegExp\(NEXT_PATTERN\)\.test\(hash\) \? hash : ''/);
   const mode = require('../.test-build/app/src/chains/elysium/mode.js');
   assert.equal(mode.PREVIEW_ALIAS, 'https://preview.domino-app-e65.pages.dev', 'the alias the links name');
   const copy = readFileSync(new URL('../src/components/wallet/copy.ts', import.meta.url), 'utf8');

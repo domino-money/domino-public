@@ -71,6 +71,29 @@ export const sameAddress = (a: string, b: string) => a.toLowerCase() === b.toLow
 /** `0x1234…abcd`: for tight places only. The full address is always shown or reachable beside it. */
 export const shortAddress = (value: string) => (value.length > 14 ? `${value.slice(0, 6)}…${value.slice(-4)}` : value)
 
+/** The short form keeping `prefix` leading characters ("0x5fc5360d…d168"); shortAddress's own at 6. */
+export const shortAddressWith = (value: string, prefix: number) => (value.length > prefix + 8 ? `${value.slice(0, prefix)}…${value.slice(-4)}` : value)
+
+/**
+ * How many leading characters each of `values` keeps in its short form so that no two listed together read alike (QA
+ * round 2, N30: the real USDG and a look-alike both read "0x5fc5…d168"): 6 unless another one shares those and its last
+ * four, then as many as tell them apart ("0x5fc5360d…d168"). By lowercase address; one address listed twice is one.
+ */
+export function shortPrefixes(values: readonly string[]): Map<string, number> {
+  const byShort = new Map<string, string[]>()
+  for (const value of new Set(values.map((item) => item.toLowerCase()))) {
+    const key = shortAddress(value)
+    byShort.set(key, [...(byShort.get(key) ?? []), value])
+  }
+  const out = new Map<string, number>()
+  for (const members of byShort.values()) {
+    let prefix = 6
+    while (members.length > 1 && prefix < 38 && new Set(members.map((value) => shortAddressWith(value, prefix))).size < members.length) prefix += 1
+    for (const value of members) out.set(value, prefix)
+  }
+  return out
+}
+
 /**
  * Narrows loaded rows by address text. Hex only, so a query can never match a
  * symbol: "TOKEN" finds nothing, "0x1111" finds the rows whose address holds it.

@@ -13,14 +13,18 @@ import { askAgainLater, readWithin, type ScreenOutcome } from '../../../lib/read
 import type { ReadOutcome, ReadRequests, ReadSource } from '../../../lib/read/types'
 import { usePoolStandIns, useFallbackRow } from '../../../lib/read/useFallback'
 import { useNow } from '../../../lib/read/useNow'
-import { APR_SLIVER } from '../../../lib/format/apr'
+import { APR_SLIVER, aprDigits } from '../../../lib/format/apr'
 import { FEE_VENUE, feeWords } from '../../../lib/format/fee'
+import { networkName } from '../../../lib/networkName'
 import { useLoadMilestone } from '../../../lib/useLoadMilestone'
+import { FEE_MEANING } from '../../explore/feeMeaning'
+import { InfoTip } from '../../InfoTip'
 import { MetricCell, TurnoverCell } from '../../explore/MetricCell'
 import { PoolTokenLabel } from '../../PoolCatalogueIdentity'
 import { TokenMarkPair } from '../../TokenIcon'
 import { FigureDash, Skeleton, Stat, StatStrip } from '../../ui'
 import { PoolActivitySummary } from '../../pool/PoolActivitySummary'
+import { ExplorerAddress } from '../../pool/ExplorerAddress'
 import { PoolAutomation } from '../../pool/PoolAutomation'
 import { PoolEarnings } from '../../pool/PoolEarnings'
 import { PoolRangeGuide } from '../../pool/PoolRangeGuide'
@@ -59,6 +63,9 @@ export const OVERVIEW_EVERY = { collecting: 5_000, refused: 30_000, settled: 60_
  * asks at the settled pace. A pool the store never collects used to be asked every 5 s for as long as the page was open.
  */
 export const COLLECTING_ASKS = 12
+
+/** Uniswap's usual fixed fee tiers, in pips (0.01%, 0.05%, 0.30%, 1.00%): any other fixed fee is said to be non-standard (N72). */
+const STANDARD_FEE_PIPS: ReadonlySet<number> = new Set([100, 500, 3000, 10_000])
 
 /** Which optional routes are listed, from the source's capabilities answer: no read, no place in the queue. A failed answer lists nothing. */
 async function listedRoutes(source: ReadSource, signal: AbortSignal): Promise<Listed> {
@@ -161,11 +168,13 @@ function refusal(option: PoolOption): string {
  * changes) has no estimate and no typical range: what Domino can do here says
  * why, beside its chart.
  */
-export function PoolWorkspace({ source, option, onOption, actions, painted, notice, moment = false }: {
+export function PoolWorkspace({ source, option, onOption, actions, earnAction, painted, notice, moment = false }: {
   source: ReadSource
   option: PoolOption
   onOption: (next: PoolOption) => void
   actions?: ReactNode
+  /** QA round 2, N84 (the owner's yes): the way into New position again, under the earnings estimate, one-column page only. */
+  earnAction?: ReactNode
   /** The first layout drawn for this pool (a copy this browser painted at once): it plays the page's load moment (v4-pool.css). */
   moment?: boolean
   /** What the page must say before anything else (a look-alike token, a pool off the list): under the pool's name (audit I1). */
@@ -293,6 +302,7 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
   const [currency0, currency1] = option.currencies
   const price = poolPrice(option, now.wall)
   const fee = option.fee === 'Dynamic' ? 'Dynamic fee' : option.fee
+  const network = networkName(base.chainId)
   const usable = optionUsableForDomino(option)
   const priceNow = price.state === 'usable' ? priceAt(price.tick, price.decimals, quoteIndex) : null
   // The typical range New position starts on, worked out on the price now each time it is drawn (round 6 review): a
@@ -308,6 +318,12 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
     ? `Provider market observation${answered?.origin === 'stored' ? ', as the read service stored it' : ''}.`
     : undefined
   const fromHistory = (metric: Metric) => metric.source === undefined && metric.state !== 'unavailable' && metric.state !== 'rejected' && metric.state !== 'absent'
+  // Where a figure comes from, in its (i) tip, which a tap or the keyboard opens (QA round 2, N38): its hover title alone
+  // never reached touch or keyboard users. Said only of a market data provider's figure, never of Domino's own history.
+  // The same words as the figures sheet's Details (PoolFiguresDialog): "not checked by Domino".
+  const reported = (metric: Metric | null | undefined) => (metric && metric.source !== undefined ? ' Reported by a market data provider, not checked by Domino.' : '')
+  // A block number as the activity card writes it, grouped ("101,310,246"), one form for it on the page (QA round 2 review).
+  const blockText = (block: number) => block.toLocaleString('en-US')
   const figure = (node: ReactNode, standIn?: ReactNode) => (shown ? <span className="dm-arrive">{node}</span> : standIn ? <span className="dm-arrive">{standIn}</span> : loading ? <Skeleton className="dm-pool-fig-skel" /> : <FigureDash />)
   const metricsFailed = !!metricsRead && metricsRead.state !== 'ok' && metricsRead.state !== 'aborted'
   const apr = shown?.feeAprPercent
@@ -319,6 +335,9 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
   const aprStandIn = !aprFromHistory && estimate?.text == null ? (shown?.aprFallback ?? standIns?.apr ?? null) : null
   const aprNumber = aprFromHistory && apr ? numberOf(apr.value) : estimate?.text && estimate.text !== APR_SLIVER ?numberOf(shown?.feeAprEstimate?.data?.feeAprEstimate24hPercent ?? estimate.text) : aprStandIn ? numberOf(aprStandIn.percent) : null
   const savedApr = aprFromHistory ? apr?.state === 'stale' : aprStandIn ? aprStandIn.basis === 'kept' || aprStandIn.basis === 'selection' : estimate?.state === 'stale'
+  // The digits the APR tile shows for that same rate (QA round 2, N8): the earnings sentence says "about 38.8% a year"
+  // under a "38.8% est." tile, never its own rounding of the number (it read "about 38.9%"). Formula untouched (D9).
+  const aprShown = aprNumber === null ? null : aprFromHistory && apr ? percentText(apr) : estimate?.text && estimate.text !== APR_SLIVER ? estimate.text : aprStandIn ? aprDigits(aprStandIn.percent) : null
   // A pool Domino can't open positions in is never estimated (hooks, a fee that changes): its dash says so in words.
   // The money in the pool, which shares its fees with an amount added (the estimate), where the TVL is a figure.
   const tvlMetric = shown?.tvlUsd ?? standIns?.tvl ?? null
@@ -361,9 +380,14 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
         <div className="min-w-0">
           <h1 className="dm-display dm-display-h1"><PoolTokenLabel token={base} /> <span className="dm-pool-slash">/</span> <PoolTokenLabel token={quote} /></h1>
           <div className="dm-pool-chips">
-            {/* The fee as every chip writes it (lib/format/fee.ts, audit E21): "Uniswap · 0.30% fee", drawn as two joined
-                segments (V4 .tag), the "·" kept in the text and unseen. */}
-            <span className="dm-chip"><span className="dm-fee-venue">{FEE_VENUE}</span><span className="dm-fee-sep"> · </span><span className="dm-fee-value">{feeWords(fee)}</span></span>
+            {/* The fee as every chip writes it (lib/format/fee.ts, audit E21): "Uniswap · 0.30% fee", drawn as joined
+                segments (V4 .tag), the "·" kept in the text and unseen. QA round 2, Q23 (the owner: the network on every
+                pool): the pool's network is the middle segment, as the Markets row the page was opened from draws it
+                ("Uniswap · Robinhood Chain · 0.30% fee"), by the app's one table of network names; Q28: what the fee is.
+                Changed on purpose 2026-10-30 (QA round 2, final review read-1): the fee segment opens that sentence as the
+                button of a tip (InfoTip, no (i) mark on the chip), which a tap or the keyboard opens as the key figures' do (N38); a hover title alone
+                reached neither, and the chip keeps its short text. */}
+            <span className="dm-chip"><span className="dm-fee-venue">{FEE_VENUE}</span><span className="dm-fee-sep"> · </span><span className="dm-fee-venue dm-fee-net" data-chain-chip={base.chainId}>{network}</span><span className="dm-fee-sep"> · </span><InfoTip label={`About the ${feeWords(fee).toLowerCase()}`} text={FEE_MEANING}><span className="dm-fee-value">{feeWords(fee)}</span></InfoTip></span>
           </div>
         </div>
       </div>
@@ -375,10 +399,10 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
     <div className="dm-pool-figures dm-pool-a-figs dm-lit" data-pool-figures="" data-market-read={shown ? (answered?.origin ?? 'read') : loading ? 'loading' : 'none'} data-market-reason={failure?.state}>
       <StatStrip cols={metricsListed ? 5 : 4} layout="tiles" className="dm-pool-stats">
         {aprFromHistory && apr
-          ? <Stat label="APR" info="What the pool’s fees come to over a year, from Domino’s own history of its last day. It describes the pool, not your position, and is not a promise." className="dm-pool-stat">{figure(<MetricCell metric={apr} percent tone="in" />)}</Stat>
-          : <Stat label="APR" info="What the pool’s fees come to over a year, estimated from its last day of trading. It describes the pool, not your position, and is not a promise." className="dm-pool-stat" sub={(shown || aprStandIn) && !usable && aprNumber === null ? 'Not estimated for this pool' : undefined}>{figure(shown && (aprStandIn ? <FallbackApr apr={aprStandIn} compact /> : <PoolAprEstimate observation={shown.feeAprEstimate} now={now} compact />), aprStandIn && <FallbackApr apr={aprStandIn} compact />)}</Stat>}
-        <Stat label="24h volume" info="How much people swapped through the pool over the last 24 hours." className="dm-pool-stat">{figure(shown && <MetricCell metric={shown.volume24hUsd} />, standIns?.volume && <MetricCell metric={standIns.volume} />)}</Stat>
-        <Stat label="TVL" info="Total value locked: the reported value of all tokens in the pool." className="dm-pool-stat">{figure(shown && <MetricCell metric={shown.tvlUsd} />, standIns?.tvl && <MetricCell metric={standIns.tvl} />)}</Stat>
+          ? <Stat label="APR" info="What the pool’s trading fees come to over a year, from Domino’s own history of the last 24 hours. It describes the pool, not your position, and is not a promise." className="dm-pool-stat">{figure(<MetricCell metric={apr} percent tone="in" />)}</Stat>
+          : <Stat label="APR" info="What the pool’s trading fees come to over a year, estimated from the last 24 hours. It describes the pool, not your position, and is not a promise." className="dm-pool-stat" sub={(shown || aprStandIn) && !usable && aprNumber === null ? 'Not estimated for this pool' : undefined}>{figure(shown && (aprStandIn ? <FallbackApr apr={aprStandIn} compact /> : <PoolAprEstimate observation={shown.feeAprEstimate} now={now} compact />), aprStandIn && <FallbackApr apr={aprStandIn} compact />)}</Stat>}
+        <Stat label="24h volume" info={`How much people swapped through the pool over the last 24 hours.${reported(shown?.volume24hUsd ?? standIns?.volume)}`} className="dm-pool-stat">{figure(shown && <MetricCell metric={shown.volume24hUsd} />, standIns?.volume && <MetricCell metric={standIns.volume} />)}</Stat>
+        <Stat label="TVL" info={`Total value locked: the value of all tokens in the pool.${reported(shown?.tvlUsd ?? standIns?.tvl)}`} className="dm-pool-stat">{figure(shown && <MetricCell metric={shown.tvlUsd} />, standIns?.tvl && <MetricCell metric={standIns.tvl} />)}</Stat>
         {metricsListed && (
           <Stat label="24h fees" info="What the pool’s swaps paid to the people who provide its money over the last 24 hours, from Domino’s own history." className="dm-pool-stat">
             {shown && !metricsRead ? <Skeleton className="dm-pool-fig-skel" /> : shown && metricsFailed ? <FigureDash /> : figure(shown && shown.lpFees24hUsd && <MetricCell metric={shown.lpFees24hUsd} />)}
@@ -405,7 +429,7 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
     </div>
 
     {usable && <div className="dm-pool-a-earn dm-lit">
-      <PoolEarnings apr={aprNumber} tvl={tvl} loading={loading || (metricsListed && !metricsRead && !!shown)} saved={aprNumber !== null && (savedApr || (tvl !== null && tvl > 0 && tvlMetric?.state === 'stale'))} />
+      <PoolEarnings apr={aprNumber} aprDigits={aprShown} tvl={tvl} loading={loading || (metricsListed && !metricsRead && !!shown)} saved={aprNumber !== null && (savedApr || (tvl !== null && tvl > 0 && tvlMetric?.state === 'stale'))} action={earnAction} />
     </div>}
 
     <div className="dm-pool-a-recent dm-v3-pool-recent dm-lit">
@@ -425,21 +449,27 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
     {/* Everything technical, at the end and closed until asked for, as on a position's page. */}
     <details className="dm-card dm-pool-details dm-pool-a-details dm-lit" data-pool-details="">
       <summary className="dm-pool-details-head">
-        <h2 className="dm-title">Pool details</h2>
+        {/* Changed on purpose 2026-10-30 (QA round 2, Q34): named for what it holds, as the docs call it. */}
+        <h2 className="dm-title">Technical details</h2>
         <span aria-hidden="true" className="dm-pool-details-chevron" />
       </summary>
       <dl className="dm-kv dm-kv--two dm-pool-kv">
+        <div><dt>Network</dt><dd data-chain-chip={base.chainId}>{network}</dd></div>
         <div>
           <dt>Pool id</dt>
           <dd className="dm-pool-kv-id"><Address value={option.key} /><CopyButton value={option.key} label="Copy pool id" /></dd>
         </div>
-        <div><dt><PoolTokenLabel token={currency0} /></dt><dd className="text-fg-muted"><Address value={currency0.address} short /></dd></div>
-        <div><dt><PoolTokenLabel token={currency1} /></dt><dd className="text-fg-muted"><Address value={currency1.address} short /></dd></div>
-        <div><dt>Fee</dt><dd>{fee === 'Dynamic fee' ? fee : `${fee} · fixed`}</dd></div>
+        {/* QA round 2, Q34: the chain's own ETH has no contract; its zero address is named for what it is. N24 (the
+            owner's yes): a token's contract opens on the pool's network's explorer; the pool id stays unlinked. */}
+        <div><dt><PoolTokenLabel token={currency0} /></dt><dd className="text-fg-muted">{currency0.address === NATIVE_CURRENCY ? <>Native ETH (<Address value={currency0.address} short />)</> : <ExplorerAddress address={currency0.address} chainId={base.chainId}><SymbolText token={currency0} /></ExplorerAddress>}</dd></div>
+        <div><dt><PoolTokenLabel token={currency1} /></dt><dd className="text-fg-muted">{currency1.address === NATIVE_CURRENCY ? <>Native ETH (<Address value={currency1.address} short />)</> : <ExplorerAddress address={currency1.address} chainId={base.chainId}><SymbolText token={currency1} /></ExplorerAddress>}</dd></div>
+        {/* QA round 2, N72 (the owner's option b): a fixed fee off Uniswap's usual tiers says so here, inside the closed
+            details only, with no version named. */}
+        <div><dt>Fee</dt><dd data-fee-tier={fee === 'Dynamic fee' ? undefined : STANDARD_FEE_PIPS.has(option.feePips) ? 'standard' : 'non-standard'}>{fee === 'Dynamic fee' ? fee : `${fee} · fixed${STANDARD_FEE_PIPS.has(option.feePips) ? '' : ' · non-standard'}`}</dd></div>
         {protocol && (
           <div data-protocol-fee={protocol.state}>
             <dt>Protocol fee</dt>
-            <dd title={protocol.state === 'invalid' ? 'The pool’s protocol fee could not be read as two directional rates.' : `Taken from the token a swap sells into the pool, before the LP fee. Packed value ${option.protocolFeeRaw}, read at block ${option.block}.`}>
+            <dd title={protocol.state === 'invalid' ? 'The pool’s protocol fee could not be read as two directional rates.' : `Taken from the token a swap sells into the pool, before the LP fee. Packed value ${option.protocolFeeRaw}, read at block ${blockText(option.block)}.`}>
               {protocol.state === 'none' ? 'None' : protocol.state === 'invalid' ? '—' : protocol.zeroForOnePips === protocol.oneForZeroPips
                 ? protocol.zeroForOne
                 : <>{protocol.zeroForOne} selling <SymbolText token={currency0} /> · {protocol.oneForZero} selling <SymbolText token={currency1} /></>}
@@ -448,11 +478,11 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
         )}
         {option.tokenMetadata === 'partial' && <div><dt>Token metadata</dt><dd className="text-fg-muted">{COPY.picker.partialMetadata}</dd></div>}
         <div><dt>Tick spacing</dt><dd>{option.tickSpacing}</dd></div>
-        <div><dt>Hooks</dt><dd>{option.hooks === NATIVE_CURRENCY ? 'None' : <Address value={option.hooks} short />}</dd></div>
+        <div><dt>Hooks</dt><dd>{option.hooks === NATIVE_CURRENCY ? 'None' : <ExplorerAddress address={option.hooks} chainId={base.chainId}>Hooks contract</ExplorerAddress>}</dd></div>
         <div>
           <dt>Pool price</dt>
           <dd>{price.state === 'usable'
-            ? <span className="tnum" title={`${price.text}, read at block ${price.block}.`}>{price.text.replace(/^≈/, '')} <SymbolText token={price.quote} /> per <SymbolText token={price.base} /><span className="dm-provenance"> · block {price.block}</span>{price.partial && ' · symbol not read'}</span>
+            ? <span className="tnum" title={`${price.text}, read at block ${blockText(price.block)}.`}>{price.text.replace(/^≈/, '')} <SymbolText token={price.quote} /> per <SymbolText token={price.base} /><span className="dm-provenance"> · block {blockText(price.block)}</span>{price.partial && ' · symbol not read'}</span>
             : <FigureDash />}</dd>
         </div>
         <div><dt>24h vol / TVL</dt><dd>{shown ? <TurnoverCell market={shown} /> : loading ? <Skeleton className="ml-auto h-4 w-12" /> : <FigureDash />}</dd></div>
@@ -467,7 +497,7 @@ export function PoolWorkspace({ source, option, onOption, actions, painted, noti
           {/* Changed 2026-10-01 (audit I1): what was checked is the pool, never its tokens; "Verified" read as vetted tokens. */}
           <dt>Pool read</dt>
           <dd title="The pool was read on Robinhood Chain and matches its id. Its tokens are not checked or endorsed.">
-            On chain at block {option.block} · {option.kind === 'stored' ? 'stored on-chain observation' : option.kind === 'discovery' ? 'found by provider discovery' : `from the catalogue (${option.catalogue?.source === 'initialize_event' ? 'initialize event' : 'verified observation'} at block ${option.catalogue?.block})`}
+            On chain at block {blockText(option.block)} · {option.kind === 'stored' ? 'stored on-chain observation' : option.kind === 'discovery' ? 'found by provider discovery' : `from the catalogue (${option.catalogue?.source === 'initialize_event' ? 'initialize event' : 'verified observation'} at block ${option.catalogue ? blockText(option.catalogue.block) : ''})`}
             {option.requestedById && ' · asked for by id'}
           </dd>
         </div>

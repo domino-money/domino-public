@@ -151,15 +151,24 @@ export function moveOf(field: TriggerField, orientation: PriceOrientation): Pric
 }
 
 /**
- * A trigger's price as the screens write a range's ends (src/v2in/automate/tokens.ts rangeWords: six significant
- * digits, the integer part grouped), in an orientation; null for a trigger that is off or a token whose decimals are
- * unknown (never guessed).
+ * A trigger's price as the screens write a range's ends, in an orientation; null for a trigger that is off or a token
+ * whose decimals are unknown (never guessed). Also the automation screens' range ends (src/v2in/automate/tokens.ts
+ * rangeWords).
+ *
+ * Changed on purpose 2026-10-30 (QA round 2, N2: the same range read "2,998.90" on V2 Review and the position page and
+ * "2,998.9" on its Auto-exit line): src/v2/plan/present.ts priceText's rule, the integer part grouped: from 1,000 up,
+ * exactly two decimals; from 1 to 1,000, six significant digits with at least two decimals; below 1, six significant
+ * digits as before. Still exact, from the sqrt price itself (never a float).
  */
 export function edgePrice(sqrtPriceX96: bigint, decimals: PoolDecimals, orientation: PriceOrientation): string | null {
   if (sqrtPriceX96 <= 0n || decimals.decimals0 === null || decimals.decimals0 === undefined || decimals.decimals1 === null || decimals.decimals1 === undefined) return null
   try {
-    const [integer, fraction] = priceFromSqrtPriceX96(sqrtPriceX96, decimals, orientation, { significant: 6 }).split('.')
-    return fraction === undefined ? group(integer) : `${group(integer)}.${fraction}`
+    const at = (significant: number, rounding?: 'down') => priceFromSqrtPriceX96(sqrtPriceX96, decimals, orientation, { significant, rounding })
+    // The leading digit rounded down: "0.0003" below 1, else as many digits as the price's integer part ("2000").
+    const lead = at(1, 'down')
+    if (lead.startsWith('0')) return at(6)
+    const [integer, fraction = ''] = at(lead.length >= 4 ? lead.length + 2 : 6).split('.')
+    return `${group(integer)}.${fraction.padEnd(2, '0')}`
   } catch {
     return null
   }
@@ -169,7 +178,7 @@ export function edgePrice(sqrtPriceX96: bigint, decimals: PoolDecimals, orientat
 export interface EdgeWords {
   field: TriggerField
   move: PriceMove
-  /** "2,000" (six significant digits), or null when a token's decimals are unknown. */
+  /** "2,000.00" (the screens' price rule, edgePrice), or null when a token's decimals are unknown. */
   price: string | null
   sqrtPriceX96: bigint
 }

@@ -42,7 +42,7 @@ export const SlotBoundary = READ_SCREENS
   : null
 
 export const PoolFiguresSlot = READ_SCREENS
-  ? lazy<(props: { market: Market; onClose: () => void }) => ReactNode>(() => import('../../../components/read/screens').then((m) => ({ default: m.PoolFiguresDialog })))
+  ? lazy<(props: { market: Market; action?: ReactNode; onClose: () => void }) => ReactNode>(() => import('../../../components/read/screens').then((m) => ({ default: m.PoolFiguresDialog })))
   : null
 
 export const SlotFailed = READ_SCREENS

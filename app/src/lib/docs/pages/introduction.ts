@@ -30,14 +30,14 @@ export const WHAT_IS_DOMINO: DocPage = {
       id: 'three-features',
       title: 'One position, three ways',
       blocks: [
-        diagram('three-ways', 'What a position’s fees can do.', 'Three small scenes. Plain position: fees pile up beside the position. Auto-compound: fees go back into the same position, which grows. Domino-compound: fees open a second position one step higher.'),
+        // 2026-10-30 (QA2 N11, the owner): the three ways of Home and Automate; the drawing after them shows where fees go.
+        p('Every position starts plain, opened in ', doc('New position', 'new-position'), ': its fees wait in it until you collect them. Then, with ', b('Automate'), ', you can choose one of three ways for it:'),
         list(
-          [b('Plain position'), ': opened in ', doc('New position', 'new-position'), '. Its fees wait in it until you collect them.'],
           [doc('Auto-compound', 'auto-compound'), ': its fees go back into the same position, so it grows.'],
           [doc('Domino-compound', 'domino-compound'), ': near the top of its range, its fees open the next position one step higher.'],
+          [doc('Auto-exit', 'auto-exit'), ': closes the position by itself when the price reaches the end of its range.'],
         ),
-        p('Every position starts plain; you choose what its fees do later, with ', b('Automate'), '.'),
-        p(doc('Auto-exit', 'auto-exit'), ' can also close a position by itself when the price reaches the end of its range.'),
+        diagram('three-ways', 'What a position’s fees can do.', 'Three small scenes. Plain position: fees pile up beside the position. Auto-compound: fees go back into the same position, which grows. Domino-compound: fees open a second position one step higher.'),
       ],
     },
     {
@@ -45,10 +45,10 @@ export const WHAT_IS_DOMINO: DocPage = {
       title: 'Where things are',
       blocks: [
         list(
-          [doc('Markets', 'markets'), ': the pools you can use on Robinhood Chain, with a page for each.'],
+          [doc('Markets', 'markets'), ': today’s Robinhood Chain pools, a search that also finds Base and Arbitrum One tokens, and a page for each pool.'],
           [doc('New position', 'new-position'), ': four steps on Robinhood Chain, Base or Arbitrum One, then your wallet creates the position. Tokens on another network can be ', doc('brought over first', 'bring-funds'), '.'],
           [doc('Positions', 'positions'), ': your positions on Robinhood Chain, Base and Arbitrum One, each with a page where you ', doc('manage it', 'manage-position'), '.'],
-          [b('Automate'), ': the three ways and Auto-exit side by side, and where ', doc('Auto-compound', 'auto-compound'), ' and ', doc('Domino-compound', 'domino-compound'), ' are set up.'],
+          [b('Automate'), ': the three ways side by side, each with its set-up button.'],
         ),
       ],
     },
@@ -77,9 +77,9 @@ export const WHAT_IS_DOMINO: DocPage = {
 /** Whether the Connect dialog offers WalletConnect (wallet/walletConnect.ts): the docs name it only then. */
 const WALLETCONNECT = /^[0-9a-f]{32}$/.test(WALLETCONNECT_PROJECT_ID)
 
-/** 2026-10-01 (audit C3, C4): a phone, in the Connect dialog's words. What this browser keeps is on Privacy now. */
+/** 2026-10-01 (audit C3, C4): a phone or tablet (2026-10-30, N4), in the Connect dialog's words. What this browser keeps is on Privacy now. */
 const PHONE: Block = p(
-  'On a phone, open this site in your wallet app’s own browser: with none in the phone’s browser, ',
+  'On a phone or tablet, open this site in your wallet app’s browser: with no wallet in this browser, ',
   b('Connect wallet'),
   ' offers MetaMask, Coinbase Wallet and Trust Wallet to open it in.',
   ...(WALLETCONNECT ? [' It also offers ', b('WalletConnect'), ': scan its code with your wallet app, or open the app from it.'] : []),
@@ -88,13 +88,13 @@ const PHONE: Block = p(
 export const WALLET: DocPage = {
   slug: 'wallet',
   title: 'Wallet and sign-in',
-  summary: 'Connect a wallet from a computer or a phone, use Domino’s three networks, and sign in for quotes.',
+  summary: 'Connect a wallet from a computer, phone or tablet, use Domino’s three networks, and sign in for quotes.',
   sections: [
     {
       id: 'connect',
       title: 'Connect a wallet',
       blocks: [
-        p('A wallet holds your tokens and signs for you: an extension in a computer’s browser, or an app on a phone.'),
+        p('A wallet holds your tokens and signs for you: an extension in a computer’s browser, or a phone or tablet app.'),
         p(b('Connect wallet'), ', in the header, lists the wallets in this browser. Choose one to connect it. With none, it offers MetaMask and Rabby to install.'),
         PHONE,
         // Changed on purpose 2026-10-04 (the owner's UI round of 2026-10-03): the wallet dialog shows the address, not the app's name.
@@ -153,7 +153,7 @@ export const WALLET: DocPage = {
         list(
           ['A quote: for ', doc('New position', 'new-position'), ', and for Add liquidity, Change range or a withdrawal in one token on a position’s page.'],
           [doc('Bringing funds from another network', 'bring-funds'), '.'],
-          ['What Domino V1’s automation did, in Managed positions and Receipts on ', doc('Positions', 'positions', 'managed-positions'), '.'],
+          ['What older automation did, in Automated positions and Receipts on ', doc('Positions', 'positions', 'managed-positions'), '.'],
         ),
         p('Public pages need no sign-in, and neither does a step without a quote, such as collecting fees, closing a position, or setting up automation or Auto-exit.'),
       ],

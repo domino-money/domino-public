@@ -6,6 +6,7 @@ const require = createRequire(import.meta.url);
 const { protectionPositions, protectionSelection } = require('../../.test-build/app/src/v2in/automate/protectionPositions.js');
 const { v2Chain } = require('../../.test-build/app/src/v2/chains.js');
 const { automationState, rememberMandate, sessionMandatesFor } = require('../../.test-build/app/src/v2in/automate/store.js');
+const { setupWaiting } = require('../../.test-build/app/src/v2in/automate/setupPositions.js');
 const fixture = () => JSON.parse(readFileSync(new URL('../../../api-contracts/read-v6/fixtures/valid/portfolio.json', import.meta.url), 'utf8'));
 const portfolio = () => {
   const body = fixture();
@@ -60,6 +61,45 @@ test('protection picker cannot offer an existing, closed, foreign, hooked, stale
   body.chains[1].status = 'unavailable';
   assert.equal(protectionPositions(body, body.wallet).incomplete, true);
   assert.equal(protectionPositions(body, body.wallet).positions.length, 1, 'an unavailable network does not hide a proven eligible NFT elsewhere');
+});
+
+// 2026-10-30 (QA round 2, final review shell-1): Set up Auto-exit (ProtectionSetup.tsx) keeps its loading rows while one of
+// the wallet's own NFTs on an open network could not be judged, and shows "No positions available for Auto-exit" with New
+// position only when nothing is waiting; protectionPositions' `incomplete` alone (any network behind) never decides it.
+test('Auto-exit setup with nothing to offer: an NFT not judged yet keeps the loading rows; a wallet with none gets the plate', () => {
+  const open = (chainId) => chainId === 4663;
+  const offered = (body) => protectionPositions(body, body.wallet).positions.length;
+  for (const edit of [
+    (b) => { b.positions[0].state.freshness.status = 'stale'; },
+    (b) => { b.positions[0].state = { status: 'not_read' }; },
+    (b) => { b.chains.find((c) => c.chainId === 4663).status = 'stale'; },
+  ]) {
+    const body = portfolio(); edit(body);
+    assert.equal(offered(body), 0);
+    assert.equal(protectionPositions(body, body.wallet).incomplete, true);
+    assert.equal(setupWaiting(body, body.wallet, offered(body), open), true, 'loading rows, never "No positions available for Auto-exit"');
+    assert.equal(setupWaiting(body, body.wallet, offered(body), () => false), false, 'with every gate closed nothing is waited for');
+  }
+  // Truly none: an empty wallet with a network behind is incomplete for the picker, and still the plate at once.
+  const empty = portfolio();
+  empty.positions = [];
+  empty.chains[1].status = 'unavailable';
+  assert.equal(protectionPositions(empty, empty.wallet).incomplete, true);
+  assert.equal(setupWaiting(empty, empty.wallet, 0, open), false);
+  // A judged NFT Auto-exit cannot take (full range, already automated) is a fact: the plate.
+  for (const edit of [
+    (b) => { Object.assign(b.positions[0].state, { tickLower: -887220, tickUpper: 887220, pool: { ...b.positions[0].state.pool, tickSpacing: 60 } }); },
+    (b) => { b.positions[0].vault = { address: `0x${'1'.repeat(40)}`, role: 'root' }; },
+  ]) {
+    const body = portfolio(); edit(body);
+    assert.equal(offered(body), 0);
+    assert.equal(setupWaiting(body, body.wallet, offered(body), open), false);
+  }
+  // ProtectionSetup asks it with its joined gates, and draws the loading rows on it before the plate.
+  const screen = readFileSync(new URL('../../src/v2in/automate/ProtectionSetup.tsx', import.meta.url), 'utf8');
+  assert.match(screen, /const waiting = body !== null && !waitOver && setupWaiting\(body, owner, positions\.length, \(chainId\) => gates\[chainId\] !== null\)/);
+  assert.match(screen, /: !list \|\| waiting \? <div className="dm-card dm-acct-block dm-seq-loading" aria-busy="true" data-sequence-positions="failed">/);
+  assert.ok(screen.indexOf('!list || waiting') < screen.indexOf('data-sequence-positions="empty"'));
 });
 
 test('a just-registered V3 mandate cannot hide the same-numbered V4 NFT or another wallet/chain', () => {

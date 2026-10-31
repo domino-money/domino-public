@@ -274,7 +274,7 @@ test('owned: the envelope, its ids from DominoSetupV1’s state (no SetupMinted 
   assert.deepEqual(stateOnly.mints, []);
 });
 
-test('owned: kept per owner 25 s (a fresh question 5 s), a failure 12 s; the mints walk kept a week, not made again while every listed mint is kept, and a failed walk leaves the kept mints', async () => {
+test('owned: kept per owner 25 s (a fresh question 5 s), a failure 12 s (a node out of reach 3 s); the mints walk kept a week, not made again while every listed mint is kept, and a failed walk leaves the kept mints', async () => {
   const chain = wallet();
   const { ask, clock, stored, routeLines } = edge(deps(chain));
   const first = await (await ask('owned')).json();
@@ -322,6 +322,20 @@ test('owned: kept per owner 25 s (a fresh question 5 s), a failure 12 s; the min
   assert.equal((await down.ask('owned', { owner: OWNER, fresh: true })).status, 502, 'kept for a fresh question too');
   down.clock.time += 1;
   assert.equal((await down.ask('owned')).status, 200);
+  // Changed on purpose 2026-10-30 (launch capacity study, item 7, and its review): a node the transport could not reach
+  // (the tunnel's 502) is kept 3 s, so one blip no longer holds a wallet's positions away for 12 s; every other failure
+  // keeps 12 s.
+  assert.equal(owned.UNAVAILABLE_SECONDS, 3);
+  const blip = wallet();
+  blip.outage = 502;
+  const reach = edge(deps(blip));
+  const away = await reach.ask('owned');
+  assert.deepEqual([away.status, await away.json(), away.headers.get('Retry-After')], [502, { error: 'chain_unavailable' }, '3']);
+  blip.outage = null;
+  reach.clock.time += 2_999;
+  assert.equal((await reach.ask('owned', { owner: OWNER, fresh: true })).status, 502, 'kept for a fresh question too');
+  reach.clock.time += 1;
+  assert.equal((await reach.ask('owned')).status, 200);
 });
 
 test('owned: a busy node is chain_busy with its wait, which the client reads as a rate refusal', async () => {
@@ -636,7 +650,7 @@ test('simulate: on by its flag, one fixed eth_simulateV1, the answer trimmed to 
 // The source away, the log line, the token
 // ---------------------------------------------------------------------------
 
-test('the node away (another chain, a refused token, out of reach) is the calm source_unavailable with a minute’s wait; a busy one is not', async () => {
+test('the node away (another chain, a refused token, out of reach) is the calm source_unavailable, with a minute’s wait or, out of reach, what is left of the window; a busy one is not', async () => {
   const other = edge(deps(wallet()), { chainId: '0x1' });
   for (const name of ['owned', 'state', 'automation', 'ledger', 'record']) {
     const response = await other.ask(name);
@@ -647,9 +661,17 @@ test('the node away (another chain, a refused token, out of reach) is the calm s
   const refused = await refusing.ask('state');
   assert.deepEqual([refused.status, await refused.json()], [503, { v: 1, error: 'source_unavailable' }]);
   assert.ok(refusing.lines.some((line) => line.event === 'local_rpc_refused' && line.status === 401));
+  // Changed on purpose 2026-10-30 (launch capacity study, item 7): out of reach is the node away only at the third POST in
+  // a row that fails (localRpc.ts LOCAL_RPC_DOWN), and it says to come back as its window ends, 5 to 15 s
+  // (SOURCE_DOWN_RETRY_SECONDS), not a minute later; a failure alone is the route's own 502.
+  assert.deepEqual(routes.SOURCE_DOWN_RETRY_SECONDS, { min: 5, max: 15 });
   const unreachable = edge({ fetch: async () => Promise.reject(new TypeError('fetch failed')) });
+  for (const name of ['state', 'ledger']) assert.equal((await unreachable.ask(name)).status, 502, `${name}: one failure in a row, then two`);
   const away = await unreachable.ask('automation');
-  assert.deepEqual([away.status, await away.json()], [503, { error: 'source_unavailable' }]);
+  assert.deepEqual([away.status, away.headers.get('Retry-After'), await away.json()], [503, '10', { error: 'source_unavailable' }]);
+  unreachable.clock.time += 7_000;
+  const later = await unreachable.ask('owned');
+  assert.deepEqual([later.status, later.headers.get('Retry-After'), await later.json()], [503, '5', { error: 'source_unavailable' }], 'what is left of the window, 5 s at the least');
   const busy = edge({ fetch: async () => new Response('', { status: 429 }) });
   const resting = await busy.ask('state');
   assert.deepEqual([resting.status, await resting.json()], [429, { v: 1, error: 'rate_limited' }]);

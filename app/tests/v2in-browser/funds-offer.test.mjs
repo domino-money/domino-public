@@ -366,7 +366,9 @@ test('unread balances remain unavailable, never zero or an empty-network claim',
   try {
     await typeUsdg(s, '50'); await signIn(s);
     await s.page.locator('[data-funds-nothing]').waitFor();
-    assert.match(await s.page.locator('[data-funds-nothing]').innerText(), /could not be checked yet.*try again automatically/);
+    // Changed on purpose 2026-10-30 (QA round 2, SWEEP: no words saying data is missing): the balances are read again on
+    // their own (every 30 s, and on focus), said as being checked.
+    assert.equal(await s.page.locator('[data-funds-nothing]').innerText(), 'Checking the tokens in your wallet…');
     assert.equal(await s.page.locator('[data-funds-deposit-button]').count(), 0);
   } finally { await s.close(); }
 });
@@ -438,6 +440,38 @@ test('a useful primary-network read produces a proposal while the other balance 
     release.forEach((done) => done());
     await s.close();
   }
+});
+
+// Added 2026-10-30 (launch capacity 9a, pass 3 review): Amount's minute tick asks Domino's balances again but reuses the
+// Ethereum and OP Mainnet balances read on this visit, with no request for them; a first read (another pool chosen) asks
+// them again. The bridge is off here so its own discovery, which reads them on a timer of its own, does not blur the count.
+test('Amount’s tick reuses the Ethereum and OP Mainnet balances read this visit; a first read asks them again', async () => {
+  const local = createChainReads({ chainId: 4663, tokens: [token(ZERO, 'ETH', 18), token(USDG, 'USDG', 6), token(VIRTUAL, 'VIRTUAL', 6), token(WETH, 'WETH', 18)], balances: { [ZERO]: 10n ** 18n } });
+  const reads = together(local, chainReads(1, ETH_USDC, 0n, 0n), chainReads(10, OP_USDC, 0n, 0n));
+  const asked = { away: 0, home: 0 };
+  const served = { answer(route, request) {
+    if (route === 'chain-balances') asked[request.tokens.some((entry) => entry.chainId === 1 || entry.chainId === 10) ? 'away' : 'home'] += 1;
+    return reads.answer(route, request);
+  } };
+  const s = await openFundingChoice(browser, { bridge: false, clock: true, served });
+  const pause = (ms) => new Promise((done) => setTimeout(done, ms));
+  const settle = async (check, what) => {
+    for (const end = Date.now() + 15_000; Date.now() < end; await pause(100)) if (check()) return;
+    assert.fail(`timed out waiting for ${what}`);
+  };
+  try {
+    await settle(() => asked.away > 0, 'the first read of Ethereum and OP Mainnet');
+    await pause(1_000);
+    const first = { ...asked };
+    // One tick: Domino's balances asked again, Ethereum's and OP Mainnet's taken from this visit's read.
+    await s.page.clock.fastForward(61_000);
+    await settle(() => asked.home > first.home, 'the tick’s read of Domino’s balances');
+    await pause(1_000);
+    assert.equal(asked.away, first.away, 'the tick asks nothing of Ethereum or OP Mainnet');
+    // Another pool: its first read asks them again.
+    await changeFundingPool(s.page, 1);
+    await settle(() => asked.away > first.away, 'a first read of Ethereum and OP Mainnet for the new pool');
+  } finally { await s.close(); }
 });
 
 test('an expired idle proposal stays visible and only refreshes when the user requests it', async () => {

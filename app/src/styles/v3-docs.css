@@ -47,16 +47,12 @@
   .dm-docs-row:hover > svg { color: var(--fg); background: var(--v4-w06); translate: 2px 0; }
   @media (hover: none) { .dm-docs-row::before { display: none; } }
 
-  /* From 860px (the prototype's one phone switch, whatever the pointer): the stage beside the title, three cells side by
-     side with upright grooves, two groups to a row. */
+  /* From 860px (the prototype's one phone switch, whatever the pointer): the stage beside the title, two groups to a row.
+     Changed on purpose 2026-10-30 (QA round 2, the owner's decision on N95, "SWAP"): Start here keeps the rows phones
+     already show (the glyph, the serif title with its chevron, the short line, a groove between rows) at every width; from
+     860px it was three cells side by side, each glyph over its title. */
   @media (min-width: 860px) {
     .dm-docs-start { margin-top: 2.75rem; padding: 0.5rem 0.5rem 0.625rem; }
-    .dm-docs-start-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .dm-docs-start-grid > li + li::before { left: -1px; right: auto; top: 1.375rem; bottom: 1.375rem; width: 2px; height: auto; background: linear-gradient(90deg, rgb(0 0 0 / 0.5) 0 1px, rgb(255 236 220 / 0.075) 1px 2px); }
-    .dm-docs-start-card { display: flex; flex-direction: column; align-items: flex-start; gap: 0; padding: 1.375rem 1.5rem 1.625rem; }
-    .dm-docs-start-icon { margin-top: 0; }
-    .dm-docs-start-title { margin-top: 2.375rem; font-size: 2.125rem; }
-    .dm-docs-start-summary { margin-top: 0.875rem; font-size: 0.90625rem; }
     .dm-docs-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3.5rem 2.5rem; margin-top: 4.5rem; }
     .dm-docs-group > .dm-display-rail { padding-left: 1.375rem; font-size: 1.875rem; }
     .dm-docs-row { padding: 0.875rem 0.625rem 0.875rem 1.375rem; }

@@ -5,14 +5,14 @@ import { Button, cx, FigureDash, Skeleton } from '../../components/ui'
 import type { ZapReview, ZapWarning } from '../../finance/v2/zap'
 import { CREATE } from '../../lib/create/copy'
 import { v2Chain } from '../../v2/chains'
-import { conversionSummary, ethAboutText, ethText, EXACT_FRACTION, feesToCome, feeTierText, networkFeeLine, planNetworkCost, priceText, rangeBothWays, shortAddress, SHOWN_FRACTION, smallerUpToPercent, spanText } from '../../v2/plan/present'
+import { conversionSummary, ethAboutText, ethText, EXACT_FRACTION, feesToCome, feeTierText, networkFeeLine, planNetworkCost, priceText, rangeBothWays, shortAddress, smallerUpToPercent, spanText } from '../../v2/plan/present'
 import type { S1PlanReply, S1PlanRequest } from '../../v2/plan/types'
 import { ZERO_ADDRESS, type Address, type TokenAmount, type V2ChainId } from '../../v2/types'
 import { HIGH_SLIPPAGE_COPY, POSITION_SLIPPAGE_WARN_ABOVE_BPS, UNCONVERTED_OFFER_ABOVE_PERCENT } from './constants'
 import { COPY } from './copy'
 import type { RunStep } from './run'
 import { Amount, Note, Pair, Rows } from './ui'
-import { amountText, decimalsOf, labelOf, type TokenBook } from './tokens'
+import { amountText, decimalsOf, labelOf, shortAmountText, type TokenBook } from './tokens'
 
 /**
  * The review of a position action's plan (spec F7 rev2 §2.6.1 "Revisão", §8.2): the network and the pool (its tokens
@@ -40,7 +40,9 @@ import { amountText, decimalsOf, labelOf, type TokenBook } from './tokens'
  * same choices are quoted again (./PositionDialog.tsx). As New position's Review: the network fee line counts the
  * approvals still to send (a part not read, or a fee not known yet, said in words), a slippage above 2% is said in view,
  * and the Domino fee and what you put in are rounded up (never shown lower than they are; what you put in is what the
- * wallet is asked to allow, and what the receipt says was paid in).
+ * wallet is asked to allow, and what the receipt says was paid in). Changed on purpose 2026-10-30 (QA round 2, N2: one
+ * number format): every amount drawn at six significant digits, as New position's Review (./tokens.ts shortAmountText),
+ * no longer six decimals; every digit still in its title.
  *
  * `review` is the zap client's: its legs, fee and warnings (the plan's own figures where it has none).
  */
@@ -145,8 +147,8 @@ export function Review({ chainId, book, reply, request, review = null, steps = [
         <SheetFact label={COPY.review.fee} data-position-fee={fee ? 'charged' : 'none'}>
           {fee ? (
             <span>
-              <span data-position-fee-amount="" title={amountText(book, fee.token, fee.amount, EXACT_FRACTION)}>{amountText(book, fee.token, fee.amount, SHOWN_FRACTION, 'up')}</span> (
-              <span data-position-fee-base="" title={COPY.review.feeBase(amountText(book, fee.token, fee.basis, EXACT_FRACTION))}>{COPY.review.feeBase(amountText(book, fee.token, fee.basis))}</span>)
+              <span data-position-fee-amount="" title={amountText(book, fee.token, fee.amount, EXACT_FRACTION)}>{shortAmountText(book, fee.token, fee.amount, 'up')}</span> (
+              <span data-position-fee-base="" title={COPY.review.feeBase(amountText(book, fee.token, fee.basis, EXACT_FRACTION))}>{COPY.review.feeBase(shortAmountText(book, fee.token, fee.basis))}</span>)
             </span>
           ) : (
             COPY.review.noFee
@@ -180,7 +182,7 @@ export function Review({ chainId, book, reply, request, review = null, steps = [
       </SheetFacts>
       {converted && (
         <div className="dm-pa-field" data-position-converted={converted.offer ? 'offer' : 'ok'}>
-          <Note>{COPY.review.converted(`${(request.slippageBps / 100).toString()}%`, amountText(book, converted.token, converted.converted), amountText(book, converted.token, converted.rest))}</Note>
+          <Note>{COPY.review.converted(`${(request.slippageBps / 100).toString()}%`, shortAmountText(book, converted.token, converted.converted), shortAmountText(book, converted.token, converted.rest))}</Note>
           {converted.offer && (onLowerSlippage || onReceiveBoth) && !stale && (
             <div className="flex flex-wrap gap-2">
               {onLowerSlippage && <Button type="button" variant="outline" size="sm" onClick={onLowerSlippage} data-position-lower-slippage="">{COPY.review.lowerSlippage}</Button>}
@@ -229,8 +231,8 @@ export function Review({ chainId, book, reply, request, review = null, steps = [
           {legs.map((leg, i) => (
             <SheetFact key={i} label={legs.length > 1 ? `${COPY.review.route} ${i + 1}` : COPY.review.route} data-position-route-leg={String(i)}>
               <span>{amount(leg.tokenIn, leg.amountIn)} → {labelOf(book, leg.tokenOut)}</span>
-              {leg.expectedOut !== null && <span className="dm-pa-sub" title={amountText(book, leg.tokenOut, leg.expectedOut, EXACT_FRACTION)}>{COPY.review.expected} {amountText(book, leg.tokenOut, leg.expectedOut)}</span>}
-              <span className="dm-pa-sub" data-position-leg-at-least="" title={amountText(book, leg.tokenOut, leg.minAmountOut, EXACT_FRACTION)}>{COPY.review.atLeast} {amountText(book, leg.tokenOut, leg.minAmountOut)}</span>
+              {leg.expectedOut !== null && <span className="dm-pa-sub" title={amountText(book, leg.tokenOut, leg.expectedOut, EXACT_FRACTION)}>{COPY.review.expected} {shortAmountText(book, leg.tokenOut, leg.expectedOut)}</span>}
+              <span className="dm-pa-sub" data-position-leg-at-least="" title={amountText(book, leg.tokenOut, leg.minAmountOut, EXACT_FRACTION)}>{COPY.review.atLeast} {shortAmountText(book, leg.tokenOut, leg.minAmountOut)}</span>
               <span className="dm-pa-sub" title={leg.pools.map((p) => `${COPY.page.version(p.dex)} · ${feeTierText(p.fee)}`).join(', ')}>
                 {leg.pools.map((p) => `${COPY.page.uniswap} · ${feeTierText(p.fee)}`).join(', ')}
                 {leg.asQuoted && ` (${COPY.review.asQuoted})`}

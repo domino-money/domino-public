@@ -20,6 +20,7 @@ const { walletCard } = require('../.test-build/app/src/lib/walletCards.js');
 const { chainPoolPrice } = require('../.test-build/app/src/lib/read/screens/positions.js');
 const { sqrtPriceAtTick } = require('../.test-build/app/src/lib/read/screens/poolRange.js');
 const { readablePrice, priceFigure, rangeFacts, statusWords, moveText, priceDomain, placeLabels, figureWidth, historyLine, EDGE_ROOM, MIN_SPAN } = chart;
+const { symbolInText, SYMBOL_CHARS } = require('../.test-build/app/src/lib/chart/priceFacts.js');
 
 test('closed NFT history stops at its confirmed final zero-liquidity interval; later pool trades never extend it', () => {
   const view = { phase: 'verified', state: { liquidity: 0n }, history: { events: [
@@ -214,6 +215,39 @@ test('the status says in plain words where the price is, and how far it must mov
   assert.equal(at('under', 1.002, 2).move, 'It must rise less than 1% to come back into your range.');
   assert.equal(moveText(0.6), '60%');
   assert.equal(moveText(0), 'less than 1%');
+
+  // Changed on purpose 2026-10-30 (QA round 2, N68, the owner's decision): in range and within 10% of an end, what
+  // happens past that end, with the end as the key figures write it and the token the position then holds. The ends
+  // are named as Auto-exit names them (Lower end, Upper end), and the symbol is isolated as TokenLabel's <bdi> isolates
+  // it (U+2068 … U+2069) and cut at its 14 characters.
+  const near = (lower, upper, now, { lowerText = String(lower), upperText = String(upper), base = 'ETH', quote = 'USDG' } = {}) =>
+    statusWords({ where: 'inside', lower, upper, now, lowerText, upperText, base: { symbol: base }, quote: { symbol: quote } });
+  const iso = (symbol) => `\u2068${symbol}\u2069`;
+  assert.deepEqual(near(100, 200, 105), { tone: 'in', title: 'Earning fees', detail: 'the price is inside your range', move: `Near the lower end: below 100, it stops earning and becomes all ${iso('ETH')}.` });
+  assert.equal(near(100, 200, 190).move, `Near the upper end: above 200, it stops earning and becomes all ${iso('USDG')}.`);
+  assert.equal(near(100, 200, 150).move, null, 'away from both ends');
+  assert.equal(near(100, 200, 111).move, null, 'more than 10% above the lower end');
+  assert.equal(near(0, 200, 5, { lowerText: '0' }).move, null, 'the lower end at the pool’s limit says nothing');
+  assert.equal(near(0, 200, 190, { lowerText: '0' }).move, `Near the upper end: above 200, it stops earning and becomes all ${iso('USDG')}.`);
+  assert.equal(near(100, Infinity, 105, { upperText: '∞' }).move, `Near the lower end: below 100, it stops earning and becomes all ${iso('ETH')}.`);
+  assert.equal(near(100, 200, 105, { lowerText: null }).move, null, 'an end written as its tick');
+  assert.equal(near(100, 200, 190, { quote: null }).move, null, 'a token with no symbol');
+  assert.equal(near(3.66503e-7, 7.99485e-7, 3.7e-7, { lowerText: '0.000000366503', base: 'MANY' }).move, `Near the lower end: below 0.0₆366503, it stops earning and becomes all ${iso('MANY')}.`, 'the end as the key figures write it');
+  // A long symbol cut as TokenLabel cuts it on screen; a right-to-left one isolated; one with a format character not said.
+  assert.equal(SYMBOL_CHARS, 14);
+  assert.equal(near(100, 200, 105, { base: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' }).move, `Near the lower end: below 100, it stops earning and becomes all ${iso('ABCDEFGHIJKLM…')}.`);
+  assert.equal(near(100, 200, 105, { base: 'ABCDEFGHIJKLMN' }).move, `Near the lower end: below 100, it stops earning and becomes all ${iso('ABCDEFGHIJKLMN')}.`, '14 characters kept whole');
+  assert.equal(near(100, 200, 105, { base: 'שקל' }).move, `Near the lower end: below 100, it stops earning and becomes all ${iso('שקל')}.`);
+  assert.equal(near(100, 200, 105, { base: 'ETH\u202e' }).move, null, 'a right-to-left override in the symbol');
+  assert.equal(near(100, 200, 190, { quote: 'US\u2069DG' }).move, null, 'an isolate’s end in the symbol');
+  assert.equal(symbolInText(null), null);
+  assert.equal(symbolInText(''), null);
+  assert.equal(symbolInText('🦄'.repeat(20)), iso(`${'🦄'.repeat(13)}…`), 'cut by character, never inside one');
+  // The owner’s narrow stable range, near both ends: the lower end is said.
+  const { facts: narrow } = factsOf(CASES.narrow);
+  assert.equal(narrow.where, 'inside');
+  assert.match(statusWords(narrow).move, new RegExp(`^Near the lower end: below ${readablePrice(narrow.lowerText).replaceAll('.', '[.]')}, it stops earning and becomes all \u2068${narrow.base.symbol}\u2069[.]$`));
+  assert.equal(statusWords(factsOf(CASES.huge).facts).move, null, 'WBTC 20% from its ends');
 });
 
 test('the labels at the plot’s right never overlap, keep their order and the price now’s place, and stay inside', () => {

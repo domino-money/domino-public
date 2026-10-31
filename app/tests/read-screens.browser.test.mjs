@@ -724,7 +724,9 @@ test('a chosen pool gets range controls on its read price: presets, steppers and
   await page.keyboard.press('ArrowRight');
   assert.deepEqual(await boundTicks(dialog), ['3540', '-4140']);
   const spoken = await lower.getAttribute('aria-valuetext');
-  assert.match(spoken, /^≈[\d,.]+, −[\d.]+% from the pool price, tick 3540$/);
+  // Changed on purpose 2026-10-30 (QA round 2, Q14): a price and its distance from the pool's, never a bare tick.
+  assert.match(spoken, /^≈[\d,.]+, −[\d.]+% from the pool price$/);
+  assert.doesNotMatch(spoken, /tick/);
   assert.doesNotMatch(spoken, /TOKEN|ETH/, 'an untrusted symbol never goes into an attribute');
   assert.match(await dialog.locator('[data-range-bound="lower"] .pointer-events-none').innerText(), /^−[\d.]+%$/, 'the handle shows the distance from the pool price');
   // A bound never crosses the other: the lower stops one spacing below the upper.

@@ -22,9 +22,16 @@ export const CREATE = {
     notChosen: '—',
     sourceLoading: 'Loading…',
     preview: 'Your position',
+    /** The same card while a pool row is only pointed at in step 1, nothing chosen yet (QA round 2 N21, the owner's yes). */
+    previewPointed: 'Preview',
     previewExample: 'Illustration of how a price range works',
     previewTotal: 'Estimated total',
     stepState: { done: 'done', current: 'current', upcoming: 'not started' },
+    /**
+     * Added 2026-10-30 (QA round 2, final review create-1): heard after a link the flow opens in a new tab, so the steps
+     * already filled stay as they are; never shown (as components/pool/ExplorerAddress.tsx and the footer say it).
+     */
+    newTab: ' (opens in a new tab)',
   },
   /**
    * The four visual steps of the flow, over the five stages of the state machine. Changed on purpose 2026-10-06 (the
@@ -39,7 +46,8 @@ export const CREATE = {
     // alone, so "either token" is said only of a range around the price, and the one-token range has its own lead.
     amount: {
       title: 'Amount',
-      lead: 'Enter one amount; the other fills in.',
+      // Changed on purpose 2026-10-30 (QA round 2, Q4): a position holds both tokens, said before the fields.
+      lead: 'You add both tokens: type one, the other fills in.',
       leadOne: (symbol: string) => `This range takes only ${symbol}. Enter an amount.`,
       /** Added 2026-10-06: the deposit paid with one other token (lib/create/journey.ts PayWith). */
       leadPay: (symbol: string) => `Pay with ${symbol}. Domino swaps it for the pool’s tokens.`,
@@ -60,18 +68,30 @@ export const CREATE = {
   token: {
     needToken: 'Choose a token to continue.',
     notSelectable: 'The chosen token cannot be deposited: it could not be read.',
-    searchLabel: 'Search a token',
-    searchPlaceholder: 'Name or address, like USDG',
+    // Removed on purpose 2026-10-30 (QA round 2, N33/N102): the search's label and placeholder, now the one pair every
+    // search uses (components/read/screens/TokenSearch.tsx SEARCH_LABEL, SEARCH_PLACEHOLDER).
+    /**
+     * Added 2026-10-30 (QA round 2 sweep): a network whose creation gate is closed, in the gate's own words (the V2
+     * journey's JOURNEY.pool.networkClosed), never that creating there "is unavailable". Its pools can still be explored.
+     */
+    networkClosed: (chain: string) => `New positions on ${chain} aren’t open right now.`,
+    exploreStill: 'You can still explore its pools.',
     preselectHeading: 'Pool from the link',
     preselectChecking: 'Verifying the linked pool on Robinhood Chain…',
     preselectVerified: 'Pool selected.',
-    preselectNotFound: 'The linked pool id was not returned by the read service, so it is not preselected. Search for a token below to choose a pool.',
+    // Changed on purpose 2026-10-30 (QA round 2 sweep): plain words, nothing about the read service.
+    preselectNotFound: 'This pool wasn’t found. Search for a token to choose a pool.',
     preselectMalformed: 'The link does not carry a valid pool id, so nothing is preselected.',
     // A pool the featured list withdrew by a safety rule (featured pools v1 §11.5), or one with a token that passes for a
     // main token (audit I1), opened by a link. Since 2026-10-01 (audit B2) a pool that left the list only because its
     // figures were unavailable is preselected as any other, so this line is said for safety reasons alone.
     preselectWithdrawn: 'For safety, Domino doesn’t open positions in this pool. Choose another pool.',
     nativeNote: 'Native ETH is its own currency at address 0x0000…0000. Wrapped ETH is a separate contract at its own address. Their pools are different pools.',
+    /**
+     * Added 2026-10-30 (QA round 2, N19): the heading over the list's pools under the search, as Home and Markets name the
+     * same list (lib/read/featuredList.ts featuredTitle), without "· last 24h": these rows show no 24h figures.
+     */
+    topPools: (server: boolean) => (server ? 'Top pools' : 'Selected pools'),
   },
   pool: {
     needPool: 'Choose a pool to continue.',
@@ -87,14 +107,27 @@ export const CREATE = {
   },
   amount: {
     entered: 'You enter',
-    paired: 'Paired automatically',
+    // Changed on purpose 2026-10-30 (QA round 2, Q4): the other panel is needed too, not optional.
+    paired: 'Also needed, worked out for you',
     total: 'Estimated total',
     // Changed on purpose 2026-10-06 (the owner's point 4: little text): the total's note in a few words. Network fees are
     // paid in ETH on top, never taken from the position, so they are "extra", not something the total is "before".
-    totalNote: 'Network fees are extra.',
-    totalOneNote: 'Network fees are extra.',
-    totalSwapNote: 'After the swap; network fees are extra.',
-    totalUnavailable: 'USD estimate unavailable',
+    // Changed on purpose 2026-10-30 (QA round 2, N37 c): and which token pays them (ETH on all three networks).
+    totalNote: 'Network fees are extra, paid in ETH.',
+    totalOneNote: 'Network fees are extra, paid in ETH.',
+    totalSwapNote: 'After the swap; network fees are extra, paid in ETH.',
+    /**
+     * Added 2026-10-30 (QA round 2, N51, the owner's yes above 10%): the deposit's share of the pool, said plainly beside the
+     * total, never as a warning. Q20: an amount above everything the pool holds asks for a second look instead.
+     */
+    poolShare: (percent: string) => `You’d be about ${percent} of this pool.`,
+    beyondPool: 'That is more than this whole pool holds. Check the amount.',
+    /** Added 2026-10-30 (QA round 2, N54, the owner's US$ 1 minimum): the Continue reason below it. */
+    tooSmall: 'Enter at least $1. Smaller amounts cost more in network fees than they earn.',
+    /** The same for a pool with no USD price, when the amount rounds to nothing in one of its tokens. */
+    tooSmallUnpriced: 'This amount is too small for this pool. Enter a larger one.',
+    /** Added 2026-10-30 (QA round 2, N99): a decimal comma, said plainly instead of the generic format line. */
+    decimalComma: 'Use a dot for decimals, like 0.5.',
     empty: 'Enter an amount to continue.',
     format: 'Enter a number, like 100 or 0.5.',
     zero: 'The amount must be more than zero.',
@@ -111,16 +144,20 @@ export const CREATE = {
     now: 'Today’s price',
     widths: 'Range width',
     // Changed on purpose 2026-10-06 (the owner's point 4: little text): what each width means, in one short line; the
-    // larger window keeps its cost (its fees spread thinner), so it never reads as simply better.
+    // wider range keeps its cost, so it never reads as simply better. Changed on purpose 2026-10-30 (QA round 2, Q30 and
+    // N74, the owner's approved words): literal lines, no idioms ("window", "spread thinner"), each saying how the width
+    // changes what it earns.
     widthLines: {
-      standard: 'A smaller window: the price can leave it sooner.',
-      wide: 'A larger window: more room to move, fees spread thinner.',
+      standard: 'Earns more per dollar, but the price leaves it sooner.',
+      wide: 'Stays in range longer, earns less per dollar.',
       custom: 'Set your own lowest and highest price.',
     },
     lowest: 'Lowest price',
     highest: 'Highest price',
     below: (percent: string) => `${percent} below today`,
     above: (percent: string) => `${percent} above today`,
+    /** (QA round 2, the owner's find) An end more than 10,000% above today (lib/create/plain.ts FAR_PERCENT). */
+    farAbove: (percent: string) => `More than ${percent} above today`,
     atToday: 'At today’s price',
     /** A bound's buttons, for assistive technology. */
     lowerBy: (label: string) => `Lower the ${label.toLowerCase()}`,
@@ -134,7 +171,8 @@ export const CREATE = {
     rangeIn: 'Today’s price is inside this range.',
     /** The preview's calm word for a range beside today's price (PositionPreview.tsx, 2026-09-28, one-sided): no red alarm. */
     earnsInRange: 'Earns once the price is in range',
-    customHint: 'Type a price or drag. It moves to the nearest price the pool allows.',
+    // Changed on purpose 2026-10-30 (QA round 2, N36): a typed price moves outward, never to the nearest step.
+    customHint: 'Type a price or drag. It moves a little outward, to the closest price the pool allows.',
     /**
      * A typed price the range controls refused (lib/read/screens/RangePriceInput.ts, shared with the pool page), in the
      * step's own words: "lowest" and "highest" rather than "min" and "max", and no "decimal" or "exponents". A message
@@ -151,7 +189,8 @@ export const CREATE = {
     advanced: 'Advanced',
     slippageLabel: 'Slippage tolerance',
     slippageHint: 'How far prices may move while you confirm. If they move more, the step stops and your tokens stay yours.',
-    slippageInvalid: 'Slippage is a whole number of basis points from 10 to 500: 0.1% to 5%.',
+    // Changed on purpose 2026-10-30 (QA round 2, N28): the Continue reason while the box holds no usable tolerance, in plain words.
+    slippageInvalid: 'Choose a slippage tolerance from 0.1% to 5% under Advanced.',
     slippagePresets: 'Common tolerances',
     /** Setup's draft and its swap, when the box holds nothing the bound admits. */
     slippageRequired: 'Choose a slippage limit from 0.1% to 5%.',
@@ -167,13 +206,19 @@ export const CREATE = {
     rangeHeading: 'Price range',
     maxLabel: 'Max',
     connectForBalance: 'Connect a wallet to see your balance.',
+    /**
+     * Added 2026-10-30 (QA round 2, N22): after it, with no wallet, what the landing and the docs promise. The other-network
+     * line is the funds offer's (src/v2in/funds), said only while bringing funds from another network is open (the S2 gate).
+     */
+    connectOneToken: 'Only have one of these tokens? Domino can swap part of it for the other.',
+    /** Its link to the docs' amount step (QA round 2 review, N22). */
+    connectOneTokenLink: 'How it works',
+    connectOtherNetwork: 'Funds on another network? Domino can bring them over once you connect.',
     // Changed on purpose 2026-10-06 (the owner's point 4): the balance line carries no tooltip.
     balanceAt: (block: string | null) => (block ? `Balance at block ${block}:` : 'Balance:'),
     pairUnused: (symbol: string) => `At today’s price this range holds only ${symbol}. Enter the amount in ${symbol}.`,
     pairOneSided: (symbol: string) => `At today’s price this range holds only ${symbol}.`,
-    pairUnknown: 'The other amount can’t be worked out right now.',
     pairUnreadable: 'This token can’t be read, so no amount can be entered in it.',
-    pairNone: 'Your balance of this token could not be read.',
     pairReading: 'Checking your balance…',
     /** The wallet cannot fund the amounts either way (lib/create/depositPlan.ts): said under them, never blocked here. */
     short: 'Your wallet doesn’t have enough for this amount. Lower it, or add tokens to your wallet.',
@@ -219,9 +264,17 @@ export const CREATE = {
   },
   review: {
     choices: 'Your position',
-    total: 'Estimated position value',
+    // Changed on purpose 2026-10-30 (QA round 2, one name per concept): as the amount step, the preview and V2's Review say it.
+    total: 'Estimated total',
     steps: 'In your wallet',
+    /** Added 2026-10-30 (QA round 2, Q31): the same section's title while no wallet is connected, as V2's Review titles it. */
+    stepsConnect: 'Next: connect your wallet',
     stepsNote: 'Your wallet will ask you to confirm these, in order.',
+    /** Added 2026-10-30 (QA round 2, Q12): automation is added later, from Automate; the last word is the link. */
+    automateLater: 'You can add Auto-compound or Auto-exit after the position is created, from',
+    /** The same for a Full range position, which Auto-exit is not offered for (N73, the owner's decision; its review). */
+    automateLaterFull: 'You can add Auto-compound after the position is created, from',
+    automateLink: 'Automate',
     /**
      * The one charge Domino makes, on earned fees an automation uses. Automate states it for the mode it applies
      * (screens/Automate.tsx: "2% of the fees it uses, once"); a direct deposit carries none. Changed on purpose

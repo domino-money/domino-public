@@ -8,6 +8,7 @@
 import { parseDecimal } from '../read/decimal'
 import { usableTicks } from '../read/screens/poolRange'
 import { CREATE } from './copy'
+import { amountText } from './amountText'
 import { numberFormat } from '../format/numberFormat'
 
 const MAX_UINT256 = (1n << 256n) - 1n
@@ -16,9 +17,13 @@ const DECIMAL_TEXT = /^(?:0|[1-9]\d*)(?:\.\d+)?$/
 export type RawAmount = { ok: true; raw: string } | { ok: false; reason: string }
 
 /** A decimal amount in the token's units to raw base units; unknown decimals block, never guess. */
-export function rawAmount(text: string, decimals: number | null): RawAmount {
+export function rawAmount(typed: string, decimals: number | null): RawAmount {
   if (decimals === null) return { ok: false, reason: CREATE.amount.decimalsUnknown }
-  if (text === '') return { ok: false, reason: CREATE.amount.empty }
+  // The same reading of what was typed as journey.ts validateBudget (QA round 2, N99): ./amountText.ts.
+  const cleaned = typed.trim() === '' ? null : amountText(typed)
+  if (cleaned === null) return { ok: false, reason: CREATE.amount.empty }
+  if (!cleaned.ok) return cleaned
+  const text = cleaned.text
   if (text.length > 100 || !DECIMAL_TEXT.test(text)) return { ok: false, reason: CREATE.amount.format }
   const value = parseDecimal(text)
   if (!value || value.coefficient === 0n) return { ok: false, reason: CREATE.amount.zero }

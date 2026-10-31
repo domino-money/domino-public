@@ -15,7 +15,7 @@
  * is a choice of where to deposit rather than a reference.
  */
 import type { CatalogueDiscoveryPool, DiscoveryPool, PoolsRequest, PoolsResponse } from 'api-contracts/read-v1/types'
-import { compare } from '../decimal'
+import { compare, formatUsdCompact, parseDecimal } from '../decimal'
 import { reasonText } from '../describe'
 import { tokenDisplay, unreadToken } from '../project'
 import type { TokenDisplay } from '../types'
@@ -25,6 +25,10 @@ import type { PoolCatalogueEntry } from '../../../config/selectedPoolCatalogue'
 import { featuredPoolIds } from './featuredPools'
 import { addressKey, NATIVE_CURRENCY, poolIdKey, type AddressKey, type PoolIdKey } from './identity'
 import { figureFromProviderMetrics, retrievalNote, type AttributedFigure } from './figures'
+import type { Instant, Market, Metric } from '../../markets'
+import { aprDigits } from '../../format/apr'
+import { poolAprPresentation } from '../poolAprPresentation'
+import { rowApr } from './rowApr'
 
 export interface PoolOption {
   key: PoolIdKey
@@ -70,6 +74,12 @@ export interface PoolOption {
   requestedById: boolean
   liquidity: AttributedFigure
   volume: AttributedFigure
+  /**
+   * Added 2026-10-30 (QA round 2, N8): the APR the Markets table shows for this pool, where the page already holds its
+   * Markets row (withMarketFigures). New position's row and its preview write that figure (optionAprText), so one pool
+   * reads one APR on every screen. Absent everywhere else, and on a pool Markets shows no APR for.
+   */
+  marketApr?: MarketApr
   /** Source and retrieval time of the two DexScreener figures; null when there are none to date (none retrieved, or rejected). */
   providerNote: string | null
   aprReason: string
@@ -163,6 +173,95 @@ function descending(a: string | null, b: string | null): number {
  */
 export function byTvl<T extends Pick<PoolOption, 'liquidity' | 'volume' | 'feePips' | 'key'>>(options: readonly T[]): T[] {
   return [...options].sort((a, b) => descending(reported(a.liquidity), reported(b.liquidity)) || descending(reported(a.volume), reported(b.volume)) || neutral(a, b))
+}
+
+/**
+ * A Markets row's provider figure as a pool option's (QA round 2, N10), with its own provider: the same figure the
+ * Markets table shows for the pool. Null for anything that is not a provider's current or kept figure (Domino's own
+ * history has no provider to name here). Changed 2026-10-30 (QA round 2, N8): a figure standing in for a refused one
+ * (figureFallback.ts) is taken too, under the provider it names, as the Markets table shows it.
+ */
+export function marketFigure(metric: Metric | undefined): AttributedFigure | null {
+  if (!metric || metric.value === null || metric.source === undefined) return null
+  if (metric.state !== 'provider' && metric.state !== 'stale') return null
+  const parsed = parseDecimal(metric.value)
+  const value = formatUsdCompact(metric.value)
+  if (!parsed || !value) return null
+  const figure = { value, raw: metric.value, zero: parsed.coefficient === 0n, provider: metric.source === 'DexScreener' ? 'dexscreener' as const : 'geckoterminal' as const, retrievedAt: metric.asOf ?? 0, cacheAgeSeconds: null }
+  return metric.state === 'stale' ? { state: 'attributed_stale', ...figure, refreshReason: null } : { state: 'attributed', ...figure }
+}
+
+/** The APR the Markets table shows for a pool (QA round 2, N8): its digits by the one APR rule, and whether it is an estimate. */
+export interface MarketApr {
+  /** "38.8", "1,590", "<0.1" (lib/format/apr.ts); the caller adds "%" and, for an estimate, "est.". */
+  digits: string
+  estimate: boolean
+}
+
+/**
+ * The APR a Markets row shows, chosen as its cell chooses (poolAprPresentation.ts): Domino's own history where it
+ * qualifies, else the read service's estimate while it is current, else the stand-in estimate (figureFallback.ts). Null
+ * where the row shows none (a dash, or a figure still coming). `row` as the table draws it: stand-ins applied, aged.
+ */
+export function marketApr(row: Market, now: Instant): MarketApr | null {
+  const apr = poolAprPresentation(row, now)
+  const digits = apr.qualified
+    ? (row.feeAprPercent.value === null ? null : aprDigits(row.feeAprPercent.value))
+    : (apr.estimate.text ?? (apr.fallback ? aprDigits(apr.fallback.percent) : null))
+  return digits === null ? null : { digits, estimate: !apr.qualified }
+}
+
+/** One pool's figures as the Markets table shows them, for New position's row (QA round 2, N8); null where it shows none. */
+export interface MarketFigures {
+  liquidity: AttributedFigure | null
+  volume: AttributedFigure | null
+  apr: MarketApr | null
+}
+
+/**
+ * New position's list with the figures the Markets table already shows for the same pools, so one pool reads one TVL,
+ * one 24h volume and one APR on Markets, on its own page and in New position (QA round 2, N8; N10 before it filled only
+ * the figures the pools route had not reported). Each figure Markets shows replaces the route's; the route's stays where
+ * Markets shows none (and where Markets' is Domino's own history, which marketFigure does not take). Then the list is put
+ * in TVL order again. `figures` are worked out from rows already read (knownMarkets.ts); nothing is read for this. The
+ * same options when there are none.
+ */
+export function withMarketFigures<T extends PoolOption>(options: readonly T[], figures: ReadonlyMap<string, MarketFigures> | null): readonly T[] {
+  if (!figures || figures.size === 0 || options.length === 0) return options
+  let changed = false
+  const out = options.map((option) => {
+    const shown = figures.get(option.key)
+    if (!shown) return option
+    const liquidity = shown.liquidity ?? option.liquidity
+    const volume = shown.volume ?? option.volume
+    if (liquidity === option.liquidity && volume === option.volume && shown.apr === null && option.marketApr === undefined) return option
+    changed = true
+    const next: T = { ...option, liquidity, volume }
+    // An APR Markets no longer shows is not kept from an earlier merge (a chosen pool merged again, knownMarkets.ts).
+    if (shown.apr) next.marketApr = shown.apr
+    else delete next.marketApr
+    return next
+  })
+  return changed ? byTvl(out) : options
+}
+
+/**
+ * A pool row's APR as New position writes it, in its list and on its preview card (QA round 2, N8): the figure Markets
+ * shows where the page holds the pool's row ("38.8% est.", or "41.2%" from Domino's own history), else the row's own
+ * estimate from the figures it carries (rowApr.ts, "12.2% est."). Null where there is neither. One APR rule
+ * (lib/format/apr.ts).
+ */
+export function optionAprText(option: PoolOption): string | null {
+  if (option.marketApr) return `${option.marketApr.digits}%${option.marketApr.estimate ? ' est.' : ''}`
+  const apr = rowApr({
+    integration: option.integration,
+    currentLpFeePips: option.feePips,
+    protocolFeeRaw: option.protocolFeeRaw,
+    ...(option.v3FeeProtocol !== undefined ? { v3FeeProtocol: option.v3FeeProtocol } : {}),
+    liquidity: option.liquidity,
+    volume: option.volume,
+  })
+  return apr.kind === 'estimate' ? `${aprDigits(apr.text) ?? apr.text}% est.` : null
 }
 
 export function coverageLines(d: PoolsResponse): { lines: string[]; complete: boolean } {

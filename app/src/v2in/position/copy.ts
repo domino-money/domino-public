@@ -51,6 +51,10 @@ export const COPY = {
     rangeInvalid: 'This price range isn’t valid for this pool.',
     howMuch: 'How much',
     all: 'All',
+    /** (QA round 2, WD-MAX, the owner) Withdraw's whole-position choice: "Max", as a wallet's amount field says it. */
+    max: 'Max',
+    /** (QA round 2, WD-MAX) What Withdraw can take out: the position's two tokens now, above its How much. */
+    inPosition: 'In this position',
     how: 'How you receive it',
     both: 'Both tokens',
     convert: 'One token',
@@ -199,7 +203,12 @@ export const COPY = {
     paidByUniswap: 'Paid by Uniswap',
     notInLogs: 'Not shown in the receipt',
     waiting: 'Waiting for the network',
-    unreadable: 'This receipt can’t be read exactly. Nothing is guessed.',
+    /**
+     * Changed on purpose 2026-10-30 (QA round 2, SWEEP; rule 2): New position's own words for a receipt this page could
+     * not read exactly, said as where to see it (it was "This receipt can’t be read exactly. Nothing is guessed."). Nothing
+     * is guessed still: no figure is drawn.
+     */
+    unreadable: 'See your wallet’s activity for the details.',
     newPosition: 'Open the new position',
   },
   custody: {

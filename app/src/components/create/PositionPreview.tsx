@@ -1,16 +1,18 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { rangeGeometry } from '../../lib/chart/range'
 import { CREATE } from '../../lib/create/copy'
-import { aprDigits } from '../../lib/format/apr'
+import { feeWords } from '../../lib/format/fee'
 import type { JourneyState } from '../../lib/create/journey'
 import { figuresShownUntil, networkFiguresAt } from '../../lib/create/otherChains'
 import { awayShort, plainFigure } from '../../lib/create/plain'
 import { formatUsd } from '../../lib/format/usd'
 import { readNow } from '../../lib/markets'
 import { rem } from '../../lib/rootScale'
+import { pricePair } from '../../lib/read/orientation'
+import { useMarketOption } from '../../lib/read/screens/knownMarkets'
 import type { PoolPrice } from '../../lib/read/screens/poolRange'
-import type { PoolOption } from '../../lib/read/screens/poolsList'
-import { rowApr } from '../../lib/read/screens/rowApr'
+import { optionAprText, type PoolOption } from '../../lib/read/screens/poolsList'
+import { FEE_MEANING } from '../explore/feeMeaning'
 import { AmountText, LiveFigure, UsdText } from '../figures'
 import { SymbolText } from '../read/screens/SymbolText'
 import { TokenMark, TokenMarkPair } from '../TokenIcon'
@@ -22,12 +24,14 @@ import { heldAmounts, rangeView, type RangeView } from './valuation'
 
 type Usable = Extract<PoolPrice, { state: 'usable' }>
 
-/** The row's own figures: its provider TVL, and the APR estimate the row works out, or nothing. */
+/**
+ * The row's own figures: its TVL, and its APR as New position's list row writes it (poolsList.ts optionAprText: Markets'
+ * figure where the page holds the pool's row, else the row's own estimate), or nothing. The one APR rule of every screen
+ * (lib/format/apr.ts, audit E21).
+ */
 function poolFigures(pool: PoolOption): { tvl: string | null; apr: string | null } {
   const tvl = pool.liquidity.state === 'attributed' || pool.liquidity.state === 'attributed_stale' ? pool.liquidity.value : null
-  const apr = rowApr({ integration: pool.integration, currentLpFeePips: pool.feePips, protocolFeeRaw: pool.protocolFeeRaw, ...(pool.v3FeeProtocol !== undefined ? { v3FeeProtocol: pool.v3FeeProtocol } : {}), liquidity: pool.liquidity, volume: pool.volume })
-  // The one APR rule of every screen (lib/format/apr.ts, audit E21).
-  return { tvl, apr: apr.kind === 'estimate' ? `${aprDigits(apr.text) ?? apr.text}% est.` : null }
+  return { tvl, apr: optionAprText(pool) }
 }
 
 /** Review's own words for what a one-token plan takes from the wallet (StageReview's swap line). */
@@ -139,6 +143,7 @@ export function PositionPreview({
   price,
   balances,
   step,
+  network = null,
   className,
   style,
 }: {
@@ -150,6 +155,11 @@ export function PositionPreview({
   balances: PairBalancesState
   /** The open step: the part of the card it fills is marked. */
   step: VisualStep
+  /**
+   * QA round 2, Q23/N37 (the owner: the network on every pool): a pool's network by its chain id, where the chosen pool's
+   * panel names it (other networks offered, lib/create/otherChains.ts); null for one it does not name.
+   */
+  network?: ((chainId: number) => string | null) | null
   className?: string
   style?: CSSProperties
 }) {
@@ -172,17 +182,28 @@ export function PositionPreview({
     const wake = setTimeout(() => setClock(readNow()), Math.max(0, (until + 1) * 1000 - Date.now()))
     return () => clearTimeout(wake)
   }, [until, clock])
-  const figures = shown ? poolFigures(shown) : null
+  // QA round 2, N8 (pass 3): the figures Markets shows for this pool, whichever way it came in (a link carries the pools
+  // route's TVL and no Markets APR), so the card and its list row write the same TVL and APR. Only the Markets rows the
+  // page already holds; nothing is asked. Base and Arbitrum One pools have no Markets row and keep their own.
+  const marked = useMarketOption(shown)
+  const figures = marked ? poolFigures(marked) : null
   const view = chosen && price && state.range ? rangeView(state.range, price, chosen) : null
   const held = chosen ? heldAmounts(state, balances) : null
   const valued = held !== null && held.sides.every((side) => side.usd !== null) ? held.total : null
   const words = (text: string | null): ReactNode => plainFigure(text ?? CREATE.review.summary.beyondDisplay)
   const phase = chosen ? 'chosen' : pool ? 'pointed' : 'empty'
+  // QA round 2, Q24: the pair named as Markets and the pool page name it (the order its price is written), marks matched.
+  const pair = head ? pricePair(head.currencies[0], head.currencies[1]) : null
+  const chain = head ? head.currencies[0].chainId : null
+  const networkText = chain !== null && network ? network(chain) : null
+  // The fee as every chip writes it (lib/format/fee.ts, QA round 2 N34: never a bare percentage), and what it is on hover (Q28).
+  const fee = head ? feeWords(head.fee) : ''
 
   return (
     <aside aria-hidden="true" hidden={step === 'review'} className={className} style={style} data-preview={phase} data-step={step}>
       <div className="dm-flow-preview-head">
-        <span className="dm-flow-preview-kicker">{CREATE.page.preview}</span>
+        {/* QA round 2, N21 (the owner's yes): a pool only pointed at, nothing chosen yet, is a preview, not your position. */}
+        <span className="dm-flow-preview-kicker">{phase === 'pointed' ? CREATE.page.previewPointed : CREATE.page.preview}</span>
       </div>
       {/* The pool: pair, fee, and its TVL and APR, for a chosen pool or a row pointed at. It opens and folds (M13). */}
       <div
@@ -193,13 +214,21 @@ export function PositionPreview({
         }}
       >
         <div className="dm-flow-pv-fold-inner">
-          {head && (
+          {head && pair && (
             <div key={head.key} className="dm-flow-pv-pool dm-arrive">
-              <TokenMarkPair base={head.currencies[0]} quote={head.currencies[1]} size={40} />
+              <TokenMarkPair base={pair.base} quote={pair.quote} size={40} />
               <div className="dm-flow-pv-pool-words">
                 <p className="dm-flow-pv-pair">
-                  <SymbolText token={head.currencies[0]} /> / <SymbolText token={head.currencies[1]} />
+                  <SymbolText token={pair.base} /> / <SymbolText token={pair.quote} />
                 </p>
+                {/* QA round 2, Q23/N37: with its network, the pool's tags sit under the pair, network then fee, as the chosen
+                    pool's panel and the pool rows show them (joined tags, new.html .tag). */}
+                {networkText !== null && (
+                  <span className="dm-flow-pv-chips" data-pool-chips="">
+                    <span className="dm-chip" data-chain-chip={chain ?? undefined}>{networkText}</span>
+                    <span className="dm-chip" data-fee="" title={FEE_MEANING}>{fee}</span>
+                  </span>
+                )}
                 {figures && (figures.tvl || figures.apr) && (
                   <dl className="dm-flow-pv-stats">
                     {figures.tvl && (
@@ -212,7 +241,9 @@ export function PositionPreview({
                     )}
                     {figures.apr && (
                       <div>
-                        <dt>Yearly fee estimate</dt>
+                        {/* Changed on purpose 2026-10-30 (QA round 2, N52, the owner's option b): the label says it is the
+                            pool's yearly fee rate now, not what this deposit earns. The number and its formula are unchanged (D9). */}
+                        <dt>Pool fee rate, yearly</dt>
                         <dd className="dm-flow-pv-apr">
                           <LiveFigure value={figures.apr} direction="none" />
                         </dd>
@@ -221,7 +252,11 @@ export function PositionPreview({
                   </dl>
                 )}
               </div>
-              <span className="dm-chip dm-flow-pv-fee">{head.fee}</span>
+              {networkText === null && (
+                <span className="dm-chip dm-flow-pv-fee" title={FEE_MEANING}>
+                  {fee}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -313,7 +348,7 @@ export function PositionPreview({
                 {part.usd && (
                   <span className="dm-flow-pv-usd">
                     <LiveFigure value={formatUsd(part.usd)} direction="none">
-                      <UsdText value={part.usd} />
+                      <UsdText value={part.usd} floor />
                     </LiveFigure>
                   </span>
                 )}
@@ -327,7 +362,7 @@ export function PositionPreview({
               <span className="dm-fig-lg dm-arrive">
                 {held.estimate && <span className="dm-flow-pv-about">{CREATE.review.about} </span>}
                 <LiveFigure value={formatUsd(valued)} direction="auto">
-                  <UsdText value={valued} />
+                  <UsdText value={valued} floor />
                 </LiveFigure>
               </span>
             </div>

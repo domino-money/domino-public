@@ -8,7 +8,7 @@
  * carries none, and this file asks for none.
  */
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import * as runtime from '../../../api-contracts/position-plan-v1/runtime.mjs';
@@ -60,7 +60,9 @@ test('fee tiers: v3 the profile\'s, Base\'s extra 0.02/0.03/0.04% (fee 200/300/4
   for (const chainId of [4663, 42161]) assert.deepEqual(pools.tiersOf(chainId, 3).map((t) => t.fee), [100, 500, 3000, 10000]);
   for (const chainId of [4663, 8453, 42161]) assert.deepEqual(pools.tiersOf(chainId, 4), [{ fee: 100, tickSpacing: 1 }, { fee: 500, tickSpacing: 10 }, { fee: 3000, tickSpacing: 60 }, { fee: 10000, tickSpacing: 200 }]);
   assert.equal(pools.feePercent(200), '0.02%');
-  assert.equal(pools.feePercent(3000), '0.3%');
+  // Changed on purpose 2026-10-30 (QA round 2, N2): the one fee format of every screen.
+  assert.equal(pools.feePercent(3000), '0.30%');
+  assert.equal(pools.feePercent(10000), '1.00%');
 });
 
 test('hooked v4 pools are never offered (decision #6); V1\'s list pools become the same PoolRef, and a hooked or malformed one none', () => {
@@ -215,8 +217,8 @@ test('the owner\'s journey on V2: its pool, range and slippage as chosen; what t
 
 // Added 2026-10-06 (the final check's F5): a read of the wallet's two balances that finished with nothing usable leaves the
 // owner's journey waiting for good (inputsFromV1's wait: the plan funds the deposit from both balances), and nothing reads
-// them again by itself; Review then offers to read them again. Never while the read is under way, with no wallet, or once
-// both are known (a zero is known).
+// them again by itself; Review then reads them again on its own (the test below). Never while the read is under way, with
+// no wallet, or once both are known (a zero is known).
 test('balancesUnread: a finished read with no figure for either side is unread; one under way, no wallet, or zero balances are not', () => {
   const fromV1 = require(`${BUILD}v2in/journey/model/fromV1.js`);
   const { rawBalances } = require(`${BUILD}components/create/valuation.js`);
@@ -237,6 +239,28 @@ test('balancesUnread: a finished read with no figure for either side is unread; 
     const raw = rawBalances({ ...read, budgets: {} });
     assert.equal(read.status === 'ready' && (raw === null || raw[0] === null || raw[1] === null), unread, `${why}: as the plan reads it`);
   }
+});
+
+// Added 2026-10-30 (QA round 2, final review journey-1): Review read unread balances again three times (2 s, 5 s, 15 s), then
+// stopped for good and said "Your balance couldn’t be read." with a Read again button (rule 3: no "couldn't" text, no Retry
+// buttons, reads asked again silently). Now the last pause repeats once a minute for as long as they stay unread, only while
+// the page is in view, and the line only ever says the balance is being checked.
+test('unread balances on Review are read again on their own for good, 2 s, 5 s, 15 s, then every minute, with no Read again', () => {
+  const fromV1 = require(`${BUILD}v2in/journey/model/fromV1.js`);
+  assert.deepEqual([0, 1, 2, 3, 4, 10, 1_000].map(fromV1.unreadRereadAfter), [2_000, 5_000, 15_000, 60_000, 60_000, 60_000, 60_000], 'never stops: the minute repeats');
+  assert.equal(fromV1.unreadRereadAfter(-1), 2_000, 'never sooner than the first pause');
+  const strip = (text) => text.replaceAll('\r\n', '\n').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
+  const create = strip(readFileSync(new URL('../../src/v2in/journey/JourneyCreateV2.tsx', import.meta.url), 'utf8'));
+  assert.match(create, /\}, unreadRereadAfter\(rereads\.count\)\)/, 'each pause from the schedule above');
+  assert.doesNotMatch(create, /rereads\.count >=|UNREAD_REREADS_MS\.length/, 'no count after which the re-reads stop');
+  // Only while the page is in view: a pause that ends while it is hidden waits for it to be shown, then reads.
+  assert.match(create, /if \(document\.hidden\) document\.addEventListener\('visibilitychange', whenVisible\)\s*else again\(\)/);
+  assert.match(create, /document\.removeEventListener\('visibilitychange', whenVisible\)/);
+  // The unread line only ever says the balance is being checked; no fallback sentence and no button to read again.
+  assert.match(create, /data-zap-reason="unread">\s*\{CREATE\.amount\.pairReading\}\s*<\/p>/);
+  assert.doesNotMatch(create, /reasonUnread|final\.readAgain|data-create-read-again|data-zap-rereading/);
+  const copy = strip(readFileSync(new URL('../../src/v2in/journey/copy.ts', import.meta.url), 'utf8'));
+  assert.doesNotMatch(copy, /couldn.t be read|'Read again'/, 'the strings went with the branch');
 });
 
 // Added 2026-10-06 (the final check's F4, a second look): before a quote has figures, Review on Domino V2 writes what the

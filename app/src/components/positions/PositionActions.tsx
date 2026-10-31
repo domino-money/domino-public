@@ -65,6 +65,12 @@ export interface PositionActionsProps {
   automationSlot?: ReactNode
   /** Collect fees is the primary button: a plain position's (2026-09-27); a sequence's is outlined. */
   primary?: boolean
+  /**
+   * (QA round 2, N49) The position is the root of Auto-exit's own vault (read-v6, through the page's V2 actions): its
+   * subscriber is that vault, and Collect fees leaves Auto-exit on (the docs, and the V2 dialogs), so the note that
+   * collecting or closing stops Domino automation is not said.
+   */
+  autoExitRoot?: boolean
 }
 
 type Action = 'collect' | 'close'
@@ -179,7 +185,7 @@ const LEDE: Readonly<Record<Action, string>> = {
   close: 'Your tokens and fees return to your wallet. The position, now empty, stays in your wallet.',
 }
 
-export default function PositionActions({ tokenId, owner, liquidityRaw, unsettledFeesRaw, currencies, hooks, onChanged, usd = null, tokens = null, automate = null, automationSlot = null, primary }: PositionActionsProps) {
+export default function PositionActions({ tokenId, owner, liquidityRaw, unsettledFeesRaw, currencies, hooks, onChanged, usd = null, tokens = null, automate = null, automationSlot = null, primary, autoExitRoot = false }: PositionActionsProps) {
   const identity = useWalletIdentity()
   const wallet = identity.kind === 'connected' ? `${identity.connectorName}|${identity.address.toLowerCase()}` : null
   const mine = wallet !== null && identity.kind === 'connected' && identity.address.toLowerCase() === owner.toLowerCase()
@@ -417,7 +423,7 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
                 </SheetFact>
               </SheetFacts>
             </div>
-            {prepared?.state.hasSubscriber && (
+            {prepared?.state.hasSubscriber && !autoExitRoot && (
               <SheetNote tone="warn" data-position-warning="automation">
                 {AUTOMATION}
               </SheetNote>

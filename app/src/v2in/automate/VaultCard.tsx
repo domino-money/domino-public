@@ -73,7 +73,9 @@ const toneOf = (view: VaultView) => (view.exit ? EXIT_TONE[view.exit] : PILL_TON
 function modeWords(view: VaultView): string | null {
   // Auto-exit's own vault records Auto-compound's mode with one position, and never reinvests: no mode to say.
   if (view.exit || view.status === 'protection' || view.mode === null) return null
-  return view.mode === 2 ? `Domino-compound: ${automationFeeText(2)} of reinvested fees` : `Auto-compound: ${automationFeeText(1)} of reinvested fees`
+  // Changed on purpose 2026-10-30 (QA round 2, final review shell-3, the owner's Q1): the fee in Automate's one wording
+  // (components/automate/ModeSummary.tsx); it said "2% of reinvested fees", another base than every other screen's.
+  return `${view.mode === 2 ? 'Domino-compound' : 'Auto-compound'}: ${automationFeeText(view.mode === 2 ? 2 : 1)} of the earned fees it uses, each time`
 }
 
 /** One amount per pool token as "1.5 USDG + 990 raw units of MANY", only those above zero; "0" when none; a dash with its reason when unread. */

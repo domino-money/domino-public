@@ -74,6 +74,7 @@ function setup(fake, { purpose = 'owned', memory = local.localRpcMemory(), clock
 }
 
 const refused = (promise) => assert.rejects(promise, (error) => error instanceof TypeError && error.message === 'local_rpc_refused_method');
+const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 // ---------------------------------------------------------------------------
 // The secret
@@ -522,33 +523,172 @@ test('a refused token (401, 403, 404) is a 502 and lets the node alone for a min
   assert.equal(moved.posts.at(-1).init.redirect, 'manual');
 });
 
-test('a node out of reach (a network error, 502, 504, 520 to 530) is down: 15 s, doubling to 5 min, every POST rejected at once meanwhile', async () => {
+// Changed on purpose 2026-10-30 (launch capacity study, item 7): it was down at the first failure, for 15 s doubled by every
+// failed call to five minutes, so one blip with five calls on their way took an isolate to 240 s. Now: down only at the
+// third POST in a row that cannot reach the node, for 10 s, doubled only by the failed probe at a window's end, to 30 s.
+test('a node out of reach (a network error, 502, 504, 520 to 530) three times in a row is down: 10 s, doubled once per failed probe to 30 s, every POST rejected at once meanwhile', async () => {
+  assert.deepEqual(local.LOCAL_RPC_DOWN, { failures: 3, firstMs: 10_000, maxMs: 30_000 });
   for (const failure of ['network', 502, 504, 520, 530]) {
     let down = true;
     const fake = node({ reply: (posted) => (down && posted.calls[0].method !== 'eth_chainId' ? (failure === 'network' ? Promise.reject(new TypeError('fetch failed')) : new Response('', { status: failure })) : null) });
-    const { make, clock, memory } = setup(fake);
-    await assert.rejects(make().fetch(RPC, body(envelope('eth_blockNumber', []))), { message: 'local_rpc_down' });
-    assert.equal(make().health(), 'down', String(failure));
-    await assert.rejects(make().fetch(RPC, body(envelope('eth_blockNumber', []))), { message: 'local_rpc_down' });
-    assert.equal(fake.posts.length, 2, `${failure}: nothing asked while down`);
-    clock.time += 15_000;
-    await assert.rejects(make().fetch(RPC, body(envelope('eth_blockNumber', []))), { message: 'local_rpc_down' });
-    assert.equal(memory.downMs, 30_000, 'doubled');
-    for (let i = 0; i < 6; i++) {
-      clock.time += memory.downMs;
-      // Still trusted: a chain id check the node answers is a reply, which would end the doubling.
-      memory.trustedUntil = clock.time + local.LOCAL_RPC_TRUST_MS;
-      await make().fetch(RPC, body(envelope('eth_blockNumber', []))).catch(() => undefined);
+    const { make, clock, memory, log } = setup(fake);
+    const ask = () => make().fetch(RPC, body(envelope('eth_blockNumber', [])));
+    // One failure, then a reply: never down, and the reply ends the run.
+    await assert.rejects(ask(), { message: 'local_rpc_unreachable' });
+    assert.equal(make().health(), 'ok', `${failure}: one failure is not the node away`);
+    down = false;
+    assert.equal((await ask()).status, 200);
+    down = true;
+    await assert.rejects(ask(), { message: 'local_rpc_unreachable' });
+    await assert.rejects(ask(), { message: 'local_rpc_unreachable' });
+    assert.equal(make().health(), 'ok', `${failure}: two in a row are not`);
+    await assert.rejects(ask(), { message: 'local_rpc_unreachable' });
+    const rpc = make();
+    assert.equal(rpc.health(), 'down', `${failure}: three in a row are`);
+    assert.equal(memory.downMs, 10_000);
+    assert.equal(rpc.downForMs(), 10_000);
+    const posts = fake.posts.length;
+    await assert.rejects(ask(), { message: 'local_rpc_down' });
+    assert.equal(fake.posts.length, posts, `${failure}: nothing asked while down`);
+    // Each window's end lets one probe through; failed, it doubles the window once, to 30 s at the most.
+    for (const [after, next] of [[10_000, 20_000], [20_000, 30_000], [30_000, 30_000]]) {
+      clock.time += after;
+      await assert.rejects(ask(), { message: 'local_rpc_unreachable' });
+      assert.equal(memory.downMs, next, `${failure}: after a window of ${after} ms`);
     }
-    assert.equal(memory.downMs, local.LOCAL_RPC_DOWN.maxMs, 'at most five minutes');
+    assert.equal(fake.posts.length, posts + 3, 'one probe a window');
+    assert.equal(memory.downMs, local.LOCAL_RPC_DOWN.maxMs, 'at most 30 s');
+    assert.deepEqual(log.map((line) => JSON.parse(line)), [10_000, 20_000, 30_000, 30_000].map((ms) => ({ service: 'chain-routes', event: 'local_rpc_down', ms })));
     clock.time += memory.downMs;
     down = false;
-    assert.equal((await make().fetch(RPC, body(envelope('eth_blockNumber', [])))).status, 200);
+    assert.equal((await ask()).status, 200, 'a probe the node answers');
     assert.equal(memory.downMs, 0, 'a reply ends it');
+    assert.equal(make().health(), 'ok');
+  }
+  // Calls on their way when it goes down add nothing: five failing together are one window of 10 s (they were 240 s).
+  {
+    const releases = [];
+    const fake = node({ reply: (posted) => (posted.calls[0].method === 'eth_chainId' ? null : new Promise((resolve) => releases.push(() => resolve(new Response('', { status: 502 }))))) });
+    const { make, clock, memory } = setup(fake);
+    memory.trustedUntil = clock.time + local.LOCAL_RPC_TRUST_MS;
+    const asks = Array.from({ length: 5 }, (_, i) => make().fetch(RPC, body(envelope('eth_blockNumber', [], i))));
+    while (releases.length < 5) await tick();
+    for (const release of releases.splice(0)) release();
+    for (const asked of asks) await assert.rejects(asked, { message: 'local_rpc_unreachable' });
+    assert.equal(memory.downMs, 10_000, 'one window for one blip');
+    assert.equal(memory.downUntil, clock.time + 10_000);
+    // Its end lets one probe through; the calls that come meanwhile wait for its verdict as down, sending nothing.
+    clock.time += 10_000;
+    const probe = make().fetch(RPC, body(envelope('eth_blockNumber', [])));
+    while (releases.length < 1) await tick();
+    const waiting = make();
+    await assert.rejects(waiting.fetch(RPC, body(envelope('eth_blockNumber', []))), { message: 'local_rpc_down' });
+    assert.equal(waiting.health(), 'down', 'its probe is on its way');
+    assert.equal(waiting.downForMs(), 0, 'and its window is over');
+    assert.equal(fake.posts.length, 6, 'one POST went');
+    releases[0]();
+    await assert.rejects(probe, { message: 'local_rpc_unreachable' });
+    assert.equal(memory.downMs, 20_000, 'the failed probe doubled it, once');
   }
   // The chain code reads it as a failure to reach the RPC.
   const out = node({ reply: () => Promise.reject(new TypeError('fetch failed')) });
   await assert.rejects(owned.paced({ fetch: setup(out).rpc.fetch, sleep: async () => {}, now: () => 0 }, { calls: 0, started: 0, logBytes: 0 }, 'eth_blockNumber', []), (error) => error.kind === 'fatal');
+});
+
+// Added 2026-10-30 (launch capacity study, item 7): Cloudflare cancels the tasks of a request whose visitor left, so a
+// probe may never settle; it holds the isolate for one time-out and its margin at the most.
+test('a probe whose request was cut off never holds the isolate down: past one time-out and its margin, the next POST probes', async () => {
+  let hang = true;
+  const fake = node({ reply: (posted) => (posted.calls[0].method !== 'eth_chainId' && hang ? new Promise(() => undefined) : null) });
+  const { make, clock, memory } = setup(fake, { timeoutMs: 20 });
+  memory.trustedUntil = clock.time + local.LOCAL_RPC_TRUST_MS;
+  // An outage whose window has just ended.
+  memory.downMs = local.LOCAL_RPC_DOWN.firstMs;
+  memory.downUntil = clock.time;
+  void make().fetch(RPC, body(envelope('eth_blockNumber', []))).catch(() => undefined);
+  while (fake.posts.length < 1) await tick();
+  assert.equal(make().health(), 'down', 'its probe is on its way');
+  await assert.rejects(make().fetch(RPC, body(envelope('eth_blockNumber', []))), { message: 'local_rpc_down' });
+  assert.equal(fake.posts.length, 1);
+  clock.time += 40;
+  hang = false;
+  assert.equal(make().health(), 'ok', 'a probe older than its life no longer counts');
+  assert.equal((await make().fetch(RPC, body(envelope('eth_blockNumber', [])))).status, 200, 'the next POST probes, and the reply ends the outage');
+  assert.equal(memory.downMs, 0);
+  assert.equal(memory.probeAt, 0);
+});
+
+// Added 2026-10-30 (review of the launch change, item 7): a reply that came during a window left the isolate dark to the
+// window's end; a probe failing after such a reply marked it down at once; and an outage was never forgotten, so the first
+// burst after a quiet hour went one probe at a time.
+test('a reply during a down window ends it at once; a probe failing after that reply is one failure like any other; an outage quiet for LOCAL_RPC_DOWN.maxMs is forgotten', async () => {
+  const pending = [];
+  const fake = node({ reply: (posted) => (posted.calls[0].method === 'eth_chainId' ? null : new Promise((resolve) => pending.push({ posted, resolve }))) });
+  const ok = ({ posted, resolve }) => resolve(json({ jsonrpc: '2.0', id: posted.calls[0].id, result: '0x1' }));
+  const ask = (make, i = 1) => make().fetch(RPC, body(envelope('eth_blockNumber', [], i)));
+  // A call on its way when three others take the isolate down, answered during the window: the window ends there.
+  {
+    const { make, clock, memory } = setup(fake);
+    memory.trustedUntil = clock.time + local.LOCAL_RPC_TRUST_MS;
+    const asks = Array.from({ length: 4 }, (_, i) => ask(make, i));
+    while (pending.length < 4) await tick();
+    for (const { resolve } of pending.slice(0, 3)) resolve(new Response('', { status: 502 }));
+    for (const asked of asks.slice(0, 3)) await assert.rejects(asked, { message: 'local_rpc_unreachable' });
+    assert.equal(make().health(), 'down');
+    assert.equal(memory.downUntil, clock.time + local.LOCAL_RPC_DOWN.firstMs);
+    ok(pending[3]);
+    assert.equal((await asks[3]).status, 200);
+    const rpc = make();
+    assert.deepEqual([rpc.health(), rpc.downForMs(), memory.downMs, memory.downUntil, memory.probeAt], ['ok', 0, 0, 0, 0], 'the reply ended the window at once');
+    const next = ask(make);
+    while (pending.length < 5) await tick();
+    ok(pending[4]);
+    assert.equal((await next).status, 200, 'the next POST went, as on any day');
+    pending.length = 0;
+  }
+  // A probe on its way when a call from before the window is answered: the probe's failure is one in a row, not a window.
+  {
+    const { make, clock, memory } = setup(fake);
+    memory.trustedUntil = clock.time + local.LOCAL_RPC_TRUST_MS;
+    const before = ask(make, 0);
+    while (pending.length < 1) await tick();
+    // The isolate went down, and its window ended, while that call was on its way.
+    memory.downMs = local.LOCAL_RPC_DOWN.firstMs;
+    memory.downUntil = clock.time;
+    const probe = ask(make, 1);
+    while (pending.length < 2) await tick();
+    assert.equal(memory.probeAt, clock.time, 'it is the probe');
+    ok(pending[0]);
+    assert.equal((await before).status, 200);
+    assert.deepEqual([memory.downMs, memory.probeAt], [0, 0], 'the reply ended the outage, and its probe');
+    pending[1].resolve(new Response('', { status: 502 }));
+    await assert.rejects(probe, { message: 'local_rpc_unreachable' });
+    assert.deepEqual([make().health(), memory.downMs, memory.downFailures], ['ok', 0, 1], 'one failure in a row, not the node away');
+    pending.length = 0;
+  }
+  // An outage whose window ended less than LOCAL_RPC_DOWN.maxMs ago: one probe at a time. Past it: forgotten.
+  for (const [ago, forgotten] of [[local.LOCAL_RPC_DOWN.maxMs - 1, false], [local.LOCAL_RPC_DOWN.maxMs, true]]) {
+    const { make, clock, memory } = setup(fake);
+    memory.trustedUntil = clock.time + local.LOCAL_RPC_TRUST_MS;
+    memory.downMs = local.LOCAL_RPC_DOWN.firstMs * 2;
+    memory.downUntil = clock.time - ago;
+    const first = ask(make, 0);
+    while (pending.length < 1) await tick();
+    if (forgotten) {
+      assert.equal(memory.downMs, 0, `${ago} ms after the window: forgotten`);
+      const second = ask(make, 1);
+      while (pending.length < 2) await tick();
+      ok(pending[1]);
+      assert.equal((await second).status, 200, 'a second POST goes beside the first');
+    } else {
+      assert.equal(memory.probeAt, clock.time, `${ago} ms after the window: the first POST is its probe`);
+      await assert.rejects(ask(make, 1), { message: 'local_rpc_down' });
+    }
+    ok(pending[0]);
+    assert.equal((await first).status, 200);
+    assert.equal(memory.downMs, 0);
+    pending.length = 0;
+  }
 });
 
 // Changed on purpose 2026-10-02 (rugged97's rule 7): a log range too slow was split and asked again; it stops now.

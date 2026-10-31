@@ -403,10 +403,14 @@ test('Auto-exit picker recovers a failed portfolio read without a reload or a wa
   const s = await openPreview(v1, '/sequence/protection/999999', { portfolio: failed });
   try {
     await s.page.locator('[data-sequence-positions="failed"]').waitFor();
+    // Changed on purpose 2026-10-30 (QA round 2, the owner's rule: reads are asked again silently): no failure words and no
+    // Try again; the loading rows stay while the portfolio is asked again by itself (src/v2in/lists/source.ts, 5 s after a
+    // first failure).
+    assert.doesNotMatch(await s.page.locator('main').innerText(), /couldn’t be checked|Try again/);
+    assert.equal(await s.page.locator('[data-sequence-positions="failed"] .dm-seq-loading-row').count(), 3);
     const portfolio = plainPortfolio(v1, holder);
     await s.page.evaluate((value) => { window.__dominoV2Test.read6.portfolio = () => value; }, portfolio);
-    await s.page.getByRole('button', { name: 'Try again', exact: true }).click();
-    await s.page.locator('[data-v2in-protection-setup]').waitFor();
+    await s.page.locator('[data-v2in-protection-setup]').waitFor({ timeout: 30_000 });
     assert.match(await s.page.locator('[data-sequence-position-missing]').innerText(), /Choose another position/);
     assert.equal(await s.page.locator('[data-sequence-action="protection"]').isDisabled(), true, 'missing intent never selects an unrelated NFT');
     assert.deepEqual(s.wallet.state.log.filter((entry) => SENDS_AND_SIGNATURES.includes(entry.method)), []);
@@ -445,7 +449,8 @@ test('preview: Auto-exit on a plain position the wallet holds: the range\'s two 
     assert.match(await edges.nth(0).innerText(), /^↘\s*falls to\s*759\.053 USDG per ETH$/);
     assert.match(await edges.nth(1).innerText(), /^↗\s*rises to\s*5,608\.12 USDG per ETH$/);
     // Changed on purpose 2026-10-06 (the review of point 5): the price now beside them; under the preview, the page's read.
-    assert.equal(await dialog.locator('[data-mandate-now]').innerText(), 'Now 2,500');
+    // Changed on purpose 2026-10-30 (QA round 2, N2): the screens' price rule (present.ts priceText), 2 decimals from 1,000.
+    assert.equal(await dialog.locator('[data-mandate-now]').innerText(), 'Now 2,500.00');
     assert.equal(await dialog.locator('[data-mandate-near]').count(), 0, 'both ends far from the price: no warning');
     // Changed on purpose 2026-10-06 (rugged's answer of 6 Oct, the spec delta §2: one button is the acknowledgement and the
     // consent only with them in view above it): §4.6's fee line whole, warnings 1 and 2 (v4: no third), and the
@@ -498,7 +503,9 @@ test('preview: Auto-exit on a plain position the wallet holds: the range\'s two 
     // Added 2026-10-06 (the integration review, ux #9): Automate's Auto-exit sends the person here: Auto-exit is named.
     const automation = page.locator('section[aria-labelledby="automation-title"]');
     assert.deepEqual(await automation.locator('.dm-acct-auto-name').allInnerTexts(), ['Auto-compound', 'Domino-compound', 'Auto-exit']);
-    assert.equal(await automation.locator('[data-automation-feature="auto-exit"] .dm-acct-auto-text').innerText(), 'Close at the range limit');
+    // Changed on purpose 2026-10-30 (QA round 2, N12): Auto-exit's trigger has one name across the app, "the end of your range",
+    // in the imperative of the card's other two lines ("Reinvest earned fees", "Fund the next range").
+    assert.equal(await automation.locator('[data-automation-feature="auto-exit"] .dm-acct-auto-text').innerText(), 'Close at the end of your range');
     await automation.screenshot({ path: join(shots(), 'v2in-positions-automation-card.png'), animations: 'disabled' });
     // …and Automate itself is about more than fees now.
     await page.evaluate(() => { location.hash = '#/automate'; });
@@ -793,7 +800,9 @@ test('live: "Leave automation" on a running vault\'s page sends exitAll() (the r
     assert.doesNotMatch(await card.innerText(), /vault/i);
     assert.deepEqual(await card.locator('[data-vault-open]').evaluateAll((buttons) => buttons.map((b) => b.getAttribute('data-vault-open'))), ['withdraw', 'leave']);
     assert.deepEqual(await card.locator('[data-vault-more]').evaluateAll((buttons) => buttons.map((b) => b.getAttribute('data-vault-more'))), ['pause']);
-    assert.match(await card.locator('[data-vault-details]').textContent(), /Auto-compound: 2% of reinvested fees/);
+    // Changed on purpose 2026-10-30 (QA round 2, final review shell-3, the owner's Q1): the fee in Automate's one wording.
+    assert.match(await card.locator('[data-vault-details]').textContent(), /Auto-compound: 2% of the earned fees it uses, each time/);
+    assert.doesNotMatch(await card.locator('[data-vault-details]').textContent(), /reinvested fees/);
     // Auto-exit is separate from compounding (rugged97, 2026-10-06): a running Auto-compound is never offered it.
     await page.locator('[data-position-actions] [data-position-v2-more]').waitFor({ timeout: 30_000 });
     assert.equal(await page.locator('[data-position-v2-action="protect"]').count(), 0, 'no Auto-exit on a running Auto-compound');
@@ -1107,12 +1116,17 @@ test('live: a protection-only automation with its Auto-exit on is ONE card: "Clo
     // Set up automation offers it neither a second Auto-exit nor compounding (rugged97: "auto-exit has no fee compounding").
     await page.evaluate((id) => { location.hash = `#/sequence/protection/${id}`; }, String(ROOT));
     // The multichain picker also checks Base and Arbitrum; this fixture explicitly leaves those reads unavailable.
-    const setup = page.locator('[data-sequence-positions="failed"]');
+    // Changed on purpose 2026-10-30 (QA round 2, the owner's rule: missing information stays out of sight, and the review):
+    // an answer that came back with those networks behind and nothing to offer is the plate at once, never endless loading
+    // rows or failure words; the portfolio is still asked again by itself, and a list would replace the plate.
+    const setup = page.locator('[data-sequence-positions="empty"]');
     await setup.waitFor({ timeout: 30_000 });
     assert.equal(released.length, 0, 'V2 never asks the inactive V1 release');
     assert.equal(await page.locator('[data-sequence-release="unavailable"]').count(), 0, 'no "Automation can’t be set up here."');
     assert.doesNotMatch(await page.locator('main').innerText(), /Automation can’t be set up here/);
-    assert.match(await setup.innerText(), /Your positions couldn’t be checked right now/);
+    assert.match(await setup.innerText(), /No positions available for Auto-exit[\s\S]*This position isn’t available for a new Auto-exit\. Check its status in Positions\./);
+    assert.doesNotMatch(await setup.innerText(), /couldn’t be checked|Try again/);
+    assert.equal(await page.locator('[data-sequence-positions="failed"]').count(), 0, 'a portfolio that answered is not left loading');
     assert.equal(await page.locator('[data-sequence-action], [data-sequence-mode]').count(), 0, 'an automated NFT cannot choose a second Auto-exit or compounding');
     assert.equal(await setup.locator('[data-v2in-consent]').count(), 0, 'nothing to consent to');
     await setup.screenshot({ path: join(shots(), 'v2in-setup-autoexit-held.png'), animations: 'disabled' });
@@ -1214,7 +1228,8 @@ test('live: Auto-exit on a plain position is ONE signature and ONE wallet_sendCa
     const [below, above] = [sqrtPriceAtTick(-201060), sqrtPriceAtTick(-198060)];
     assert.equal(await dialog.locator('[data-mandate-edges]').getAttribute('data-mandate-price'), 'chain', 'the pool\'s own price, read on chain');
     assert.ok(chain.callsSince(0).some((c) => c.calls.includes('stateView.getSlot0')));
-    assert.equal(await dialog.locator('[data-mandate-now]').innerText(), 'Now 2,500');
+    // Changed on purpose 2026-10-30 (QA round 2, N2): the screens' price rule (present.ts priceText), 2 decimals from 1,000.
+    assert.equal(await dialog.locator('[data-mandate-now]').innerText(), 'Now 2,500.00');
     // 2,500 is 0.2% under the upper end (2,504.92): within the 1% band, it may close soon, and the dialog says so.
     assert.equal(await dialog.locator('[data-mandate-near]').innerText(), 'The price is close to the end of your range, so Auto-exit may close this position soon.');
     await dialog.screenshot({ path: join(shots(), 'v2in-autoexit-live-ready.png'), animations: 'disabled' });
@@ -1299,7 +1314,8 @@ test('V2 detail: one setup link preselects the NFT, and both compounding reviews
       const review = flow.locator('[data-v2in-review]');
       await review.waitFor();
       assert.equal(await review.locator('dd').nth(1).innerText(), title);
-      assert.equal(await review.locator('dd').nth(2).innerText(), `${fee} of earned fees used, once`);
+      // Changed on purpose 2026-10-30 (QA round 2, the owner's Q1): Automate's one wording, "each time", not "once".
+      assert.equal(await review.locator('dd').nth(2).innerText(), `${fee} of the earned fees it uses, each time`);
       for (const width of [1280, 390, 320]) {
         await page.setViewportSize({ width, height: 960 });
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${mode} review fits at ${width}`);
@@ -1344,9 +1360,10 @@ test('V2 detail: unread, stale, missing and failed custody never show Off or off
       if (name === 'custody failed') {
         // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the control names the automation alone; it said "· State unavailable".
         assert.doesNotMatch(await control.innerText(), /State unavailable|Updating|Loading/);
-        await s.page.evaluate((portfolio) => { window.__dominoV2Test.read6.portfolio = portfolio; }, plainPortfolio(v1, holder));
-        await s.page.locator('[data-automation-refresh]').click();
-        await s.page.locator('[data-automation-setup]').waitFor();
+        // Changed on purpose 2026-10-30 (QA round 2, the owner's rule: no Retry or Refresh on a read surface): no Refresh;
+        // the portfolio is asked again by itself (src/v2in/lists/source.ts), which a test build does only when asked to.
+        assert.equal(await s.page.locator('[data-automation-refresh]').count(), 0);
+        assert.equal(await s.page.getByRole('button', { name: 'Refresh', exact: true }).count(), 0);
       }
     } finally { await s.close(); }
   }
@@ -2138,9 +2155,11 @@ test('final pass: all three automation entries have an honest empty state and co
     try {
       await s.page.locator('[data-sequence-positions="failed"]').waitFor();
       assert.equal(await s.page.locator('[data-sequence-positions="empty"]').count(), 0, 'read failure is not an empty portfolio');
+      // Changed on purpose 2026-10-30 (QA round 2, the owner's rule: reads are asked again silently): no Try again; the
+      // portfolio is asked again by itself, 5 s after a first failure (src/v2in/lists/source.ts).
+      assert.equal(await s.page.getByRole('button', { name: 'Try again', exact: true }).count(), 0);
       await s.page.evaluate(value => { window.__dominoV2Test.read6.portfolio = () => value; }, plainPortfolio(v1, holder));
-      await s.page.getByRole('button', { name: 'Try again', exact: true }).click();
-      await s.page.locator(`[data-sequence-position="${ROOT}"]`).waitFor();
+      await s.page.locator(`[data-sequence-position="${ROOT}"]`).waitFor({ timeout: 30_000 });
       assert.equal(await s.page.locator('[data-v2in-consent]').count(), 0, 'recovery has not picked an NFT or supplied consent');
       assert.deepEqual(s.wallet.state.log.filter(entry => SENDS_AND_SIGNATURES.includes(entry.method)), []);
     } finally { await s.close(); }

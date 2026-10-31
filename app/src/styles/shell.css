@@ -33,7 +33,7 @@
   .dm-press { transition: scale var(--dur-press) var(--ease-std), background-color var(--dur-hover) ease, color var(--dur-hover) ease, box-shadow var(--dur-hover) ease, opacity var(--dur-hover) ease, filter var(--dur-hover) ease; }
   .dm-press:active:not(:disabled):not([aria-disabled="true"]) { scale: var(--press-scale); }
   .dm-press-icon { transition: scale var(--dur-press) var(--ease-std), background-color var(--dur-hover) ease, color var(--dur-hover) ease, box-shadow var(--dur-hover) ease, opacity var(--dur-hover) ease; }
-  .dm-press-icon:active:not(:disabled) { scale: var(--press-scale-icon); }
+  .dm-press-icon:active:not(:disabled):not([aria-disabled="true"]) { scale: var(--press-scale-icon); }
 
   /* ---- Type scale (§2.8). Serif: the Home hero, page h1s, Home section heads, card-sized display titles.
      Geist: every other title and every figure. Weight never above 500 outside the wordmark. ---------- */
@@ -76,9 +76,10 @@
   .dm-btn--lg > svg { width: 1.125rem; height: 1.125rem; }
   .dm-btn--xl > svg { width: 1.25rem; height: 1.25rem; }
   .dm-btn > svg { flex-shrink: 0; }
-  /* The label is the page's cream ink, as the approved prototype draws every solid Tangerine button (its links and buttons
-     inherit their colour); only the wallet sheet's foot keeps the dark label (v4-foundation.css). */
-  .dm-btn--primary, .dm-btn--accent { background: var(--primary); color: var(--fg); }
+  /* The label is the dark ink on Tangerine (--primary-fg, the prototype's --tan-fg, 7.9:1). Changed on purpose 2026-10-30
+     (QA round 2, N31, the owner's decision): it was the page's cream ink (1.8:1), which the prototype draws only through a
+     cascade quirk (its buttons inherit their colour); the wallet icon inside was already dark. Same orange, same shape. */
+  .dm-btn--primary, .dm-btn--accent { background: var(--primary); color: var(--primary-fg); }
   .dm-btn--primary:hover:not(:disabled):not([aria-disabled="true"]), .dm-btn--accent:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--primary-hover); }
   .dm-btn--primary:active:not(:disabled):not([aria-disabled="true"]), .dm-btn--accent:active:not(:disabled):not([aria-disabled="true"]) { background: var(--primary-press); }
   .dm-btn--soft, .dm-btn--secondary, .dm-btn--outline { background: var(--v4-w03); color: var(--fg); box-shadow: inset 0 0 0 1px var(--border-lip); }
@@ -91,7 +92,7 @@
   :is(.dm-btn--ghost, .dm-btn--danger):is(:disabled, [aria-disabled="true"]) { background: transparent; box-shadow: none; }
   /* Working (V4 .is-busy): the button presses into its deeper Tangerine and a 1.6px arc turns beside its words in .9s (its
      inner shade is v4-foundation.css's, as the v3 layer's disabled ring would beat it here). */
-  :is(.dm-btn--primary, .dm-btn--accent)[aria-busy="true"]:disabled { background: var(--primary-press); color: var(--fg); cursor: progress; }
+  :is(.dm-btn--primary, .dm-btn--accent)[aria-busy="true"]:disabled { background: var(--primary-press); color: var(--primary-fg); cursor: progress; }
   .dm-btn[aria-busy="true"]:disabled::before { content: ''; flex-shrink: 0; width: 1rem; height: 1rem; border-radius: var(--radius-pill); background: conic-gradient(from var(--dm-spin), currentColor 0 25%, color-mix(in srgb, currentColor 20%, transparent) 0); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 1.6px), #000 calc(100% - 1.2px)); mask: radial-gradient(farthest-side, transparent calc(100% - 1.6px), #000 calc(100% - 1.2px)); animation: dm-spin 0.9s linear infinite; }
   .dm-btn .i-chev-r { transition: translate 0.25s var(--ease-enter); }
   .dm-btn:hover .i-chev-r { translate: 2px 0; }
@@ -102,11 +103,12 @@
   .dm-icon-btn--md { width: 2.5rem; height: 2.5rem; }
   .dm-icon-btn--sm { width: 2rem; height: 2rem; }
   .dm-icon-btn--surface, .dm-icon-btn--round { background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border-lip); color: var(--fg); }
-  .dm-icon-btn--surface:hover:not(:disabled), .dm-icon-btn--round:hover:not(:disabled) { background: var(--v4-tan-07); box-shadow: inset 0 0 0 1px var(--v4-tan-ring); color: var(--primary-hover); }
+  .dm-icon-btn--surface:hover:not(:disabled):not([aria-disabled="true"]), .dm-icon-btn--round:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--v4-tan-07); box-shadow: inset 0 0 0 1px var(--v4-tan-ring); color: var(--primary-hover); }
   .dm-icon-btn--round { border-radius: var(--radius-pill); }
   .dm-icon-btn--ghost { background: transparent; }
-  .dm-icon-btn--ghost:hover:not(:disabled) { background: var(--v4-w06); color: var(--fg); }
-  .dm-icon-btn:disabled { background: transparent; color: var(--fg-faint); box-shadow: none; cursor: not-allowed; }
+  .dm-icon-btn--ghost:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--v4-w06); color: var(--fg); }
+  /* QA round 2, N86: the rail's arrows are aria-disabled at its ends (they keep focus), never disabled. */
+  .dm-icon-btn:is(:disabled, [aria-disabled="true"]) { background: transparent; color: var(--fg-faint); box-shadow: none; cursor: not-allowed; }
 
   /* ---- Pills, then chips (§3.4). Chips come later so `className="dm-chip"` on a Pill wins. -------- */
   .dm-pill { display: inline-flex; align-items: center; gap: 0.375rem; min-height: 1.375rem; padding: 0.1875rem 0.4375rem; border-radius: 0.375rem; font-size: 0.75rem; line-height: 1rem; font-weight: 500; letter-spacing: -0.01em; }
@@ -166,8 +168,12 @@
   .dm-field { width: 100%; height: 2.5rem; padding: 0 0.875rem; border-radius: 0.875rem; background: var(--v4-w03); color: var(--fg); box-shadow: inset 0 0 0 1px var(--border-lip); font: inherit; transition: box-shadow 0.2s var(--ease-std), background-color 0.2s var(--ease-std); }
   .dm-field::placeholder { color: var(--fg-subtle); }
   :is(.dm-field, .dm-search-input):hover { box-shadow: inset 0 0 0 1px var(--border-strong); }
-  :is(.dm-field, .dm-search-input):focus-visible { box-shadow: inset 0 0 0 1px var(--v4-tan-ring-strong), 0 0 0 0.25rem var(--v4-tan-halo); outline: none; }
+  /* Focused, a field wears a 2px Tangerine ring inside its edge, as firm as a button's focus outline (2026-10-30, QA round
+     2, N88, the owner's decision; it was 1px at 55%). Every field's own focus rule follows it. */
+  :is(.dm-field, .dm-search-input):focus-visible { box-shadow: inset 0 0 0 2px var(--ring), 0 0 0 0.25rem var(--v4-tan-halo); outline: none; }
   :is(.dm-field, .dm-search-input)[aria-invalid="true"] { box-shadow: inset 0 0 0 1px rgb(244 96 122 / 0.6), 0 0 0 0.25rem rgb(244 96 122 / 0.1); }
+  /* An invalid field focused keeps the same firm 2px ring, in money-out (as flow.css's invalid fields). */
+  :is(.dm-field, .dm-search-input)[aria-invalid="true"]:focus-visible { box-shadow: inset 0 0 0 2px var(--money-out), 0 0 0 0.25rem rgb(244 96 122 / 0.1); }
   .dm-field:disabled { color: var(--fg-subtle); cursor: not-allowed; }
   textarea.dm-field { height: auto; min-height: 5.5rem; padding: 0.625rem 0.75rem; line-height: 1.25rem; }
   .dm-label { display: block; margin-bottom: 0.5rem; font-size: 0.8125rem; line-height: 1.125rem; font-weight: 500; letter-spacing: -0.01em; color: var(--fg-subtle); }
@@ -499,8 +505,15 @@
      Kept sticky on purpose (2026-10-17): the prototype's header scrolls away, but every section offset and scroll
      check of the site is built on a header that stays. ---- */
   .dm-header { position: sticky; top: 0; z-index: 30; height: var(--header-h); }
-  .dm-header::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none; transition: background-color var(--dur-fade) var(--ease-std); }
+  /* The wash ends in a 12-design-px fade below the header rather than a straight cut, so a serif headline passing under it
+     is not sliced flat (2026-10-30, QA round 2, N94); still no hairline, and the header's own height is unchanged. */
+  .dm-header::before { content: ''; position: absolute; inset: 0 0 -0.75rem; z-index: -1; pointer-events: none; -webkit-mask-image: linear-gradient(#000 calc(100% - 0.75rem), transparent); mask-image: linear-gradient(#000 calc(100% - 0.75rem), transparent); transition: background-color var(--dur-fade) var(--ease-std); }
   .dm-header[data-scrolled]::before { background: rgb(13 12 10 / 0.84); -webkit-backdrop-filter: blur(0.75rem); backdrop-filter: blur(0.75rem); }
+  /* Skip to content (QA round 2, N85): the page's first Tab stop, out of sight until the keyboard reaches it, then a quiet
+     pill over the header's left end in the header buttons' surface and ring (App.tsx SkipLink). */
+  .dm-skip { position: fixed; left: 0.75rem; top: 0.75rem; z-index: 40; display: inline-flex; align-items: center; height: 2.5rem; padding: 0 1rem; border-radius: 0.75rem; background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border-lip); color: var(--fg); font-size: 0.875rem; font-weight: 500; text-decoration: none; translate: 0 calc(-100% - 1.5rem); }
+  .dm-skip:focus { translate: none; }
+  main[tabindex="-1"]:focus { outline: none; }
   .dm-header-row { position: relative; display: flex; align-items: center; justify-content: space-between; column-gap: 1rem; width: 100%; max-width: calc(var(--content) + 2 * var(--gutter)); height: 100%; margin-inline: auto; padding-inline: var(--gutter); }
   /* The wordmark: the tile tips 14 degrees and lifts while hovered, the full stop warms; a press presses it. */
   .dm-wordmark { display: inline-flex; align-items: center; gap: 0.625rem; flex-shrink: 0; padding: 0.375rem 0.25rem; border-radius: 0.625rem; color: var(--fg); text-decoration: none; }

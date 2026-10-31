@@ -5,7 +5,7 @@ import { v2TxUrl } from '../../v2/explorers'
 import { IconCheck, IconChevronDown } from '../../components/icons'
 import { Pill } from '../../components/ui'
 import { shortDate, shortTime } from '../../lib/format/time'
-import { chainNotes, partialSentence, type ShownReceipt } from './model'
+import { chainNotes, effectTitled, partialSentence, type ShownReceipt } from './model'
 import { RECEIPT_WORDS, receiptStatus } from './words'
 
 export const RECEIPT_LIST =
@@ -34,9 +34,9 @@ function Hash({ value, href }: { value: string; href: string | null }) {
 }
 
 /** Every effect remains inspectable. Amounts and tariffs are never summed across event kinds. */
-function Effect({ view, many }: { view: ShownReceipt; many: boolean }) {
+function Effect({ view, titled }: { view: ShownReceipt; titled: boolean }) {
   return <div data-receipt-effect={view.id}>
-    {(many || view.what.includes('raw units')) && <p className="dm-receipt-effect-title">{view.what}</p>}
+    {(titled || view.what.includes('raw units')) && <p className="dm-receipt-effect-title">{view.what}</p>}
     {(view.lines.some((line) => !line.tech) || view.fees.length > 0) && <dl className="dm-rcpt-facts">
       {view.lines.filter((line) => !line.tech).map((line, i) => <div key={`line-${i}`} data-receipt-line={line.data}><dt>{line.label}</dt><dd className="tnum">{line.value}</dd></div>)}
       {view.fees.map((fee, i) => <div key={`fee-${i}`} data-receipt-fee={fee.kind} data-receipt-fee-rate={fee.rate ?? undefined}><dt>{fee.label}</dt><dd className="tnum">{fee.value}</dd></div>)}
@@ -74,11 +74,12 @@ export function ReceiptRow({ view, effects = [view], showGas = true, children, p
           {/* (2026-10-15, pack 8): a session receipt whose block time the money client's read did not name draws no time (never this page's clock); the network as the setup's session row says it. */}
           <span className="dm-activity-time">{view.at === null ? view.chainId !== 4663 && <span className="dm-activity-chain" data-activity-chain={view.chainId}>{view.chain}</span> : <><time dateTime={new Date(view.at * 1000).toISOString()}>{timeWords(view.at)}</time>{view.chainId !== 4663 && <> · <span className="dm-activity-chain" data-activity-chain={view.chainId}>{view.chain}</span></>}</>}</span>
         </span>
-        <span className="dm-rcpt-amount tnum" data-v2-receipt-amount="" title={raw ? 'Token details are unavailable. Exact raw amounts are in the receipt.' : undefined}>{raw ? '—' : view.amount ? <AmountInks text={view.amount} /> : ''}</span>
+        {/* (QA round 2, SWEEP) A dash is a dash: no title saying token details are unavailable (the exact amounts are in the receipt). */}
+        <span className="dm-rcpt-amount tnum" data-v2-receipt-amount="">{raw ? '—' : view.amount ? <AmountInks text={view.amount} /> : ''}</span>
         <IconChevronDown size={16} className="dm-rcpt-chevron" />
       </summary>
       <div className="dm-rcpt-detail" data-position-activity-fee={positionItem?.kind === 's1_action' ? positionItem.tariffs.filter((fee) => fee.kind === 'assisted_swap').map((fee) => fee.amount).join(',') || 'none' : undefined}>
-        {effects.map((effect) => <Effect key={effect.id} view={effect} many={effects.length > 1} />)}
+        {effects.map((effect) => <Effect key={effect.id} view={effect} titled={effectTitled(effect, effects)} />)}
         {children}
         <dl className="dm-rcpt-tech">
           {view.at !== null && <div data-receipt-field="time"><dt>Time</dt><dd>{timeWords(view.at)}</dd></div>}

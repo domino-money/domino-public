@@ -137,7 +137,8 @@ function BoundControl({
     if (!parsed.ok) { setError(parsed.message); return }
     change({ ...range, [which]: parsed.tick })
   }
-  const spoken = (t: number) => `${priceOrWords(t, price)}, ${fromPoolPrice(t, price.tick)} from the pool price, tick ${shownTick(t, inverted)}`
+  // QA round 2, Q14: the slider says a price and how far it is from the pool's, never a bare tick number.
+  const spoken = (t: number) => `${priceOrWords(t, price)}, ${fromPoolPrice(t, price.tick)} from the pool price`
   return (
     <div className="dm-pool-bound" data-range-bound={which}>
       <div className="dm-pool-bound-head">
@@ -175,7 +176,8 @@ function BoundControl({
       </div>
       <p id={`${id}-unit`} className="dm-pool-bound-unit"><Units price={price} /> · displayed approximately</p>
       <p className="sr-only" data-bound-price="">{priceOrWords(tick, price)}</p>
-      <span className="sr-only" data-bound-tick="">{shownTick(tick, inverted)}</span>
+      {/* QA round 2, Q14: the end's tick stays as data for tests and tools, out of sight and never read aloud. */}
+      <span hidden data-bound-tick="">{shownTick(tick, inverted)}</span>
       {value !== displayed && <Button type="button" variant="outline" size="sm" className="mt-2" onClick={apply}>Apply {label.toLowerCase()}</Button>}
       {error && <p id={`${id}-error`} role="alert" className="dm-error">{error}</p>}
       <PriceSlider

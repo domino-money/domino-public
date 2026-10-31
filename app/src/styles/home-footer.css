@@ -54,10 +54,14 @@
     /* The prototype's phone polish: every footer link and the X pill 44px tall, the links touching, nothing wraps. */
     .dm-footer-links { gap: 0; }
     .dm-footer-link, .dm-footer-social { height: 2.75rem; white-space: nowrap; }
+    /* And 44 px wide at least (QA round 2, Q16: "Docs" and "Risks" were 34 px): the links sit left in their column, so the
+       room runs into the space to their right and nothing moves. 44 CSS px whatever the root's scale (rem over --vwk). */
+    .dm-footer-link { min-width: calc(2.75rem / var(--vwk)); }
   }
-  /* A thumb gets 44px on every footer link (audit E23). */
+  /* A thumb gets 44px on every footer link (audit E23), across as well as down (Q16). */
   @media (pointer: coarse) {
     .dm-footer-link, .dm-footer-social { min-height: 2.75rem; }
+    .dm-footer-link { min-width: calc(2.75rem / var(--vwk)); }
   }
   @media (prefers-reduced-motion: reduce) {
     .dm-footer-social:hover .dm-footer-social-mark { transform: none; }

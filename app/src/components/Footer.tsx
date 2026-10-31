@@ -17,8 +17,12 @@
  * Changed on purpose 2026-10-03 (the owner: Domino covers more than one network now, and the footer had two things
  * too many): no Network column, no chain in the brand line, and no Pause motion row. Reduced motion (the system
  * setting) still stills every drawing, and the ticker still stops under the pointer or focus.
+ *
+ * Changed on purpose 2026-10-30 (QA round 2, Q16): the guides are the menu's own list (HeaderMenu.tsx GUIDES), so both
+ * use the same names and go to the same places; Risks opens the docs' Risks page.
  */
 import { automateHref, docsHref, marketsHref, newPositionHref, positionsHref } from './explore/routes'
+import { GUIDES } from './HeaderMenu'
 import '../styles/home-footer.css'
 
 /** Domino's X account, confirmed by the owner on 2026-09-26. */
@@ -45,12 +49,7 @@ const COLUMNS: ReadonlyArray<{ heading: string; links: ReadonlyArray<{ label: st
   },
   {
     heading: 'Guides',
-    links: [
-      { label: 'Docs', href: docsHref() },
-      { label: 'How it works', href: '#/#learn' },
-      { label: 'Ranges', href: '#/#ranges' },
-      { label: 'Risks', href: '#/#limits' },
-    ],
+    links: [{ label: 'Docs', href: docsHref() }, ...GUIDES.map(({ label, href }) => ({ label, href }))],
   },
 ]
 

@@ -29,6 +29,26 @@ test('amounts: grouped, rounded down at the shown decimals, "<0.000001" for a du
   assert.throws(() => p.formatUnitsText(1n, 78), /invalid_decimals/);
 });
 
+// Added 2026-10-30 (QA round 2, N2: "10,345.741134 PRIORS" on Review): six significant digits, as the rest of the app writes
+// an amount (lib/format/amount.ts shortAmount): the whole part whole and grouped, rounded down, or up for a fee or an
+// amount to allow; below one, at most six decimals (the owner's point 4), so dust stays "<0.000001".
+test('amounts at six significant digits: the whole part kept, rounded down or up, dust a bound', () => {
+  assert.equal(p.significantUnitsText(10_345_741_134n, 6), '10,345.7');
+  assert.equal(p.significantUnitsText(2_018_590_753_780_000_000_000_000n, 18), '2,018,590');
+  assert.equal(p.significantUnitsText(190_000_000_000_000_000n, 18), '0.19');
+  assert.equal(p.significantUnitsText(1_000_000_000n, 6), '1,000');
+  assert.equal(p.significantUnitsText(123_456_789n, 18), '<0.000001');
+  assert.equal(p.significantUnitsText(1n, 18), '<0.000001', 'dust stays a bound, never 18 digits (owner point 4)');
+  assert.equal(p.significantUnitsText(12_345_678_900_000n, 18), '0.000012', 'below one: six decimals at most');
+  assert.equal(p.significantUnitsText(0n, 18), '0');
+  assert.equal(p.significantUnitsText(10_345_741_134n, 6, 'up'), '10,345.8', 'a fee or an amount to allow: never shown lower');
+  assert.equal(p.significantUnitsText(2_018_590_753_780_000_000_000_000n, 18, 'up'), '2,018,591');
+  assert.equal(p.significantUnitsText(123_456_789n, 18, 'up'), '0.000001');
+  assert.equal(p.significantUnitsText(999_999_95n, 2, 'up'), '1,000,000', 'rounding up may carry into a new digit');
+  assert.equal(p.significantUnitsText(123456789n, null), '123,456,789', 'no decimals: raw units, never a guess');
+  assert.throws(() => p.significantUnitsText(1n, 78), /invalid_decimals/);
+});
+
 test('typed amounts and slippage', () => {
   assert.equal(p.parseUnitsText('1,000.5', 6), 1_000_500_000n);
   assert.equal(p.parseUnitsText('.25', 18), 250_000_000_000_000_000n);
@@ -39,6 +59,13 @@ test('typed amounts and slippage', () => {
   assert.equal(p.parseUnitsText('', 6), null);
   assert.equal(p.parseUnitsText('42', null), 42n);
   assert.equal(p.parseUnitsText('4.2', null), null);
+  // QA round 2, N99: only thousands separators are dropped; a decimal comma is refused, never read as ten times the amount.
+  assert.equal(p.parseUnitsText('0,5', 18), null, 'a decimal comma is refused, never read as 5');
+  assert.equal(p.parseUnitsText('1,000.50', 6), 1_000_500_000n);
+  assert.equal(p.parseUnitsText(' 0.5 ', 18), 500_000_000_000_000_000n, 'spaces around it are dropped');
+  assert.equal(p.parseUnitsText('-1.5', 18), null);
+  assert.equal(p.parseUnitsText('10,00', 6), null, 'commas that do not group thousands');
+  assert.equal(p.parseUnitsText('1,000', null), 1_000n, 'raw units may be grouped too');
   assert.equal(p.slippageBpsOf('0.5', 10, 500), 50);
   assert.equal(p.slippageBpsOf('5%', 10, 500), 500);
   assert.equal(p.slippageBpsOf('0.1', 10, 500), 10);
@@ -51,7 +78,10 @@ test('labels: symbols, ETH for native, short addresses; fee tiers as a percent',
   assert.equal(p.tokenText({ address: USDG, symbol: 'USDG' }), 'USDG');
   assert.equal(p.tokenText({ address: ZERO, symbol: null }), 'ETH');
   assert.equal(p.tokenText({ address: USDG, symbol: null }), '0x5fc5…d168');
-  assert.deepEqual([p.feeTierText(3000), p.feeTierText(500), p.feeTierText(100), p.feeTierText(200), p.feeTierText(10000)], ['0.3%', '0.05%', '0.01%', '0.02%', '1%']);
+  // Changed on purpose 2026-10-30 (QA round 2, N2): the fee format of every other screen (lib/read/screens/fee.ts
+  // fixedFeePercent), at least two decimals ("0.30%", "1.00%"), never "0.3%" beside "0.30%".
+  assert.deepEqual([p.feeTierText(3000), p.feeTierText(500), p.feeTierText(100), p.feeTierText(200), p.feeTierText(10000)], ['0.30%', '0.05%', '0.01%', '0.02%', '1.00%']);
+  assert.deepEqual([p.feeTierText(50), p.feeTierText(1), p.feeTierText(2690), p.feeTierText(8000), p.feeTierText(0)], ['0.005%', '0.0001%', '0.269%', '0.80%', '0.00%']);
 });
 
 test('prices: currency1 per currency0 from a tick with decimals, both orientations, null without decimals', () => {
@@ -67,6 +97,16 @@ test('prices: currency1 per currency0 from a tick with decimals, both orientatio
   assert.deepEqual(p.rangeBothWays(-60, 60, null, 6), { forward: { low: null, high: null }, inverse: { low: null, high: null } });
   assert.equal(p.priceText(2272.123456789), '2,272.12');
   assert.equal(p.priceText(0.000440123456), '0.000440123');
+  // Changed on purpose 2026-10-30 (QA round 2, N2: "1,590.87" beside "3,411.8"): two decimals from 1,000 up; at least two
+  // from 1 to 1,000 (six significant digits); below 1 as before.
+  assert.equal(p.priceText(3411.8), '3,411.80');
+  assert.equal(p.priceText(1590.87), '1,590.87');
+  assert.equal(p.priceText(1234567.891), '1,234,567.89');
+  assert.equal(p.priceText(3.4), '3.40');
+  assert.equal(p.priceText(1), '1.00');
+  assert.equal(p.priceText(1.00045), '1.00045');
+  assert.equal(p.priceText(999.9999), '1,000.00');
+  assert.equal(p.priceText(0.5), '0.5');
   assert.equal(p.priceText(null), null);
   assert.equal(p.priceText(0), null);
 });

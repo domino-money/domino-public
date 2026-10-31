@@ -48,11 +48,14 @@ export const STEP: Record<SigningStep, string> = {
   closing: 'Closing the sign-in request…',
 }
 
-export const REFRESH_UNAVAILABLE =
-  'The service could not renew your session just now. This page will try again shortly; if it cannot, the session ends after 30 minutes idle.'
-
-/** The Connect dialog on a computer when no browser wallet has announced itself (through EIP-6963 or window.ethereum). */
-export const NO_BROWSER_WALLET = 'No browser wallet found. Install or unlock a wallet extension, then open this again.'
+/**
+ * The Connect dialog on a computer when no browser wallet has announced itself (through EIP-6963 or window.ethereum).
+ * Changed on purpose 2026-10-30 (QA round 2, N4): "then open this again" did not say what to open, and a wallet installed
+ * while the page is open reaches it only once the page reloads; and a phone or a tablet is told its own way on. What to
+ * do next is the line after it, which names the two wallets (WalletSessionDialog GetAWallet).
+ */
+export const NO_BROWSER_WALLET = 'No wallet found in this browser.'
+export const NO_BROWSER_WALLET_PHONE = 'On a phone or tablet, open this site in your wallet app’s browser.'
 
 /**
  * The Connect dialog on a phone with no wallet in its browser (2026-10-01, audit C4): an extension cannot be installed
@@ -109,9 +112,9 @@ export function describe(view: View, away = false): string {
     case 'signing_in':
       return STEP[view.step]
     case 'signed_in':
-      return view.notice === 'refresh_unavailable'
-        ? `Signed in as ${shortAddress(view.owner)}. ${REFRESH_UNAVAILABLE}`
-        : `Signed in as ${shortAddress(view.owner)}.`
+      // Changed on purpose 2026-10-30 (QA round 2, the owner's rule: no notices that something could not update): a
+      // renewal the service could not serve is asked again in the background (session/machine.ts) and not announced.
+      return `Signed in as ${shortAddress(view.owner)}.`
     case 'other_session':
       return `This browser is signed in as ${shortAddress(view.owner)}, not the connected account. Sign that session out to continue.`
     case 'signing_out':

@@ -5,7 +5,8 @@ import { DocsLayout } from '../components/docs/DocsLayout'
 import { hashParts } from '../components/explore/routes'
 import { PageShell } from '../components/ui'
 import { findDocPage } from '../lib/docs/registry'
-import { useTabTitle } from '../lib/routeTitle'
+import { useRouteTitle } from '../lib/routeTitle'
+import { NotFound } from './NotFound'
 import { scrollToSection } from '../lib/sectionScroll'
 
 /** What stops the late re-scroll: the reader has started moving the page themselves. */
@@ -42,14 +43,20 @@ function useSectionAfterFonts() {
 }
 
 /**
- * The docs: `#/docs` is the index, `#/docs/<slug>` a page. A slug that names
- * no page shows the index, without an error, the way an unknown route shows
- * Home. Nothing here reads, signs or stores anything.
+ * The docs: `#/docs` is the index, `#/docs/<slug>` a page. Nothing here reads, signs or stores anything.
+ *
+ * Changed on purpose 2026-10-30 (QA round 2): a slug that names no page shows the app's own "This page doesn't exist" (N40;
+ * NotFound is in the entry already, so no chunk grows), as an unknown route does, instead of the index as if the link had
+ * worked; an old slug the registry keeps (stop-loss, domino-compounder) still opens its page. And the tab says "Docs ·
+ * Domino" and "Fees · Docs · Domino", the pattern of every other screen (N25); it said "Domino docs" and "Fees · Domino
+ * docs". The title is set here even for the missing page: Docs' effect runs after NotFound's, so it has the last word.
  */
 export function Docs({ slug }: { slug: string }) {
   const page = findDocPage(slug)
+  const missing = slug !== '' && page === null
   useSectionAfterFonts()
-  useTabTitle(page ? `${page.title} · Domino docs` : 'Domino docs')
+  useRouteTitle(page ? `${page.title} · Docs` : missing ? 'Page not found' : 'Docs')
+  if (missing) return <NotFound />
   return (
     <PageShell data-docs="">
       <DocsLayout page={page} />

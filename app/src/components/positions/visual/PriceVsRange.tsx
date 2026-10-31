@@ -13,7 +13,7 @@ import { logScale } from '../../../lib/chart/scale'
 import { shortDate, shortTime } from '../../../lib/format/time'
 import { useMediaQuery } from '../../../lib/useMediaQuery'
 import { rem } from '../../../lib/rootScale'
-import { PAD_BOTTOM, PAD_TOP, RangeFactsContext, RangeHead, rangePlotHeight } from './RangeStatus'
+import { PAD_BOTTOM, PAD_TOP, RangeFactsContext, RangeHead, RangeSkeleton, rangePlotHeight } from './RangeStatus'
 import { dateTicks, spacedTimeTicks } from './ticks'
 import { usePoolHistory, type PoolHistoryAsk } from './usePoolHistory'
 import { usePositionChartOptions } from '../PositionChartOptions'
@@ -107,6 +107,8 @@ function PriceChart({ facts, ask, openedAt, openedBefore, closedAt, observations
   const markerText = closed ? last?.exact ?? null : nowText
   const domain = useMemo(() => priceDomain(lower, upper, [...(closed ? [] : [now]), ...(line ? line.runs.flat().map((point) => point.price) : [])]), [lower, upper, now, closed, line])
   const xs = useMemo(() => points.map((point) => point.t), [points])
+  // (QA round 2, N69) The pool's history on its first read, with no line yet: the pool chart's shimmer over the plot.
+  const waiting = recorded === undefined && ask !== null && history.phase === 'reading' && !drawn
   const status = statusWords(facts)
   const tone = status.tone
   const hasLower = lower > 0
@@ -262,6 +264,7 @@ function PriceChart({ facts, ask, openedAt, openedBefore, closedAt, observations
       ) : null
     return (
       <>
+        {waiting && <RangeSkeleton style={{ position: 'absolute', top: rem(plot.top), left: rem(plot.left), width: rem(Math.max(0, plot.right - plot.left)), height: rem(Math.max(0, plot.bottom - plot.top)) }} />}
         {endLabel('max', 'Max', figures.max, upperText, !hasUpper)}
         {endLabel('min', 'Min', figures.min, lowerText, !hasLower)}
         {markerText !== null && <span className="dm-pvr-chip" data-tone={tone} style={{ top: rem(placed.now), left: rem(left) }}>
@@ -288,7 +291,7 @@ function PriceChart({ facts, ask, openedAt, openedBefore, closedAt, observations
 
   const words = `Your range ${lowerText ?? 'unknown'} to ${upperText ?? 'unknown'}; the price now ${nowText}, ${status.detail}`
   return (
-    <div className="dm-pvr-wrap" data-pvr-where={where} data-pvr-line={drawn ? '' : undefined} data-pvr-history={recorded !== undefined ? 'recorded' : ask && knownMint === null && !bounded ? 'unknown_mint' : verdict?.kind === 'none' ? verdict.reason : history.phase} data-pvr-stale={line?.stale ? '' : undefined} data-pvr-opened={knownMint ?? undefined} data-pvr-closed={closedAt ?? undefined} data-pvr-start={line?.start} data-pvr-end={line?.end} data-pvr-first={points[0]?.t}>
+    <div className="dm-pvr-wrap" aria-busy={waiting || undefined} data-pvr-where={where} data-pvr-line={drawn ? '' : undefined} data-pvr-history={recorded !== undefined ? 'recorded' : ask && knownMint === null && !bounded ? 'unknown_mint' : verdict?.kind === 'none' ? verdict.reason : history.phase} data-pvr-stale={line?.stale ? '' : undefined} data-pvr-opened={knownMint ?? undefined} data-pvr-closed={closedAt ?? undefined} data-pvr-start={line?.start} data-pvr-end={line?.end} data-pvr-first={points[0]?.t}>
       <RangeHead facts={facts} />
       <ChartFrame
         className="dm-pvr"

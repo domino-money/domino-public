@@ -126,6 +126,26 @@ export function DirectReceiptView({ chainId, receipt, book, signed = 1 }: { chai
   )
 }
 
+/**
+ * (QA round 2, review of np2 request 1) A direct action in a block with success whose logs can't be read exactly
+ * (./directRun.ts): "Confirmed" leads, as on every receipt, and the Receipt line says where the details are, as the zap's
+ * receipt does in the same case. Until then the sentence stood alone in a red alert under the figures sent for, with
+ * nothing saying the transaction went through. `code`: why it can't be read, for data-error-code only.
+ */
+export function DirectReceiptUnread({ code }: { code: string }) {
+  return (
+    <div className="dm-pa-field" data-position-receipt="included">
+      <SheetStatus state="done" data-position-receipt-state="included">
+        <Laid count={1} />
+        {COPY.wallet.included}
+      </SheetStatus>
+      <SheetFacts>
+        <SheetFact label={COPY.receipt.title} data-error-code={code}>{COPY.receipt.unreadable}</SheetFact>
+      </SheetFacts>
+    </div>
+  )
+}
+
 /** One small domino laid flat per signed step, before "Confirmed" (V4's .as-rcpt): decoration only, no text. */
 function Laid({ count }: { count: number }) {
   return (

@@ -2,12 +2,12 @@ import type { ReactNode } from 'react'
 import { ActionSheet, SheetAlert, SheetLocked, SheetNote, SheetStatus, TokenRow, TokenRows } from '../../components/positions/ActionSheet'
 import { TokenMark, TokenMarkPair } from '../../components/TokenIcon'
 import { Button } from '../../components/ui'
-import { formatUnitsText } from '../../v2/plan/present'
+import { EXACT_FRACTION, formatUnitsText, significantUnitsText } from '../../v2/plan/present'
 import type { Address, V2ChainId } from '../../v2/types'
 import { COPY } from './copy'
 import { REJECTED_IN_WALLET, type ActionError } from './errors'
 import { markOf } from './marks'
-import { amountText, decimalsOf, labelOf, type TokenBook } from './tokens'
+import { amountText, decimalsOf, labelOf, shortAmountText, type TokenBook } from './tokens'
 
 /**
  * The position page's Domino V2 parts in the page's own look. Changed on purpose 2026-10-03 (the owner, point 9: the
@@ -94,29 +94,31 @@ export function Mark({ chainId, book, token, size = 20 }: { chainId: V2ChainId; 
 
 /**
  * A raw amount split for a token row: the figure in the token's own units, and its symbol (raw units when unread).
- * `round` 'up' for a fee, never shown lower than it is (v2/plan/present.ts formatUnitsText, 2026-10-06).
+ * `round` 'up' for a fee, never shown lower than it is (v2/plan/present.ts formatUnitsText, 2026-10-06). Changed on
+ * purpose 2026-10-30 (QA round 2, N2: one number format): six significant digits, as New position's Review and receipt
+ * and V1's own dialogs write an amount ("10,345.7", not "10,345.741134"); below one still at most six decimals.
  */
-export function amountParts(book: TokenBook, token: Address, raw: bigint, maxFraction = 6, round: 'down' | 'up' = 'down'): { figure: string; symbol: string } {
+export function amountParts(book: TokenBook, token: Address, raw: bigint, round: 'down' | 'up' = 'down'): { figure: string; symbol: string } {
   const decimals = decimalsOf(book, token)
   const label = labelOf(book, token)
-  return decimals === null ? { figure: formatUnitsText(raw, null), symbol: `${COPY.form.rawUnits} of ${label}` } : { figure: formatUnitsText(raw, decimals, maxFraction, round), symbol: label }
+  return decimals === null ? { figure: formatUnitsText(raw, null), symbol: `${COPY.form.rawUnits} of ${label}` } : { figure: significantUnitsText(raw, decimals, round), symbol: label }
 }
 
 /** Token amounts as rows: each token's mark, its figure, its symbol; every digit in the row's title. */
-export function Rows({ chainId, book, items, size = 'lg', maxFraction = 6, round = 'down', ...data }: { chainId: V2ChainId; book: TokenBook; items: readonly { token: Address; amount: bigint }[]; size?: 'lg' | 'sm'; maxFraction?: number; round?: 'down' | 'up' } & Record<`data-${string}`, string>) {
+export function Rows({ chainId, book, items, size = 'lg', round = 'down', ...data }: { chainId: V2ChainId; book: TokenBook; items: readonly { token: Address; amount: bigint }[]; size?: 'lg' | 'sm'; round?: 'down' | 'up' } & Record<`data-${string}`, string>) {
   return (
     <TokenRows size={size} {...data}>
       {items.map((item, index) => {
-        const parts = amountParts(book, item.token, item.amount, maxFraction, round)
-        return <TokenRow key={`${item.token}-${index}`} mark={<Mark chainId={chainId} book={book} token={item.token} size={size === 'lg' ? 28 : 16} />} figure={parts.figure} symbol={parts.symbol} title={amountText(book, item.token, item.amount, 18)} />
+        const parts = amountParts(book, item.token, item.amount, round)
+        return <TokenRow key={`${item.token}-${index}`} mark={<Mark chainId={chainId} book={book} token={item.token} size={size === 'lg' ? 28 : 16} />} figure={parts.figure} symbol={parts.symbol} title={amountText(book, item.token, item.amount, EXACT_FRACTION)} />
       })}
     </TokenRows>
   )
 }
 
 /** Both amounts of a pool's pair as rows, as V1's dialogs draw them. */
-export function Pair({ chainId, book, tokens, amounts, size = 'sm', maxFraction }: { chainId: V2ChainId; book: TokenBook; tokens: readonly [Address, Address]; amounts: readonly [bigint, bigint]; size?: 'lg' | 'sm'; maxFraction?: number }) {
-  return <Rows chainId={chainId} book={book} items={[{ token: tokens[0], amount: amounts[0] }, { token: tokens[1], amount: amounts[1] }]} size={size} maxFraction={maxFraction} />
+export function Pair({ chainId, book, tokens, amounts, size = 'sm' }: { chainId: V2ChainId; book: TokenBook; tokens: readonly [Address, Address]; amounts: readonly [bigint, bigint]; size?: 'lg' | 'sm' }) {
+  return <Rows chainId={chainId} book={book} items={[{ token: tokens[0], amount: amounts[0] }, { token: tokens[1], amount: amounts[1] }]} size={size} />
 }
 
 /** "ETH / USDC" with the pair's two marks before it. */
@@ -132,12 +134,12 @@ export function PairName({ chainId, book, tokens, size = 20 }: { chainId: V2Chai
   )
 }
 
-/** One amount inline, its mark beside it (a route's leg, a receipt's swap). */
-export function Amount({ chainId, book, token, raw, maxFraction = 6 }: { chainId: V2ChainId; book: TokenBook; token: Address; raw: bigint; maxFraction?: number }) {
+/** One amount inline, its mark beside it (a route's leg, a receipt's swap): six significant digits, every digit in its title. */
+export function Amount({ chainId, book, token, raw }: { chainId: V2ChainId; book: TokenBook; token: Address; raw: bigint }) {
   return (
-    <span className="dm-pa-inline tnum" title={amountText(book, token, raw, 18)}>
+    <span className="dm-pa-inline tnum" title={amountText(book, token, raw, EXACT_FRACTION)}>
       <Mark chainId={chainId} book={book} token={token} size={16} />
-      {amountText(book, token, raw, maxFraction)}
+      {shortAmountText(book, token, raw)}
     </span>
   )
 }

@@ -84,6 +84,9 @@ function Hero() {
           {/* The light's warm copy of the headline: beside the heading, never inside it, so its text stays its own. */}
           <span className="dm-hero-title dm-hero-sheen dm-k-sheen" aria-hidden="true" data-home-sheen="hero"><HeroLines still /></span>
         </div>
+        {/* Changed on purpose 2026-10-30 (QA round 2, Q7, the owner's exact line): what Domino is and which fees it earns,
+            under the headline, outside the head so the light's copy never covers it. */}
+        <p className="dm-hero-lede dm-k-up1">Put two tokens in a pool and earn its trading fees.</p>
         <div className="dm-hero-actions dm-k-up1">
           <LinkButton href="#/markets" size="xl">
             Explore markets
@@ -92,9 +95,11 @@ function Hero() {
             {PLUS}New position
           </LinkButton>
         </div>
-        <div className="dm-hero-funding dm-k-up2" aria-label="Networks to bring funds from">
+        {/* Changed on purpose 2026-10-30 (QA round 2, N20): the chips looked like buttons and did nothing; each now leads to
+            Home's own section on bringing funds (same look), and the group's name is announced. */}
+        <div className="dm-hero-funding dm-k-up2" role="group" aria-label="Networks to bring funds from">
           <span>Bring funds from</span>
-          <ul>{FUNDING_NETWORKS.map(network => <li key={network}><NetworkMark network={network} variant="v4" /><span>{network}</span></li>)}</ul>
+          <ul>{FUNDING_NETWORKS.map(network => <li key={network}><a href="#/#funding"><NetworkMark network={network} variant="v4" /><span>{network}</span></a></li>)}</ul>
         </div>
       </div>
       <div className="dm-hero-band">

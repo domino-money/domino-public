@@ -1,7 +1,8 @@
 import { USDG } from '../../config/mainTokens'
-import { parseScaled, scaledText, type Scaled } from '../../lib/format/decimal'
+import { CREATE } from '../../lib/create/copy'
+import { align, parseScaled, scaledText, type Scaled } from '../../lib/format/decimal'
 import { PRICE_SCALE, priceFromSqrtIn, valueIn } from '../../lib/format/price'
-import { usdgValue } from '../../lib/format/usd'
+import { formatUsd, usdgValue } from '../../lib/format/usd'
 import type { JourneyState, TickRange } from '../../lib/create/journey'
 import { reviewPlan, type ReviewPlan } from '../../lib/create/reviewPlan'
 import { formatUnits } from '../../lib/read/decimal'
@@ -50,6 +51,17 @@ function currentPrice(pool: PoolOption, price: Usable): number | null {
   }
 }
 
+/**
+ * One end's price as the steps write it, in the page's frame (`price` is shownPrice's): 0 or ∞ at the pool's usable tick
+ * limit on its side, as a position's card writes a full-range end (lib/read/screens/positions.ts rangeEnd), else the
+ * figure (`boundPrice`, null beyond display). Added 2026-10-30 (QA round 2, N73: Full range).
+ */
+export function endPrice(tick: number, which: 'lower' | 'upper', price: Usable): string | null {
+  const { min, max } = usableTicks(price.tickSpacing)
+  if (which === 'lower' ? tick <= min : tick >= max) return which === 'lower' ? '0' : '∞'
+  return boundPrice(tick, price)
+}
+
 export function rangeView(range: TickRange, price: Usable, pool: PoolOption): RangeView {
   const { min, max } = usableTicks(price.tickSpacing)
   const shown = shownPrice(price)
@@ -59,8 +71,8 @@ export function rangeView(range: TickRange, price: Usable, pool: PoolOption): Ra
     upper: view.upper >= max ? Infinity : tickPrice(view.upper, shown),
     current: currentPrice(pool, price),
     inRange: rangePosition(range, price.tick) === 'inside',
-    lowerText: boundPrice(view.lower, shown),
-    upperText: boundPrice(view.upper, shown),
+    lowerText: endPrice(view.lower, 'lower', shown),
+    upperText: endPrice(view.upper, 'upper', shown),
     ticks: { pool: shown.tick, lower: view.lower, upper: view.upper },
   }
 }
@@ -250,6 +262,89 @@ export function heldAmounts(state: JourneyState, balances: PairBalancesState): H
     usd: usdOf(pool, index === 0 ? [amounts[0], 0n] : [0n, amounts[1]]),
   })
   const only = amounts[0] === 0n && amounts[1] > 0n ? 1 : amounts[1] === 0n && amounts[0] > 0n ? 0 : null
-  return { sides: [side(0), side(1)], total: usdOf(pool, amounts), estimate, wallet, only }
+  const sides = [side(0), side(1)] as const
+  return { sides, total: shownTotal(sides[0].usd, sides[1].usd) ?? usdOf(pool, amounts), estimate, wallet, only }
+}
+
+/** A USD value as the page writes it (formatUsd: cents from $1, four significant digits below), as a decimal again. */
+const asShown = (usd: string): Scaled | null => parseScaled(formatUsd(usd).replace(/[$,]/g, ''))
+
+/**
+ * Added 2026-10-30 (QA round 2, Q22): the total as the two figures beside it are written, added exactly, so the lines
+ * always add up to it (each rounded alone, then the exact sum rounded, drifted a cent: $1,160.62 + $1,031.93 under a
+ * total of $2,192.54). Null unless both sides are valued; display only, nothing signed or sent reads it.
+ */
+export function shownTotal(first: string | null, second: string | null): string | null {
+  const a = first === null ? null : asShown(first)
+  const b = second === null ? null : asShown(second)
+  if (!a || !b) return null
+  const [x, y, scale] = align(a, b)
+  return scaledText(x + y, scale)
+}
+
+/** The smallest deposit New position takes, in USD (QA round 2, N54, the owner's decision of 2026-10-29: US$ 1). */
+export const MIN_DEPOSIT_USD = '1'
+
+/** Whether a USD value is under the minimum deposit; false when it cannot be read (no value, no block). */
+export function underMinimum(usd: string | null): boolean {
+  const value = usd === null ? null : parseScaled(usd)
+  const floor = parseScaled(MIN_DEPOSIT_USD)
+  if (!value || !floor) return false
+  const [x, y] = align(value, floor)
+  return x < y
+}
+
+/**
+ * Added 2026-10-30 (QA round 2, N51): the share of the pool a deposit of `totalUsd` would be, beside its reported TVL
+ * (a USD decimal): total / (TVL + total), between 0 and 1. Null without both figures, or with a TVL that is not above
+ * zero. The TVL is the whole pool's, so the share is approximate and is always said with "about".
+ */
+export function poolShare(tvlUsd: string | null, totalUsd: string | null): number | null {
+  if (tvlUsd === null || totalUsd === null) return null
+  const tvl = Number(tvlUsd)
+  const total = Number(totalUsd)
+  if (!Number.isFinite(tvl) || !Number.isFinite(total) || tvl <= 0 || total <= 0) return null
+  return total / (tvl + total)
+}
+
+/**
+ * The share as the page says it, "97%", only from 10% up (the owner's decision: a plain sentence above about 10%,
+ * nothing below it); never "100%", since the pool keeps what it holds.
+ */
+export function poolShareWords(share: number | null): string | null {
+  if (share === null) return null
+  const percent = Math.min(99, Math.round(share * 100))
+  return percent >= 10 ? `${percent}%` : null
+}
+
+/** Whether a deposit of `totalUsd` is more than everything the pool reports holding (Q20): false without both figures. */
+export function beyondPool(tvlUsd: string | null, totalUsd: string | null): boolean {
+  if (tvlUsd === null || totalUsd === null) return false
+  const tvl = Number(tvlUsd)
+  const total = Number(totalUsd)
+  return Number.isFinite(tvl) && Number.isFinite(total) && tvl > 0 && total > tvl
+}
+
+/**
+ * The one plain sentence said beside a deposit's total, on Amount and on Review alike (QA round 2 review, N51 and Q20): a
+ * second look when it is more than the whole pool holds, else its share from about 10%, else nothing.
+ */
+export function poolSizeLine(tvlUsd: string | null, totalUsd: string | null): string | null {
+  if (beyondPool(tvlUsd, totalUsd)) return CREATE.amount.beyondPool
+  const words = poolShareWords(poolShare(tvlUsd, totalUsd))
+  return words ? CREATE.amount.poolShare(words) : null
+}
+
+/** Whether a range covers every price the pool allows (its usable tick limits): New position's Full range (N73). */
+export function coversFullRange(range: TickRange | null, tickSpacing: number): boolean {
+  if (!range) return false
+  const { min, max } = usableTicks(tickSpacing)
+  return range.lower <= min && range.upper >= max
+}
+
+/** The pool's reported TVL as a USD decimal, when its figure carries one; null otherwise (never a zero, never a guess). */
+export function reportedTvl(pool: PoolOption): string | null {
+  const figure = pool.liquidity
+  return figure.state === 'attributed' || figure.state === 'attributed_stale' ? figure.raw : null
 }
 

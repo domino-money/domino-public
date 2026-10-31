@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import type { PortfolioResponse, Position } from 'api-contracts/read-v6/types'
 import type { WalletPosition } from '../../lib/walletPositions'
 import { v2Chain } from '../../v2/chains'
@@ -55,6 +56,33 @@ export function setupPositions(body: PortfolioResponse, owner: string): { positi
   // when an unrelated network is behind; only an otherwise empty picker needs the unavailable state.
   if (positions.length === 0 && body.chains.some(chain => chain.status !== 'current')) incomplete = true
   return { positions, incomplete }
+}
+
+/**
+ * Changed on purpose 2026-10-30 (QA round 2, final review shell-1): an empty offer is a fact only when every NFT of the
+ * wallet on an open network was judged. One that could not be (its network behind, its reading not fresh) is read again
+ * by itself (../lists/source.ts, every 30 s), so Set up automation and Set up Auto-exit keep their loading rows instead of
+ * saying there is no position and offering a second deposit. A wallet with no NFT, or whose only unjudged NFTs sit behind
+ * a closed gate, still gets the plate at once, even while an unrelated network is behind.
+ */
+/**
+ * How long a screen keeps those loading rows (QA round 2, final review follow-up): read-v6 can keep an NFT unjudged for
+ * good (one it cannot prove burned, `v2_burn_unproven`), so past two minutes of 30 s re-asks the plate is said after all.
+ */
+export const SETUP_WAIT_MS = 120_000
+
+/** Starts at the screen's mount: true once SETUP_WAIT_MS has passed, so setupWaiting stops holding the loading rows. */
+export function useSetupWaitOver(): boolean {
+  const [over, setOver] = useState(false)
+  useEffect(() => {
+    const timer = window.setTimeout(() => setOver(true), SETUP_WAIT_MS)
+    return () => window.clearTimeout(timer)
+  }, [])
+  return over
+}
+
+export function setupWaiting(body: PortfolioResponse, owner: string, offered: number, open: (chainId: Position['chainId']) => boolean): boolean {
+  return offered === 0 && body.positions.some((item) => open(item.chainId) && setupEligibility(body, owner, item) === 'unavailable')
 }
 
 /** Only a successful read with a pending requested NFT is polled. Transport failures keep their own retry policy. */

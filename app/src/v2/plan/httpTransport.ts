@@ -60,7 +60,7 @@ export type RawPost = (
 export function createHttpS1PlanTransport({ post, csrf }: { post: RawPost; csrf: () => string | null }): S1PlanTransport {
   return {
     kind: 'http',
-    async plan(request) {
+    async plan(request, signal) {
       const token = csrf()
       if (!token) throw new Error('session_required')
       const body = JSON.stringify(request)
@@ -76,7 +76,8 @@ export function createHttpS1PlanTransport({ post, csrf }: { post: RawPost; csrf:
           },
           body,
         },
-        { contractHeader: S1_PLAN_HEADER, maxBytes: S1_PLAN_MAX_RESPONSE_BYTES, timeoutMs: S1_PLAN_TIMEOUT_MS },
+        // The caller's abort (2026-10-30, INST-2): a quote for choices nobody waits for any more stops here.
+        { contractHeader: S1_PLAN_HEADER, maxBytes: S1_PLAN_MAX_RESPONSE_BYTES, timeoutMs: S1_PLAN_TIMEOUT_MS, ...(signal ? { signal } : {}) },
       )
       if (result.kind !== 'reply') throw new Error(result.kind)
       const reply = result.reply
@@ -108,10 +109,10 @@ export interface PlanSession {
 export function createSessionPlanTransport({ post, session }: { post: RawPost; session: PlanSession }): S1PlanTransport {
   return {
     kind: 'http',
-    async plan(request) {
+    async plan(request, signal) {
       const epoch = session.epoch()
       if (epoch === null || !session.csrfAccess) throw new Error('session_required')
-      const lent = await session.withCsrf(epoch, (csrf) => createHttpS1PlanTransport({ post, csrf: () => csrf }).plan(request))
+      const lent = await session.withCsrf(epoch, (csrf) => createHttpS1PlanTransport({ post, csrf: () => csrf }).plan(request, signal))
       if (!lent.ok) throw new Error('session_required')
       return lent.value
     },

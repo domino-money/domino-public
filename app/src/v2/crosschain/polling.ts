@@ -4,8 +4,9 @@
  * hands every new state to `onUpdate`, and PHASE B writes the record's `lastState` to the journal and draws the screen.
  *
  *   - Every call passes the state last shown as `previousState` (null on the first one).
- *   - The answer's `nextCheckSeconds` says when to ask again. The per-provider table below is a fallback only, for
- *     waits after a failure, when there is no answer to take it from.
+ *   - The answer's `nextCheckSeconds` says when to ask again, never sooner than MIN_WAIT_SECONDS (10 s, since
+ *     2026-10-30). The per-provider table below is a fallback only, for waits after a failure, when there is no answer
+ *     to take it from.
  *   - The screen never moves back: the answer's `state` already holds a regressed provider (`transition: "held"`), and
  *     the runtime's `advance(shown, state)` is applied once more here, so a `held` keeps the state shown.
  *   - `terminal` (filled, refunded) stops the polling, and so does `crosschain_deposit_not_found` (the screen shows
@@ -30,6 +31,12 @@ export const FALLBACK_POLL_SECONDS: Readonly<Record<Provider, Readonly<Partial<R
 
 /** The longest wait between two asks after failures. */
 export const MAX_WAIT_SECONDS = 300
+/**
+ * Added 2026-10-30 (launch capacity, CAP-5 and CAP-11): the shortest wait between two asks, whatever the answer names
+ * (Relay's 5 s). A transfer's status is asked through the wallet's one request budget, which its plan at Review shares,
+ * and the providers' budgets, which every visitor's quotes share; a few seconds more before the next look loses nothing.
+ */
+export const MIN_WAIT_SECONDS = 10
 /** How many more attempts an unexpected answer gets before the polling stops. */
 export const UNEXPECTED_RETRIES = 1
 
@@ -105,6 +112,8 @@ export function fallbackSeconds(provider: Provider, shown: DepositState | null):
 }
 
 const grow = (baseSeconds: number, attempt: number) => Math.min(MAX_WAIT_SECONDS, baseSeconds * 2 ** Math.max(0, attempt - 1)) * 1000
+/** A wait as the poller keeps it: never under MIN_WAIT_SECONDS. */
+const waitOf = (ms: number): PollNext => ({ kind: 'wait', ms: Math.max(MIN_WAIT_SECONDS * 1000, ms) })
 
 function stop(state: PollState, reason: StopReason, notice: PollNotice | null): { state: PollState; next: PollNext } {
   return { state: { ...state, stopped: reason, notice }, next: { kind: 'stop', reason } }
@@ -134,18 +143,18 @@ export function reduceStatus(
     }
     if (report.terminal || isTerminal(now)) return stop(next, 'terminal', null)
     const seconds = report.nextCheckSeconds ?? fallbackSeconds(record.provider, now)
-    return { state: next, next: { kind: 'wait', ms: seconds * 1000 } }
+    return { state: next, next: waitOf(seconds * 1000) }
   }
   const failure = outcome.failure
   const base = fallbackSeconds(record.provider, shown)
   const transient = (notice: PollNotice, baseSeconds: number) => {
     const failures = state.failures + 1
-    return { state: { ...state, failures, notice }, next: { kind: 'wait', ms: grow(baseSeconds, failures) } as PollNext }
+    return { state: { ...state, failures, notice }, next: waitOf(grow(baseSeconds, failures)) }
   }
   const unexpected = (notice: PollNotice) => {
     const count = state.unexpected + 1
     if (count > UNEXPECTED_RETRIES) return stop({ ...state, unexpected: count }, 'unexpected', notice)
-    return { state: { ...state, unexpected: count, notice }, next: { kind: 'wait', ms: base * 1000 } as PollNext }
+    return { state: { ...state, unexpected: count, notice }, next: waitOf(base * 1000) }
   }
   switch (failure.kind) {
     case 'aborted':

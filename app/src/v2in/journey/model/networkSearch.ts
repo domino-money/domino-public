@@ -20,10 +20,21 @@ import type { TokenDisplay } from '../../../lib/read/types'
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/
 
-/** The text a search asks the networks about: two characters at least, or a whole address (lower case); null otherwise. */
+/**
+ * The longest name a network is asked about: read-v6 chain-tokens' own limit (its request schema's maxLength), the one
+ * Robinhood Chain's search stops at too (components/read/screens/TokenSearch.tsx).
+ */
+const MAX_TEXT = 96
+
+/**
+ * The text a search asks the networks about: two characters at least, or a whole address (lower case); null otherwise.
+ * Changed on purpose 2026-10-30 (QA round 2, N98): never more than 96 characters. A longer text was sent anyway, refused
+ * by the contract's own check, and said as "Base and Arbitrum One search is unavailable right now."; now no network is
+ * asked, and the list says what it says of any name with no match.
+ */
 export function searchable(query: string): string | null {
   const text = query.trim()
-  if (text.length < 2 || (/^0x/i.test(text) && !ADDRESS.test(text))) return null
+  if (text.length < 2 || text.length > MAX_TEXT || (/^0x/i.test(text) && !ADDRESS.test(text))) return null
   return /^0x/i.test(text) ? text.toLowerCase() : text
 }
 

@@ -161,7 +161,12 @@ test('V2 with sufficient selected tokens does not suggest a bridge', async () =>
 test('an unread V2 balance is unavailable, never a zero shortfall; disconnect removes all account-scoped funding state', async () => {
   const s = await openFunding({ failed: true });
   try {
-    await s.zap.locator('[data-zap-funds-balance="unavailable"]').waitFor();
+    // Changed on purpose 2026-10-30 (QA round 2, SWEEP: no words saying data is missing): a read with nothing usable is
+    // asked again on its own, said as being checked ("could not be checked yet" before).
+    const checking = s.zap.locator('[data-zap-funds-balance="checking"]');
+    await checking.waitFor();
+    assert.equal(await checking.innerText(), 'Checking the tokens in your wallet…');
+    assert.equal(await s.zap.getByText(/could not be checked/).count(), 0);
     assert.equal(await s.zap.locator('[data-funds-offer]').count(), 0);
     assert.deepEqual(s.calls, []);
     await s.page.locator('header [aria-haspopup="dialog"]').click();

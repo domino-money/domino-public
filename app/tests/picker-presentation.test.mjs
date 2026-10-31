@@ -249,15 +249,16 @@ test('New position’s pool row: TVL, 24h volume and APR on every row, a dash fo
   const full = html(PoolRow, { option, checked: false, onPick() {}, name: 'pool-option', compact: true, plain: true })
   assert.match(full, />\$10\.00</)
   assert.match(full, />[\d.,]+% est\.</)
-  // 2026-10-01 (audit E21): the fee as every chip writes it.
-  assert.match(full, /data-fee="">0\.30% fee</)
+  // 2026-10-01 (audit E21): the fee as every chip writes it. Changed on purpose 2026-10-30 (QA round 2, Q28): with what the
+  // fee is in its title.
+  assert.match(full, /data-fee="" title="Traders pay this on every swap\. People who add money to the pool, you included, share it\. It is never taken from your deposit\.">0\.30% fee</)
   // Changed on purpose 2026-10-06 (the review of the next update): a row that names its network draws the fee chip beside the
   // network chip, on one line under the pair (.dm-flow-pool-chips, which wraps where both do not fit); a row without one keeps
   // its fee chip beside the pair, last in the label.
-  assert.match(full, /<\/span><span class="dm-chip shrink-0" data-fee="">0\.30% fee<\/span><\/label>/)
+  assert.match(full, /<\/span><span class="dm-chip shrink-0" data-fee="" title="[^"]+">0\.30% fee<\/span><\/label>/)
   assert.doesNotMatch(full, /dm-flow-pool-chips|dm-flow-pool-net/)
   const networked = html(PoolRow, { option, checked: false, onPick() {}, name: 'pool-option', compact: true, plain: true, network: 'Base' })
-  assert.match(networked, /<span class="dm-flow-pool-chips"><span class="dm-chip dm-flow-pool-net" data-chain-chip="\d+">Base<\/span><span class="dm-chip shrink-0" data-fee="">0\.30% fee<\/span><\/span><\/span><\/label>/)
+  assert.match(networked, /<span class="dm-flow-pool-chips"><span class="dm-chip dm-flow-pool-net" data-chain-chip="\d+">Base<\/span><span class="dm-chip shrink-0" data-fee="" title="[^"]+">0\.30% fee<\/span><\/span><\/span><\/label>/)
   assert.equal((networked.match(/data-fee=/g) ?? []).length, 1, 'one fee chip')
   assert.match(full, /data-token-metadata="available"/)
   // Changed on purpose (round 6, 2026-09-27, New position for beginners): the row names its pair and fee only; the
@@ -265,6 +266,13 @@ test('New position’s pool row: TVL, 24h volume and APR on every row, a dash fo
   assert.doesNotMatch(full, /Uniswap ·/)
   assert.match(full, new RegExp(`data-pool-key="${option.key}"`))
   assert.doesNotMatch(full, /\btitle="[^"]*"[^>]*data-pool-option|data-pool-option="discovery"[^>]*title=/, 'no title on a row with nothing to say')
+  // Changed on purpose 2026-10-30 (QA round 2, N105): a row's estimate has the one plain title every "est." figure has.
+  assert.match(full, /<span class="tnum font-medium text-fg" title="Estimate from the last 24 hours of trading fees\. Your earnings depend on your price range\.">[\d.,]+% est\.</)
+  // Added 2026-10-30 (QA round 2, N8): where the page holds the pool's Markets row, the row writes Markets' own APR.
+  const marketEstimate = html(PoolRow, { option: { ...option, marketApr: { digits: '38.8', estimate: true } }, checked: false, onPick() {}, name: 'pool-option', compact: true, plain: true })
+  assert.match(marketEstimate, /data-row-apr="estimate" data-row-apr-source="markets"><span class="text-fg-muted">APR<\/span><span class="tnum font-medium text-fg" title="Estimate from the last 24 hours of trading fees\. Your earnings depend on your price range\.">38\.8% est\.<\/span>/)
+  const marketHistory = html(PoolRow, { option: { ...option, marketApr: { digits: '41.2', estimate: false } }, checked: false, onPick() {}, name: 'pool-option', compact: true, plain: true })
+  assert.match(marketHistory, /data-row-apr="history" data-row-apr-source="markets"><span class="text-fg-muted">APR<\/span><span class="tnum font-medium text-money-in">41\.2%<\/span>/, 'Domino’s own history, no "est.", in the gains ink as on Markets')
 })
 
 test('the New position picker reads nothing on render and shows no coverage, catalogue or rejected panel while it waits', () => {

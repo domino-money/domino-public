@@ -35,7 +35,7 @@ const DECIMALS = { decimals0: 18, decimals1: 6 };
 /** ETH / USDG as the screens name it (tokens in pool order). */
 const TOKENS = [{ address: ETH, label: 'ETH', decimals: 18, known: true }, { address: USDG, label: 'USDG', decimals: 6, known: true }];
 const at = (price) => sqrtPriceX96FromPrice(price, DECIMALS, 'token1PerToken0').sqrtPriceX96;
-/** A range from about 2,000 to 3,000 USDG per ETH, in the pool's ticks (spacing 60): 1,994.25 and 2,998.9 exactly as written. */
+/** A range from about 2,000 to 3,000 USDG per ETH, in the pool's ticks (spacing 60): 1,994.25 and 2,998.90 exactly as written. */
 const RANGE = { tickLower: -200340, tickUpper: -196260 };
 
 test('the triggers are the range\'s edges, exactly; both while the price is inside the range', () => {
@@ -133,10 +133,12 @@ test('the edges in the app\'s price words, the falling one first, in either orie
   const { edges } = form.exitEdges(RANGE, at('2500'), 60);
   const said = words.edgesOf(edges, TOKENS, 'token1PerToken0');
   assert.deepEqual(said.map((edge) => [edge.move, edge.field]), [['falls', 'triggerBelowSqrtPriceX96'], ['rises', 'triggerAboveSqrtPriceX96']]);
-  assert.deepEqual(said.map((edge) => edge.price), ['1,994.25', '2,998.9'], 'six significant digits, as the range is written');
-  assert.equal(words.closesAtWords(said, TOKENS, 'token1PerToken0'), '1,994.25 – 2,998.9 USDG per ETH');
+  // Changed on purpose 2026-10-30 (QA round 2, N2): the screens' one price rule (src/v2/plan/present.ts priceText), two
+  // decimals from 1,000 up, as V2 Review and the position page write the same range ("2,998.9" was six significant digits).
+  assert.deepEqual(said.map((edge) => edge.price), ['1,994.25', '2,998.90'], 'two decimals from 1,000 up, as the range is written');
+  assert.equal(words.closesAtWords(said, TOKENS, 'token1PerToken0'), '1,994.25 – 2,998.90 USDG per ETH');
   // Changed on purpose 2026-10-06 (the review of point 5): under the card's title "Auto-exit" and its "On" pill.
-  assert.equal(words.onLine(said, TOKENS, 'token1PerToken0'), 'Closes at 1,994.25 – 2,998.9 USDG per ETH');
+  assert.equal(words.onLine(said, TOKENS, 'token1PerToken0'), 'Closes at 1,994.25 – 2,998.90 USDG per ETH');
   // The other way round: the upper sqrt price is the lower figure, and it is the one the price "falls" to.
   const inverse = words.edgesOf(edges, TOKENS, 'token0PerToken1');
   assert.deepEqual(inverse.map((edge) => [edge.move, edge.field]), [['falls', 'triggerAboveSqrtPriceX96'], ['rises', 'triggerBelowSqrtPriceX96']]);
@@ -144,7 +146,7 @@ test('the edges in the app\'s price words, the falling one first, in either orie
   // One far edge: one price.
   const sell = words.edgesOf(form.exitEdges(RANGE, at('1500'), 60).edges, TOKENS, 'token1PerToken0');
   assert.equal(sell.length, 1);
-  assert.equal(words.onLine(sell, TOKENS, 'token1PerToken0'), 'Closes at 2,998.9 USDG per ETH');
+  assert.equal(words.onLine(sell, TOKENS, 'token1PerToken0'), 'Closes at 2,998.90 USDG per ETH');
   // A token whose decimals are unknown: never a guessed price.
   const unknown = [TOKENS[0], { address: ORB, label: 'ORB', decimals: null, known: false }];
   const blind = words.edgesOf(edges, unknown, 'token1PerToken0');
