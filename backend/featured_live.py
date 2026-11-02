@@ -82,6 +82,19 @@ def transient(estimate):
     return reasons <= LATE_DATA and all(age <= TRANSIENT_DATA_SECONDS for age in ages)
 
 
+def estimate_note(estimate, missing):
+    """What a withdrawal's line records of the pool's estimate at that check: its status and
+    reasons, the market's own reason (a 429 reads provider_rate_limited) and the age of the
+    market data and of the snapshot. Codes and ages only. `missing` names why there is none."""
+    if estimate is None:
+        return {'status': 'unavailable', 'reasons': [missing], 'marketReason': None,
+                'marketAgeSeconds': None, 'snapshotAgeSeconds': None}
+    provenance = estimate['provenance']
+    return {'status': estimate['status'], 'reasons': list(estimate['reasons']),
+            'marketReason': provenance['marketReason'], 'marketAgeSeconds': provenance['effectiveMarketAgeSeconds'],
+            'snapshotAgeSeconds': provenance['snapshotAgeSeconds']}
+
+
 def _decimal(value):
     try:
         return Decimal(value) if value is not None else None
@@ -281,7 +294,7 @@ class Live:
     # ------------------------------------------------------------ health
     def _pool_health(self, entry, overrides, now):
         """(reasons that remove the pool at once, conditions it shows now, conditions its data
-        cannot judge now)."""
+        cannot judge now, what its estimate says now: estimate_note)."""
         pool_id, reasons, seen, unknown = entry['poolId'], [], set(), set()
         tokens = [token['address'] for token in entry.get('tokens') or ()]
         if pool_id in overrides['excludedPools'] or any(token in overrides['excludedTokens'] for token in tokens):
@@ -289,7 +302,7 @@ class Live:
         row = self.public.get('pool', pool_id)
         if row is None or row['payload'] is None:
             seen.add('estimate_unavailable')
-            return reasons, seen, unknown
+            return reasons, seen, unknown, estimate_note(None, 'figures_pending')
         aged = aged_market(row['payload'], row['observed_at'], now)
         pool, thresholds = aged['pool'], self.policy['thresholds']
         if pool['integrationClass'] != 'hookless_fixed_fee':
@@ -315,10 +328,8 @@ class Live:
         if data is not None:
             tvl, volume = _decimal(data['reportedLiquidityUsd']), _decimal(data['volume24hUsd'])
             apr = _decimal(estimate['feeAprEstimate24hPercent']) if estimate else None
-            if tvl is not None and tvl < Decimal(thresholds['minTvlUsd']) / 2:
-                seen.add('tvl_collapse')
-            if volume is not None and volume < Decimal(thresholds['minVolume24hUsd']) / 10:
-                seen.add('volume_collapse')
+            # Under half the TVL floor, under a tenth of the volume floor (rules.COLLAPSE).
+            seen |= rules.collapses(volume, tvl, self.policy)
             ceiling, turnover = thresholds['maxAprPercent'], thresholds['maxTurnover24h']
             # A policy with no ceiling (null) watches neither.
             if ((ceiling is not None and apr is not None and apr > Decimal(ceiling)) or
@@ -330,7 +341,7 @@ class Live:
             other = ratio if reference == pool['currencies'][1] else 1 / ratio
             if other < PRICE_FALL:
                 seen.add('price_fall')
-        return reasons, seen, unknown
+        return reasons, seen, unknown, estimate_note(estimate, 'figures_invalid')
 
     def _token_checks(self, entries, now):
         """TA-5 once an hour: listed tokens whose code differs from when first listed."""
@@ -353,9 +364,9 @@ class Live:
             # A list every pool has left still takes replacements once they are ready.
             return self._fill_vacancies(served, overrides, now) if self._fillable(served) else {'status': 'idle'}
         entries = {entry['poolId']: entry for entry in served['payload']['pools']}
-        immediate, seen, unknown = {}, {}, {}
+        immediate, seen, unknown, notes = {}, {}, {}, {}
         for pool_id, entry in entries.items():
-            reasons, conditions, unjudged = self._pool_health(entry, overrides, now)
+            reasons, conditions, unjudged, notes[pool_id] = self._pool_health(entry, overrides, now)
             if reasons:
                 immediate[pool_id] = reasons[0]
             seen[pool_id], unknown[pool_id] = conditions, unjudged
@@ -376,7 +387,7 @@ class Live:
         for token in sorted(changed):
             self.store.add_override('exclude_token', token, reason='token_code_changed: code differs from when first listed')
         if removed:
-            return self._repair(served, removed, overrides, now)
+            return self._repair(served, removed, overrides, now, notes)
         if len(entries) < self.policy['size'] and self._fillable(served):
             return self._fill_vacancies(served, overrides, now)
         return {'status': 'healthy'}
@@ -422,7 +433,7 @@ class Live:
             """The site can show it now, and it shows no condition that would remove it."""
             if self.readiness([pool_id], now)[pool_id] is not None:
                 return False
-            reasons, seen, unknown = self._pool_health(entry_of(pool_id, 'ranked'), overrides, now)
+            reasons, seen, unknown, _ = self._pool_health(entry_of(pool_id, 'ranked'), overrides, now)
             return not reasons and not seen and not unknown
         return [entry_of(item['poolId'], item['source'])
                 for item in rules.refill([entry['poolId'] for entry in kept], evaluations, self.policy,
@@ -443,10 +454,10 @@ class Live:
         revision = self._serve('repaired', {**served['payload'], 'pools': kept + added,
                                             'withdrawn': prune_withdrawn(withdrawn, now)},
                                day=served['selection_date'], run_id=served['run_id'], now=now,
-                               valid_until=served['valid_until'])
+                               generated_at=served['generated_at'], valid_until=served['valid_until'])
         return {'status': 'refilled', 'revision': revision, 'added': [entry['poolId'] for entry in added]}
 
-    def _repair(self, served, removed, overrides, now):
+    def _repair(self, served, removed, overrides, now, notes):
         kept = [entry for entry in served['payload']['pools'] if entry['poolId'] not in removed]
         withdrawn = served['payload'].get('withdrawn', []) + [
             {'poolId': pool_id, 'reason': reason, 'at': now} for pool_id, reason in sorted(removed.items())]
@@ -454,11 +465,15 @@ class Live:
         # The search just ran: a list still short looks again only after VACANCY_SECONDS.
         self.vacancies_checked_at = now
         status = 'manual' if served['status'] == 'manual' else 'repaired'
+        # A repair keeps the list's date: the app gives up a list 72 h after its generatedAt, and
+        # the list chosen on 16 Oct 2026, repaired nine times, stayed on the site until 21 Oct.
         revision = self._serve(status, {**served['payload'], 'pools': kept + added,
                                         'withdrawn': prune_withdrawn(withdrawn, now)},
                                day=served['selection_date'], run_id=served['run_id'], now=now,
-                               valid_until=served['valid_until'])
+                               generated_at=served['generated_at'], valid_until=served['valid_until'])
+        # The withdrawal's line says what each pool's estimate showed when it left.
         return {'status': status, 'revision': revision, 'removed': removed,
+                'estimates': {pool_id: notes.get(pool_id) for pool_id in sorted(removed)},
                 'added': [entry['poolId'] for entry in added]}
 
     # ------------------------------------------------------------ tick

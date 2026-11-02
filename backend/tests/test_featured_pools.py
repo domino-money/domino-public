@@ -12,7 +12,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from discovery import DataError
 from featured_pools import (MARKET, OPTIONAL_DECIMALS, OPTIONAL_INTEGERS, POLICY_PATH, SAFETY, band_bound,
                             check_policy, compose, depth_usd, eth_usd, evaluate, list_id, load_policy,
-                            policy_version, reference_depth, reference_side, symbol_reading, token_reasons)
+                            policy_version, reference_depth, reference_side, refill, symbol_reading, token_reasons)
 from v4_math import Q96, amount_delta, sqrt_at_tick, tick_at_sqrt
 
 ZERO='0x'+'0'*40
@@ -125,6 +125,8 @@ class RuleTests(unittest.TestCase):
             ('dynamic_fee_unsupported',[(key+('fee_pips',),0x800000)]),
             ('fixed_fee_mismatch',[(('chain','pool','currentLpFeePips'),2500)]),
             ('fee_out_of_range',[(key+('fee_pips',),1_000_000),(('chain','pool','currentLpFeePips'),1_000_000)]),
+            # A zero fee costs its wash volume nothing: such pools ranked from 16 to 25 Oct 2026.
+            ('fee_out_of_range',[(key+('fee_pips',),0),(('chain','pool','currentLpFeePips'),0)]),
             ('invalid_protocol_fee',[(('chain','pool','protocolFeeRaw'),1001|(1001<<12))]),
             ('invalid_protocol_fee',[(('chain','pool','protocolFeeRaw'),1001)]),
             ('invalid_protocol_fee',[(('chain','pool','protocolFeeRaw'),1001<<12)]),
@@ -230,10 +232,14 @@ class PolicyV2Tests(unittest.TestCase):
         self.assertEqual(V2['hysteresis'],{'incumbentFloorFactor':'1','challengerMargin':'1',
                                            'maxRankedSwapsPerDay':V2['size']})
         self.assertTrue(V2['rejectUpgradeableTokens'])
-        self.assertEqual({key:value for key,value in V2.items() if key not in ('rankBy','persistence','fill',
-                                                                               'thresholds','hysteresis')},
-                         {key:value for key,value in POLICY.items() if key not in ('rankBy','persistence','fill',
-                                                                                   'thresholds','hysteresis')})
+        # 2 Nov 2026: a finished selection publishes with a single ranked pool (v1 waited for 3).
+        self.assertEqual((V2['minPublishable'],POLICY['minPublishable']),(1,3))
+        changed=('rankBy','persistence','fill','thresholds','hysteresis','minPublishable')
+        self.assertEqual({key:value for key,value in V2.items() if key not in changed},
+                         {key:value for key,value in POLICY.items() if key not in changed})
+        # What the VM's runs report with no override in force (featured-v1:77cef48e336b until minPublishable 1).
+        self.assertEqual(policy_version(V2,{'pins':[],'excludedPools':[],'excludedTokens':[]}),
+                         'featured-v1:603500f6d873')
 
     def test_the_shipped_policy_holds_the_reference_depth_floor(self):
         # 04/10: under US$ 10k, or unmeasurable, is refused; exactly US$ 10k is not.
@@ -314,6 +320,7 @@ class PolicyV2Tests(unittest.TestCase):
         key=('chain','pool','poolKey')
         for reason,changes in (('hooked_pool_unsupported',[(key+('hooks',),'0x'+'22'*20)]),
                                ('dynamic_fee_unsupported',[(key+('fee_pips',),0x800000)]),
+                               ('fee_out_of_range',[(key+('fee_pips',),0),(('chain','pool','currentLpFeePips'),0)]),
                                ('token_upgradeable_unreviewed',[(('token','proxy'),'eip1967')]),
                                ('token_protected_unreviewed',[(('token','symbol'),'TSLA')]),
                                ('estimate_not_available',[(('estimate',),None)]),
@@ -651,6 +658,22 @@ class ComposeTests(unittest.TestCase):
         self.assertEqual(self.names(result),[(1,'R1','ranked'),(2,'R2','ranked'),(3,'R3','ranked'),
                                              (4,'F1','fallback')])
 
+    def test_the_embedded_list_completes_a_list_only_with_pools_the_health_check_keeps(self):
+        # From 30/10, UBIK, ORBIO and VIRTUAL completed lists and the health check withdrew them 3 h later
+        # (volume_collapse). v2's floors: US$ 1M of volume (a tenth: 100k) and US$ 100k of TVL (half: 50k).
+        ranked=[ev(pid('R1'),tok('R1'),300),ev(pid('R2'),tok('R2'),200),ev(pid('R3'),tok('R3'),100)]
+        fallbacks=[ev(pid('THIN'),tok('THIN'),5,eligible=False,volume='99999.99'),
+                   ev(pid('SHALLOW'),tok('SHALLOW'),5,eligible=False,tvl='49999.99'),
+                   ev(pid('UNKNOWN'),tok('UNKNOWN'),5,eligible=False,volume=None),
+                   ev(pid('EDGE'),tok('EDGE'),5,eligible=False,volume='100000',tvl='50000')]
+        embedded=[pid(name) for name in ('THIN','SHALLOW','UNKNOWN','EDGE')]
+        result=compose(ranked+fallbacks,V2,previous_list=[],embedded=embedded)
+        self.assertEqual(self.names(result),[(1,'R1','ranked'),(2,'R2','ranked'),(3,'R3','ranked'),
+                                             (4,'EDGE','fallback')])
+        # The same pools complete a repaired list, and no others.
+        added=refill([pid('R1'),pid('R2'),pid('R3')],ranked+fallbacks,V2,embedded=embedded)
+        self.assertEqual(added,[{'poolId':pid('EDGE'),'source':'fallback'}])
+
     def test_fewer_than_three_ranked_or_pinned_keeps_yesterday_s_list(self):
         ranked=[ev(pid('R1'),tok('R1'),300),ev(pid('R2'),tok('R2'),200)]
         result=compose(ranked,POLICY,previous_list=[])
@@ -658,6 +681,18 @@ class ComposeTests(unittest.TestCase):
         pinned=ev(pid('P'),tok('P'),1,eligible=False)
         result=compose(ranked+[pinned],POLICY,previous_list=[],pins=[{'poolId':pid('P'),'slot':1}])
         self.assertEqual(result['status'],'current')
+
+    def test_v2_publishes_one_ranked_pool_completed_by_the_embedded_list_but_never_none(self):
+        # 5 Oct to 2 Nov 2026: on 9 days fewer than 3 pools ranked, and the old list stayed.
+        fallbacks=[ev(pid(name),tok(name),5,eligible=False) for name in ('F1','F2')]
+        embedded=[pid('F1'),pid('F2')]
+        result=compose([ev(pid('R1'),tok('R1'),300)]+fallbacks,V2,previous_list=[],embedded=embedded)
+        self.assertEqual((result['status'],self.names(result)),
+                         ('current',[(1,'R1','ranked'),(2,'F1','fallback'),(3,'F2','fallback')]))
+        # The embedded list alone is no selection: yesterday's list stays.
+        result=compose([ev(pid('R1'),tok('R1'),300,eligible=False)]+fallbacks,V2,previous_list=[],embedded=embedded)
+        self.assertEqual((result['status'],[entry['source'] for entry in result['pools']]),
+                         ('carried_over',['fallback','fallback']))
 
     def test_list_id_names_the_pools_not_the_figures(self):
         entries=[{'slot':1,'source':'ranked','poolId':POOL,'rankInputs':{'rankApr':'1'},'poolKey':{'fee_pips':3000},
@@ -669,9 +704,55 @@ class ComposeTests(unittest.TestCase):
         self.assertNotEqual(list_id(entries),list_id(other))
 
 
+class RefillTests(unittest.TestCase):
+    """What completes a repaired list (featured_live._replacements): the day's eligible pools in the
+    order compose chooses them, then the embedded list's pools the health check would keep."""
+    def names(self,added):
+        return [(NAMES[entry['poolId']],entry['source']) for entry in added]
+
+    def october_30(self):
+        """15:00 UTC: USDG/PRIORS, CASHCAT/USDG and PONS/USDG listed; the 0.05% ETH/USDG pool has left,
+        and two ETH/USDG pools are eligible: 0.01% (APR 74.0%, US$ 250k) and 0.046% (68.1%, US$ 719k)."""
+        kept=[ev(pid(name),tok(name),rank,tvl=tvl) for name,rank,tvl in
+              (('PRIORS','120','278000'),('CASHCAT','90','401000'),('PONS','60','1100000'))]
+        majors=[ev(pid('ETH001'),ZERO,'74.0',tvl='250000',major=True),
+                ev(pid('ETH046'),ZERO,'68.1',tvl='719000',major=True)]
+        return [item['poolId'] for item in kept],kept+majors
+
+    def test_a_repair_keeps_the_deepest_major_pair_as_the_selection_does(self):
+        kept,evaluations=self.october_30()
+        # The embedded list's major pair is the 0.01% too: it does not complete the list instead.
+        added=refill(kept,evaluations,V2,embedded=[pid('ETH001')])
+        self.assertEqual(self.names(added),[('ETH046','ranked')])
+        chosen=[entry['poolId'] for entry in compose(evaluations,V2,previous_list=[])['pools']]
+        self.assertIn(pid('ETH046'),chosen)
+        self.assertNotIn(pid('ETH001'),chosen)
+
+    def test_the_deepest_pool_not_ready_yet_keeps_its_place_from_a_shallower_one(self):
+        # It is kept warm as a candidate and completes the list once ready; the 0.01% never does.
+        kept,evaluations=self.october_30()
+        asked=[]
+
+        def ready(pool_id):
+            asked.append(pool_id)
+            return pool_id!=pid('ETH046')
+        self.assertEqual(refill(kept,evaluations,V2,embedded=[pid('ETH001')],ready=ready),[])
+        self.assertNotIn(pid('ETH001'),asked)
+
+    def test_the_deepest_pool_of_each_token_then_the_best_apr(self):
+        evaluations=[ev(pid('A1'),tok('A'),500,tvl='400000'),ev(pid('A2'),tok('A'),100,tvl='900000'),
+                     ev(pid('B'),tok('B'),200,tvl='300000'),ev(pid('S1'),tok('S1'),900,eligible=False)]
+        policy={**V2,'size':2}
+        self.assertEqual(self.names(refill([],evaluations,policy)),[('B','ranked'),('A2','ranked')])
+        self.assertEqual(self.names(refill([pid('S1')],evaluations,policy)),[('B','ranked')])
+        # A full list asks no pool whether it is ready.
+        self.assertEqual(refill([pid('S1'),pid('B')],evaluations,policy,ready=lambda pool_id:1/0),[])
+
+
 NAMES={pid(name):name for name in ('ORBIO','SHROOM','NOTE','LIT','AI','CASHCAT','MEME','ETHUSDG','PONS','PONS25',
                                     'DELTA','UFG','GOOGL','NEW','A1','A2','M1','M2','S1','S2','P','R1','R2','R3',
-                                    'C1','C2','F1','F2')}
+                                    'C1','C2','F1','F2','THIN','SHALLOW','UNKNOWN','EDGE','PRIORS','ETH001','ETH046',
+                                    'B')}
 NAMES.update({pid(f'I{n}'):f'I{n}' for n in range(6)})
 NAMES.update({pid(f'N{n}'):f'N{n}' for n in range(6)})
 

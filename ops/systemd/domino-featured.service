@@ -1,5 +1,5 @@
 [Unit]
-Description=Domino featured pools selection (shadow list; publishes nothing)
+Description=Domino featured pools (daily selection; serves and repairs the list when live)
 After=postgresql@16-domino.service domino-continuous-egress.service
 BindsTo=domino-continuous-egress.service
 PartOf=domino-public-data.target

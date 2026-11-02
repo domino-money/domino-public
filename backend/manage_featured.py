@@ -33,7 +33,7 @@ from rpc_config import configured_rpc_urls
 from selected_pools import SELECTED_POOLS
 
 
-def tick(selector, store, policy, now, live=None):
+def tick(selector, store, policy, now, live=None, clock=time.time):
     """One pass of the service: the day's selection in its window, then the live list."""
     overrides = store.overrides(now)
     phase, result = overrides['phase'], {}
@@ -42,6 +42,9 @@ def tick(selector, store, policy, now, live=None):
         # The selection runs in every mode: persistence (E17b) needs each day's evaluation.
         if first <= now < at:
             result['selection'] = selector.select(now=now, phase=phase, final=now >= last)
+            # A selection takes minutes (11:30:07 to 11:34:28 on 30 Oct 2026): the live list reads
+            # the clock again, or what the collector wrote meanwhile is in its future.
+            now = max(now, int(clock()))
         if phase == 'live' and live is not None:
             result['live'] = live.tick(now)
         elif live is not None:

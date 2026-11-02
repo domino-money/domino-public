@@ -4,6 +4,7 @@ Pools are the collector's own payload fixture under distinct tokens, stored as
 the collector would store them; charts, the manual-list check and the node are
 scripted. Times sit on 2026-09-27, around its 12:00 UTC selection.
 """
+from contextlib import contextmanager
 import copy
 from datetime import date, datetime, timedelta, timezone
 import json
@@ -546,6 +547,51 @@ class LiveTests(unittest.TestCase):
         self.assertEqual(check(HOUR,rate_limited_for=60)['status'],'healthy')    # unknown: the window stays
         self.assertEqual(check(3*HOUR,volume=None)['removed'],{pool_of(a):'estimate_unavailable'})
 
+    def test_repairs_keep_the_list_s_date_so_the_site_s_limit_counts_from_its_selection(self):
+        # The app gives a list up 72 h after its generatedAt. Every repair renewed it: the list chosen
+        # on 16 Oct 2026 was repaired nine times and stayed on the site until 21 Oct.
+        a,b,c=TOKENS[:3]
+        self.serve_today([a,b],extra=[c])
+        start,live=AT+2*HOUR,self.live()
+        self.figures(a,at=start-5)
+        self.store.add_override('exclude_pool',pool_of(b),reason='rug report')
+        self.assertEqual(live.tick(start)['health']['removed'],{pool_of(b):'excluded_by_owner'})
+        repaired=self.store.current()
+        self.assertEqual((repaired['status'],repaired['generated_at'],repaired['effective_at'],repaired['valid_until']),
+                         ('repaired',AT,start,AT+36*HOUR))
+        self.assertEqual(build_response(repaired,now=start)['generatedAt'],AT)
+        # The vacancy filled later keeps it too.
+        later=start+VACANCY_SECONDS
+        for token in (a,c):self.figures(token,at=later-5)
+        self.assertEqual(live.tick(later)['health']['added'],[pool_of(c)])
+        refilled=self.store.current()
+        self.assertEqual((refilled['revision']>repaired['revision'],refilled['generated_at'],refilled['effective_at'],
+                          refilled['valid_until']),(True,AT,later,AT+36*HOUR))
+        self.assertEqual(build_response(refilled,now=later)['generatedAt'],AT)
+
+    def test_a_withdrawal_line_says_what_the_estimate_showed(self):
+        # 30/10 14:30: the 0.05% ETH/USDG pool and ORBIO left (estimate_unavailable), and nothing told
+        # whether the provider had refused them or answered nothing useful.
+        a,b,c=TOKENS[:3]
+        self.serve_today([a,b,c])
+        start,live=AT+2*HOUR,self.live()
+
+        def check(offset):
+            self.figures(a,at=start+offset-5)
+            self.figures(b,at=start+offset-5,rate_limited_for=7*HOUR)       # refused; last answer 7 h ago
+            return live.tick(start+offset)['health']                          # c: never published
+        self.assertEqual(check(0)['status'],'healthy')
+        health=check(3*HOUR)
+        self.assertEqual(health['removed'],{pool_of(b):'estimate_unavailable',pool_of(c):'estimate_unavailable'})
+        self.assertEqual(health['estimates'],{
+            pool_of(b):{'status':'unavailable','reasons':['market_data_expired','market_unavailable',
+                                                          'missing_reported_tvl','missing_volume24h'],
+                        'marketReason':'provider_rate_limited','marketAgeSeconds':7*HOUR+5,'snapshotAgeSeconds':5},
+            pool_of(c):{'status':'unavailable','reasons':['figures_pending'],'marketReason':None,
+                        'marketAgeSeconds':None,'snapshotAgeSeconds':None}})
+        # Codes and ages only: the provider's address never reaches the journal.
+        self.assertNotIn('http',json.dumps(health))
+
     def test_a_short_list_takes_a_replacement_once_it_is_ready_without_another_pool_leaving(self):
         # #278: a list repaired while no replacement was ready stayed short for the rest of the day.
         a,b,c=TOKENS[:3]
@@ -678,6 +724,39 @@ class LiveTests(unittest.TestCase):
     def test_the_window(self):
         first,last,at=window(self.policy,AT+5*HOUR)
         self.assertEqual((first,last,at),(AT-30*60,AT-10*60,AT))
+
+
+class ServiceTickTests(unittest.TestCase):
+    """manage_featured.tick with its store, selection and live list scripted: no database."""
+    def ticked(self,phase,now,*,clock_at,selection_seconds=0):
+        clock,calls=[clock_at],[]
+
+        class Store:
+            def overrides(self,at):return {'phase':phase}
+
+            @contextmanager
+            def selector_lock(self):yield
+
+        class Selection:
+            def select(self,*,now,phase,final):
+                clock[0]+=selection_seconds
+                return {'outcome':'selected'}
+
+        class Served:
+            def tick(self,at):calls.append(('tick',at));return {'mode':'auto'}
+            def withdraw(self,at):calls.append(('withdraw',at));return {'status':'served_none'}
+        manage_featured.tick(Selection(),Store(),load_policy(),now,live=Served(),clock=lambda:clock[0])
+        return calls
+
+    def test_after_a_selection_the_live_list_reads_the_clock_again(self):
+        # 30/10 (run 40): the selection ran from 11:30:07 to 11:34:28, and the health check that followed
+        # took what the collector had written meanwhile for figures from its future.
+        started=AT-30*60+7
+        for phase,call in (('live','tick'),('shadow','withdraw')):
+            with self.subTest(phase=phase):
+                self.assertEqual(self.ticked(phase,started,clock_at=started,selection_seconds=261),[(call,started+261)])
+        # Outside the window no selection runs, and the tick keeps the time it was given.
+        self.assertEqual(self.ticked('live',AT+2*HOUR,clock_at=AT+2*HOUR+999),[('tick',AT+2*HOUR)])
 
 
 if __name__=='__main__':unittest.main()

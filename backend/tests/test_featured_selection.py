@@ -259,8 +259,9 @@ class FeaturedTests(unittest.TestCase):
         self.assertRegex(baseline['listed_code_hash'],r'^0x[0-9a-f]{64}$')
 
     def test_under_v2_the_first_run_selects_by_today_s_apr(self):
-        # Ranking by today alone needs no evaluation to persist against: no bootstrap day.
-        self.policy={**load_policy(),'minPublishable':1}
+        # Ranking by today alone needs no evaluation to persist against: no bootstrap day. The
+        # shipped policy publishes a single ranked pool (minPublishable 1 since 2 Nov 2026).
+        self.policy=load_policy()
         young=gt_pool(YOUNG,TOKEN,USDG,created=NOW-DAY,volume='999999.99')
         thin=gt_pool('0x'+'7c'*32,TOKEN,USDG,tvl='99999.99')
         self.provider.pages=[[gt_pool(POOL,TOKEN,ZERO),young,thin]]

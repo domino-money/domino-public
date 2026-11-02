@@ -39,7 +39,7 @@
   "referenceDepth": {"bandPercent": "10", "maxSteps": 300},
   "hysteresis": {"incumbentFloorFactor": "1", "challengerMargin": "1", "maxRankedSwapsPerDay": 6},
   "diversity": {"perNonReferenceToken": 1, "keep": "deepest", "maxMajorPairs": 1},
-  "minPublishable": 3,
+  "minPublishable": 1,
   "validHours": 36,
   "persistenceLookbackHours": 48
 }

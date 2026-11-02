@@ -28,6 +28,11 @@ depth makes a pool ineligible for ranking. The other market rules stay off.
 | `minReferenceDepthUsd` | 10000 | 10000 (restored 04/10/2026) |
 | APR and turnover ceilings, age, activity, fading volume, price move, provider price | set | `null` (off) |
 | `hysteresis` | 0.7, 1.2, 2 swaps a day | 1, 1, 6: the day's best replace yesterday's |
+| `minPublishable` | 3 | 1 (02/11/2026): a finished selection publishes; the embedded list completes it |
+
+With no override in force, the runs report `policyVersion`
+`featured-v1:603500f6d873` (`featured-v1:77cef48e336b` until `minPublishable`
+went from 3 to 1).
 
 A null threshold turns its rule off everywhere: in the listing screen, in the
 evaluation and in the live health checks (`apr_or_turnover_above_ceiling`
@@ -101,7 +106,8 @@ writes the day's list as a draft; only the live service below serves it.
 
 ## The live phase
 
-Each tick (every 30 s), in this order:
+Each tick (every 30 s), in this order (after a selection, which can take
+minutes, the tick reads the clock again first):
 
 1. **Mode.** `off` serves `none`. `manual` serves the owner's pools, each
    checked against the safety rules when the list changes (a pool that fails
@@ -152,10 +158,20 @@ Each tick (every 30 s), in this order:
    until a check sees the condition again.
 
    The others keep their order. The list is completed from the day's ranked
-   pools, then from the embedded list, with pools that are ready and show no
-   condition now, never with a pool withdrawn this week nor from a selection
-   the owner vetoed; a manual list is not completed. It becomes a new revision
-   (`repaired`; a manual list stays `manual`). A list still short, even an
+   pools, in the order the selection chooses them (the deepest pool per token
+   and per major pair, then by APR: a deepest pool not ready yet keeps its
+   place rather than a shallower one), then from the embedded list's pools
+   whose selection figures clear the same collapse limits (`rules.COLLAPSE`),
+   with pools that are ready and show no condition now, never with a pool
+   withdrawn this week nor from a selection the owner vetoed; a manual list is
+   not completed. It becomes a new revision (`repaired`; a manual list stays
+   `manual`) that keeps the list's `generatedAt`, and its `validUntil` unless
+   that has passed: `effectiveAt` is the repair's time, and the app's 72-hour
+   limit counts from the selection.
+   The withdrawal's line in the journal (`live.health.estimates`) records each
+   leaving pool's estimate: status, reasons, the market's reason (a 429 reads
+   `provider_rate_limited`) and the age of the market data and snapshot.
+   A list still short, even an
    empty one, looks for ready replacements again every 2 minutes and takes
    them as soon as they are ready, without another pool having to leave
    (#278): health reports `healthy` (or `idle` when empty) with its `vacant`
@@ -215,7 +231,8 @@ does not keep choosing a figure against its original mount time.
 ## Rules
 
 Safety rules are never relaxed, not for pins: verified identity, no hook,
-fixed fee, symmetric protocol fee, a reference side (ETH, WETH or USDG, not
+a fixed fee above zero (`fee_out_of_range`; zero-fee pools ranked on wash volume
+in October 2026), symmetric protocol fee, a reference side (ETH, WETH or USDG, not
 ETH/WETH), the token rules, owner exclusions, an `available` estimate and
 active liquidity. Market rules are calibrated in the shadow; pins skip them and
 the previous list's pools meet the volume, liquidity and depth floors at

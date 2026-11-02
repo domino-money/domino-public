@@ -68,6 +68,10 @@ FILLS = ('carried', 'fallback')
 # A threshold as a list states it (read_contract.DecimalString).
 DECIMAL_STRING = re.compile(r'[0-9]+(?:\.[0-9]+)?')
 SOURCES = ('pinned', 'ranked', 'carried', 'fallback', 'manual')
+# The live health check withdraws a served pool whose reported TVL falls under its floor
+# divided by 2 (tvl_collapse), or whose 24 h volume falls under its floor divided by 10
+# (volume_collapse); the embedded list completes a list only with pools above both.
+COLLAPSE = {'tvl_collapse': ('minTvlUsd', 2), 'volume_collapse': ('minVolume24hUsd', 10)}
 
 # Letters that only look Latin, and digits and signs that pass for letters,
 # as the Latin letter they imitate: app/src/lib/walletHoldings.ts LOOKS.
@@ -360,6 +364,13 @@ def screen(market, listing, created_at, policy, *, now, relaxed=False):
     return reasons, volume, tvl
 
 
+def collapses(volume, tvl, policy):
+    """The COLLAPSE conditions a 24 h volume and a reported TVL show; a figure that is unknown shows none."""
+    figures = {'tvl_collapse': tvl, 'volume_collapse': volume}
+    return {condition for condition, (floor, divisor) in COLLAPSE.items()
+            if figures[condition] is not None and figures[condition] < Decimal(policy['thresholds'][floor]) / divisor}
+
+
 def evaluate(candidate, policy, *, now, previous, relaxed=False, excluded_pools=(), excluded_tokens=(),
              published_readings=None):
     """Every rule a candidate fails, in rule order, plus the figures that rank it.
@@ -391,7 +402,9 @@ def evaluate(candidate, policy, *, now, previous, relaxed=False, excluded_pools=
             reasons.append('dynamic_fee_unsupported')
         elif key['fee_pips'] != pool['currentLpFeePips']:
             reasons.append('fixed_fee_mismatch')
-        elif not 0 <= key['fee_pips'] < 1_000_000:
+        # A pool with no fee earns its LPs nothing, and its volume costs nothing to make:
+        # zero-fee pools ranked on wash volume from 16 to 25 Oct 2026.
+        elif not 0 < key['fee_pips'] < 1_000_000:
             reasons.append('fee_out_of_range')
         protocol = pool['protocolFeeRaw']
         if (protocol & 0xfff) > 1000 or (protocol >> 12) > 1000:
@@ -504,24 +517,51 @@ class Diversity:
                 self.readings[item['symbolReading']] = item['token']
 
 
+def _holds(item, policy):
+    """A fallback the health check would keep: its 24 h volume and TVL known, and neither collapsed."""
+    volume, tvl = _decimal(item.get('volume24hUsd')), _decimal(item.get('reportedLiquidityUsd'))
+    return volume is not None and tvl is not None and not collapses(volume, tvl, policy)
+
+
 def refill(kept, evaluations, policy, *, embedded=(), ready=lambda pool_id: True):
-    """Pools that complete a repaired list: ranked eligible pools, then the
-    embedded list's safe ones, each ready and admissible beside those kept."""
+    """Pools that complete a repaired list, each ready and admissible beside those kept.
+
+    The day's eligible pools come in the order `compose` chooses them: the
+    deepest pool per token and per major pair, then by rankApr. On 30 Oct 2026
+    a walk by rankApr put the 0.01% ETH/USDG pool (US$ 250k) where the
+    selection keeps the deepest. A pool chosen so that is not ready yet keeps
+    its token's or major pair's place: the list stays short until it is ready
+    (it is kept warm as a candidate) rather than take a shallower pool. Then
+    the embedded list's safe pools whose figures the health check would keep.
+    """
+    slots = policy['size'] - len(kept)
+    if slots <= 0:
+        return []
     by_id = {item['poolId']: item for item in evaluations}
-    held = [by_id[pool_id] for pool_id in kept if pool_id in by_id]
-    diversity, listed, added = Diversity(policy, held), set(kept), []
-    ranked = sorted((item for item in evaluations if item['eligible']), key=rank_key)
-    for source, pool_ids in (('ranked', [item['poolId'] for item in ranked]), ('fallback', list(embedded))):
-        for pool_id in pool_ids:
-            if len(kept) + len(added) >= policy['size']:
-                return added
-            item = by_id.get(pool_id)
-            if (pool_id in listed or item is None or not item['safe'] or diversity.reason(item)
-                    or not ready(pool_id)):
-                continue
+    diversity, listed = Diversity(policy, [by_id[pool_id] for pool_id in kept if pool_id in by_id]), set(kept)
+    # Diversity picks the deepest pool per token before any ranking, as in compose.
+    chosen = []
+    for item in sorted((item for item in evaluations if item['eligible']), key=_depth_key):
+        if item['poolId'] not in listed and not diversity.reason(item):
             diversity.take(item)
-            listed.add(pool_id)
-            added.append({'poolId': pool_id, 'source': source})
+            chosen.append(item)
+    added = []
+    for item in sorted(chosen, key=rank_key):
+        if len(added) >= slots:
+            break
+        if ready(item['poolId']):
+            listed.add(item['poolId'])
+            added.append({'poolId': item['poolId'], 'source': 'ranked'})
+    for pool_id in embedded:
+        if len(added) >= slots:
+            break
+        item = by_id.get(pool_id)
+        if (pool_id in listed or item is None or not item['safe'] or not _holds(item, policy)
+                or diversity.reason(item) or not ready(pool_id)):
+            continue
+        diversity.take(item)
+        listed.add(pool_id)
+        added.append({'poolId': pool_id, 'source': 'fallback'})
     return added
 
 
@@ -539,7 +579,8 @@ def compose(evaluations, policy, *, previous_list, pins=(), embedded=()):
        rankApr, at most `maxRankedSwapsPerDay` times;
     4. ranked pools fill the other slots by rankApr;
     5. short lists are completed, in the order `fill` names, with incumbents
-       that are still safe (carried) and the embedded list's safe pools (fallback).
+       that are still safe (carried) and the embedded list's safe pools whose
+       figures the health check would keep (fallback).
     Fewer than `minPublishable` pinned or ranked pools keeps the previous list.
     """
     size, hysteresis = policy['size'], policy['hysteresis']
@@ -605,6 +646,9 @@ def compose(evaluations, policy, *, previous_list, pins=(), embedded=()):
                 break
             item = by_id.get(pool_id)
             if pool_id in listed or item is None or not item['safe'] or admissible(item):
+                continue
+            # A fallback the health check would withdraw within hours does not complete the list.
+            if source == 'fallback' and not _holds(item, policy):
                 continue
             take(item)
             listed.add(pool_id)

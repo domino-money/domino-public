@@ -70,6 +70,21 @@ class PublicInstallTests(unittest.TestCase):
         target=self.plan()['units']['domino-public-data.target']
         self.assertNotIn('domino-featured',target)
 
+    def test_the_featured_unit_says_what_it_does_and_its_new_text_moves_with_the_release(self):
+        # It has served the live list since 27 Sep 2026; its Description still said it published nothing.
+        planned=self.plan()
+        unit=planned['units']['domino-featured.service']
+        described='Description=Domino featured pools (daily selection; serves and repairs the list when live)\n'
+        self.assertIn(described,unit)
+        self.assertNotIn('publishes nothing',unit)
+        # The unit installed today carries the old text: the release replaces it, and rollback restores it.
+        old=unit.replace(described,'Description=Domino featured pools selection (shadow list; publishes nothing)\n')
+        (self.systemd/'domino-featured.service').write_text(old)
+        installer.apply(self.files,planned)
+        self.assertEqual((self.systemd/'domino-featured.service').read_text(),unit)
+        installer.rollback(COMMIT)
+        self.assertEqual((self.systemd/'domino-featured.service').read_text(),old)
+
     def test_the_v2_indexer_is_installed_per_chain_but_never_enabled(self):
         unit=self.plan()['units']['domino-v2-indexer@.service']
         for field in ('User=domino-write','SupplementaryGroups=domino-db','ProtectSystem=strict',
