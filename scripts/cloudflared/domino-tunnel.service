@@ -2,7 +2,7 @@
 # Before first start: approve the separate egress drop-in and remote mappings,
 # validate credential/asset ownership, and run the documented network probes.
 [Unit]
-Description=Domino staging Cloudflare Tunnel (2026.9.0)
+Description=Domino staging Cloudflare Tunnel (2026.10.4)
 Wants=network-online.target
 After=network-online.target
 StartLimitIntervalSec=60
@@ -12,10 +12,10 @@ StartLimitBurst=3
 Type=exec
 User=domino-tunnel
 Group=domino-tunnel
-WorkingDirectory=/opt/domino/cloudflared/2026.9.0
+WorkingDirectory=/opt/domino/cloudflared/2026.10.4
 LoadCredential=cloudflared-token:/etc/domino/credentials/cloudflared-token
 # Disables management-service diagnostics; the loopback diagnostic server remains.
-ExecStart=/usr/bin/env -i HOME=/nonexistent PATH=/usr/bin:/bin /opt/domino/cloudflared/2026.9.0/cloudflared tunnel --config /opt/domino/cloudflared/2026.9.0/connector.yml --no-autoupdate --loglevel info --metrics 127.0.0.1:20241 --grace-period 20s --management-diagnostics=false run --token-file ${CREDENTIALS_DIRECTORY}/cloudflared-token
+ExecStart=/usr/bin/env -i HOME=/nonexistent PATH=/usr/bin:/bin /opt/domino/cloudflared/2026.10.4/cloudflared tunnel --config /opt/domino/cloudflared/2026.10.4/connector.yml --no-autoupdate --loglevel info --metrics 127.0.0.1:20241 --grace-period 20s --management-diagnostics=false run --token-file ${CREDENTIALS_DIRECTORY}/cloudflared-token
 UMask=0077
 NoNewPrivileges=yes
 ProtectSystem=strict

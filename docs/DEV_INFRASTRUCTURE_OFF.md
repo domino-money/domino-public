@@ -70,7 +70,7 @@ Neither statement authorizes backend activation or a live provider request.
 The independent connector is absent from the target's dependencies. Its unit
 also requires `/run/domino-dev-connector.reviewed`, which this bundle never
 creates. There is no `[Install]` section, timer, auto-start or reboot selection.
-The pinned cloudflared binary matches the existing reviewed 2026.9.0 installation
+The pinned cloudflared binary matches the existing reviewed 2026.10.4 installation
 path; a later installer must verify the recorded binary digest before execution.
 Its explicit empty config does not establish safe remote routing.
 

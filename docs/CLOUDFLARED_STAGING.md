@@ -23,30 +23,31 @@ application or establish new VM evidence.
 
 ## Exact binary and provenance
 
-The candidate pins **cloudflared 2026.9.0, Linux amd64 only**. On 2026-09-11,
+The candidate pins **cloudflared 2026.10.4, Linux amd64 only**. On 2026-11-02,
 Cloudflare's official GitHub release metadata reported:
 
 | Field | Expected value |
 | --- | --- |
 | Asset | `cloudflared-linux-amd64` |
-| Bytes | `39838050` |
-| SHA256 | `53b7a7a5420d188758d24341294acb0d1bca54296548ac05e38811a694ac6134` |
-| Published | `2026-09-09T18:38:16Z` |
-| Source commit | `b749dfd998f4bced81f48727b9c971cfc3056865` |
-| Annotated tag object | `011bbe7bbe0b753fef5aba9b7b4dc3aec6123b50` |
+| Bytes | `40247428` |
+| SHA256 | `ae5e8add7884b0531d66bbca4570d1de491ff6da51e4ebe7eb160cdf241d9e42` |
+| Published | `2026-10-26T11:19:58Z` |
+| Source commit | `dc3b264da64a801bc3a8d5301a6db21401910ad5` |
+| Annotated tag object | `6d0eceb28aca93086a3a9ccce88415b4e613b690` |
 
-Use the [official release](https://github.com/cloudflare/cloudflared/releases/tag/2026.9.0),
-[asset](https://github.com/cloudflare/cloudflared/releases/download/2026.9.0/cloudflared-linux-amd64)
-and [release API metadata](https://api.github.com/repos/cloudflare/cloudflared/releases/tags/2026.9.0),
+Use the [official release](https://github.com/cloudflare/cloudflared/releases/tag/2026.10.4),
+[asset](https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-linux-amd64)
+and [release API metadata](https://api.github.com/repos/cloudflare/cloudflared/releases/tags/2026.10.4),
 also recorded in [release.json](../scripts/cloudflared/release.json).
 The tag API reported an unsigned tag. The asset digest establishes correspondence
 to Cloudflare's GitHub publication; it is not an independent signed binary
 attestation or a reproducible-build proof. Recheck that provenance before a later
 installation. Stop if metadata/digest/architecture differ; do not substitute
 `latest`, another platform, a package-manager update or a silently refreshed binary.
-No binary was downloaded or executed when preparing this candidate.
+The services host verified this size and SHA-256 and has run
+this binary since 2026-11-02 13:30:52 UTC. The host identity is recorded privately.
 
-The pinned [run implementation](https://github.com/cloudflare/cloudflared/blob/b749dfd998f4bced81f48727b9c971cfc3056865/cmd/cloudflared/tunnel/subcommands.go#L767)
+The pinned [run implementation](https://github.com/cloudflare/cloudflared/blob/dc3b264da64a801bc3a8d5301a6db21401910ad5/cmd/cloudflared/tunnel/subcommands.go#L769)
 reads and trims the token file. Official [run parameters](https://developers.cloudflare.com/tunnel/advanced/run-parameters/)
 document file-based tokens from 2025.4.0 onward. The unit pins `--no-autoupdate`,
 info logging, a loopback-only metrics address and disabled management-service diagnostics.
@@ -54,15 +55,18 @@ Its 20-second graceful shutdown fits inside systemd's 30-second stop timeout.
 
 `--management-diagnostics=false` disables the additional diagnostics exposed by
 the management service, not all local diagnostics or management functions.
-[Pinned management handlers](https://github.com/cloudflare/cloudflared/blob/b749dfd998f4bced81f48727b9c971cfc3056865/management/service.go#L78-L92).
+[Pinned management handlers](https://github.com/cloudflare/cloudflared/blob/dc3b264da64a801bc3a8d5301a6db21401910ad5/management/service.go#L78-L92).
 The loopback server on `127.0.0.1:20241` also serves `/config`, `/diag/*`,
-`/debug/pprof/`, `/debug/requests`, `/debug/events`, `/metrics`, `/ready`,
-`/healthcheck` and `/quicktunnel`; some depend on configured handlers. These can
+`/debug/pprof/` (index, runtime profiles, `profile`, `symbol`, `trace`),
+`/debug/vars` (memstats only), `/metrics`, `/ready`, `/healthcheck` and
+`/quicktunnel`; some depend on configured handlers. These can
 expose runtime/configuration information and must never become origin mappings,
-reverse-proxy targets or port forwards. The pinned version explicitly returns
-403 for `/debug/pprof/cmdline`.
-[Metrics handlers](https://github.com/cloudflare/cloudflared/blob/b749dfd998f4bced81f48727b9c971cfc3056865/metrics/metrics.go#L62-L97),
-[diagnostic handlers](https://github.com/cloudflare/cloudflared/blob/b749dfd998f4bced81f48727b9c971cfc3056865/diagnostic/handlers.go#L58-L62).
+reverse-proxy targets or port forwards. The pinned version mounts only an
+allowlist of debug handlers: `/debug/pprof/cmdline` returns 404, and
+`/debug/requests` and `/debug/events` are not served.
+[Metrics handlers](https://github.com/cloudflare/cloudflared/blob/dc3b264da64a801bc3a8d5301a6db21401910ad5/metrics/metrics.go#L69-L124),
+[diagnostic handlers](https://github.com/cloudflare/cloudflared/blob/dc3b264da64a801bc3a8d5301a6db21401910ad5/diagnostic/handlers.go#L110-L115),
+[cmdline test](https://github.com/cloudflare/cloudflared/blob/dc3b264da64a801bc3a8d5301a6db21401910ad5/metrics/debug_endpoints_test.go#L162-L171).
 
 ## Credential and process boundary
 
@@ -108,15 +112,15 @@ this initial installation. Never overwrite an existing installation as an upgrad
 
    ```sh
    test "$(uname -s):$(uname -m)" = Linux:x86_64
-   test "$(wc -c < cloudflared-linux-amd64 | tr -d ' ')" = 39838050
+   test "$(wc -c < cloudflared-linux-amd64 | tr -d ' ')" = 40247428
    sha256sum --check <<'CHECKSUM'
-   53b7a7a5420d188758d24341294acb0d1bca54296548ac05e38811a694ac6134  cloudflared-linux-amd64
+   ae5e8add7884b0531d66bbca4570d1de491ff6da51e4ebe7eb160cdf241d9e42  cloudflared-linux-amd64
    CHECKSUM
    ```
 
 2. Record existing file metadata/configuration and create only absent targets.
    Install the verified binary as root:root0555 at
-   `/opt/domino/cloudflared/2026.9.0/cloudflared`; install the reviewed
+   `/opt/domino/cloudflared/2026.10.4/cloudflared`; install the reviewed
    [connector.yml](../scripts/cloudflared/connector.yml) as root:root0444 alongside
    it. Parent directories must be root-controlled and not writable by service
    users; the version directory should be0555 after staging files. The explicit
@@ -179,9 +183,9 @@ The pinned implementation treats that API failure as diagnostic, not a startup
 gate. Autoupdate is already disabled; this row is not a reason to add 443 egress.
 It does not excuse DNS/edge failures or replace the required connection and
 negative probes. Distinguish the failing component when assessing the summary.
-[Pinned precheck target](https://github.com/cloudflare/cloudflared/blob/b749dfd998f4bced81f48727b9c971cfc3056865/prechecks/probes.go#L24-L41),
-[summary classification](https://github.com/cloudflare/cloudflared/blob/b749dfd998f4bced81f48727b9c971cfc3056865/prechecks/result.go#L80-L151),
-[diagnostic-only startup](https://github.com/cloudflare/cloudflared/blob/b749dfd998f4bced81f48727b9c971cfc3056865/cmd/cloudflared/tunnel/cmd.go#L514-L516).
+[Pinned precheck target](https://github.com/cloudflare/cloudflared/blob/dc3b264da64a801bc3a8d5301a6db21401910ad5/prechecks/probes.go#L24-L41),
+[summary classification](https://github.com/cloudflare/cloudflared/blob/dc3b264da64a801bc3a8d5301a6db21401910ad5/prechecks/result.go#L80-L156),
+[diagnostic-only startup](https://github.com/cloudflare/cloudflared/blob/dc3b264da64a801bc3a8d5301a6db21401910ad5/cmd/cloudflared/tunnel/cmd.go#L536-L538).
 
 Before starting the real connector, run a credential-free probe under the same
 effective service UID, address families and proposed egress filter: required DNS
@@ -206,11 +210,11 @@ Verify `/debug/pprof/cmdline` locally without retaining its response body:
 ```sh
 probe_status="$(curl --disable --noproxy '*' --proto '=http' --connect-timeout 2 --max-time 4 \
   --silent --show-error --output /dev/null --write-out '%{http_code}' \
-  http://127.0.0.1:20241/debug/pprof/cmdline)" && test "$probe_status" = 403
+  http://127.0.0.1:20241/debug/pprof/cmdline)" && test "$probe_status" = 404
 ```
 
 Also inspect effective listeners/mappings/forwards to prove nothing exposes
-port 20241 beyond loopback. A 403 from one path does not protect the other local
+port 20241 beyond loopback. A 404 from one path does not protect the other local
 handlers; do not retrieve their bodies for public evidence.
 
 ## Remote mappings and denial contract

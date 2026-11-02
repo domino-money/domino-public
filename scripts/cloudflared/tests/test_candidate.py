@@ -95,8 +95,8 @@ class TunnelCandidateTests(unittest.TestCase):
             ('InaccessiblePaths=/etc/domino/credentials /opt/domino/releases /run/postgresql-domino',
              'InaccessiblePaths='),
             ('TimeoutStopSec=30', 'TimeoutStopSec=infinity'),
-            ('--config /opt/domino/cloudflared/2026.9.0/connector.yml', '--config /etc/cloudflared/config.yml'),
-            ('cloudflared/2026.9.0/cloudflared', 'cloudflared/latest/cloudflared'),
+            ('--config /opt/domino/cloudflared/2026.10.4/connector.yml', '--config /etc/cloudflared/config.yml'),
+            ('cloudflared/2026.10.4/cloudflared', 'cloudflared/latest/cloudflared'),
         ]
         for before, after in mutations:
             with self.subTest(before=before), self.assertRaises(ValueError):
@@ -116,13 +116,13 @@ class TunnelCandidateTests(unittest.TestCase):
                 check_candidate(self.unit + '\n' + extra + '\n', self.release)
 
     def test_release_matches_official_metadata_pin(self):
-        self.assertEqual(self.release['version'], '2026.9.0')
+        self.assertEqual(self.release['version'], '2026.10.4')
         self.assertEqual(self.release['platform'], 'linux-amd64')
         self.assertEqual(self.release['asset'], 'cloudflared-linux-amd64')
-        self.assertEqual(self.release['size'], 39838050)
-        self.assertEqual(self.release['sha256'], '53b7a7a5420d188758d24341294acb0d1bca54296548ac05e38811a694ac6134')
-        self.assertEqual(self.release['downloadUrl'], 'https://github.com/cloudflare/cloudflared/releases/download/2026.9.0/cloudflared-linux-amd64')
-        self.assertEqual(self.release['sourceCommit'], 'b749dfd998f4bced81f48727b9c971cfc3056865')
+        self.assertEqual(self.release['size'], 40247428)
+        self.assertEqual(self.release['sha256'], 'ae5e8add7884b0531d66bbca4570d1de491ff6da51e4ebe7eb160cdf241d9e42')
+        self.assertEqual(self.release['downloadUrl'], 'https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-linux-amd64')
+        self.assertEqual(self.release['sourceCommit'], 'dc3b264da64a801bc3a8d5301a6db21401910ad5')
         self.assertFalse(self.release['tagSignatureVerified'])
 
     def test_local_config_is_empty_and_cannot_create_remote_routes(self):

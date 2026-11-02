@@ -1,16 +1,16 @@
 {
-  "version": "2026.9.0",
+  "version": "2026.10.4",
   "platform": "linux-amd64",
   "asset": "cloudflared-linux-amd64",
-  "size": 39838050,
-  "sha256": "53b7a7a5420d188758d24341294acb0d1bca54296548ac05e38811a694ac6134",
-  "downloadUrl": "https://github.com/cloudflare/cloudflared/releases/download/2026.9.0/cloudflared-linux-amd64",
-  "releaseUrl": "https://github.com/cloudflare/cloudflared/releases/tag/2026.9.0",
-  "metadataUrl": "https://api.github.com/repos/cloudflare/cloudflared/releases/tags/2026.9.0",
-  "publishedAt": "2026-09-09T18:38:16Z",
-  "checkedOn": "2026-09-11",
-  "tagObject": "011bbe7bbe0b753fef5aba9b7b4dc3aec6123b50",
-  "sourceCommit": "b749dfd998f4bced81f48727b9c971cfc3056865",
+  "size": 40247428,
+  "sha256": "ae5e8add7884b0531d66bbca4570d1de491ff6da51e4ebe7eb160cdf241d9e42",
+  "downloadUrl": "https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-linux-amd64",
+  "releaseUrl": "https://github.com/cloudflare/cloudflared/releases/tag/2026.10.4",
+  "metadataUrl": "https://api.github.com/repos/cloudflare/cloudflared/releases/tags/2026.10.4",
+  "publishedAt": "2026-10-26T11:19:58Z",
+  "checkedOn": "2026-11-02",
+  "tagObject": "6d0eceb28aca93086a3a9ccce88415b4e613b690",
+  "sourceCommit": "dc3b264da64a801bc3a8d5301a6db21401910ad5",
   "tagSignatureVerified": false,
-  "provenance": "Cloudflare-owned GitHub release metadata and asset digest; not an independently signed binary attestation. No binary downloaded or executed for this candidate."
+  "provenance": "Cloudflare-owned GitHub release metadata and asset digest; not an independently signed binary attestation. The services host (domino-prod-02) verified this size and SHA-256 and has run this binary since 2026-11-02 13:30:52 UTC."
 }
