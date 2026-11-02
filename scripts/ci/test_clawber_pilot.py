@@ -109,6 +109,20 @@ class PilotTests(unittest.TestCase):
         self.assertFalse(iface['dhcp6'])
         self.assertFalse(iface['accept-ra'])
 
+    def test_only_shared_base_disables_dac_relabel(self):
+        tree = ET.fromstring(pilot.domain_xml('test-vm', self.root / 'jobs/test-vm', self.config))
+        disk = tree.find('devices/disk')
+        backing = disk.find('backingStore')
+        self.assertEqual(backing.attrib, {'type': 'file'})
+        self.assertEqual(backing.find('format').attrib, {'type': 'qcow2'})
+        self.assertEqual(backing.find('source').attrib, {'file': str(self.base)})
+        label = backing.find('source/seclabel')
+        self.assertEqual(label.attrib, {'model': 'dac', 'relabel': 'no'})
+        self.assertEqual(len(tree.findall('.//seclabel')), 1)
+        self.assertIsNotNone(backing.find('backingStore'))
+        self.assertIsNone(disk.find('source/seclabel'))
+        self.assertIsNone(tree.find('seclabel'))
+
     def test_cloud_init_no_install_or_secret_argv(self):
         secret = jit()
         config = json.loads(pilot.cloud_config(secret, self.config).split('\n', 1)[1])

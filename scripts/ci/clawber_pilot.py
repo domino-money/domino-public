@@ -111,6 +111,13 @@ def domain_xml(name, job_dir, config):
     disk = ET.SubElement(devices, 'disk', {'type': 'file', 'device': 'disk'})
     ET.SubElement(disk, 'driver', {'name': 'qemu', 'type': 'qcow2', 'cache': 'none'})
     ET.SubElement(disk, 'source', {'file': str(job_dir / 'disk.qcow2')})
+    backing = ET.SubElement(disk, 'backingStore', {'type': 'file'})
+    ET.SubElement(backing, 'format', {'type': 'qcow2'})
+    base_source = ET.SubElement(backing, 'source', {'file': str(config.base_image)})
+    # Keep the shared, pinned root-owned base immutable across VM lifecycles.
+    # This per-source DAC override leaves overlay ownership and AppArmor intact.
+    ET.SubElement(base_source, 'seclabel', {'model': 'dac', 'relabel': 'no'})
+    ET.SubElement(backing, 'backingStore')
     ET.SubElement(disk, 'target', {'dev': 'vda', 'bus': 'virtio'})
     io_tune = ET.SubElement(disk, 'iotune')
     ET.SubElement(io_tune, 'total_bytes_sec').text = str(50 * 1024 * 1024)
