@@ -1490,12 +1490,22 @@ test('a completed incomplete inventory ends the last-known total even while a ne
 test('a later visit replaces the remembered total only after new holdings receive qualified prices', { timeout: 60_000 }, async () => {
   let extras = [[NEWDROP, 'NEWDROP']];
   let delay = 0;
+  let inventoryReady = null;
+  let releaseInventory = () => {};
+  let releasePrices = () => {};
   overrideReply = (route, body) => (route === 'wallet-assets' ? (body.cursor === undefined ? pageOneWith(extras) : pageTwo()) : null);
   const asked = [];
   try {
     const { context, page, errors } = await visit(`/portfolio/${OWNER}`, async (ctx) => {
       await delayedPrices(asked, () => delay)(ctx);
       await watchTotals(ctx);
+      await ctx.clock.install();
+      // The reload's inventory may otherwise replace memory before the test can
+      // observe it. Hold the request in the browser, then use the real bridge.
+      await ctx.route('**/api/read/v1/wallet-assets', async route => {
+        if (inventoryReady) await inventoryReady;
+        await route.continue();
+      });
     });
     try {
       const list = page.locator('[data-portfolio-tokens]');
@@ -1508,13 +1518,19 @@ test('a later visit replaces the remembered total only after new holdings receiv
       // and until NEWER's discovery has put the total's slot on its placeholder: the same order is checked, the remembered
       // total at once, the slot waiting for the new holding, then the new total once its price comes.
       extras = [[NEWDROP, 'NEWDROP'], [NEWER, 'NEWER']];
-      let releasePrices;
       delay = new Promise((resolve) => { releasePrices = resolve; });
+      inventoryReady = new Promise((resolve) => { releaseInventory = resolve; });
+      // This fixture deliberately holds the wire, not a provider failure: its six-second abort must not race
+      // a slow reload or the observer below. Resume normal deadlines as soon as the held replies are released.
+      await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 100);
       await page.reload();
       await list.locator('[data-wallet-total]').waitFor({ timeout: 5_000 });
+      assert.equal(await list.getAttribute('data-wallet-source'), 'memory', 'inventory is held until the remembered valuation is observed');
       assert.equal(await list.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$2,038.50', 'the remembered total, at once');
-      await page.waitForFunction(() => window.__placeholders >= 1, null, { timeout: 10_000 });
+      releaseInventory();
+      await list.locator('.dm-acct-total-skel').waitFor({ timeout: 10_000 });
       releasePrices();
+      await page.clock.resume();
       assert.equal(await totalBecomes(page, '$2,039.50'), '$2,039.50', 'NEWER counted once its price came');
       await page.locator('[data-portfolio-tokens][data-wallet-prices="ok"][data-wallet-source="read"]').waitFor({ timeout: 30_000 });
       assert.equal(await page.evaluate(() => window.__totalGone), 1, 'a newly discovered nonzero holding invalidates the remembered total');
@@ -1525,6 +1541,8 @@ test('a later visit replaces the remembered total only after new holdings receiv
       assert.equal(await page.evaluate(() => window.__emptied), 0);
       assert.deepEqual(errors, []);
     } finally {
+      releaseInventory();
+      releasePrices();
       await context.close();
     }
   } finally {

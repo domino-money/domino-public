@@ -8494,7 +8494,8 @@ test('a position’s page with the site’s chain routes without their node: the
     // has 0 to 25% added at random in the page (src/lib/jitter.ts), so its next read comes 300 to 375 s on, never sooner.
     await jump(s.page, '06:16', { pending: true });
     await at(chain.head).waitFor({ timeout: 30_000 });
-    await detail.locator('[data-position-actions]').waitFor({ timeout: 15_000 });
+    // The owner toolbar and its lazy-loaded button group both mark actions; wait for the toolbar.
+    await detail.locator('.dm-pos-actions[data-position-actions]').waitFor({ timeout: 15_000 });
     await detail.locator('[data-position-action="collect"]').waitFor();
     await detail.locator('[data-position-action="close"]').waitFor();
     assert.equal(await detail.getAttribute('data-position-read'), 'chain');

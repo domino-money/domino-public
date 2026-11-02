@@ -21,7 +21,7 @@ import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { closeBrowser } from './support/close-browser.mjs';
 import { TEXT_FILE, findForbidden } from '../scripts/deploy-markers.mjs';
-import { apiOf, close, dexOf, go, leaving, open as openPage, problemsOf, reload, shown, watch } from './page-watch.mjs';
+import { apiOf, close, dexOf, go, leaving, problemsOf, reload, shown, watch } from './page-watch.mjs';
 import { feesAnswer } from './support/fees/stub.mjs';
 
 const DIST = resolve(import.meta.dirname, '../dist');
@@ -126,7 +126,18 @@ after(async () => {
  * the wire (page-watch.mjs). The artwork test deliberately probes one
  * missing file; nothing else about it is excused.
  */
-const open = (route = '/') => openPage(browser, { origin, route, ignore: (problem) => problem.includes('nosuchtoken') });
+async function open(route = '/') {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  watch(page, { ignore: (problem) => problem.includes('nosuchtoken') });
+  // This static server has no market data. Keep its optional provider fallback
+  // deterministic, as the route and simulator checks below already do: an
+  // empty provider answer supplies no invented figures. Browser errors and
+  // same-origin read failures still go through the unchanged watcher.
+  await page.route('https://api.dexscreener.com/**', route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.goto(`${origin}/#${route}`, { waitUntil: 'networkidle' });
+  await shown(page, route);
+  return page;
+}
 
 /** Nothing the browser reported on this page was the page's own doing. */
 const clean = (page, label) => assert.deepEqual(problemsOf(page), [], `${label} reported browser errors`);
