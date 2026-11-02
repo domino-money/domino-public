@@ -20,7 +20,8 @@ from read_deadline import read_deadline
 from session_models import SessionError
 from session_service import SessionService
 from session_siwe import SiwePolicy
-from session_store import CAPACITIES, CLEANUP_BATCH, SessionStore, digest, session_csrf, _DeadlineConnection
+from session_store import (CAPACITIES, CLEANUP_BATCH, ISSUANCE_IP_PER_MINUTE, SessionStore, digest, session_csrf,
+                           _DeadlineConnection)
 
 VALIDATION={'method':'plain_eoa','blockNumber':'123','blockHash':'0x'+'ab'*32}
 DELEGATE='0x'+'d7'*20
@@ -303,7 +304,7 @@ class SessionStoreTests(unittest.TestCase):
         self.assertEqual(self.admin.execute('SELECT attempts FROM domino_sessions.challenges').fetchone()['attempts'],5)
         self.error('challenge_invalid',lambda:self.call('verify',b,**p))
         self.assertEqual(self.checker.calls,[])
-        for index in range(5):self.call('bootstrap',service=self.peer,client='192.0.2.9')
+        for index in range(ISSUANCE_IP_PER_MINUTE):self.call('bootstrap',service=self.peer,client='192.0.2.9')
         self.error('session_rate_limited',lambda:self.call('bootstrap',client='192.0.2.9'))
         for index in range(21):self.pending(f'198.51.100.{index+1}')
         initial=self.call('bootstrap',client='198.51.100.30')
@@ -399,9 +400,9 @@ class SessionStoreTests(unittest.TestCase):
         self.assertEqual(self.admin.execute('SELECT * FROM domino_sessions.sessions').fetchone(),before)
 
     def test_ipv6_prefix_and_ipv4_mapped_clients_cannot_reset_shared_ip_budget(self):
-        for index in range(5):self.call('bootstrap',client=f'2001:db8:1:2::{index+1}')
+        for index in range(ISSUANCE_IP_PER_MINUTE):self.call('bootstrap',client=f'2001:db8:1:2::{index+1:x}')
         self.error('session_rate_limited',lambda:self.call('bootstrap',client='2001:db8:1:2::ffff'))
-        for index in range(5):self.call('bootstrap',client='192.0.2.17')
+        for index in range(ISSUANCE_IP_PER_MINUTE):self.call('bootstrap',client='192.0.2.17')
         self.error('session_rate_limited',lambda:self.call('bootstrap',client='::ffff:192.0.2.17'))
 
     def test_capacities_do_not_evict_active_state_cleanup_is_bounded(self):
@@ -485,3 +486,17 @@ class SessionStoreTests(unittest.TestCase):
             with read_deadline(1,clock=lambda:clock[0]):
                 self.error('request_timeout',lambda:self.call('verify',b,**p))
         self.assertEqual(self.checker.calls,[])
+
+
+class RateLimitBoundTests(unittest.TestCase):
+    def test_every_rate_limit_fits_the_counter_check(self):
+        # A limit past rate_limits.count's CHECK turns the call that would count past it into
+        # session_store_unavailable, for every caller sharing that row, instead of session_rate_limited.
+        import session_store
+        migration = (Path(__file__).resolve().parents[1] / 'migrations' / '008_wallet_sessions.sql').read_text()
+        self.assertIn('count integer NOT NULL CHECK (count BETWEEN 1 AND %d)' % session_store.RATE_COUNT_MAX, migration)
+        limits = {name: getattr(session_store, name) for name in (
+            'ISSUANCE_IP_PER_MINUTE', 'ISSUANCE_GLOBAL_PER_MINUTE', 'VERIFY_IP_PER_MINUTE', 'VERIFY_GLOBAL_PER_MINUTE',
+            'PROVEN_WALLET_PER_HOUR', 'PREVIEW_IP_LIMIT', 'PREVIEW_ACCOUNT_LIMIT', 'PREVIEW_GLOBAL_LIMIT')}
+        for name, limit in limits.items():
+            self.assertTrue(1 <= limit <= session_store.RATE_COUNT_MAX, name)

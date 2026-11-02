@@ -127,18 +127,25 @@ export const PRODUCER_PIN = {
       // route, schema or version moved.
       // Changed on purpose (data) 2026-10-06: read_service.py reads a live window's logs on their own client and
       // retries a refused range on a fresh one; no read-v1 route, schema or version moved.
-      manifestSha256: '846e5ca71b47139080b05b400491331bcb15237252645458e952e714a5b10fe7',
+      // Changed on purpose (data) 2026-11-02: read_gateway.py and read_api.py, which the manifest hashes, raise a
+      // visitor's provider budget to 30, then 300 a minute, and the stored lanes to eight for the public launch; no
+      // read-v1 route, schema or version moved.
+      manifestSha256: 'cd7bfbc3e2cd1b5ae86525294d2281fc39c863c27fd27ecec4fb2097d4998416',
     },
     'session-v1': {
       version: '3.0.0-rc.4',
-      manifestSha256: 'e10f66fae4d045632b5667aacc7f30c4e77ecc3d5b4e4472baeefe101d9ce5ac',
+      // Changed on purpose (data) 2026-11-02: session_store.py, which the manifest hashes, raises the sign-in and
+      // signed-in rate limits for the public launch; no route, schema, reason code or version moved.
+      manifestSha256: '7e815e11ce6e86fb9af7627a949c88ae677cd2340f4cd19d2943f7560dae18d9',
     },
     'onboarding-v1': {
       version: '1.1.0',
       // Changed on purpose (data) 2026-10-06: authenticated_api.py, which the manifest hashes, lets a family accept a
       // second contract version for a switch window (crosschain-v1's); onboarding-v1 keeps its one, and no route, schema
       // or version moved.
-      manifestSha256: '8e6aa5eff239a9487ce255291611c80ff238f39ec0d0d91d239b36fed1f8717b',
+      // Changed on purpose (data) 2026-11-02: session_store.py, which the manifest hashes, raises the signed-in rate
+      // limits for the public launch; no route, schema, reason code or version moved.
+      manifestSha256: 'ea2e65fd801c02860529248df2ce1a603a1c682c3f03c69e529a69c70ab5527d',
     },
     'deposit-v1': {
       version: '1.1.0-rc.4',
@@ -163,7 +170,9 @@ export const READ_V2_PIN = {
   // more behind from its live window; no read-v2 route, schema or version moved.
   // Changed on purpose (data) 2026-10-06: read_service.py retries a live window's refused log range on a fresh
   // client; no read-v2 route, schema or version moved.
-  manifestSha256: '1a496f9218fd2c28e8c406cbafe39bd0dfae1ef3c59ffa87523aeca0fa75e4a3',
+  // Changed on purpose (data) 2026-11-02: read_gateway.py and read_api.py raise a visitor's provider budget and the
+  // stored lanes for the public launch; no read-v2 route, schema or version moved.
+  manifestSha256: 'a08ac9ca8a5fec161637c5d62e2195fc77e5dbd4d9ecf1f6081e77ebd068519b',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */

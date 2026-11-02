@@ -172,7 +172,7 @@ class ReadAdmissionTests(IdentityFixtures, unittest.TestCase):
     def test_a_visitor_has_a_budget_per_lane_stored_reads_far_more(self):
         # 6 Oct 2026: one visitor's New position asked 9 reads in 2 s; a single budget of 5 refused 18 of his 82.
         from read_gateway import VISITOR_BUDGETS
-        self.assertEqual(VISITOR_BUDGETS, {ReadGate.STORED: (30, 240), ReadGate.PROVIDER: (12, 60)})
+        self.assertEqual(VISITOR_BUDGETS, {ReadGate.STORED: (30, 240), ReadGate.PROVIDER: (30, 300)})
         now = [time.monotonic()]  # the reader's transport bounds its calls by the real clock
         gateway = Gateway(enabled=True, enabled_reads=('catalogue', 'markets-snapshot', 'token'),
                           verifier=self.verifier(), upstream=LocalReaderHTTP(client=self.reader),
@@ -189,13 +189,15 @@ class ReadAdmissionTests(IdentityFixtures, unittest.TestCase):
         self.assertEqual((refused.status_code, refused.json(), refused.headers['Retry-After']),
                          (429, {'error': 'read_capacity_busy'}, '1'))  # four stored reads a second come back
         # The stored lane spent nothing of the provider lane's, nor another visitor's.
-        for _ in range(12):
+        from read_gateway import VISITOR_BUDGETS
+        burst, per_minute = VISITOR_BUDGETS[ReadGate.PROVIDER]
+        for _ in range(burst):
             self.assertEqual(post('token', {'token': TOKEN}).status_code, 200)
         self.assertEqual(post('token', {'token': TOKEN}).status_code, 429)
         self.assertEqual(post('markets-snapshot', {}, visitor='192.0.2.2').status_code, 200)
-        now[0] += 1  # a second later: one provider read, four stored
-        self.assertEqual(post('token', {'token': TOKEN}).status_code, 200)
-        self.assertEqual(post('token', {'token': TOKEN}).status_code, 429)
+        now[0] += 1  # a second later: a second's worth of provider reads, four stored
+        self.assertEqual([post('token', {'token': TOKEN}).status_code for _ in range(per_minute // 60 + 1)],
+                         [200] * (per_minute // 60) + [429])
         self.assertEqual([post('markets-snapshot', {}).status_code for _ in range(5)], [200] * 4 + [429])
 
     def test_stored_reads_still_require_identity_and_share_client_budget(self):
@@ -248,7 +250,7 @@ class GatewayWorkerTests(IdentityFixtures, unittest.TestCase):
                          [response.text for response in responses if response.status_code != 200][:1])
 
     def test_worker_pool_matches_the_lanes_of_each_gate(self):
-        for gate, workers in ((public_gate(), 20), (ReadGate(), 2),
+        for gate, workers in ((public_gate(), 24), (ReadGate(), 2),
                               (ReadGate(provider_capacity=3, stored_capacity=2), 5)):
             with self.subTest(workers=workers):
                 app = create_gateway(self.gateway(gate))

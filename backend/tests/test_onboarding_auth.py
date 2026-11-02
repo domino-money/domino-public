@@ -249,7 +249,7 @@ class OnboardingAuthPostgresTests(unittest.TestCase):
         self.assertEqual(len(self.checker.calls), PREVIEW_ACCOUNT_LIMIT)
         self.assertEqual(self.bucket('onboarding-account', owner)['count'], PREVIEW_ACCOUNT_LIMIT)
         self.assertEqual(self.bucket('onboarding-global', 'all')['count'], PREVIEW_ACCOUNT_LIMIT)
-        self.assertEqual(self.bucket('onboarding-ip', second['client'])['count'], 6)
+        self.assertEqual(self.bucket('onboarding-ip', second['client'])['count'], PREVIEW_ACCOUNT_LIMIT // 2 + 1)
 
     def test_account_check_failures_consume_budget_without_revoke(self):
         credentials, owner = self.login()
@@ -285,12 +285,13 @@ class OnboardingAuthPostgresTests(unittest.TestCase):
         self.assertEqual(self.checker.calls, [])
 
     def test_global_quota_is_shared_across_owners_and_persists_denied_account_reservation(self):
-        for number in range(1, 7):
+        full, rest = divmod(PREVIEW_GLOBAL_LIMIT, PREVIEW_ACCOUNT_LIMIT)
+        for number in range(1, full + 2):
             credentials, owner = self.login(number)
-            for index in range(PREVIEW_ACCOUNT_LIMIT):
+            for index in range(PREVIEW_ACCOUNT_LIMIT if number <= full else rest):
                 self.store.begin_preview(**credentials)
         self.assertEqual(self.bucket('onboarding-global', 'all')['count'], PREVIEW_GLOBAL_LIMIT)
-        credentials, owner = self.login(7)
+        credentials, owner = self.login(full + 2)
         before = len(self.checker.calls)
         self.error('session_rate_limited', lambda: OnboardingAuth(self.peer, self.checker).begin(**credentials))
         self.assertEqual(len(self.checker.calls), before)
@@ -316,7 +317,7 @@ class OnboardingAuthPostgresTests(unittest.TestCase):
             # Release before collecting futures, including on assertion failure.
             with self.admin.transaction():
                 self.admin.execute('SELECT pg_advisory_xact_lock(%s)', (LOCK_ID,))
-                futures = [pool.submit(reserve, index) for index in range(14)]
+                futures = [pool.submit(reserve, index) for index in range(PREVIEW_ACCOUNT_LIMIT + 4)]
                 saw_contention = busy.wait(timeout=5)
             self.assertTrue(saw_contention, 'workers did not exercise lock contention')
             results = [future.result() for future in futures]
@@ -324,7 +325,7 @@ class OnboardingAuthPostgresTests(unittest.TestCase):
         self.assertEqual(results.count('session_rate_limited'), 4, results)
         self.assertEqual(self.bucket('onboarding-account', owner)['count'], PREVIEW_ACCOUNT_LIMIT)
         self.assertEqual(self.bucket('onboarding-global', 'all')['count'], PREVIEW_ACCOUNT_LIMIT)
-        self.assertEqual(self.bucket('onboarding-ip', credentials['client'])['count'], 14)
+        self.assertEqual(self.bucket('onboarding-ip', credentials['client'])['count'], PREVIEW_ACCOUNT_LIMIT + 4)
 
     def test_capacity_saturation_never_reaches_checker_and_keeps_reserved_ip(self):
         credentials, owner = self.login()

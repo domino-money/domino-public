@@ -458,7 +458,7 @@ class RouteTests(unittest.TestCase):
         with self.assertRaises(DataError):
             Gateway(enabled_v6=True, enabled_v6_reads=('portfolio',))
         stored = Gateway(verifier=Mock(), enabled_v6=True, enabled_v6_reads=ROUTES).gate
-        self.assertEqual((stored.stored_capacity, stored.kind_of('activity', {})), (4, stored.STORED))
+        self.assertEqual((stored.stored_capacity, stored.kind_of('activity', {})), (8, stored.STORED))
 
     def test_the_bridge_client_asks_only_for_typed_v6_routes(self):
         http = LocalReaderHTTP(client=reader_client(Reader()))

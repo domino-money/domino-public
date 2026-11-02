@@ -89,7 +89,7 @@ class ProviderLaneTests(unittest.TestCase):
     def test_the_public_reader_and_gateway_admit_sixteen_reads_at_once(self):
         gate = public_gate()
         self.assertEqual(PROVIDER_CAPACITY, 16)
-        self.assertEqual((gate.provider_capacity, gate.interval, gate.stored_capacity, gate.stored_interval), (16, 0, 4, 0))
+        self.assertEqual((gate.provider_capacity, gate.interval, gate.stored_capacity, gate.stored_interval), (16, 0, 8, 0))
         self.assertTrue(all(gate.enter() for _ in range(16)))
         self.assertFalse(gate.enter())
         # The gateway in front of the reader has the same lanes; a gateway serving no stored route keeps the old one.

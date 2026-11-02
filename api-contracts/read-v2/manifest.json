@@ -278,11 +278,11 @@
     },
     {
       "path": "backend/read_gateway.py",
-      "sha256": "fe2e9ae54e12a7c1b3e5693a3c0edeb42fa57e839d47ea32b37067f245b8494a"
+      "sha256": "89fc05ff08fcf9466a32bc0f65cd813022758bec85b2abe871ed4049b59839b3"
     },
     {
       "path": "backend/read_api.py",
-      "sha256": "4b9b562f81ffadb49a4120a456a1604c0b7526a37760e085e7cc8719298dbd16"
+      "sha256": "c4ecd3422f3857f16364308b0858e099730e8f8287b809f66cf45acbb804a99a"
     },
     {
       "path": "backend/bridge_http.py",

@@ -54,8 +54,9 @@ MAX_RESPONSE = 1024 * 1024
 # position on the V2 app asked 9 reads within 2 s and 34 within a minute, and the single budget it then shared across
 # every route (5, then 30 a minute) refused 18 of his 82 reads. A stored read answers from the reader's own data in
 # milliseconds; a provider read pays a node or a market provider, and the reader's provider lane and caches bound what
-# it may cost, so it gets less.
-VISITOR_BUDGETS = {ReadGate.STORED: (30, 240), ReadGate.PROVIDER: (12, 60)}
+# it may cost, so it gets less. 2 Nov 2026, public launch: 7 to 10 people on New position behind one shared IPv4 would
+# spend a provider budget of 12, then 60 a minute, so it is 30, then 300 a minute.
+VISITOR_BUDGETS = {ReadGate.STORED: (30, 240), ReadGate.PROVIDER: (30, 300)}
 
 
 def safe_error(code):

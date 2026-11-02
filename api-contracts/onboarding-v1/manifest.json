@@ -143,7 +143,7 @@
     },
     {
       "path": "backend/session_store.py",
-      "sha256": "2b6afe090e73fb3ef0dd875bbdc6a9e24d093c036fb65d94214d1050e30c13d8"
+      "sha256": "2a836ddcf3676a57519c13cec24e9877635aafc53af9ddf64f4f12bb3142825d"
     },
     {
       "path": "backend/hop_log.py",
@@ -159,7 +159,7 @@
     },
     {
       "path": "backend/tests/test_onboarding_auth.py",
-      "sha256": "686077764a854b933e2fdbd4ca4d9b08d0adea5d3be89497b26d1f687a418093"
+      "sha256": "0bebc58c5902a53a97afbe766a91850d3309c5a1075c4f89d50f08b00a6c9b14"
     },
     {
       "path": "backend/tests/onboarding_contract_fixtures.py",

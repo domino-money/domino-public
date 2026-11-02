@@ -25,12 +25,19 @@ CAPACITIES = {'contexts': 10000, 'challenges': 20000, 'sessions': 10000,
               'rate_limits': 50000, 'private_limits': 20000}
 CLEANUP_BATCH = 100
 LOCK_ID = 0x444F4D53455353
-ISSUANCE_GLOBAL_PER_MINUTE = 100
-VERIFY_GLOBAL_PER_MINUTE = 200
+# Public launch, 2 Nov 2026: a crowd behind one shared IPv4 may sign in and plan at once, and every signed-in family
+# (plans, bridge quotes and status, execution status) shares the preview rows; the listeners' slots bound the load.
+# No limit may pass RATE_COUNT_MAX, rate_limits.count's CHECK (migration 008): the call that would count past it
+# fails as session_store_unavailable instead of being refused as session_rate_limited.
+RATE_COUNT_MAX = 1000
+ISSUANCE_IP_PER_MINUTE = 30
+ISSUANCE_GLOBAL_PER_MINUTE = 1000
+VERIFY_IP_PER_MINUTE = 30
+VERIFY_GLOBAL_PER_MINUTE = 1000
 PROVEN_WALLET_PER_HOUR = 20
-PREVIEW_IP_LIMIT = 20
-PREVIEW_ACCOUNT_LIMIT = 10
-PREVIEW_GLOBAL_LIMIT = 60
+PREVIEW_IP_LIMIT = 120
+PREVIEW_ACCOUNT_LIMIT = 30
+PREVIEW_GLOBAL_LIMIT = 1000
 PREVIEW_WINDOW_SECONDS = 60
 
 
@@ -219,7 +226,7 @@ class SessionStore:
     def bootstrap(self, client, preauth=None, session=None):
         new,csrf=bearer(),bearer()
         def operation(conn,now):
-            denied=self._rate(conn,now,'issuance-ip',client,5,60)
+            denied=self._rate(conn,now,'issuance-ip',client,ISSUANCE_IP_PER_MINUTE,60)
             if denied:return denied
             denied=self._rate(conn,now,'issuance-global','all',ISSUANCE_GLOBAL_PER_MINUTE,60)
             if denied:return denied
@@ -244,7 +251,7 @@ class SessionStore:
     def challenge(self, client, preauth, csrf, address, issue):
         identifier,nonce=secrets.token_hex(16),secrets.token_hex(16)
         def operation(conn,now):
-            denied=self._rate(conn,now,'issuance-ip',client,5,60)
+            denied=self._rate(conn,now,'issuance-ip',client,ISSUANCE_IP_PER_MINUTE,60)
             if denied:return denied
             denied=self._rate(conn,now,'issuance-global','all',ISSUANCE_GLOBAL_PER_MINUTE,60)
             if denied:return denied
@@ -266,7 +273,7 @@ class SessionStore:
 
     def reserve_verify(self, client, preauth, csrf, identifier, message, old_session=None):
         def operation(conn,now):
-            denied=self._rate(conn,now,'verify-ip',client,10,60)
+            denied=self._rate(conn,now,'verify-ip',client,VERIFY_IP_PER_MINUTE,60)
             if denied:return denied
             denied=self._rate(conn,now,'verify-global','all',VERIFY_GLOBAL_PER_MINUTE,60)
             if denied:return denied

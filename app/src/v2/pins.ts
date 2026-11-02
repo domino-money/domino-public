@@ -30,7 +30,9 @@ export const READ_V6_PIN = {
   // answer are Domino's three chains, as before.
   // Changed on purpose (data) 2026-10-06: a mandate's waiting reason from before its vault's latest ExitModuleSet is
   // not shown (v2_read_service.py, v2_index_store.py); same version, same schemas and fixtures.
-  manifestSha256: 'f494b31a43014fba7c6f73f7264d642af498517481e2a46785a3da49c4d5e2f1',
+  // Changed on purpose (data) 2026-11-02: read_gateway.py and read_api.py, which the manifest hashes, raise a visitor's
+  // provider budget and the stored lanes for the public launch; same version, same schemas and fixtures.
+  manifestSha256: 'ba7f86fc35836d63827098e47c81263142af24153146ef27792226a5ab0f261b',
 } as const
 
 export const POSITION_PLAN_V1_PIN = {
