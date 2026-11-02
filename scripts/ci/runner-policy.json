@@ -15,6 +15,7 @@
       "job_name": "Repository hygiene",
       "job_label": "domino-job-ci-hygiene",
       "profile": "systemd",
+      "resource_profile": "light",
       "lifetime_seconds": 900
     },
     {
@@ -22,6 +23,7 @@
       "job_name": "What the change touches",
       "job_label": "domino-job-ci-changes",
       "profile": "normal",
+      "resource_profile": "light",
       "lifetime_seconds": 900
     },
     {
@@ -29,6 +31,7 @@
       "job_name": "Frontend",
       "job_label": "domino-job-ci-frontend",
       "profile": "normal",
+      "resource_profile": "standard",
       "lifetime_seconds": 1500
     },
     {
@@ -36,6 +39,7 @@
       "job_name": "Read Worker",
       "job_label": "domino-job-ci-read-worker",
       "profile": "normal",
+      "resource_profile": "light",
       "lifetime_seconds": 900
     },
     {
@@ -43,6 +47,7 @@
       "job_name": "Frontend browser (pages)",
       "job_label": "domino-job-ci-browser-pages",
       "profile": "normal",
+      "resource_profile": "browser",
       "lifetime_seconds": 2100
     },
     {
@@ -50,6 +55,7 @@
       "job_name": "Frontend browser (finance-create)",
       "job_label": "domino-job-ci-browser-finance-create",
       "profile": "normal",
+      "resource_profile": "browser",
       "lifetime_seconds": 2100
     },
     {
@@ -57,6 +63,7 @@
       "job_name": "Frontend browser (finance-automation)",
       "job_label": "domino-job-ci-browser-finance-automation",
       "profile": "normal",
+      "resource_profile": "browser",
       "lifetime_seconds": 2100
     },
     {
@@ -64,6 +71,7 @@
       "job_name": "Frontend browser (finance-positions)",
       "job_label": "domino-job-ci-browser-finance-positions",
       "profile": "normal",
+      "resource_profile": "browser",
       "lifetime_seconds": 2100
     },
     {
@@ -71,6 +79,7 @@
       "job_name": "Frontend browser (gate)",
       "job_label": "domino-job-ci-browser-gate",
       "profile": "normal",
+      "resource_profile": "browser",
       "lifetime_seconds": 2100
     },
     {
@@ -78,6 +87,7 @@
       "job_name": "Backend",
       "job_label": "domino-job-ci-backend",
       "profile": "normal",
+      "resource_profile": "heavy",
       "lifetime_seconds": 3000
     },
     {
@@ -85,6 +95,7 @@
       "job_name": "Contracts (v1)",
       "job_label": "domino-job-ci-contracts-v1",
       "profile": "normal",
+      "resource_profile": "heavy",
       "lifetime_seconds": 5400
     },
     {
@@ -92,6 +103,7 @@
       "job_name": "Contracts (v2)",
       "job_label": "domino-job-ci-contracts-v2",
       "profile": "normal",
+      "resource_profile": "heavy",
       "lifetime_seconds": 5400
     },
     {
@@ -99,6 +111,7 @@
       "job_name": "Contracts (v2-audit)",
       "job_label": "domino-job-ci-contracts-v2-audit",
       "profile": "normal",
+      "resource_profile": "heavy",
       "lifetime_seconds": 5400
     },
     {
@@ -106,6 +119,7 @@
       "job_name": "Deploy gated preview",
       "job_label": "domino-job-ci-preview",
       "profile": "deploy",
+      "resource_profile": "standard",
       "lifetime_seconds": 1500
     },
     {
@@ -113,6 +127,7 @@
       "job_name": "Funding, automation and history in browser",
       "job_label": "domino-job-funding",
       "profile": "normal",
+      "resource_profile": "browser",
       "lifetime_seconds": 3000
     },
     {
@@ -120,6 +135,7 @@
       "job_name": "Archive, OFF units and local gas peer",
       "job_label": "domino-job-automation-off",
       "profile": "systemd",
+      "resource_profile": "light",
       "lifetime_seconds": 1200
     },
     {
@@ -127,6 +143,7 @@
       "job_name": "inspect",
       "job_label": "domino-job-execution-inspect",
       "profile": "deploy",
+      "resource_profile": "light",
       "lifetime_seconds": 900
     },
     {
@@ -134,6 +151,7 @@
       "job_name": "release",
       "job_label": "domino-job-read-path-release",
       "profile": "deploy",
+      "resource_profile": "standard",
       "lifetime_seconds": 1500
     },
     {
@@ -141,6 +159,7 @@
       "job_name": "Require a dispatched main commit",
       "job_label": "domino-job-pilot-preflight",
       "profile": "normal",
+      "resource_profile": "light",
       "lifetime_seconds": 900
     },
     {
@@ -148,6 +167,7 @@
       "job_name": "read-worker (clawber)",
       "job_label": "domino-job-pilot-read-worker",
       "profile": "normal",
+      "resource_profile": "light",
       "lifetime_seconds": 900
     },
     {
@@ -155,6 +175,7 @@
       "job_name": "contracts-v1 (clawber)",
       "job_label": "domino-job-pilot-contracts-v1",
       "profile": "normal",
+      "resource_profile": "heavy",
       "lifetime_seconds": 5400
     },
     {
@@ -162,6 +183,7 @@
       "job_name": "contracts-v2-audit (clawber)",
       "job_label": "domino-job-pilot-contracts-v2-audit",
       "profile": "normal",
+      "resource_profile": "heavy",
       "lifetime_seconds": 5400
     },
     {
@@ -169,6 +191,7 @@
       "job_name": "browser-finance-create (clawber)",
       "job_label": "domino-job-pilot-browser-finance-create",
       "profile": "normal",
+      "resource_profile": "browser",
       "lifetime_seconds": 2100
     },
     {
@@ -176,6 +199,7 @@
       "job_name": "backend (clawber)",
       "job_label": "domino-job-pilot-backend",
       "profile": "normal",
+      "resource_profile": "heavy",
       "lifetime_seconds": 3000
     }
   ]

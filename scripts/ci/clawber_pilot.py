@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Root-only host controller for one of two disposable Clawber CI VM slots.
+"""Root-only host controller for one of eight disposable Clawber CI VM slots.
 
 Feed GitHub's encoded_jit_config on stdin, never a PAT or command argument.
 The pinned base already contains the runner/toolchain. The admitting broker must
@@ -29,6 +29,8 @@ import uuid
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
+from clawber_resources import MAX_SLOTS, RESOURCE_PROFILES
+
 ROOT = Path('/mnt/narrative-ssd/domino-ci-pilot')
 MAX_SECONDS = 5400
 DEFAULT_SECONDS = 900
@@ -38,8 +40,9 @@ NETWORK = 'domino-ci-pilot'
 MAC = '52:54:00:dc:1a:02'
 GUEST_IP = '172.30.78.2'
 GATEWAY = '172.30.78.1'
-GUEST_PREFIX = 29
-SLOTS = {1: (GUEST_IP, MAC), 2: ('172.30.78.3', '52:54:00:dc:1a:03')}
+GUEST_PREFIX = 28
+SLOTS = {slot: (f'172.30.78.{slot + 1}', f'52:54:00:dc:1a:{slot + 1:02x}')
+         for slot in range(1, MAX_SLOTS + 1)}
 SYSTEMD_SUDOERS = '/etc/sudoers.d/91-domino-ci-systemd'
 URI = 'qemu:///system'
 
@@ -65,6 +68,7 @@ class Config:
     timeout_seconds: int = DEFAULT_SECONDS
     slot: int = 1
     guest_profile: str = 'normal'
+    resource_profile: str = 'legacy'
 
 
 def slot_prefix(config):
@@ -110,14 +114,15 @@ def read_jit(stream):
 
 
 def domain_xml(name, job_dir, config):
+    resources = RESOURCE_PROFILES[config.resource_profile]
     domain = ET.Element('domain', {'type': 'kvm'})
     ET.SubElement(domain, 'name').text = name
-    ET.SubElement(domain, 'memory', {'unit': 'MiB'}).text = '16384'
-    ET.SubElement(domain, 'currentMemory', {'unit': 'MiB'}).text = '16384'
-    ET.SubElement(domain, 'vcpu', {'placement': 'static'}).text = '4'
+    ET.SubElement(domain, 'memory', {'unit': 'MiB'}).text = str(resources['memory_mib'])
+    ET.SubElement(domain, 'currentMemory', {'unit': 'MiB'}).text = str(resources['memory_mib'])
+    ET.SubElement(domain, 'vcpu', {'placement': 'static'}).text = str(resources['vcpus'])
     cpu_tune = ET.SubElement(domain, 'cputune')
     ET.SubElement(cpu_tune, 'global_period').text = '100000'
-    ET.SubElement(cpu_tune, 'global_quota').text = '400000'
+    ET.SubElement(cpu_tune, 'global_quota').text = str(resources['vcpus'] * 100000)
     block_tune = ET.SubElement(domain, 'blkiotune')
     ET.SubElement(block_tune, 'weight').text = '100'
     os_node = ET.SubElement(domain, 'os')
@@ -282,6 +287,8 @@ def validate_roots(config):
         raise PilotError('invalid_slot')
     if config.guest_profile not in ('normal', 'systemd'):
         raise PilotError('invalid_guest_profile')
+    if not isinstance(config.resource_profile, str) or config.resource_profile not in RESOURCE_PROFILES:
+        raise PilotError('invalid_resource_profile')
     owned_path(config.root, directory=True)
     owned_path(config.root / 'jobs', config.root, directory=True)
 
@@ -356,14 +363,14 @@ def acquire_locks(config):
 
 
 def validate_network(commands, config):
-    """Do not boot slot 2 on the legacy /30 broadcast address."""
+    """Require the dedicated /28 before admitting any of the eight slots."""
     try:
         network = ET.fromstring(commands.virsh('net-dumpxml', config.network, capture=True).stdout)
         addresses = [node for node in network.findall('ip') if node.get('address') == GATEWAY]
         if (network.findtext('name') != config.network or len(addresses) != 1
-                or not (addresses[0].get('netmask') == '255.255.255.248'
+                or not (addresses[0].get('netmask') == '255.255.255.240'
                         or addresses[0].get('prefix') == str(GUEST_PREFIX))):
-            raise PilotError('dedicated_network_requires_ipv4_29')
+            raise PilotError('dedicated_network_requires_ipv4_28')
     except ET.ParseError:
         raise PilotError('invalid_dedicated_network_xml') from None
 
@@ -445,6 +452,7 @@ def run_vm(config, jit, commands=None, *, clock=time.monotonic, sleep=time.sleep
     name = slot_prefix(config) + uuid.uuid4().hex
     job_dir = None
     result = {'domain': name, 'slot': config.slot, 'guest_profile': config.guest_profile,
+              'resource_profile': config.resource_profile,
               'lifecycle': 'guest_stopped', 'job_outcome': 'check_github'}
     try:
         listing = commands.virsh('list', '--all', '--name', capture=True).stdout
@@ -469,6 +477,7 @@ def run_vm(config, jit, commands=None, *, clock=time.monotonic, sleep=time.sleep
         os.chmod(job_dir, 0o710)
         secure_file(job_dir / 'controller.json', json.dumps({
             'version': 1, 'created_by': 'domino-ci-slot-controller', 'slot': config.slot,
+            'resource_profile': config.resource_profile,
             'domain': name, 'job_directory': str(job_dir),
         }) + '\n')
         secure_file(job_dir / 'user-data', cloud_config(jit, config))
@@ -507,6 +516,7 @@ def main(argv=None):
     parser.add_argument('--timeout-seconds', type=int, default=DEFAULT_SECONDS)
     parser.add_argument('--slot', type=int, choices=sorted(SLOTS), default=1)
     parser.add_argument('--guest-profile', choices=('normal', 'systemd'), default='normal')
+    parser.add_argument('--resource-profile', choices=sorted(RESOURCE_PROFILES), default='legacy')
     parser.add_argument('--cleanup-slot', action='store_true', help='Recover only this locked slot; no JIT input')
     args = parser.parse_args(argv)
     if os.geteuid() != 0:

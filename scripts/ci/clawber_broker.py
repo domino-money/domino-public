@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Root-owned, outbound-only broker for two disposable Domino CI guests.
+"""Root-owned, outbound-only broker for resource-bounded disposable CI guests.
 
 Install this code and its policy outside CI checkouts. The App key and one-hour
 installation tokens remain on the host; only a one-use JIT crosses guest stdin.
@@ -23,6 +23,9 @@ from datetime import datetime
 import urllib.error
 import urllib.request
 
+from clawber_resources import (BUDGET_MEMORY_MIB, BUDGET_VCPUS, MAX_HEAVY,
+                               MAX_SLOTS, RESOURCE_PROFILES)
+
 API = 'https://api.github.com'
 API_VERSION = '2026-03-10'
 MAX_PAGES = 10
@@ -30,6 +33,12 @@ MAX_BYTES = 8 * 1024 * 1024
 PREFIX = 'domino-broker-'
 PROFILES = {'normal', 'systemd', 'deploy'}
 ACTIVE = {'queued', 'in_progress'}
+JOB_RESOURCE_PROFILES = set(RESOURCE_PROFILES) - {'legacy'}
+BACKFILL_GRACE_SECONDS = 180
+DEFAULT_POLL_SECONDS = 45
+MAX_API_REQUESTS_PER_CYCLE = 54
+MAX_QUEUE_RUNS = 24
+MAX_QUEUE_CANDIDATES = 64
 
 
 class BrokerError(Exception):
@@ -110,13 +119,29 @@ def load_policy(document):
         need(isinstance(workflow, str) and re.fullmatch(r'\.github/workflows/[a-z0-9-]+\.yml', workflow)
              and isinstance(name, str) and 1 <= len(name) <= 160
              and isinstance(label, str) and re.fullmatch(r'domino-job-[a-z0-9-]{1,90}', label)
-             and entry.get('profile') in PROFILES
+             and isinstance(entry.get('profile'), str) and entry['profile'] in PROFILES
+             and isinstance(entry.get('resource_profile'), str)
+             and entry['resource_profile'] in JOB_RESOURCE_PROFILES
              and type(entry.get('lifetime_seconds')) is int
              and 60 <= entry['lifetime_seconds'] <= 5400, 'policy_job')
         need((workflow, name) not in identities and label not in labels, 'policy_duplicate')
         identities.add((workflow, name))
         labels.add(label)
     return document
+
+
+def record_resources(record):
+    """Old four-core guests reserve their full size and a heavy slot until cleanup."""
+    profile = record.get('resource_profile', 'legacy')
+    need(isinstance(profile, str) and profile in RESOURCE_PROFILES, 'state_resources')
+    resources = RESOURCE_PROFILES[profile]
+    if 'resources' in record:
+        need(record['resources'] == resources
+             and all(type(record['resources'].get(key)) is int for key in resources),
+             'state_resources')
+    else:
+        need(profile == 'legacy', 'state_resources')
+    return profile, resources
 
 
 def expected_labels(policy, run, entry):
@@ -198,6 +223,18 @@ class GitHub:
         self.transport = transport or self._http
         self.token = None
         self.expires = 0
+        self.remaining = None
+
+    def begin_cycle(self):
+        # At the default 45 seconds this caps polling at 4,320 requests/hour,
+        # leaving headroom below the installation's 5,000-request allowance.
+        self.remaining = MAX_API_REQUESTS_PER_CYCLE
+
+    def send(self, method, path, credential, payload):
+        if self.remaining is not None:
+            need(self.remaining > 0, 'api_cycle_budget')
+            self.remaining -= 1
+        return self.transport(method, path, credential, payload)
 
     @staticmethod
     def _http(method, path, credential, payload):
@@ -237,7 +274,7 @@ class GitHub:
             permissions = {'actions': 'read', 'metadata': 'read'}
             permissions['organization_self_hosted_runners' if self.config['runner_scope'] == 'organization'
                         else 'administration'] = 'write'
-            answer = self.transport('POST', f"/app/installations/{self.config['installation_id']}/access_tokens",
+            answer = self.send('POST', f"/app/installations/{self.config['installation_id']}/access_tokens",
                 self.jwt(), {'repository_ids': [self.policy['repository_id']], 'permissions': permissions})
             token = answer.get('token')
             need(isinstance(token, str) and 1 <= len(token) <= 8192, 'app_token_invalid')
@@ -251,7 +288,7 @@ class GitHub:
             # Do not assume a token's format or length; GitHub's formats change.
             self.token, self.expires = token, expiry
         try:
-            return self.transport(method, path, self.token, payload)
+            return self.send(method, path, self.token, payload)
         except ApiError as error:
             if error.status == 401:
                 self.token, self.expires = None, 0
@@ -285,13 +322,20 @@ class Store:
             need(self.data.get('version') == 1 and isinstance(self.data.get('active'), dict)
                  and isinstance(self.data.get('completed'), dict), 'state_shape')
             for slot, record in self.data['active'].items():
-                need(slot in ('1', '2') and isinstance(record, dict)
+                need(slot in {str(s) for s in range(1, MAX_SLOTS + 1)} and isinstance(record, dict)
                      and type(record.get('job_id')) is int
                      and re.fullmatch(PREFIX + r'[0-9]+-[0-9]+-[0-9]+', record.get('runner_name', ''))
                      and (record.get('runner_id') is None or type(record['runner_id']) is int),
                      'state_shape')
+                record_resources(record)
         self.data.setdefault('retries', {})
         need(isinstance(self.data['retries'], dict), 'state_shape')
+        waiting = self.data.setdefault('resource_wait', None)
+        need(waiting is None or isinstance(waiting, dict)
+             and type(waiting.get('job_id')) is int and waiting['job_id'] > 0
+             and waiting.get('resource_profile') == 'heavy'
+             and type(waiting.get('since')) in (int, float) and waiting['since'] >= 0,
+             'state_resource_wait')
 
     def save(self):
         temporary = self.path.with_name(self.path.name + '.new')
@@ -320,11 +364,37 @@ class Broker:
         self.runner_path = ('/orgs/' + config['runner_owner'] if config['runner_scope'] == 'organization'
                             else self.repo_path) + '/actions/runners'
 
+    def draining(self):
+        # main() already verifies this root-owned state directory. Never follow
+        # a marker symlink, even a dangling one, or accept an untrusted writer.
+        marker = self.store.path.parent / 'drain'
+        try:
+            info = marker.lstat()
+        except FileNotFoundError:
+            return False
+        need(stat.S_ISREG(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o022,
+             'unsafe_drain_marker')
+        return True
+
+    def can_fit(self, profile, *, reserve=None):
+        need(profile in JOB_RESOURCE_PROFILES and reserve in (None, 'heavy'), 'resource_profile')
+        active = self.store.data['active'].values()
+        accounted = [record_resources(record) for record in active]
+        profiles = [p for p, _ in accounted] + [profile] + ([reserve] if reserve else [])
+        sizes = [r for _, r in accounted] + [RESOURCE_PROFILES[profile]]
+        if reserve:
+            sizes.append(RESOURCE_PROFILES[reserve])
+        return (len(profiles) <= MAX_SLOTS
+                and sum(r['vcpus'] for r in sizes) <= BUDGET_VCPUS
+                and sum(r['memory_mib'] for r in sizes) <= BUDGET_MEMORY_MIB
+                and sum(p in ('heavy', 'legacy') for p in profiles) <= MAX_HEAVY)
+
     def controller(self, slot, *, entry=None):
         command = ['/usr/bin/python3', self.config['controller'], '--slot', str(slot)]
         if entry is None:
             return command + ['--cleanup-slot']
         command += ['--guest-profile', 'systemd' if entry['profile'] == 'systemd' else 'normal',
+                    '--resource-profile', entry['resource_profile'],
                     '--base-sha256', self.config['base_sha256'],
                     '--timeout-seconds', str(entry['lifetime_seconds'])]
         if self.config.get('base_image'):
@@ -375,9 +445,7 @@ class Broker:
         if job.get('status') == 'queued':
             # A crash between JIT creation and guest boot must not permanently
             # consume a still-queued job. Back off failed startup attempts.
-            count = self.store.data['retries'].get(job_key, {}).get('count', 0) + 1
-            self.store.data['retries'][job_key] = {'count': count,
-                'after': self.clock() + min(900, 60 * 2 ** min(count - 1, 4))}
+            self.defer_job(record['job_id'])
         else:
             self.store.data['completed'][job_key] = int(self.clock())
             self.store.data['retries'].pop(job_key, None)
@@ -388,9 +456,15 @@ class Broker:
         self.children.pop(slot, None)
         print(json.dumps({'event': 'job_released', 'slot': slot, 'job_id': record['job_id']}), flush=True)
 
+    def defer_job(self, job_id):
+        key = str(job_id)
+        count = self.store.data['retries'].get(key, {}).get('count', 0) + 1
+        self.store.data['retries'][key] = {'count': count,
+            'after': self.clock() + min(900, 60 * 2 ** min(count - 1, 4))}
+
     def recover(self):
         # Controller cleanup locks fail closed if an old controller is alive.
-        for slot in (1, 2):
+        for slot in range(1, MAX_SLOTS + 1):
             if str(slot) in self.store.data['active']:
                 self.finish(slot)
             else:
@@ -409,8 +483,9 @@ class Broker:
             name = run.get(key, {}).get('login', '')
             need(isinstance(name, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9\[\]-]{0,100}', name),
                  'actor_identity')
-            permissions[name] = self.api.request('GET', self.repo_path + '/collaborators/'
-                                                 + name + '/permission').get('permission')
+            if name not in permissions:
+                permissions[name] = self.api.request('GET', self.repo_path + '/collaborators/'
+                                                     + name + '/permission').get('permission')
         workflow_id = run.get('workflow_id')
         need(type(workflow_id) is int, 'workflow_identity')
         workflow = self.api.request('GET', self.repo_path + '/actions/workflows/' + str(workflow_id))
@@ -422,15 +497,77 @@ class Broker:
             for run in self.api.pages(self.repo_path + '/actions/runs?status=' + status, 'workflow_runs'):
                 runs[run['id']] = run
         result = []
-        for run in runs.values():
+        ordered = sorted(runs.values(), key=lambda run: (run.get('created_at', ''), run['id']))
+        inspected = 0
+        for run in ordered:
             if workflow_path(run.get('path'), self.policy['repository']) not in {
                     e['workflow'] for e in self.policy['jobs']}:
                 continue
+            if inspected >= MAX_QUEUE_RUNS or len(result) >= MAX_QUEUE_CANDIDATES:
+                break
+            inspected += 1
             jobs = self.attempt_jobs(run)
             for job in jobs:
                 if job.get('status') == 'queued' and 'domino-ci' in job.get('labels', []):
-                    result.append((job.get('created_at', run.get('created_at', '')), job['id'], run['id']))
-        return sorted(result)
+                    if not self.eligible({'job': job}):
+                        continue
+                    entries = [entry for entry in self.policy['jobs']
+                               if entry['workflow'] == workflow_path(run.get('path'), self.policy['repository'])
+                               and entry['job_name'] == job.get('name')]
+                    if len(entries) == 1:
+                        result.append({'run': run, 'jobs': jobs, 'job': job, 'entry': entries[0]})
+        # A matrix released late still belongs to its original run. Within one
+        # run, release the dependency selector before independent longer jobs.
+        return sorted(result, key=lambda candidate: (
+            candidate['run'].get('created_at', ''), candidate['run']['id'],
+            candidate['entry']['job_label'] != 'domino-job-ci-changes',
+            candidate['job'].get('created_at', candidate['run'].get('created_at', '')),
+            candidate['job']['id']))[:MAX_QUEUE_CANDIDATES]
+
+    def eligible(self, candidate):
+        job_id = candidate['job']['id']
+        return (str(job_id) not in self.store.data['completed']
+                and self.store.data['retries'].get(str(job_id), {}).get('after', 0) <= self.clock()
+                and not any(r['job_id'] == job_id for r in self.store.data['active'].values()))
+
+    def backfill_barrier(self, candidates):
+        """After a bounded grace, younger work leaves room for the oldest heavy job."""
+        barrier = None
+        heavy_active = sum(record_resources(record)[0] in ('heavy', 'legacy')
+                           for record in self.store.data['active'].values())
+        for index, candidate in enumerate(candidates):
+            # Each existing heavy (including legacy) already reserves at least
+            # the next heavy's size. Its completion frees everything needed;
+            # reserving a third heavy here would needlessly block light work.
+            if (heavy_active >= MAX_HEAVY or candidate['entry']['resource_profile'] != 'heavy'
+                    or self.can_fit('heavy')):
+                continue
+            try:
+                # A forbidden job must not pin a resource reservation. Queue
+                # identity may age; launch() still refetches all authorization.
+                self.identity(candidate['run'], candidate['jobs'], candidate['job'])
+            except BrokerError as error:
+                if str(error) == 'api_cycle_budget':
+                    raise
+                self.defer_job(candidate['job']['id'])
+                self.store.save()
+                error_event('job_deferred', error, job_id=candidate['job']['id'])
+                continue
+            barrier = index
+            break
+        waiting = self.store.data['resource_wait']
+        if barrier is None:
+            updated = None
+        else:
+            job_id = candidates[barrier]['job']['id']
+            updated = waiting if waiting and waiting['job_id'] == job_id else {
+                'job_id': job_id, 'resource_profile': 'heavy', 'since': self.clock()}
+        if waiting != updated:
+            self.store.data['resource_wait'] = updated
+            self.store.save()
+        if updated and self.clock() - updated['since'] >= BACKFILL_GRACE_SECONDS:
+            return barrier
+        return None
 
     def attempt_jobs(self, run):
         attempt, run_id = run.get('run_attempt'), run.get('id')
@@ -458,6 +595,8 @@ class Broker:
         need({r['id'] for r in repos} == {self.policy['repository_id']}, 'runner_group_repository')
 
     def launch(self, slot, run_id, job_id):
+        need(type(slot) is int and 1 <= slot <= MAX_SLOTS
+             and str(slot) not in self.store.data['active'], 'slot_unavailable')
         # Refetch every source immediately before creating the registration.
         run = self.api.request('GET', self.repo_path + f'/actions/runs/{run_id}')
         need(run.get('id') == run_id, 'run_identity')
@@ -466,10 +605,14 @@ class Broker:
         need(len(selected) == 1, 'job_no_longer_queued')
         entry, labels = self.identity(run, jobs, selected[0])
         self.check_group()
+        need(not self.stopping and not self.draining(), 'broker_draining')
+        need(self.can_fit(entry['resource_profile']), 'resource_budget')
         name = f"{PREFIX}{run_id}-{run['run_attempt']}-{job_id}"
         record = {'run_id': run_id, 'run_attempt': run['run_attempt'], 'head_sha': run['head_sha'],
                   'job_id': job_id, 'runner_name': name, 'runner_id': None,
-                  'started': self.clock(), 'lifetime_seconds': entry['lifetime_seconds']}
+                  'started': self.clock(), 'lifetime_seconds': entry['lifetime_seconds'],
+                  'resource_profile': entry['resource_profile'],
+                  'resources': dict(RESOURCE_PROFILES[entry['resource_profile']])}
         self.store.data['active'][str(slot)] = record
         self.store.save()  # Crash before/after POST remains recoverable by name.
         try:
@@ -490,7 +633,9 @@ class Broker:
             child.stdin.write(jit.encode('ascii'))
             child.stdin.close()
             print(json.dumps({'event': 'job_started', 'slot': slot, 'job_id': job_id,
-                              'profile': entry['profile']}), flush=True)
+                              'profile': entry['profile'],
+                              'resource_profile': entry['resource_profile'],
+                              'resources': record['resources']}), flush=True)
         except BaseException:
             child = self.children.get(slot)
             if child is not None:
@@ -516,38 +661,59 @@ class Broker:
                 child.wait(timeout=10)
 
     def cycle(self):
+        if hasattr(self.api, 'begin_cycle'):
+            self.api.begin_cycle()
+        runs = {}
         for slot, record in list(self.store.data['active'].items()):
             slot = int(slot)
             child = self.children.get(slot)
-            if child is None or child.poll() is not None:
-                self.finish(slot)
-                continue
-            job = self.api.request('GET', self.repo_path + f"/actions/jobs/{record['job_id']}")
-            run = self.api.request('GET', self.repo_path + f"/actions/runs/{record['run_id']}")
-            if (job.get('status') == 'completed' or run.get('status') == 'completed'
-                    or run.get('run_attempt') != record['run_attempt']
-                    or job.get('run_id') != record['run_id'] or job.get('head_sha') != record['head_sha']
-                    or self.clock() > record['started'] + record['lifetime_seconds'] + 120):
-                self.stop_child(child)
-                self.finish(slot)
-        if self.stopping or len(self.store.data['active']) >= 2:
+            try:
+                if child is None or child.poll() is not None:
+                    self.finish(slot)
+                    continue
+                job = self.api.request('GET', self.repo_path + f"/actions/jobs/{record['job_id']}")
+                if record['run_id'] not in runs:
+                    runs[record['run_id']] = self.api.request('GET', self.repo_path + f"/actions/runs/{record['run_id']}")
+                run = runs[record['run_id']]
+                if (job.get('status') == 'completed' or run.get('status') == 'completed'
+                        or run.get('run_attempt') != record['run_attempt']
+                        or job.get('run_id') != record['run_id'] or job.get('head_sha') != record['head_sha']
+                        or self.clock() > record['started'] + record['lifetime_seconds'] + 120):
+                    self.stop_child(child)
+                    self.finish(slot)
+            except (BrokerError, OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
+                if str(error) == 'api_cycle_budget':
+                    raise
+                # A failed cleanup continues to reserve its slot and resources;
+                # it must not prevent unrelated completed guests from reaping.
+                error_event('slot_cleanup_pending', error, slot=slot, job_id=record['job_id'])
+        if self.stopping or self.draining() or not any(self.can_fit(p) for p in JOB_RESOURCE_PROFILES):
             return
-        for _, job_id, run_id in self.queued():
-            if (str(job_id) in self.store.data['completed']
-                    or self.store.data['retries'].get(str(job_id), {}).get('after', 0) > self.clock()
-                    or any(r['job_id'] == job_id for r in self.store.data['active'].values())):
+        candidates = [candidate for candidate in self.queued() if self.eligible(candidate)]
+        barrier = self.backfill_barrier(candidates)
+        for index, candidate in enumerate(candidates):
+            if not self.eligible(candidate):
                 continue
-            slots = [s for s in (1, 2) if str(s) not in self.store.data['active']]
+            slots = [s for s in range(1, MAX_SLOTS + 1) if str(s) not in self.store.data['active']]
             if not slots:
                 break
+            job_id, run_id = candidate['job']['id'], candidate['run']['id']
+            reserve = 'heavy' if barrier is not None and index > barrier else None
+            if not self.can_fit(candidate['entry']['resource_profile'], reserve=reserve):
+                continue
             try:
                 self.launch(slots[0], run_id, job_id)
             except BrokerError as error:
+                if str(error) == 'api_cycle_budget':
+                    raise
+                if str(error) not in ('resource_budget', 'broker_draining'):
+                    self.defer_job(job_id)
+                    self.store.save()
                 error_event('job_deferred', error, job_id=job_id)
 
     def shutdown(self):
         self.stopping = True
-        # Stop both guests even if one API cleanup is temporarily unavailable.
+        # Stop every guest even if one API cleanup is temporarily unavailable.
         failed = False
         for child in list(self.children.values()):
             try:
@@ -575,12 +741,14 @@ def main():
         policy = load_policy(json.loads(secure_path(args.policy).read_text()))
         config.setdefault('runner_scope', 'organization')
         config.setdefault('runner_owner', 'domino-money')
+        config.setdefault('poll_seconds', DEFAULT_POLL_SECONDS)
         need(config['runner_scope'] in ('organization', 'repository')
              and config['runner_owner'] == 'domino-money'
              and type(config.get('app_id')) in (int, str)
              and re.fullmatch(r'[A-Za-z0-9_.-]{1,100}', str(config['app_id']))
              and type(config.get('installation_id')) is int and config['installation_id'] > 0
              and type(config.get('runner_group_id')) is int and config['runner_group_id'] > 0
+             and type(config['poll_seconds']) is int and DEFAULT_POLL_SECONDS <= config['poll_seconds'] <= 300
              and re.fullmatch(r'[0-9a-f]{64}', config.get('base_sha256', '')), 'config_shape')
         key = config.get('private_key') or str(Path(os.environ.get('CREDENTIALS_DIRECTORY',
             '/run/credentials/domino-clawber-broker.service')) / 'github-app.pem')
@@ -595,7 +763,9 @@ def main():
         if state_path.exists():
             secure_path(state_path, secret=True)
         store = Store(state_path)
-        broker = Broker(config, policy, GitHub(config, policy), store)
+        api = GitHub(config, policy)
+        api.begin_cycle()  # A separate bounded startup-recovery allowance.
+        broker = Broker(config, policy, api, store)
         broker.recover()
         def stop(signum, frame):
             broker.stopping = True
@@ -607,7 +777,7 @@ def main():
             except (BrokerError, OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
                 error_event('broker_retry', error)
             # Sleep in short slices so termination does not wait for a poll.
-            for _ in range(30):
+            for _ in range(config['poll_seconds']):
                 if broker.stopping:
                     break
                 time.sleep(1)

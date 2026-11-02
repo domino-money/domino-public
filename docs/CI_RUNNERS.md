@@ -1,14 +1,16 @@
 # Self-hosted CI runners
 
-All six repository workflows route their jobs to **Clawber x64 by default**. A root-owned broker supplies one disposable Ubuntu VM per job, with at most two guests running at once. Unrelated research workloads remain outside this architecture. `Clawber` is the runner implementation namespace used by the committed workflows, scripts and units; actual management hostnames and SSH identities stay in private operator configuration.
+All six repository workflows route their jobs to **Clawber x64 by default**. A root-owned broker supplies one disposable Ubuntu VM per job, with up to eight guests admitted within a shared CPU/memory budget. Unrelated research workloads remain outside this architecture. `Clawber` is the runner implementation namespace used by the committed workflows, scripts and units; actual management hostnames and SSH identities stay in private operator configuration.
 
-The broker and GitHub App are active. Automatic admission, two concurrent guests and slot reuse have been observed on the first main run. The rollout receipt below distinguishes completed jobs from remaining execution qualification; earlier manual pilot results are historical evidence, not proof that every current job/profile has passed.
+The broker and GitHub App are active. The original two-slot rollout and subsequent expansion receipts below distinguish observed job results from remaining execution qualification; earlier manual pilot results are historical evidence, not proof that every current job/profile has passed.
 
 ## Follow a run on GitHub
 
 Open [Actions](https://github.com/domino-money/domino/actions), select the commit/run and then a job to see its current step, logs and duration. Runner names start with `domino-broker-` and contain the run, attempt and job IDs. The selected runner is created for that job and disappears after cleanup; a permanently online idle runner is not expected.
 
-`Queued` means a job is waiting for admission or guest startup. At most two jobs execute simultaneously across all workflows and commits, not two per workflow. A burst of commits therefore creates a backlog: every main push keeps its own run, and there is no automatic hosted overflow. GitHub's job duration excludes the preceding queue and VM provisioning time, so compare those separately when assessing turnaround.
+`Queued` means a job is waiting for admission, resources or guest startup. The eight-slot limit applies across all workflows and commits. CPU, memory or heavy-job limits can be reached with fewer than eight guests: six browser guests consume the complete current budget. Every main push keeps its own run, and there is no automatic hosted overflow. Compare queue/startup time separately from execution time when assessing turnaround.
+
+The scheduler orders by the workflow run's creation time, so newly released browser partitions retain their parent run's priority. Within a run, path selection goes first to release dependent checks. Fitting jobs may use otherwise idle capacity; after a 180-second grace, a reservation prevents an older heavy job waiting for CPU/memory from being starved by continuous smaller jobs. Existing jobs are never preempted to make room.
 
 ## Workflow coverage
 
@@ -29,17 +31,28 @@ Existing triggers, assertions, contract/compiler freezes, per-main-commit execut
 
 | Property | Current configuration |
 | --- | --- |
-| Slots | `1` and `2`, one disposable VM/job per slot |
-| Each guest | Ubuntu 24.04 x64; 4 vCPU, 16 GiB RAM, 80 GiB writable disk capacity |
-| Aggregate guest allocation | At most 8 vCPU and 32 GiB guest RAM; hypervisor overhead is separate |
+| Slots | `1` through `8`, one disposable VM/job per slot |
+| Each guest | Ubuntu 24.04 x64; size selected by the trusted job policy; 80 GiB sparse writable disk capacity |
+| Aggregate guest allocation | At most 12 vCPU and 48 GiB guest RAM, with at most two heavy jobs; hypervisor overhead is separate |
 | Storage | Existing SSD mount, `/mnt/narrative-ssd/domino-ci-pilot`; no new host volume |
 | Trusted host source | Root-owned broker, controller and policy under `/opt/domino-ci` |
 | Base image | `/mnt/narrative-ssd/domino-ci-pilot/base/ubuntu-24.04-ci.qcow2`, root-owned mode `0444` |
 | Prepared base SHA-256 | `73835938384dafb7c497e6141f44fa4798574c57bf59adddb768d2bf33a992cf` |
-| Dedicated network | `domino-ci-pilot`, `/29`; fixed guest host octets `.2` and `.3`, one per slot; network autostart enabled |
+| Dedicated network | `domino-ci-pilot`, `/28`; fixed guest host octets `.2` through `.9`, one per slot; network autostart enabled |
 | Lifecycle | Single-job JIT runner; bounded lifetime; guest, writable disk, seed and job state removed afterward |
 
-The dedicated network was expanded from `/30` to `/29` for the second slot while preserving UUID `c91f55f6-9d8a-4788-a1ae-332d39eaf9f7`. Only this CI network was migrated. Full guest addresses and network/filter definitions are in the [network source](../scripts/ci/libvirt/network.xml) and [filters](../scripts/ci/libvirt/filter.xml).
+The dedicated network was expanded from `/30` to `/29` for the second slot, then to `/28` for eight slots, preserving UUID `c91f55f6-9d8a-4788-a1ae-332d39eaf9f7`. Each migration drained CI guests first and changed only this network. Full guest addresses and network/filter definitions are in the [network source](../scripts/ci/libvirt/network.xml) and [filters](../scripts/ci/libvirt/filter.xml).
+
+The [shared resource definitions](../scripts/ci/clawber_resources.py) and root-owned policy assign these sizes independently of guest privileges:
+
+| Resource class | vCPU | RAM | Jobs |
+| --- | ---: | ---: | --- |
+| `light` | 1 | 3 GiB | Hygiene, path selection, Read Worker, Automation OFF, execution inspection and small pilot checks |
+| `standard` | 2 | 6 GiB | Frontend, gated preview and read-path release |
+| `browser` | 2 | 8 GiB | Browser partitions, Position journeys and browser pilot |
+| `heavy` | 3 | 12 GiB | Backend, contracts and their pilot workloads |
+
+The broker reserves a job's full configured size before runner registration and releases it only after verified cleanup. CPU quota is enforced in each VM's libvirt definition; aggregate admission caps the sum of guest quotas and memory allocations. RAM currently unused by one admitted guest does not create an extra reservation for another. The manual launcher's compatibility class, `legacy` (4 vCPU/16 GiB), is not available to new automatic policy entries; historical active state is accounted conservatively during recovery.
 
 Guest egress permits DNS through the dedicated resolver and public IPv4 TCP port 443 with established replies. Private, host, Tailnet, link-local and metadata IPv4 destinations, all IPv6 and unsolicited inbound access are blocked. This is a range/port boundary, **not a DNS or destination-domain allowlist**: public production HTTPS front doors remain reachable as ordinary public clients. Private RPC/backend networks and sockets, host mounts and wallet/runtime credentials are unavailable to jobs.
 
@@ -57,7 +70,7 @@ Backend uses the repository Python pin, PostgreSQL tools at `/usr/lib/postgresql
 
 The [broker](../scripts/ci/clawber_broker.py) polls GitHub outbound over HTTPS, checks queued jobs, and admits work only from its root-owned policy. It never executes a controller or policy supplied by a job checkout.
 
-Admission verifies the private, non-forkable Domino repository and numeric identity; active workflow identity/path; immutable run SHA and current attempt; exact queued job identity/display name; and both original/triggering actors' `write`, `maintain` or `admin` permissions. Allowed events are main pushes, same-repository pull requests targeting main, and authorized manual dispatches subject to each workflow's branch constraints. Fork jobs are refused. `deploy` is never admitted for a PR and requires main.
+Admission verifies the private, non-forkable Domino repository and numeric identity; active workflow identity/path; immutable run SHA and current attempt; exact queued job identity/display name; and both original/triggering actors' `write`, `maintain` or `admin` permissions. Allowed events are main pushes, same-repository pull requests targeting main, and authorized manual dispatches subject to each workflow's branch constraints. Fork jobs are refused. `deploy` is never admitted for a PR and requires main. Resource classes come from the trusted host policy, never from a job's checkout, label or arbitrary size request.
 
 Each admitted job has exactly seven routing labels:
 
@@ -71,7 +84,7 @@ domino-ci-<normal|systemd|deploy>
 <exact domino-job-... label from runner-policy.json>
 ```
 
-The per-job/matrix label prevents a different job in the same run/profile from consuming that runner. Labels select work; they are not authorization. Policy v1 has `repository`, `repository_id`, `base_labels`, `run_label_template` and a `jobs` array whose entries contain `workflow`, `job_name`, `job_label`, `profile`, `lifetime_seconds`. Exact expanded names are allowlisted; no wildcard grants admission. Lifetimes include setup and retain startup headroom, with a 90-minute maximum. Actions job timeouts remain independent.
+The per-job/matrix label prevents a different job in the same run/profile from consuming that runner. Labels select work; they are not authorization. Policy v1 has `repository`, `repository_id`, `base_labels`, `run_label_template` and a `jobs` array whose entries contain `workflow`, `job_name`, `job_label`, `profile`, `resource_profile`, `lifetime_seconds`. Exact expanded names are allowlisted; no wildcard grants admission. Lifetimes include setup and retain startup headroom, with a 90-minute maximum. Actions job timeouts remain independent.
 
 ## GitHub App, group and credentials
 
@@ -85,7 +98,7 @@ Existing workflow `contents: read` permissions are preserved. The pilot explicit
 
 ## Configuration and service operation
 
-Install reviewed source/policy under root-owned, non-writable-by-jobs `/opt/domino-ci`. Configuration is `/etc/domino-ci/broker.json`, root-owned mode `0600`; broker state is `/var/lib/domino-clawber-broker`, mode `0700`. The following schema example uses illustrative App, installation and runner-group IDs. Replace all three with the provisioned IDs before installation:
+Install reviewed broker, controller, `clawber_resources.py` and policy under root-owned, non-writable-by-jobs `/opt/domino-ci`. The controller's legacy manual source directory also needs the resource module beside it. Configuration is `/etc/domino-ci/broker.json`, root-owned mode `0600`; broker state is `/var/lib/domino-clawber-broker`, mode `0700`. The following schema example uses illustrative App, installation and runner-group IDs. Replace all three with the provisioned IDs before installation:
 
 ```json
 {
@@ -109,19 +122,29 @@ sudo systemctl status --no-pager domino-clawber-broker.service
 sudo journalctl -u domino-clawber-broker.service -n 80 --no-pager
 ```
 
-The broker records durable slot/job/runner identities before registration, retries failed starts with backoff, and revalidates a job immediately before creating JIT credentials. Startup recovery checks both slots and cleans exact recorded runner registrations. A guest lifecycle success is not a test pass: GitHub remains authoritative for the job result.
+The broker records durable slot/job/runner identities and resource reservations before registration, retries failed starts with backoff, and revalidates a job immediately before creating JIT credentials. Startup recovery checks all eight slots and cleans exact recorded runner registrations. The default poll interval is 45 seconds; full queues do not require repeated admission attempts when no resource class fits. Discovery inspects at most the 24 oldest eligible runs and 64 candidate jobs per cycle. A 54-request HTTP budget per cycle bounds API consumption, including token refresh; incomplete cleanup retains its reservation for the next cycle. A guest lifecycle success is not a test pass: GitHub remains authoritative for the job result.
 
-**Stopping or restarting the service interrupts active CI guests.** Prefer draining first: pause new submissions and wait for the current queue/active slots to empty, observing GitHub and broker release events. There is no dedicated drain command; `systemctl stop` is not a graceful drain operation.
+**Stopping or restarting the service interrupts active CI guests.** Drain first by creating the root-owned marker below. While it exists, the broker keeps monitoring and cleaning active jobs but admits no new guests. Wait until the state file's `active` map is empty and no owned CI guest remains; the GitHub queue itself need not be empty.
+
+```sh
+sudo install -o root -g root -m 0600 /dev/null /var/lib/domino-clawber-broker/drain
+sudo journalctl -u domino-clawber-broker.service -n 80 --no-pager
+```
+
+After verified drain, stop the service for upgrades. Keep the marker through startup/recovery and remove it when the updated service is healthy to resume admissions:
 
 ```sh
 sudo systemctl stop domino-clawber-broker.service
+# Install and validate reviewed files, then:
+sudo systemctl start domino-clawber-broker.service
+sudo rm -- /var/lib/domino-clawber-broker/drain
 ```
 
-For recovery, stop the broker first and let active controller cleanup finish. The controller can recover each exclusively locked slot using root-owned ownership metadata:
+For recovery, stop the broker first and let active controller cleanup finish. The controller can recover each exclusively locked slot (`1` through `8`) using root-owned ownership metadata:
 
 ```sh
 sudo python3 /opt/domino-ci/clawber_pilot.py --slot 1 --cleanup-slot
-sudo python3 /opt/domino-ci/clawber_pilot.py --slot 2 --cleanup-slot
+sudo python3 /opt/domino-ci/clawber_pilot.py --slot 8 --cleanup-slot
 ```
 
 Cleanup validates exact domain, slot and job-directory identities before removing anything. If a domain cannot be confirmed absent, or recovery metadata is missing/invalid, it fails closed and preserves files for inspection. Never replace this with prefix-wide `virsh destroy`, firewall resets, or broad disk deletion. Verify guest domains, job directories and corresponding GitHub registrations are gone, then restart the broker. Interrupted jobs require an explicit same-SHA rerun; restarting the broker does not turn them into successful checks.
@@ -155,9 +178,19 @@ Forge and V2 compilation keys include OS/architecture and compiler/lockfile/sour
 
 Contract tests and gas snapshots remain separate validation passes. Pilot caches are separated by pool/workload and have no fallback prefixes. No cache contains App credentials, wallet state or production databases.
 
-Workflow/policy guards check all expanded identities, profiles, labels and browser installation. Offline controller/broker/launcher tests use synthetic APIs and host commands. The focused checks cover 65 Python controller/broker/launcher cases and 12 Node workflow/cache cases. After a live fixture incompatibility, the unchanged 22-test auth-release installer suite also passed with the standard runner `022` file-creation mask. These checks complement the actual job receipts; they do not establish every workload or cancellation/restart recovery under load.
+Workflow/policy guards check all expanded identities, profiles, labels and browser installation. Offline controller/broker/launcher tests use synthetic APIs and host commands. The initial two-slot rollout passed 65 Python controller/broker/launcher cases and 12 Node workflow/cache cases. After a live fixture incompatibility, the unchanged 22-test auth-release installer suite also passed with the standard runner `022` file-creation mask. These checks complement the actual job receipts; they do not establish every workload or cancellation/restart recovery under load. The expansion receipt records its additional checks separately.
 
-## Current provisioning receipt
+## Eight-slot expansion receipt — 2 November 2026
+
+The expanded broker was installed and admissions resumed at 17:25 UTC. Before migration, jobs `125373261037` (Contracts v2-audit) and `125373321634` (Repository hygiene) both completed successfully; no active job was cancelled. The dedicated network was migrated to `/28` with its UUID preserved, then the new service passed startup recovery with the drain marker present. The base image is unchanged. Root-owned source/policy/service backups are under `/opt/domino-ci/backups/20261102-172505`.
+
+Focused validation passed: 34 controller tests, 36 broker tests, 14 manual-launcher compatibility tests and four Node workflow/policy tests. These cover all eight slot identities/locks, exact resource reservations, aggregate limits, oldest-run scheduling, heavy-job backfill, safe drain/recovery and bounded API use. The installed broker/controller/resource module/policy digests were compared with the reviewed source.
+
+At 17:28 UTC, six browser VMs were running simultaneously: each actual libvirt domain had 2 vCPU, 8 GiB RAM and global CPU quota `200000` per `100000` microseconds. Their combined reservation reached exactly 12 vCPU/48 GiB, leaving slots 7–8 unallocated as intended. GitHub confirmed four jobs executing in [the oldest main run](https://github.com/domino-money/domino/actions/runs/41470516719); two guests for [the next admitted run](https://github.com/domino-money/domino/actions/runs/41473321707) were still starting. This verifies concurrent admission and the shared resource ceiling, not completion of the queued workload or eight simultaneous heavy jobs.
+
+The initial admission burst reached the local HTTP request cap once. The unfinished registration retained its reservation until the next cycle verified cleanup, then returned to the queue with backoff; existing guests continued running. This `api_cycle_budget` event is the broker's own polling limit, not a GitHub rate-limit response.
+
+## Original two-slot provisioning receipt
 
 The GitHub App was created/installed and its actual permissions authenticated. The dedicated runner group was created and its selected-repository restriction verified. The `/29` dedicated network migration and autostart are configured; the base image digest above is unchanged. The broker service is enabled and running. The first automatic [CI run 41470516719](https://github.com/domino-money/domino/actions/runs/41470516719) and [Position journeys run 41470516835](https://github.com/domino-money/domino/actions/runs/41470516835) use source `4d775f9fa6d8d28f7acb02fd971d16e26fee6131`. Frontend passed in 198 seconds, while Position journeys occupied the other slot. The Frontend guest was cleaned up and its slot reused automatically. Both ordinary guests denied sudo; sampled peer-guest HTTPS, host-bridge SSH and metadata connections timed out; neither contained the App key or Docker socket.
 

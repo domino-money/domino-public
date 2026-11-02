@@ -1,5 +1,5 @@
 [Unit]
-Description=Domino two-slot ephemeral GitHub Actions broker
+Description=Domino resource-bounded eight-slot ephemeral GitHub Actions broker
 After=network-online.target libvirtd.service
 Wants=network-online.target
 StartLimitIntervalSec=300

@@ -16,6 +16,8 @@ import unittest
 from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
+import clawber_resources as resources
+
 SPEC = importlib.util.spec_from_file_location('clawber_pilot', Path(__file__).with_name('clawber_pilot.py'))
 pilot = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = pilot
@@ -30,7 +32,7 @@ def jit(ephemeral=True, extra=None):
 
 
 class FakeCommands:
-    def __init__(self, state='shut off', fail=None, existing=(), netmask='255.255.255.248'):
+    def __init__(self, state='shut off', fail=None, existing=(), netmask='255.255.255.240'):
         self.calls = []
         self.state = state
         self.fail = fail
@@ -123,23 +125,58 @@ class PilotTests(unittest.TestCase):
             self.assertEqual(tree.findall('.//' + tag), [])
         self.assertNotIn(jit(), text)
 
+    def test_fixed_resource_profiles_set_memory_vcpus_and_whole_domain_quota(self):
+        expected = {
+            'legacy': {'vcpus': 4, 'memory_mib': 16384},
+            'light': {'vcpus': 1, 'memory_mib': 3072},
+            'standard': {'vcpus': 2, 'memory_mib': 6144},
+            'browser': {'vcpus': 2, 'memory_mib': 8192},
+            'heavy': {'vcpus': 3, 'memory_mib': 12288},
+        }
+        self.assertEqual(resources.RESOURCE_PROFILES, expected)
+        self.assertEqual((resources.MAX_SLOTS, resources.BUDGET_VCPUS,
+                          resources.BUDGET_MEMORY_MIB, resources.MAX_HEAVY), (8, 12, 49152, 2))
+        for profile, size in expected.items():
+            with self.subTest(profile=profile):
+                tree = ET.fromstring(pilot.domain_xml('test', self.slot_dir,
+                    replace(self.config, resource_profile=profile)))
+                self.assertEqual(int(tree.findtext('memory')), size['memory_mib'])
+                self.assertEqual(tree.find('memory').get('unit'), 'MiB')
+                self.assertEqual(tree.findtext('currentMemory'), tree.findtext('memory'))
+                self.assertEqual(int(tree.findtext('vcpu')), size['vcpus'])
+                self.assertEqual(int(tree.findtext('cputune/global_period')), 100000)
+                self.assertEqual(int(tree.findtext('cputune/global_quota')), size['vcpus'] * 100000)
+
     def test_static_network_disables_ipv6(self):
         iface = json.loads(pilot.network_config())['ethernets']['ci0']
         self.assertEqual(iface['match']['macaddress'], pilot.MAC)
-        self.assertEqual(iface['addresses'], [pilot.GUEST_IP + '/29'])
+        self.assertEqual(iface['addresses'], [pilot.GUEST_IP + '/28'])
         self.assertFalse(iface['dhcp6'])
         self.assertFalse(iface['accept-ra'])
 
     def test_slot_networks_have_distinct_mac_ip_and_filter_parameters(self):
-        first = ET.fromstring(pilot.domain_xml('test', self.slot_dir, self.config))
-        second_config = replace(self.config, slot=2)
-        second = ET.fromstring(pilot.domain_xml('test', self.root / 'jobs/slot-2', second_config))
-        self.assertNotEqual(first.find('devices/interface/mac').get('address'),
-                            second.find('devices/interface/mac').get('address'))
-        self.assertEqual(second.find('devices/interface/filterref/parameter').get('value'), '172.30.78.3')
-        iface = json.loads(pilot.network_config(second_config))['ethernets']['ci0']
-        self.assertEqual(iface['addresses'], ['172.30.78.3/29'])
-        self.assertEqual(iface['match']['macaddress'], second.find('devices/interface/mac').get('address'))
+        ips, macs = [], []
+        self.assertEqual(set(pilot.SLOTS), set(range(1, 9)))
+        for slot in range(1, 9):
+            with self.subTest(slot=slot):
+                config = replace(self.config, slot=slot)
+                tree = ET.fromstring(pilot.domain_xml('test', pilot.slot_directory(config), config))
+                mac = tree.find('devices/interface/mac').get('address')
+                ip = tree.find('devices/interface/filterref/parameter').get('value')
+                ips.append(ip); macs.append(mac)
+                self.assertEqual(tree.find('devices/interface/filterref').get('filter'), pilot.NETWORK)
+                iface = json.loads(pilot.network_config(config))['ethernets']['ci0']
+                self.assertEqual(iface['addresses'], [ip + '/28'])
+                self.assertEqual(iface['match']['macaddress'], mac)
+                self.assertEqual(iface['nameservers']['addresses'], [pilot.GATEWAY])
+                self.assertFalse(iface['dhcp4'])
+                self.assertFalse(iface['dhcp6'])
+                self.assertFalse(iface['accept-ra'])
+        self.assertEqual(ips, ['172.30.78.' + str(last) for last in range(2, 10)])
+        self.assertEqual(macs, ['52:54:00:dc:1a:0' + str(last) for last in range(2, 10)])
+        network = ET.parse(Path(__file__).with_name('libvirt') / 'network.xml')
+        self.assertEqual(network.find('ip').attrib,
+                         {'address': pilot.GATEWAY, 'netmask': '255.255.255.240'})
 
     def test_only_shared_base_disables_dac_relabel(self):
         tree = ET.fromstring(pilot.domain_xml('test-vm', self.root / 'jobs/test-vm', self.config))
@@ -319,6 +356,25 @@ class PilotTests(unittest.TestCase):
         self.assertNotIn(other, touched)
         self.assertNotIn('unrelated-domain', touched)
 
+    def test_eighth_slot_launch_preserves_seven_existing_guests_and_records_resources(self):
+        others = {pilot.PREFIX + f'slot{slot}-' + 'b' * 32 for slot in range(1, 8)}
+        config = replace(self.config, slot=8, resource_profile='light')
+        case = self
+        class ReceiptCheckingCommands(FakeCommands):
+            def virsh(self, *args, **kwargs):
+                if args[0] == 'define':
+                    job = Path(args[1]).parent
+                    metadata = json.loads((job / 'controller.json').read_text())
+                    case.assertEqual(metadata['resource_profile'], 'light')
+                    case.assertEqual(metadata['slot'], 8)
+                    case.assertEqual(ET.parse(args[1]).findtext('memory'), '3072')
+                return super().virsh(*args, **kwargs)
+        commands = ReceiptCheckingCommands(existing=others)
+        report = self.execute_fake(commands, config)
+        self.assertEqual((report['slot'], report['resource_profile']), (8, 'light'))
+        self.assertEqual(commands.existing, others)
+        self.assertEqual(list(pilot.slot_directory(config).iterdir()), [])
+
     def test_same_slot_or_legacy_orphan_blocks_admission(self):
         for existing in (pilot.PREFIX + 'slot1-' + 'b' * 32, pilot.PREFIX + 'c' * 32):
             with self.subTest(existing=existing):
@@ -329,19 +385,22 @@ class PilotTests(unittest.TestCase):
                 self.assertFalse(any(call[:2] == ['virsh', 'define'] for call in commands.calls))
 
     def test_legacy_network_is_rejected_before_creating_vm(self):
-        commands = FakeCommands(netmask='255.255.255.252')
-        with self.assertRaisesRegex(pilot.PilotError, 'requires_ipv4_29'):
-            self.execute_fake(commands)
-        self.assertFalse(any(call[:2] == ['virsh', 'define'] for call in commands.calls))
+        for netmask in ('255.255.255.252', '255.255.255.248'):
+            with self.subTest(netmask=netmask):
+                commands = FakeCommands(netmask=netmask)
+                with self.assertRaisesRegex(pilot.PilotError, 'requires_ipv4_28'):
+                    self.execute_fake(commands)
+                self.assertFalse(any(call[:2] == ['virsh', 'define'] for call in commands.calls))
 
-    def test_locks_allow_two_slots_but_not_two_controllers_in_same_slot(self):
+    def test_locks_allow_eight_slots_but_not_two_controllers_in_same_slot(self):
         descriptors = []
         with self.local_ownership():
             try:
-                descriptors.extend(pilot.acquire_locks(self.config))
-                descriptors.extend(pilot.acquire_locks(replace(self.config, slot=2)))
-                with self.assertRaisesRegex(pilot.PilotError, 'slot_already_running'):
-                    pilot.acquire_locks(self.config)
+                for slot in range(1, 9):
+                    descriptors.extend(pilot.acquire_locks(replace(self.config, slot=slot)))
+                for slot in range(1, 9):
+                    with self.assertRaisesRegex(pilot.PilotError, 'slot_already_running'):
+                        pilot.acquire_locks(replace(self.config, slot=slot))
                 legacy = os.open(self.root / 'pilot.lock', os.O_RDWR)
                 try:
                     with self.assertRaises(BlockingIOError):
@@ -352,12 +411,12 @@ class PilotTests(unittest.TestCase):
                 for fd in descriptors:
                     os.close(fd)
 
-    def test_legacy_exclusive_lock_fences_both_new_slots(self):
+    def test_legacy_exclusive_lock_fences_all_eight_slots(self):
         legacy = os.open(self.root / 'pilot.lock', os.O_CREAT | os.O_RDWR, 0o600)
         try:
             pilot.fcntl.flock(legacy, pilot.fcntl.LOCK_EX | pilot.fcntl.LOCK_NB)
             with self.local_ownership():
-                for slot in (1, 2):
+                for slot in range(1, 9):
                     with self.assertRaisesRegex(pilot.PilotError, 'legacy_pilot_running'):
                         pilot.acquire_locks(replace(self.config, slot=slot))
         finally:
@@ -382,6 +441,18 @@ class PilotTests(unittest.TestCase):
         commands = FakeCommands(existing=[name, other, 'unrelated'])
         with self.local_ownership():
             report = pilot.cleanup_slot(self.config, commands)
+        self.assertEqual(report['cleaned_domains'], [name])
+        self.assertFalse(job.exists())
+        self.assertTrue(other_dir.exists())
+        self.assertEqual(commands.existing, {other, 'unrelated'})
+
+    def test_slot_eight_recovers_old_metadata_without_resource_profile_and_leaves_slot_one(self):
+        name, job = self.orphan(8)
+        other, other_dir = self.orphan(1)
+        self.assertNotIn('resource_profile', json.loads((job / 'controller.json').read_text()))
+        commands = FakeCommands(existing=[name, other, 'unrelated'])
+        with self.local_ownership():
+            report = pilot.cleanup_slot(replace(self.config, slot=8, resource_profile='light'), commands)
         self.assertEqual(report['cleaned_domains'], [name])
         self.assertFalse(job.exists())
         self.assertTrue(other_dir.exists())
@@ -455,10 +526,14 @@ class PilotTests(unittest.TestCase):
             pilot.validate_config(replace(self.config, timeout_seconds=5401))
 
     def test_invalid_slot_and_profile_are_rejected(self):
-        with self.assertRaisesRegex(pilot.PilotError, 'invalid_slot'):
-            pilot.validate_roots(replace(self.config, slot=3))
+        for slot in (0, 9, True):
+            with self.assertRaisesRegex(pilot.PilotError, 'invalid_slot'):
+                pilot.validate_roots(replace(self.config, slot=slot))
         with self.assertRaisesRegex(pilot.PilotError, 'invalid_guest_profile'):
             pilot.validate_roots(replace(self.config, guest_profile='host-root'))
+        for profile in ('../../host', 'custom', '', None, []):
+            with self.assertRaisesRegex(pilot.PilotError, 'invalid_resource_profile'):
+                pilot.validate_roots(replace(self.config, resource_profile=profile))
 
 
 if __name__ == '__main__':

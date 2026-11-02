@@ -8,6 +8,7 @@ import test from 'node:test';
 // are exact expanded Actions display names, never patterns supplied by a PR.
 // labels = base_labels + rendered run_label_template + domino-ci-{profile}
 //          + job_label. lifetime_seconds bounds VM startup and one job.
+// resource_profile selects capacity separately from profile's guest privileges.
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const policy = JSON.parse(readFileSync(path.join(root, 'scripts/ci/runner-policy.json'), 'utf8'));
 const workflows = Object.fromEntries(readdirSync(path.join(root, '.github/workflows')).filter(name => name.endsWith('.yml')).map(name => {
@@ -16,6 +17,13 @@ const workflows = Object.fromEntries(readdirSync(path.join(root, '.github/workfl
 }));
 const RUN_LABEL = 'domino-ci-${{ github.run_id }}-${{ github.run_attempt }}';
 const PILOT = '.github/workflows/clawber-ci-pilot.yml';
+const RESOURCE_JOBS = {
+  light: ['ci-hygiene', 'ci-changes', 'ci-read-worker', 'automation-off', 'execution-inspect', 'pilot-preflight', 'pilot-read-worker'],
+  standard: ['ci-frontend', 'ci-preview', 'read-path-release'],
+  browser: ['ci-browser-pages', 'ci-browser-finance-create', 'ci-browser-finance-automation', 'ci-browser-finance-positions', 'ci-browser-gate', 'funding', 'pilot-browser-finance-create'],
+  heavy: ['ci-backend', 'ci-contracts-v1', 'ci-contracts-v2', 'ci-contracts-v2-audit', 'pilot-contracts-v1', 'pilot-contracts-v2-audit', 'pilot-backend'],
+};
+const RESOURCE_BY_LABEL = new Map(Object.entries(RESOURCE_JOBS).flatMap(([resource, labels]) => labels.map(label => [`domino-job-${label}`, resource])));
 
 function blocks(text) {
   const jobs = text.slice(text.indexOf('\njobs:\n') + 7);
@@ -65,9 +73,11 @@ function check(input = policy, files = workflows) {
   const entries = new Map();
   const labels = new Set();
   for (const job of input.jobs) {
-    assert.deepEqual(Object.keys(job).sort(), ['workflow', 'job_name', 'job_label', 'profile', 'lifetime_seconds'].sort(), 'v1 fields are explicit');
+    assert.deepEqual(Object.keys(job).sort(), ['workflow', 'job_name', 'job_label', 'profile', 'resource_profile', 'lifetime_seconds'].sort(), 'v1 fields are explicit');
     assert.ok(['normal', 'systemd', 'deploy'].includes(job.profile));
+    assert.ok(Object.hasOwn(RESOURCE_JOBS, job.resource_profile), 'new jobs require a named resource profile; legacy is reserved for active accounting');
     assert.match(job.job_label, /^domino-job-[a-z0-9-]+$/);
+    assert.equal(job.resource_profile, RESOURCE_BY_LABEL.get(job.job_label), `reviewed resource class for ${job.job_label}`);
     assert.ok(Number.isInteger(job.lifetime_seconds) && job.lifetime_seconds > 0 && job.lifetime_seconds <= 5400);
     const key = `${job.workflow}:${job.job_name}`;
     assert.ok(!entries.has(key) && !labels.has(job.job_label), 'job display identity and routing label must both be unique');
@@ -111,6 +121,23 @@ test('routing guard rejects an unlisted job, a hosted default, changed privilege
   assert.throws(() => check({ ...policy, jobs: policy.jobs.map((job, i) => i === 0 ? { ...job, profile: 'normal' } : job) }), /exact routing/);
   assert.throws(() => check({ ...policy, jobs: policy.jobs.map((job, i) => i === 1 ? { ...job, job_label: policy.jobs[0].job_label } : job) }), /both be unique/);
   assert.throws(() => check(policy, { ...workflows, [PILOT]: workflows[PILOT].replace('        default: false', '        default: true') }));
+});
+
+test('resource profiles cover every workload independently of privileges and reject missing or changed capacity classes', () => {
+  assert.equal(RESOURCE_BY_LABEL.size, 24);
+  assert.deepEqual([...new Set(policy.jobs.filter(job => job.profile === 'normal').map(job => job.resource_profile))].sort(), ['browser', 'heavy', 'light', 'standard']);
+  for (const resource_profile of ['legacy', 'unknown', 'normal']) {
+    const jobs = policy.jobs.map((job, index) => index === 0 ? { ...job, resource_profile } : job);
+    assert.throws(() => check({ ...policy, jobs }), /new jobs require a named resource profile/);
+  }
+  const jobs = policy.jobs.map((job, index) => index === 0 ? { ...job, resource_profile: 'heavy' } : job);
+  assert.throws(() => check({ ...policy, jobs }), /reviewed resource class/);
+  const missing = policy.jobs.map((job, index) => {
+    if (index !== 0) return job;
+    const { resource_profile, ...entry } = job;
+    return entry;
+  });
+  assert.throws(() => check({ ...policy, jobs: missing }), /v1 fields are explicit/);
 });
 
 test('browser consumers install the lock-selected Chromium and export its exact executable before tests', () => {
