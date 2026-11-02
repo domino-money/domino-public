@@ -8,7 +8,7 @@ The broker and GitHub App are active. The original two-slot rollout and subseque
 
 Open [Actions](https://github.com/domino-money/domino/actions), select the commit/run and then a job to see its current step, logs and duration. Runner names start with `domino-broker-` and contain the run, attempt and job IDs. The selected runner is created for that job and disappears after cleanup; a permanently online idle runner is not expected.
 
-`Queued` means a job is waiting for admission, resources or guest startup. The eight-slot limit applies across all workflows and commits. CPU, memory or heavy-job limits can be reached with fewer than eight guests: six browser guests consume the complete current budget. Every main push keeps its own run, and there is no automatic hosted overflow. Compare queue/startup time separately from execution time when assessing turnaround.
+`Queued` means a job is waiting for admission, resources or guest startup. The eight-slot limit applies across all workflows and commits. CPU, memory or heavy-job limits can be reached with fewer than eight guests: seven browser guests consume the complete current budget. Every main push keeps its own run, and there is no automatic hosted overflow. Compare queue/startup time separately from execution time when assessing turnaround.
 
 The scheduler orders by the workflow run's creation time, so newly released browser partitions retain their parent run's priority. Within a run, path selection goes first to release dependent checks. Fitting jobs may use otherwise idle capacity; after a 180-second grace, a reservation prevents an older heavy job waiting for CPU/memory from being starved by continuous smaller jobs. Existing jobs are never preempted to make room.
 
@@ -33,7 +33,7 @@ Existing triggers, assertions, contract/compiler freezes, per-main-commit execut
 | --- | --- |
 | Slots | `1` through `8`, one disposable VM/job per slot |
 | Each guest | Ubuntu 24.04 x64; size selected by the trusted job policy; 80 GiB sparse writable disk capacity |
-| Aggregate guest allocation | At most 12 vCPU and 48 GiB guest RAM, with at most two heavy jobs; hypervisor overhead is separate |
+| Aggregate guest allocation | At most 14 vCPU and 56 GiB guest RAM, with at most two heavy jobs; hypervisor overhead is separate |
 | Storage | Existing SSD mount, `/mnt/narrative-ssd/domino-ci-pilot`; no new host volume |
 | Trusted host source | Root-owned broker, controller and policy under `/opt/domino-ci` |
 | Base image | `/mnt/narrative-ssd/domino-ci-pilot/base/ubuntu-24.04-ci.qcow2`, root-owned mode `0444` |
@@ -179,6 +179,16 @@ Forge and V2 compilation keys include OS/architecture and compiler/lockfile/sour
 Contract tests and gas snapshots remain separate validation passes. Pilot caches are separated by pool/workload and have no fallback prefixes. No cache contains App credentials, wallet state or production databases.
 
 Workflow/policy guards check all expanded identities, profiles, labels and browser installation. Offline controller/broker/launcher tests use synthetic APIs and host commands. The initial two-slot rollout passed 65 Python controller/broker/launcher cases and 12 Node workflow/cache cases. After a live fixture incompatibility, the unchanged 22-test auth-release installer suite also passed with the standard runner `022` file-creation mask. These checks complement the actual job receipts; they do not establish every workload or cancellation/restart recovery under load. The expansion receipt records its additional checks separately.
+
+## Resource budget adjustment — 2 November 2026
+
+The aggregate budget was increased from 12 vCPU/48 GiB to 14 vCPU/56 GiB after a 30-minute observation on 2 November 2026. The 181 samples showed no new host OOM kills or swap activity and low sustained memory/I/O pressure. All observed jobs used the browser resource class. Host-wide utilization, available capacity and unrelated workload measurements remain in the private capacity record; this observation qualifies only the stated workload and budget.
+
+Seven browser guests now fit within the budget; an eighth does not. The eight-slot ceiling, two-heavy-job ceiling, per-job sizes, dedicated network and base image are unchanged. Keeping the heavy-job ceiling avoids extending a browser-only observation to unmeasured compilation workloads. Reassess host headroom, VM overhead and competing workloads privately before increasing the budget.
+
+The 36 broker and 34 controller tests passed with the revised budget, including seventh-browser admission, eighth-browser rejection, independent CPU/memory/heavy limits, registration-time budget checks and bounded heavy-job backfill. Historical receipts below retain their original allocation values.
+
+The host activated this budget at 19:28:35 UTC after all six previously active jobs completed successfully: five browser partitions in [run 41473660567](https://github.com/domino-money/domino/actions/runs/41473660567) and Frontend in [run 41474059077](https://github.com/domino-money/domino/actions/runs/41474059077). No job was cancelled for the update. The resource module was installed in both trusted source locations with SHA-256 `3b9aac1fb4d1efc5fae5f6c7028c542d12cea6aca7197eb9aa92fc496ceb7047`; the broker passed startup recovery before the drain marker was removed. The prior module and activation receipt are retained under `/opt/domino-ci/updates/budget-1456-20261102`.
 
 ## Eight-slot expansion receipt — 2 November 2026
 

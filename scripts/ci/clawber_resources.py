@@ -12,6 +12,6 @@ RESOURCE_PROFILES = {
     'browser': {'vcpus': 2, 'memory_mib': 8192},
     'heavy': {'vcpus': 3, 'memory_mib': 12288},
 }
-BUDGET_VCPUS = 12
-BUDGET_MEMORY_MIB = 49152
+BUDGET_VCPUS = 14
+BUDGET_MEMORY_MIB = 57344
 MAX_HEAVY = 2

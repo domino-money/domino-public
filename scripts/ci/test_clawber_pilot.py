@@ -135,7 +135,7 @@ class PilotTests(unittest.TestCase):
         }
         self.assertEqual(resources.RESOURCE_PROFILES, expected)
         self.assertEqual((resources.MAX_SLOTS, resources.BUDGET_VCPUS,
-                          resources.BUDGET_MEMORY_MIB, resources.MAX_HEAVY), (8, 12, 49152, 2))
+                          resources.BUDGET_MEMORY_MIB, resources.MAX_HEAVY), (8, 14, 57344, 2))
         for profile, size in expected.items():
             with self.subTest(profile=profile):
                 tree = ET.fromstring(pilot.domain_xml('test', self.slot_dir,

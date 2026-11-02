@@ -377,6 +377,9 @@ class LifecycleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             instance, _, store = self.configured(directory)
             store.data['active'] = {str(i): self.record(i, 'browser') for i in range(1, 7)}
+            self.assertTrue(instance.can_fit('browser'), 'a seventh browser fits the aggregate budget')
+            store.data['active']['7'] = self.record(7, 'browser')
+            self.assertFalse(instance.can_fit('browser'), 'an eighth browser exceeds the aggregate budget')
             self.assertFalse(instance.can_fit('light'))
             with patch.object(broker, 'BUDGET_VCPUS', 100):
                 self.assertFalse(instance.can_fit('light'), 'memory alone is bounded')
@@ -413,22 +416,22 @@ class LifecycleTests(unittest.TestCase):
     def test_launch_rechecks_budget_before_registration(self):
         with tempfile.TemporaryDirectory() as directory:
             instance, api, store = self.configured(directory)
-            store.data['active'] = {str(i): self.record(i, 'browser') for i in range(1, 7)}
+            store.data['active'] = {str(i): self.record(i, 'browser') for i in range(1, 8)}
             with self.assertRaisesRegex(broker.BrokerError, 'resource_budget'):
-                instance.launch(7, 100, 200)
+                instance.launch(8, 100, 200)
             self.assertFalse(any(call[0] == 'POST' for call in api.calls))
-            self.assertNotIn('7', store.data['active'])
+            self.assertNotIn('8', store.data['active'])
 
     def test_full_budget_skips_all_queue_discovery_and_identity_calls(self):
         with tempfile.TemporaryDirectory() as directory:
             instance, api, store = self.configured(directory)
-            store.data['active'] = {str(i): self.record(i, 'browser') for i in range(1, 7)}
-            instance.children = {i: FakeChild() for i in range(1, 7)}
-            for i in range(1, 7):
+            store.data['active'] = {str(i): self.record(i, 'browser') for i in range(1, 8)}
+            instance.children = {i: FakeChild() for i in range(1, 8)}
+            for i in range(1, 8):
                 api.values[('GET', instance.repo_path + f'/actions/jobs/{i}')] = {
                     'status': 'in_progress', 'run_id': 100, 'head_sha': 'a' * 40}
             instance.cycle()
-            self.assertEqual(len(api.calls), 7, 'six jobs plus one shared run snapshot')
+            self.assertEqual(len(api.calls), 8, 'seven jobs plus one shared run snapshot')
             self.assertFalse(any('collaborators' in call[1] or '?' in call[1] for call in api.calls))
 
     def test_drain_keeps_reaping_but_does_not_discover_or_admit(self):
@@ -510,8 +513,8 @@ class LifecycleTests(unittest.TestCase):
     def test_bounded_backfill_reserves_old_heavy_only_when_budget_is_the_blocker(self):
         with tempfile.TemporaryDirectory() as directory:
             instance, _, store = self.configured(directory)
-            # Five browser jobs use 10 CPU/40 GiB but no heavy count.
-            store.data['active'] = {str(i): self.record(i, 'browser') for i in range(1, 6)}
+            # Six browser jobs use 12 CPU/48 GiB but no heavy count.
+            store.data['active'] = {str(i): self.record(i, 'browser') for i in range(1, 7)}
             candidates = [self.candidate(instance, 220, 'heavy'), self.candidate(instance, 221)]
             instance.identity = lambda *args: (candidates[0]['entry'], [])
             self.assertIsNone(instance.backfill_barrier(candidates))
@@ -563,7 +566,7 @@ class LifecycleTests(unittest.TestCase):
     def test_forbidden_heavy_does_not_reserve_or_pin_the_discovery_window(self):
         with tempfile.TemporaryDirectory() as directory:
             instance, _, store = self.configured(directory)
-            store.data['active'] = {str(i): self.record(i, 'browser') for i in range(1, 6)}
+            store.data['active'] = {str(i): self.record(i, 'browser') for i in range(1, 7)}
             candidate = self.candidate(instance, 220, 'heavy')
             def refuse(*args):
                 raise broker.BrokerError('actor_not_trusted')
