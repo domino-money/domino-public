@@ -223,11 +223,12 @@
   }
 
   /* ---- The foot right under the body (the kit's .as-go: 12px, no hairline) ---------------------------------------
-     Only a body that scrolls keeps its fading edge, the room for it and a hairline over the foot: a scroll timeline is
-     active only then (where the browser has none, the edge and the hairline stay, as above). */
+     Only a body that scrolls keeps its fading edge and a hairline over the foot: a scroll timeline is active only then
+     (where the browser has none, both stay, as above). Reserve the fade's room in layout, as in the fallback: animating
+     the scroll container's own padding can alternate its overflow and timeline activity every frame. */
   @supports (animation-timeline: scroll()) {
     .dm-flow-dialog.dm-pa { timeline-scope: --dm-pa-body; }
-    .dm-flow-dialog.dm-pa > .dm-pa-body { padding-bottom: 1px; -webkit-mask-image: none; mask-image: none; scroll-timeline: --dm-pa-body block; animation: dm-v4s-scroll-edge linear both; animation-timeline: --dm-pa-body; }
+    .dm-flow-dialog.dm-pa > .dm-pa-body { -webkit-mask-image: none; mask-image: none; scroll-timeline: --dm-pa-body block; animation: dm-v4s-scroll-edge linear both; animation-timeline: --dm-pa-body; }
     .dm-flow-dialog.dm-pa > .dm-pa-body:has(.dm-pa-chip > [role="listbox"]) { animation: none; }
     .dm-flow-dialog.dm-pa > .dm-pa-foot { background-image: none; animation: dm-v4s-scroll-rule linear both; animation-timeline: --dm-pa-body; }
   }
@@ -247,7 +248,7 @@
 }
 
 @keyframes dm-v4s-rise { from { translate: 0 0.5rem; scale: 0.98; } to { translate: 0 0; scale: 1; } }
-@keyframes dm-v4s-scroll-edge { from, to { padding-bottom: 1.25rem; -webkit-mask-image: linear-gradient(#000 calc(100% - 1.25rem), transparent); mask-image: linear-gradient(#000 calc(100% - 1.25rem), transparent); } }
+@keyframes dm-v4s-scroll-edge { from, to { -webkit-mask-image: linear-gradient(#000 calc(100% - 1.25rem), transparent); mask-image: linear-gradient(#000 calc(100% - 1.25rem), transparent); } }
 @keyframes dm-v4s-scroll-rule { from, to { background-image: linear-gradient(var(--border), var(--border)); } }
 @keyframes dm-v4s-up { from { translate: 0 104%; } to { translate: 0 0; } }
 @keyframes dm-v4s-out { from { opacity: 1; } to { opacity: 0; } }

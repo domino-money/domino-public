@@ -2375,9 +2375,19 @@ test('(j2) Top pools name Robinhood Chain from the first paint and stay put when
     }));
     const search = page.locator('#create-token-search');
     assert.equal(await search.getAttribute('placeholder'), 'Name or address, like USDG', 'the other networks not answered yet');
+    const firstPaint = await rows();
+    assert.ok(firstPaint.length > 0, 'Top pools drawn');
+    assert.deepEqual(firstPaint.map((row) => [row.network, row.together]), firstPaint.map(() => ['Robinhood Chain', true]), 'each names its network, beside its fee');
+    // The card and its content still rise after the rows appear. Measure the capabilities change only once that
+    // unrelated entry motion and the fonts have settled; the first-paint network and alignment checks stay above.
+    await page.waitForFunction(() => {
+      const top = document.querySelector('[data-top-pools]');
+      if (!top || document.fonts.status !== 'loaded') return false;
+      const moving = top.getAnimations({ subtree: true });
+      for (let ancestor = top.parentElement; ancestor; ancestor = ancestor.parentElement) moving.push(...ancestor.getAnimations());
+      return moving.every((animation) => animation.effect?.getComputedTiming().endTime === Infinity || ['finished', 'idle'].includes(animation.playState));
+    }, undefined, { timeout: 10_000 });
     const before = await rows();
-    assert.ok(before.length > 0, 'Top pools drawn');
-    assert.deepEqual(before.map((row) => [row.network, row.together]), before.map(() => ['Robinhood Chain', true]), 'each names its network, beside its fee');
     release();
     await page.waitForFunction(() => document.getElementById('create-token-search')?.getAttribute('placeholder') === 'Search a token on any network', undefined, { timeout: 30_000 });
     assert.deepEqual(await rows(), before, 'nothing moved when the other networks answered');

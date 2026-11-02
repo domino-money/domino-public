@@ -184,7 +184,25 @@ test('Close positions: each group is done at its block and the next starts at on
     assert.equal(await dialog.getByText('Withdrawal confirmed.').count(), 1);
     const held = () => page.evaluate(() => JSON.parse(localStorage.getItem('domino.included-close.v1') ?? '[]').map((row) => row.tokenIds));
     assert.deepEqual(await held(), [['501001', '501002']], 'the first group held until final');
-    await dialog.getByRole('button', { name: 'Continue to next group', exact: true }).click();
+    // The scroll fade must not resize its own scroll container every frame and keep this action moving forever.
+    // Wait out the finite entrance/decoration motion, then measure consecutive frames before the normal click.
+    await page.waitForFunction(() => document.querySelector('[data-bulk-close="done"]')?.getAnimations({ subtree: true }).every((animation) => {
+      const end = animation.effect?.getComputedTiming().endTime;
+      return typeof end !== 'number' || !Number.isFinite(end) || ['finished', 'idle'].includes(animation.playState);
+    }), undefined, { timeout: 10_000 });
+    const next = dialog.getByRole('button', { name: 'Continue to next group', exact: true });
+    const frames = await next.evaluate(async (button) => {
+      const boxes = [];
+      for (let frame = 0; frame < 8; frame++) {
+        await new Promise(requestAnimationFrame);
+        const { x, y, width, height } = button.getBoundingClientRect();
+        boxes.push({ x, y, width, height });
+      }
+      return boxes;
+    });
+    assert.deepEqual(frames, frames.map(() => frames[0]), 'the next group button stays still after entry motion');
+    await dialog.screenshot({ path: resolve(shots, 'close-many-next-group-1320.png') });
+    await next.click();
     await page.locator('[data-bulk-close="review"]').waitFor();
     await dialog.getByRole('button', { name: 'Close 1 position', exact: true }).click();
     await page.locator('[data-bulk-close="done"]').waitFor();

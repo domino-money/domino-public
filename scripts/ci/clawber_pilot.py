@@ -194,7 +194,7 @@ try:
            'RUNNER_TOOL_CACHE': '/opt/hostedtoolcache'}
     completed = subprocess.run([RUNNER_DIR + '/run.sh'], cwd=RUNNER_DIR,
         env=env, user=account.pw_uid, group=account.pw_gid, extra_groups=(),
-        umask=0o077, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        umask=0o022, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL)
     code = completed.returncode
 finally:
@@ -460,6 +460,9 @@ def run_vm(config, jit, commands=None, *, clock=time.monotonic, sleep=time.sleep
         directory = slot_directory(config)
         directory.mkdir(mode=0o751, exist_ok=True)
         owned_path(directory, config.root / 'jobs', directory=True)
+        # The controller's 0077 umask masks mkdir's traversal bits. Restore
+        # them only after proving this is a safe, root-owned slot directory.
+        os.chmod(directory, 0o751)
         job_dir = Path(tempfile.mkdtemp(prefix=name + '-', dir=directory))
         # Root owns directory entries; QEMU can traverse, but not replace files.
         os.chown(job_dir, 0, account.pw_gid)

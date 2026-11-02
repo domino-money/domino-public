@@ -1,4 +1,5 @@
 """Offline controller/security tests; no libvirt, VM, network, or host mutation."""
+import ast
 import base64
 from contextlib import contextmanager
 from dataclasses import replace
@@ -171,6 +172,29 @@ class PilotTests(unittest.TestCase):
         self.assertEqual(config['runcmd'][0], ['shutdown', '-P', '+15'])
         compile(launcher, 'guest-launcher', 'exec')
 
+    def test_runner_child_has_hosted_umask_while_credentials_stay_private(self):
+        for profile in ('normal', 'systemd'):
+            with self.subTest(profile=profile):
+                config = json.loads(pilot.cloud_config(jit(), replace(
+                    self.config, guest_profile=profile)).split('\n', 1)[1])
+                files = {item['path']: item for item in config['write_files']}
+                secret = files['/run/runner/encoded-jit-config']
+                self.assertEqual((secret['owner'], secret['permissions']), ('runner:runner', '0600'))
+                self.assertIn(['chmod', '0700', '/run/runner'], config['bootcmd'])
+                launcher = files['/usr/local/sbin/domino-runner-launch.py']
+                self.assertEqual((launcher['owner'], launcher['permissions']), ('root:root', '0700'))
+                self.assertIn('UMask=0077', files[
+                    '/etc/systemd/system/domino-ephemeral-runner.service']['content'])
+                calls = [node for node in ast.walk(ast.parse(launcher['content']))
+                         if isinstance(node, ast.Call)
+                         and isinstance(node.func, ast.Attribute)
+                         and isinstance(node.func.value, ast.Name)
+                         and node.func.value.id == 'subprocess' and node.func.attr == 'run'
+                         and any(arg.arg == 'user' for arg in node.keywords)]
+                self.assertEqual(len(calls), 1)
+                arguments = {arg.arg: arg.value for arg in calls[0].keywords}
+                self.assertEqual(ast.literal_eval(arguments['umask']), 0o022)
+
     def test_systemd_sudo_is_guest_only_and_normal_profile_removes_it(self):
         normal = json.loads(pilot.cloud_config(jit(), self.config).split('\n', 1)[1])
         systemd = json.loads(pilot.cloud_config(jit(), replace(self.config, guest_profile='systemd')).split('\n', 1)[1])
@@ -223,6 +247,39 @@ class PilotTests(unittest.TestCase):
         self.assertEqual(list(self.slot_dir.iterdir()), [])
         self.assertIn('destroy', [c[1] for c in commands.calls if c[0] == 'virsh'])
         self.assertNotIn(jit(), json.dumps(commands.calls))
+
+    def test_restrictive_umask_preserves_qemu_traversal_before_start(self):
+        # Model the root-owned host ancestors. QEMU has another UID/GID and
+        # needs other-execute here, then group-execute on its own job directory.
+        self.root.chmod(0o751)
+        (self.root / 'jobs').chmod(0o751)
+        case = self
+        class TraversalCheckingCommands(FakeCommands):
+            def virsh(self, *args, **kwargs):
+                if args[0] == 'define':
+                    job = Path(args[1]).parent
+                    for ancestor in (job.parent, job.parent.parent, case.root):
+                        case.assertTrue(ancestor.stat().st_mode & 0o001,
+                                        'QEMU cannot traverse ' + ancestor.name)
+                        case.assertEqual(ancestor.stat().st_mode & 0o022, 0)
+                    case.assertEqual(job.parent.stat().st_mode & 0o777, 0o751)
+                    case.assertEqual(job.stat().st_mode & 0o777, 0o710)
+                    for filename in ('disk.qcow2', 'seed.iso', 'controller.json', 'user-data'):
+                        case.assertEqual((job / filename).stat().st_mode & 0o777, 0o600)
+                return super().virsh(*args, **kwargs)
+        previous_umask = os.umask(0o077)
+        try:
+            for slot in (1, 2):
+                config = replace(self.config, slot=slot)
+                for existing in (False, True):
+                    with self.subTest(slot=slot, existing=existing):
+                        directory = pilot.slot_directory(config)
+                        if existing:
+                            directory.chmod(0o700)  # Repair a prior failed startup.
+                        self.execute_fake(TraversalCheckingCommands(), config)
+                        self.assertEqual(list(directory.iterdir()), [])
+        finally:
+            os.umask(previous_umask)
 
     def test_start_failure_still_destroys_and_cleans(self):
         commands = FakeCommands(fail='start')
