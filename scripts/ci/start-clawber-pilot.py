@@ -28,7 +28,20 @@ def gh(path, *, method='GET', payload=None):
     return json.loads(result.stdout) if result.stdout.strip() else None
 
 
-def authorize(run, jobs, *, actor, sha, workload):
+def all_attempt_jobs(run_id):
+    """Read complete job history, with a bounded fail-closed pagination limit."""
+    jobs = []
+    for page in range(1, 11):
+        reply = gh(f'repos/{REPO}/actions/runs/{run_id}/jobs?filter=all&per_page=100&page={page}')
+        jobs.extend(reply['jobs'])
+        if len(jobs) >= reply['total_count']:
+            return jobs
+        if not reply['jobs']:
+            break
+    raise ValueError('Incomplete or excessive workflow job history')
+
+
+def authorize(run, jobs, *, actor, sha, workload, prior_jobs=()):
     # The workflow's main-only preflight must have passed before any runner is
     # registered. Its immutable SHA is checked again by both comparison jobs.
     if (run.get('event') != 'workflow_dispatch' or run.get('head_branch') != 'main'
@@ -41,10 +54,28 @@ def authorize(run, jobs, *, actor, sha, workload):
         raise ValueError('Run is not this operator\'s dispatched main-only pilot')
     run_label = f"domino-ci-{run['id']}-{run['run_attempt']}"
     required = {'self-hosted', 'Linux', 'X64', 'domino-ci-pilot', run_label}
+    def same_source(job, attempt):
+        return (job.get('run_id') == run['id'] and job.get('run_attempt') == attempt
+                and job.get('head_sha') == sha and job.get('head_branch') == 'main')
+
     preflight = [j for j in jobs if j.get('name') == 'Require a dispatched main commit']
+    preflight_attempt = run['run_attempt']
+    if not preflight:
+        # Rerunning only a failed comparison does not rerun its successful
+        # prerequisite. Reuse only the latest prior preflight for this run;
+        # a failed/pending preflight in the current attempt is never bypassed.
+        historical = [j for j in prior_jobs if j.get('name') == 'Require a dispatched main commit'
+                      and isinstance(j.get('run_attempt'), int)
+                      and 0 < j['run_attempt'] < run['run_attempt']]
+        if historical:
+            preflight_attempt = max(j['run_attempt'] for j in historical)
+            preflight = [j for j in historical if j['run_attempt'] == preflight_attempt]
     queued = [j for j in jobs if j.get('name') == f'{workload} (clawber)'
-              and j.get('status') == 'queued' and required == set(j.get('labels', []))]
-    if len(preflight) != 1 or preflight[0].get('conclusion') != 'success' or len(queued) != 1:
+              and j.get('status') == 'queued' and same_source(j, run['run_attempt'])
+              and required == set(j.get('labels', []))]
+    if (len(preflight) != 1 or preflight[0].get('status') != 'completed'
+            or preflight[0].get('conclusion') != 'success'
+            or not same_source(preflight[0], preflight_attempt) or len(queued) != 1):
         raise ValueError('Require one queued matching job after a successful trusted-main preflight')
     return sorted(required)
 
@@ -74,7 +105,9 @@ def main():
             raise ValueError('Operator must be a repository maintainer')
         run = gh(f'repos/{REPO}/actions/runs/{args.run_id}')
         jobs = gh(f'repos/{REPO}/actions/runs/{args.run_id}/attempts/{run["run_attempt"]}/jobs?per_page=100')['jobs']
-        labels = authorize(run, jobs, actor=actor, sha=args.sha, workload=args.workload)
+        prior_jobs = (all_attempt_jobs(args.run_id)
+                      if not any(j.get('name') == 'Require a dispatched main commit' for j in jobs) else [])
+        labels = authorize(run, jobs, actor=actor, sha=args.sha, workload=args.workload, prior_jobs=prior_jobs)
         response = gh(f'repos/{REPO}/actions/runners/generate-jitconfig', method='POST', payload={
             'name': f'domino-ci-{args.run_id}-{run["run_attempt"]}',
             'runner_group_id': 1, 'labels': labels, 'work_folder': '_work'})

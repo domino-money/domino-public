@@ -52,7 +52,7 @@ printf 'nameserver 1.1.1.1\nnameserver 9.9.9.9\n' > /etc/resolv.conf
 # Build-time apt runs in the libguestfs appliance; jobs never receive sudo.
 sed -i 's|http://|https://|g' /etc/apt/sources.list.d/ubuntu.sources
 apt-get -o Acquire::Retries=0 -o Acquire::https::Timeout=20 -o APT::Update::Error-Mode=any update
-apt-get install -y --no-install-recommends ca-certificates curl git unzip xz-utils python3 python3-venv qemu-guest-agent cloud-init grub-pc-bin postgresql-16 postgresql-client-16 libicu74 libssl3t64 libkrb5-3 zlib1g libunwind8 liblttng-ust1t64 libasound2t64 libatk-bridge2.0-0 libatk1.0-0 libatspi2.0-0 libcups2t64 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2 fonts-liberation
+apt-get install -y --no-install-recommends ca-certificates curl git unzip xz-utils python3 python3-venv qemu-guest-agent cloud-init grub-pc-bin postgresql-16 postgresql-client-16 libicu74 libssl3t64 libkrb5-3 zlib1g libunwind8 liblttng-ust1t64 libasound2t64 libcairo2 libatk-bridge2.0-0 libatk1.0-0 libatspi2.0-0 libcups2t64 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2 fonts-liberation
 # PostgreSQL is task-local via backend/dev_postgres.py, never a shared service.
 systemctl disable postgresql.service || true
 useradd --create-home --uid 1001 --shell /bin/bash runner

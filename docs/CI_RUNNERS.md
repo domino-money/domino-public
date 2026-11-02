@@ -78,6 +78,8 @@ Backend Forge restore and save are separate. After successful fixture builds, fi
 
 Pilot caches are additionally separated by pool and workload and have no fallback prefixes. Hosted control results and guest results must not reuse one another's artifacts. Dependency downloads and caches contain no credentials or wallet state.
 
+The Backend fixture record/save steps completed successfully in main runs [41457279408](https://github.com/domino-money/domino/actions/runs/41457279408), [41457965063](https://github.com/domino-money/domino/actions/runs/41457965063) and [41458676942](https://github.com/domino-money/domino/actions/runs/41458676942), before the same four Python failures reproduced from baseline `b374421a`. This confirms early-save execution; it does not establish three distinct cache uploads or a passing Backend suite. These historical results precede the separate clock-bound fixture updates in [PR 435](https://github.com/domino-money/domino/pull/435).
+
 ## Qualification and rollout
 
 1. Prepare and verify the pinned base image, isolation rules and resource limits; prove that cleanup removes only pilot-owned guest state.
@@ -153,7 +155,7 @@ gh run rerun "$DOMINO_PILOT_RUN_ID" --repo domino-money/domino \
   --job "$DOMINO_PILOT_HOSTED_JOB_ID"
 ```
 
-Set `DOMINO_PILOT_HOSTED_JOB_ID` to that hosted job's ID. A hosted-only rerun is recovery evidence, not a completed paired comparison. A guest rerun needs a fresh JIT configuration with the new attempt label, and a comparison must retain matching source/runtime identities.
+Set `DOMINO_PILOT_HOSTED_JOB_ID` to that hosted job's ID. A hosted-only rerun is recovery evidence, not a completed paired comparison. A guest rerun needs a fresh JIT configuration with the new attempt label, and a comparison must retain matching source/runtime identities. GitHub rejects a job rerun while another job in that workflow is still running; wait for that run to finish. For a single-job rerun, the launcher verifies the latest earlier successful admission job at the same immutable run/SHA when admission was not rerun; a failed admission in the current attempt is never bypassed.
 
 Rollback stops further manual pilot admission, unregisters any remaining pilot runner, destroys the pilot guest and its writable state, and leaves the existing hosted workflows active. The controller performs guest shutdown and host-side teardown; if it cannot confirm the domain is absent, it retains the job directory and returns an error for inspection. Its exit status describes the VM lifecycle; the Actions job remains the authority for test outcome.
 
@@ -183,3 +185,19 @@ This receipt covers guest boot, the sampled network/privilege boundaries and con
 
 
 The first paired Actions comparison subsequently passed on both pools at main `2d9d76db`: [Read Worker run 41457285874](https://github.com/domino-money/domino/actions/runs/41457285874). The workload phase took 5.251 s hosted and 1.721 s on Clawber; whole-job times were 17 s and 47 s respectively, including the guest's cold action/checkout/tool setup. This smoke validates plumbing and is too small to predict heavy-suite performance. Runner deregistration and guest teardown were confirmed. Host qualification also found and corrected two integration details: shared-base DAC relabeling is disabled only for the immutable backing file, and JIT input accepts GitHub's actual `Ephemeral: "True"` settings representation while refusing false values.
+
+
+The first browser attempt stopped before workload execution because the initial guest image lacked `libcairo2`. The trusted image builder now includes that library. The corrected image (`73835938384dafb7c497e6141f44fa4798574c57bf59adddb768d2bf33a992cf`) passed an unprivileged Chromium 141.0.7390.37 DOM-rendering smoke and the full [browser comparison, run 41458581494](https://github.com/domino-money/domino/actions/runs/41458581494). Both pools passed **84/84 tests**, with zero failures, skips or cancellations, at source `a46d9f2554c05543b2706423cec28794063f543e`, Node 24.22.2 and the same locked Chromium. The hosted control passed in attempt 1; only the Clawber job was repeated in attempt 2 after correcting the image.
+
+| Measured duration | GitHub-hosted | Clawber |
+| --- | ---: | ---: |
+| Install web dependencies | 20.617 s | 8.653 s |
+| Install app dependencies | 9.773 s | 2.670 s |
+| Build unit output | 27.110 s | 10.400 s |
+| Build app | 41.212 s | 14.363 s |
+| Browser workload phase | 1,282.238 s | 1,005.137 s |
+| Whole Actions job | 23 min 25 s | 17 min 56 s |
+
+The whole Clawber job took 5 min 29 s less (23.4%) in this single comparison. Provisioning is separate: the operator process started at 14:33:10 UTC and the guest job at 14:34:27, approximately 77 s later; operator start through job completion was approximately 19 min 13 s. These cold runs do not establish warm-cache behavior or performance for other workloads. Thirty-second sampling over 17 minutes observed peak QEMU resident memory of about 5.6 GiB within the 16 GiB guest limit; this does not qualify concurrent jobs.
+
+After completion, the operator exited 0. Independent inspection confirmed zero pilot runner registrations, zero pilot domains and zero pilot job directories; the base remained root-owned with mode 0444. RPC impact is unqualified because the owner was changing that service in another session and instructed this experiment to disregard those interruptions. Contract and Backend workloads, automatic admission and broad migration remain unqualified and disabled.
