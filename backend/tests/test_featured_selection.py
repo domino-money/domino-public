@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 import unittest
 from unittest.mock import patch
 
@@ -175,13 +176,18 @@ class FeaturedTests(unittest.TestCase):
     def test_overrides_expire_and_a_new_pin_replaces_the_pool_s_old_one(self):
         self.store.add_override('pin',POOL,reason='owner',value={'slot':1})
         self.store.add_override('pin',POOL,reason='owner',value={'slot':2})
-        self.store.add_override('exclude_token',TOKEN.upper().replace('0X','0x'),reason='rug',until=NOW+30*DAY)
-        overrides=self.store.overrides(NOW)
+        # The table refuses an override its own clock finds expired (until>created_at), so the
+        # exclusion is dated from the real time: the fixture's NOW+30 days passed on 25 Oct 2026.
+        now=int(time.time())
+        with self.assertRaises(DataError):
+            self.store.add_override('exclude_token',TOKEN,reason='rug',until=now-DAY)
+        self.store.add_override('exclude_token',TOKEN.upper().replace('0X','0x'),reason='rug',until=now+30*DAY)
+        overrides=self.store.overrides(now)
         self.assertEqual(overrides['pins'],[{'poolId':POOL,'slot':2}])
         self.assertEqual(overrides['excludedTokens'],[TOKEN])
-        self.assertEqual(self.store.overrides(NOW+30*DAY)['excludedTokens'],[])
+        self.assertEqual(self.store.overrides(now+30*DAY)['excludedTokens'],[])
         self.assertEqual(len(self.store.revoke_override('pin',POOL)),1)
-        self.assertEqual(self.store.overrides(NOW)['pins'],[])
+        self.assertEqual(self.store.overrides(now)['pins'],[])
         for kind,subject,value in (('mode','sometimes',None),('pin',POOL,{'slot':'1'}),('exclude_pool','0x12',None),
                                    ('veto','2026-02-30',None),('phase','live!',None),('manual','manual',{'pools':[]}),
                                    ('manual','manual',{'pools':[POOL,POOL]}),('ranking','auto',None)):

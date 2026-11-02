@@ -11,6 +11,7 @@ import stat
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -57,6 +58,11 @@ class GeneratorTests(unittest.TestCase):
     def compose(self, profile=None, sequences=((OWNER, VAULT),), **kwargs):
         options = {'expires_at': self.expiry, 'worker_id': WORKER, 'now': self.now, **kwargs}
         return generator.compose(self.release, profile or fixture_profile(), list(sequences), **options)
+
+    def clock(self, now=None):
+        """The CLI admits by the wall clock, and this release's profile expired on 21 October
+        2026: like compose() above, the CLI runs at self.now, inside the release's window."""
+        return mock.patch.object(generator.time, 'time', return_value=self.now if now is None else now)
 
     def test_three_peer_files_from_the_real_release(self):
         documents = self.compose()
@@ -171,7 +177,7 @@ class GeneratorTests(unittest.TestCase):
         path = self.temp / 'profile.json'
         path.write_text(json.dumps(fixture_profile()))
         out = io.StringIO()
-        with contextlib.redirect_stdout(out):
+        with contextlib.redirect_stdout(out), self.clock():
             code = generator.main(['--release', str(RELEASE), '--profile', str(path), '--discover',
                                    '--sequence-expires-at', str(self.expiry), '--worker-id', WORKER,
                                    '--out', str(self.temp / 'discovering')])
@@ -265,11 +271,11 @@ class GeneratorTests(unittest.TestCase):
             with self.subTest(endpoint), self.assertRaisesRegex(ExecutionError, 'execution_rpc_configuration'):
                 self.compose(rpc_endpoint=endpoint)
 
-    def run_cli(self, *extra, profile=None):
+    def run_cli(self, *extra, profile=None, now=None):
         path = self.temp / 'profile.json'
         path.write_text(json.dumps(profile or fixture_profile()))
         out = io.StringIO()
-        with contextlib.redirect_stdout(out):
+        with contextlib.redirect_stdout(out), self.clock(now):
             code = generator.main(['--release', str(RELEASE), '--profile', str(path), '--sequence', f'{OWNER}:{VAULT}',
                                    '--sequence-expires-at', str(self.expiry), *extra])
         return code, json.loads(out.getvalue())
@@ -308,6 +314,10 @@ class GeneratorTests(unittest.TestCase):
         self.assertFalse((self.temp / 'broken').exists())
         code, summary = self.run_cli('--out', str(self.temp / 'twice'), '--sequence', f'{OWNER}:{VAULT}')
         self.assertEqual((code, summary), (1, {'error': 'sequence_duplicate'}))
+        # The CLI reads the clock: at the sequence's own expiry, the same command is refused.
+        code, summary = self.run_cli('--out', str(self.temp / 'late'), now=self.expiry)
+        self.assertEqual((code, summary), (1, {'error': 'sequence_expiry_invalid'}))
+        self.assertFalse((self.temp / 'late').exists())
 
 
 if __name__ == '__main__':
