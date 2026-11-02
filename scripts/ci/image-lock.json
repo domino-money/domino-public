@@ -1,0 +1,8 @@
+{
+  "ubuntu_url": "https://cloud-images.ubuntu.com/releases/noble/release-20261017/ubuntu-24.04-server-cloudimg-amd64.img",
+  "ubuntu_sha256": "04e8f2461a16a44e78a370284471f29616cdd9baf1893df25807b71f985b6c94",
+  "node_url": "https://nodejs.org/dist/v24.22.2/node-v24.22.2-linux-x64.tar.xz",
+  "node_sha256": "48cc0e21e048790e54c0cf5749c2725005313d652651c40b7a21feb9697aaf75",
+  "runner_url": "https://github.com/actions/runner/releases/download/v2.338.2/actions-runner-linux-x64-2.338.2.tar.gz",
+  "runner_sha256": "baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40"
+}

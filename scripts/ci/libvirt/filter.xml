@@ -1,0 +1,10 @@
+<filter name='domino-ci-pilot' chain='root'>
+  <filterref filter='no-mac-spoofing'/>
+  <filterref filter='no-ip-spoofing'/>
+  <filterref filter='no-arp-spoofing'/>
+  <filterref filter='domino-ci-pilot-ipv4'/>
+  <rule action='accept' direction='inout' priority='-650'><mac protocolid='ipv4'/></rule>
+  <rule action='accept' direction='out' priority='-490'><arp arpdstipaddr='172.30.78.1'/></rule>
+  <rule action='accept' direction='in' priority='-490'><arp arpsrcipaddr='172.30.78.1'/></rule>
+  <rule action='drop' direction='inout' priority='1000'/>
+</filter>

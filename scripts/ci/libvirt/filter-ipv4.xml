@@ -1,0 +1,59 @@
+<filter name="domino-ci-pilot-ipv4" chain="root">
+  <rule action="accept" direction="out" priority="50">
+    <udp dstipaddr="172.30.78.1" dstportstart="53" dstportend="53" />
+  </rule>
+  <rule action="accept" direction="out" priority="50">
+    <tcp dstipaddr="172.30.78.1" dstportstart="53" dstportend="53" />
+  </rule>
+  <rule action="drop" direction="out" priority="100">
+    <all dstipaddr="0.0.0.0" dstipmask="8" />
+  </rule>
+  <rule action="drop" direction="out" priority="101">
+    <all dstipaddr="10.0.0.0" dstipmask="8" />
+  </rule>
+  <rule action="drop" direction="out" priority="102">
+    <all dstipaddr="100.64.0.0" dstipmask="10" />
+  </rule>
+  <rule action="drop" direction="out" priority="103">
+    <all dstipaddr="127.0.0.0" dstipmask="8" />
+  </rule>
+  <rule action="drop" direction="out" priority="104">
+    <all dstipaddr="169.254.0.0" dstipmask="16" />
+  </rule>
+  <rule action="drop" direction="out" priority="105">
+    <all dstipaddr="172.16.0.0" dstipmask="12" />
+  </rule>
+  <rule action="drop" direction="out" priority="106">
+    <all dstipaddr="192.0.0.0" dstipmask="24" />
+  </rule>
+  <rule action="drop" direction="out" priority="107">
+    <all dstipaddr="192.0.2.0" dstipmask="24" />
+  </rule>
+  <rule action="drop" direction="out" priority="108">
+    <all dstipaddr="192.168.0.0" dstipmask="16" />
+  </rule>
+  <rule action="drop" direction="out" priority="109">
+    <all dstipaddr="198.18.0.0" dstipmask="15" />
+  </rule>
+  <rule action="drop" direction="out" priority="110">
+    <all dstipaddr="198.51.100.0" dstipmask="24" />
+  </rule>
+  <rule action="drop" direction="out" priority="111">
+    <all dstipaddr="203.0.113.0" dstipmask="24" />
+  </rule>
+  <rule action="drop" direction="out" priority="112">
+    <all dstipaddr="224.0.0.0" dstipmask="4" />
+  </rule>
+  <rule action="drop" direction="out" priority="113">
+    <all dstipaddr="240.0.0.0" dstipmask="4" />
+  </rule>
+  <rule action="accept" direction="out" priority="500">
+    <tcp dstportstart="443" dstportend="443" />
+  </rule>
+  <rule action="accept" direction="in" priority="500">
+    <all state="ESTABLISHED" />
+  </rule>
+  <rule action="drop" direction="inout" priority="1000">
+    <all />
+  </rule>
+</filter>

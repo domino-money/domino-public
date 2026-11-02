@@ -1,0 +1,135 @@
+name: Clawber CI pilot
+on:
+  workflow_dispatch:
+    inputs:
+      workload:
+        description: Same offline workload on GitHub-hosted and the disposable Clawber guest
+        required: true
+        default: read-worker
+        type: choice
+        options: [read-worker, contracts-v1, contracts-v2-audit, browser-finance-create, backend]
+permissions:
+  contents: read
+concurrency:
+  group: clawber-ci-pilot
+  cancel-in-progress: false
+jobs:
+  trusted_main:
+    name: Require a dispatched main commit
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      node_version: ${{ steps.node.outputs.node-version }}
+      python_version: ${{ steps.python.outputs.python-version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Require the exact dispatched main commit
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      # Resolve the source's runtime pins once; both comparison legs receive
+      # exactly that patch version, even if an image has an older tool cache.
+      - id: node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Check pilot routing and workload failure handling
+        run: node --test scripts/ci/pilot-workflow.test.mjs
+      - id: python
+        if: inputs.workload == 'backend'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version-file: .python-version
+  compare:
+    name: ${{ inputs.workload }} (${{ matrix.pool }})
+    needs: trusted_main
+    # The operator must verify the GitHub run, trusted actor, main SHA,
+    # workflow and workload before generating its one-use JIT registration.
+    # The host lifecycle helper does not perform that GitHub authorization.
+    # Labels select a runner; they do not authorize code or grant host access.
+    runs-on: ${{ matrix.labels }}
+    timeout-minutes: ${{ startsWith(inputs.workload, 'contracts-') && 75 || inputs.workload == 'backend' && 40 || inputs.workload == 'browser-finance-create' && 25 || 5 }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pool: github-hosted
+            labels: ubuntu-24.04
+          - pool: clawber
+            labels: [self-hosted, Linux, X64, domino-ci-pilot, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}"]
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+      DOMINO_FAILURE_SHOTS: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ needs.trusted_main.outputs.node_version }}
+          package-manager-cache: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: inputs.workload == 'backend'
+        with:
+          python-version: ${{ needs.trusted_main.outputs.python_version }}
+      - name: Record source and runtime identities
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          POOL: ${{ matrix.pool }}
+          WORKLOAD: ${{ inputs.workload }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          printf 'source=%s pool=%s workload=%s os=%s arch=%s\n' "$SOURCE_SHA" "$POOL" "$WORKLOAD" "$RUNNER_OS" "$RUNNER_ARCH"
+          node --version
+          npm --version
+          printf 'PLAYWRIGHT_BROWSERS_PATH=%s/domino-pilot-browsers\nDOMINO_PILOT_TIMINGS=%s/domino-ci-pilot-timings.jsonl\n' "$RUNNER_TEMP" "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          if [ "$WORKLOAD" = backend ]; then python --version; fi
+          printf '| Workload | Phase | Exit status | Duration, ms |\n| --- | --- | ---: | ---: |\n' >> "$GITHUB_STEP_SUMMARY"
+      - name: Restore only this pool, architecture and compiler's Forge artifacts
+        if: startsWith(inputs.workload, 'contracts-') || inputs.workload == 'backend'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            contracts/cache
+            contracts/out
+          key: clawber-pilot-${{ matrix.pool }}-${{ inputs.workload }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.nvmrc', 'package-lock.json', 'contracts/foundry.toml', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-${{ hashFiles('contracts/**/*.sol') }}
+      - name: Restore this pool's exact V2 compile input
+        if: inputs.workload == 'backend'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/v2-deploy-compile
+          key: clawber-pilot-v2-${{ matrix.pool }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.nvmrc', 'contracts/src/v2/**/*.sol', 'scripts/solc-compile.cjs', 'package-lock.json') }}
+      - name: Install the workload's locked dependencies
+        env:
+          WORKLOAD: ${{ inputs.workload }}
+        run: bash scripts/ci/run-pilot-workload.sh "$WORKLOAD" prepare
+      - name: Install the exact locked Chromium without guest sudo
+        if: inputs.workload == 'browser-finance-create'
+        run: |
+          # Browser OS libraries/fonts are image-build prerequisites on the
+          # disposable guest. No apt, host Docker socket or job sudo is used.
+          node app/node_modules/playwright-core/cli.js install chromium
+          browser=$(node -e "process.stdout.write(require('./app/node_modules/playwright-core').chromium.executablePath())")
+          test -x "$browser"
+          printf 'DOMINO_BROWSER_PATH=%s\n' "$browser" >> "$GITHUB_ENV"
+          "$browser" --version
+      - name: Run the same offline workload
+        env:
+          WORKLOAD: ${{ inputs.workload }}
+        run: bash scripts/ci/run-pilot-workload.sh "$WORKLOAD" run
+      - name: Retain phase durations and failed browser pictures
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: clawber-pilot-${{ matrix.pool }}-${{ inputs.workload }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/domino-ci-pilot-timings.jsonl
+            app/.test-artifacts/failures/
+          if-no-files-found: ignore
+          retention-days: 7

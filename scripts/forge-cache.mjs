@@ -9,8 +9,10 @@
 // `prune` runs before the first build. It drops every cached source whose
 // content differs from the checkout, every source that imports one, and their
 // artifacts, so what remains is what a cold build would produce. `record` runs
-// last in a successful job and stores the content each cached source was built
-// from. A cache without a record is discarded whole.
+// after successful builds, immediately before their cache is saved, and stores
+// the content each cached source was built from. A later test failure does not
+// invalidate a completed compile; this cache never attests that tests passed.
+// A cache without a record is discarded whole.
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';

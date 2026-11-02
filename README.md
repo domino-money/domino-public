@@ -74,6 +74,8 @@ Optional read-only provider setup and API commands are in [backend/README.md](ba
 
 **Execution first, planning afterward:** all authorized collaborators and agents may work across every area, integrate and deploy within the requested scope, without area owners or repeated approvals. Direct pushes are allowed; PRs, reviews and issues are optional coordination tools. CI continues as feedback. Both `rugged97` and `OxDecimal` have administrator access. See the authoritative [execution policy](docs/EXECUTION_POLICY.md), [contribution guide](CONTRIBUTING.md) and [assistant instructions](AGENTS.md).
 
+The [Clawber CI runner pilot](docs/CI_RUNNERS.md) documents the disposable guest, manual hosted comparison, qualification stages and rollback. Existing hosted CI remains active.
+
 | Directory | Responsibility |
 | --- | --- |
 | `web/` | React / TypeScript / vinext practice UI and server preview endpoints |

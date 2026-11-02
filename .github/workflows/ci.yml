@@ -22,6 +22,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: python3 scripts/check-repository.py
+      - name: Check disposable CI tooling without host or GitHub access
+        run: |
+          python3 -B -m unittest discover -s scripts/ci -p 'test_*.py' -v
+          node --test scripts/ci/pilot-workflow.test.mjs
+          bash -n scripts/ci/prepare-image.sh scripts/ci/run-pilot-workload.sh
       - name: Check Solidity hygiene
         run: node --test scripts/check-contract-hygiene.test.mjs && node scripts/check-contract-hygiene.mjs
       - name: Check staging helpers without host access
@@ -283,25 +288,20 @@ jobs:
       DOMINO_PG_BIN: /usr/lib/postgresql/16/bin
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Cache Forge compilation artifacts
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore Forge compilation artifacts
+        id: forge_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             contracts/cache
             contracts/out
           # Exact source tree first; otherwise the newest cache from the same
           # compiler and settings, which scripts/forge-cache.mjs prunes below.
-          # Each job keeps its own cache: with one shared key the Backend, which
-          # builds three closures and finishes first, saved its subset and the
-          # Contracts job could not save its full set (run 36934135396, #285).
-          # The last fallback is that shared cache.
-          # forge-backend-v2: the V2 closure joined the set this job builds; an
-          # exact hit on the old key would never save it (an exact hit saves nothing).
-          key: forge-backend-v2-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-${{ hashFiles('contracts/**/*.sol') }}
+          # Keep this job's closure set separate from Contracts, and never
+          # restore an architecture-ambiguous legacy key onto an ARM runner.
+          key: forge-backend-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-${{ hashFiles('contracts/**/*.sol') }}
           restore-keys: |
-            forge-backend-v2-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-
-            forge-backend-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-
-            forge-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-
+            forge-backend-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
@@ -315,7 +315,7 @@ jobs:
       - run: npm --prefix app ci --no-audit --no-fund
       - run: python -m pip install -r backend/requirements-api.lock
       - name: Drop cached Forge artifacts this checkout invalidates
-        run: node scripts/forge-cache.mjs prune
+        run: node --test scripts/forge-cache.test.mjs && node scripts/forge-cache.mjs prune
       # Compile the artifact tree the backend EVM tests load: the DominoSetup
       # test pulls PoolManager, PositionManager, StateView and SetupToken.
       # A whole-tree forge build OOMs soljson; the positional path compiles
@@ -354,6 +354,20 @@ jobs:
           src/v2/vault/DominoV2VaultV3.sol src/v2/vault/DominoV2VaultV4.sol src/v2/vault/DominoV2VaultFactory.sol
           src/v2/zap/DominoZapV3.sol src/v2/zap/DominoZapV4.sol src/v2/zap/DominoZapV4Steps.sol
           test/reference/OfficialV3Fixture.sol
+      # Snapshot only completed fixture builds, after their qualification and
+      # V1 release checks. A later Python/PG test failure must not discard ten
+      # minutes of compilation. This is a compilation cache, never evidence
+      # that the backend tests or the later V2 release checks passed.
+      - name: Record the sources of the completed backend fixture builds
+        run: node scripts/forge-cache.mjs record
+      - name: Save the completed backend fixture compilation
+        if: steps.forge_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            contracts/cache
+            contracts/out
+          key: ${{ steps.forge_cache.outputs.cache-primary-key }}
       - run: python scripts/export-read-contract.py --check
       - run: python scripts/export-read-v2-contract.py --check
       - run: python scripts/export-read-v3-contract.py --check
@@ -390,7 +404,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/v2-deploy-compile
-          key: v2-deploy-compile-${{ runner.os }}-${{ hashFiles('contracts/src/v2/**/*.sol', 'scripts/solc-compile.cjs', 'package-lock.json') }}
+          key: v2-deploy-compile-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('contracts/src/v2/**/*.sol', 'scripts/solc-compile.cjs', 'package-lock.json') }}
       - name: Verify V2 unsigned CREATE3 deployment tooling offline
         env:
           DOMINO_V2_COMPILE_CACHE: ${{ runner.temp }}/v2-deploy-compile
@@ -403,8 +417,6 @@ jobs:
         env:
           DOMINO_V2_COMPILE_CACHE: ${{ runner.temp }}/v2-deploy-compile
         run: node scripts/v2/release-manifest.mjs --check --forge-out contracts/out
-      - name: Record the sources of the cached Forge artifacts
-        run: node scripts/forge-cache.mjs record
       - name: Stop isolated database
         if: always()
         run: python backend/dev_postgres.py stop
@@ -450,14 +462,11 @@ jobs:
             contracts/out
           # Exact source tree first; otherwise the newest cache from the same
           # compiler and settings, which scripts/forge-cache.mjs prunes below.
-          # Each half keeps its own cache (one shared key lets the job that
-          # finishes first save its subset, run 36934135396, #285). The
-          # fallbacks are the single Contracts job's cache and the shared one.
-          key: forge-contracts-${{ matrix.part }}-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-${{ hashFiles('contracts/**/*.sol') }}
+          # Each part and architecture keeps its own cache; an unqualified
+          # legacy key cannot cross the hosted/self-hosted architecture boundary.
+          key: forge-contracts-${{ matrix.part }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-${{ hashFiles('contracts/**/*.sol') }}
           restore-keys: |
-            forge-contracts-${{ matrix.part }}-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-
-            forge-contracts-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-
-            forge-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-
+            forge-contracts-${{ matrix.part }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-
       - run: npm ci --no-audit --no-fund
       - name: Drop cached Forge artifacts this checkout invalidates
         run: node --test scripts/forge-cache.test.mjs && node scripts/forge-cache.mjs prune
