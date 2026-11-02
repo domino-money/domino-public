@@ -77,7 +77,10 @@ def read_jit(stream):
         runner = json.loads(base64.b64decode(payload['.runner'], validate=True))
         if not isinstance(runner, dict):
             raise ValueError()
-        if runner.get('ephemeral') is not True:
+        # generate-jitconfig serializes RunnerSettings with PascalCase keys
+        # and string booleans (Ephemeral: True); older settings use bools.
+        flags = [runner[key] for key in ('Ephemeral', 'ephemeral') if key in runner]
+        if len(flags) != 1 or not (flags[0] is True or flags[0] in ('True', 'true')):
             raise PilotError('jit_runner_must_be_ephemeral')
         if not {'.runner', '.credentials'} <= payload.keys():
             raise ValueError()

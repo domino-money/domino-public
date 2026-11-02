@@ -78,6 +78,18 @@ class PilotTests(unittest.TestCase):
         with self.assertRaisesRegex(pilot.PilotError, 'must_be_ephemeral'):
             pilot.read_jit(io.BytesIO(jit(False).encode()))
 
+    def test_real_github_pascal_case_string_boolean_and_false_values(self):
+        # Sanitized shape observed from generate-jitconfig; no real credential.
+        for value in ('True', True, 'False', False, 1, None):
+            encoded = json.loads(base64.b64decode(jit()))
+            encoded['.runner'] = base64.b64encode(json.dumps({'Ephemeral': value}).encode()).decode()
+            payload = base64.b64encode(json.dumps(encoded).encode()).decode()
+            if value is True or value == 'True':
+                self.assertEqual(pilot.read_jit(io.BytesIO(payload.encode())), payload)
+            else:
+                with self.assertRaisesRegex(pilot.PilotError, 'must_be_ephemeral'):
+                    pilot.read_jit(io.BytesIO(payload.encode()))
+
     def test_malformed_or_path_bearing_jit_rejected_without_echo(self):
         for value in ('credential-that-must-not-echo', jit(extra={'../../host': 'bad'}),
                       base64.b64encode(b'{}').decode()):
