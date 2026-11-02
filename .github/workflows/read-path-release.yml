@@ -30,7 +30,7 @@ concurrency:
 jobs:
   release:
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-deploy, "domino-job-read-path-release"]
     timeout-minutes: 15
     env:
       WRANGLER_SEND_METRICS: 'false'

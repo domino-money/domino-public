@@ -10,7 +10,7 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const workflow = readFileSync(path.join(root, '.github/workflows/clawber-ci-pilot.yml'), 'utf8');
 const script = path.join(root, 'scripts/ci/run-pilot-workload.sh');
 
-test('the pilot is manual, main-only, read-only and compares the same source on two isolated pools', () => {
+test('the pilot defaults to Clawber, with an explicit hosted control, and uses the same source and runtime identities', () => {
   const triggers = workflow.split('\non:\n')[1].split('\npermissions:')[0];
   assert.match(triggers, /^  workflow_dispatch:/m);
   assert.doesNotMatch(triggers, /^  (?:push|pull_request|pull_request_target|workflow_run|schedule):/m);
@@ -20,8 +20,12 @@ test('the pilot is manual, main-only, read-only and compares the same source on 
   assert.match(workflow, /compare:[\s\S]*needs: trusted_main/);
   assert.equal((workflow.match(/ref: \$\{\{ github\.sha \}\}/g) ?? []).length, 2);
   assert.equal((workflow.match(/persist-credentials: false/g) ?? []).length, 2);
-  assert.match(workflow, /labels: ubuntu-24\.04/);
-  assert.match(workflow, /labels: \[self-hosted, Linux, X64, domino-ci-pilot, "domino-ci-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}"\]/);
+  assert.match(triggers, /compare_hosted:\n[\s\S]*?type: boolean\n        default: false/);
+  assert.match(workflow, /pool: \$\{\{ fromJSON\(inputs\.compare_hosted && '\["clawber","github-hosted"\]' \|\| '\["clawber"\]'\) \}\}/);
+  assert.match(workflow, /matrix\.pool == 'github-hosted' && 'ubuntu-24\.04'/);
+  assert.match(workflow, /runs-on: \[self-hosted, Linux, X64, domino-ci, "domino-ci-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}", domino-ci-normal, "domino-job-pilot-preflight"\]/);
+  assert.match(workflow, /"self-hosted","Linux","X64","domino-ci","domino-ci-\{0\}-\{1\}","domino-ci-normal","domino-job-pilot-\{2\}"/);
+  assert.match(workflow, /github\.run_id, github\.run_attempt, inputs\.workload\)\)/);
   assert.match(workflow, /fail-fast: false/);
   assert.doesNotMatch(workflow, /secrets\.|id-token:|environment:|pull_request_target/);
   assert.match(workflow, /node-version: \$\{\{ needs\.trusted_main\.outputs\.node_version \}\}/);

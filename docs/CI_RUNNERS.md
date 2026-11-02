@@ -1,136 +1,137 @@
-# CI runners: Clawber pilot
+# Self-hosted CI runners
 
-The Clawber pilot compares selected offline CI workloads in a disposable Linux VM with the same commands on a GitHub-hosted runner. It is a manual experiment, not a migration of the existing CI workflows.
+All six repository workflows route their jobs to **Clawber x64 by default**. A root-owned broker supplies one disposable Ubuntu VM per job, with at most two guests running at once. Unrelated research workloads remain outside this architecture. `Clawber` is the runner implementation namespace used by the committed workflows, scripts and units; actual management hostnames and SSH identities stay in private operator configuration.
 
-The runner implementation is **Clawber, x64**. Unrelated research workloads remain outside this architecture. Production RPC/backend machines, wallet runtimes and their credentials are outside the runner environment. Actual management hostnames and SSH identities stay in private operator configuration.
+The broker and GitHub App are provisioned and active. **The first automatic broker-admitted job and the complete all-jobs migration are still awaiting execution qualification.** Earlier manual pilot results are historical evidence at the bottom of this document, not proof that every current job/profile has passed.
 
-## Current scope
+## Workflow coverage
 
-- Existing [CI](../.github/workflows/ci.yml) and [Position journeys](../.github/workflows/funding-ui.yml) continue to run on GitHub-hosted Ubuntu. Their triggers, per-main-commit execution, assertions and deployment boundaries are retained.
-- The separate [Clawber CI pilot](../.github/workflows/clawber-ci-pilot.yml) accepts only a manual `workflow_dispatch` on `main`.
-- Each pilot uses the exact dispatched `github.sha` for a GitHub-hosted control and a Clawber guest. A comparison of different commits is invalid.
-- The initial workload is `read-worker`. Browser, contract and Backend choices are separate qualification steps; their presence in the workflow does not establish that they passed on Clawber.
-- There is no automatic pull-request execution on Clawber, deployment, queue fallback, production activation or use of a real wallet/RPC key.
+The [reviewed runner policy](../scripts/ci/runner-policy.json) covers 24 expanded display identities across six workflows, including matrix partitions and the manual workload choices. They do not all run in every workflow invocation.
 
-GitHub branch protection and the repository's [execution policy](EXECUTION_POLICY.md) are unchanged. The pilot adds evidence and does not turn a failed hosted check green.
-
-## Guest and storage boundary
-
-| Property | Pilot boundary |
+| Workflow | Guest profiles and dependencies |
 | --- | --- |
-| Host | Clawber x64 only |
-| Guest | Disposable Ubuntu 24.04 x64 VM, one CI job per guest |
-| Resource budget | 4 vCPU, 16 GiB RAM, 80 GiB writable disk capacity |
-| Host storage root | `/mnt/narrative-ssd/domino-ci-pilot` |
-| Base image and tools | [Pinned image inputs](../scripts/ci/image-lock.json); repository Node/Python pins and installed PostgreSQL 16 tools |
-| Runner routing | `self-hosted`, `Linux`, `X64`, `domino-ci-pilot`, plus the exact run/attempt label `domino-ci-<run_id>-<run_attempt>` |
-| Guest user | No job `sudo`, no host Docker socket or host filesystem mounts |
-| Lifecycle | Fresh guest for one job; destroy its writable disk and runtime state afterward |
+| [CI](../.github/workflows/ci.yml) | `systemd` for hygiene; `normal` for path selection, Frontend, Read Worker, five browser parts, Backend and three contract parts; `deploy` for preview/release |
+| [Position journeys](../.github/workflows/funding-ui.yml) | `normal`; Node and lock-selected Chromium |
+| [Automation OFF rehearsal](../.github/workflows/automation-off-rehearsal.yml) | `systemd`; Python, synthetic users and privileged unit/peer checks inside the guest |
+| [Execution Cloudflare preflight](../.github/workflows/execution-cloudflare-preflight.yml) | `deploy`; Node and the existing Cloudflare step credential |
+| [Read-path release](../.github/workflows/read-path-release.yml) | `deploy`; Node/npm/Wrangler and the existing Cloudflare step credential |
+| [Clawber pilot/benchmark](../.github/workflows/clawber-ci-pilot.yml) | `normal` for admission and selected workload; Clawber-only by default; an explicit `compare_hosted=true` adds the hosted benchmark leg |
 
-The storage root is reserved for pilot-owned images and guests. Provisioning and rollback must leave other host disks, VMs, services and workloads alone. A resource limit is a ceiling, not permission to consume the host's remaining capacity; start with one guest at a time.
+Existing triggers, assertions, contract/compiler freezes, per-main-commit execution, preview ordering/hold checks and release conditions are retained. The [execution policy](EXECUTION_POLICY.md) and GitHub branch protection are unchanged. There is **no automatic fallback to GitHub-hosted compute** if Clawber is unavailable.
 
-The [network](../scripts/ci/libvirt/network.xml) and [filters](../scripts/ci/libvirt/filter.xml) block private, host, Tailnet, link-local and metadata IPv4 destinations, all IPv6 and unsolicited inbound access. Guest egress permits DNS through the dedicated resolver and public IPv4 TCP port 443 with established replies. These controls belong outside contributed job code.
+## Capacity, storage and network
 
-This is a network-range/port boundary, not a DNS or destination-domain allowlist. Public production HTTPS front doors remain reachable as they would be for an ordinary unauthenticated public client. Private RPC/backend networks and sockets, host mounts and credentials remain unavailable. Do not describe this policy as blocking every production URL.
-
-## Authorization and credentials
-
-Runner labels select a machine; they do not authorize a commit. The operator-side [launcher](../scripts/ci/start-clawber-pilot.py) requires the authenticated GitHub actor to match both the run's original and triggering actor, with repository `write`, `maintain` or `admin` permission. It verifies the repository, manual pilot workflow, `main` ref, reviewed full SHA, selected workload, successful hosted admission job and exactly one matching queued guest job before requesting a just-in-time (JIT) runner.
-
-GitHub requests use the operator's existing access on the operator's Mac, outside Clawber. Registration includes the workflow's exact run/attempt label so a different queued job cannot consume this guest. The launcher sends only the short-lived, single-job JIT configuration over SSH stdin to the host controller; it attempts to remove the registration in `finally`, including failed starts. The host controller validates the ephemeral input and VM boundary, not GitHub run authorization.
-
-Do not place a long-lived GitHub token on Clawber, in an image, in cloud-init files, in process arguments, in the repository or in logs. Confirm that no pilot runner registration remains after completion or failure; a cleanup attempt is not a confirmed cleanup receipt.
-
-The job receives a read-only GitHub token; checkout uses `persist-credentials: false`. No repository deployment secret, RPC credential, signing key, wallet configuration or production database belongs in the guest. JIT configuration remains secret even though it is short-lived.
-
-## Workloads and comparison evidence
-
-Both pools run [the same workload script](../scripts/ci/run-pilot-workload.sh):
-
-```sh
-bash scripts/ci/run-pilot-workload.sh read-worker prepare
-bash scripts/ci/run-pilot-workload.sh read-worker run
-```
-
-The script is a workload runner, not a VM provisioner or GitHub authorization controller. Its phases are `prepare` and `run`.
-
-| Choice | Work performed |
+| Property | Current configuration |
 | --- | --- |
-| `read-worker` | Current Read Worker checks; no dependency installation |
-| `contracts-v1` | Non-V2 contract suites, one dependency closure at a time; size checks and deterministic gas baseline |
-| `contracts-v2-audit` | V2 adversarial/invariant suites and required artifacts; size checks and gas baseline |
-| `browser-finance-create` | Unit/app builds and financial creation browser tests |
-| `backend` | Fixture compilation, schema/export checks, disposable PostgreSQL/EVM tests and unsigned release checks |
+| Slots | `1` and `2`, one disposable VM/job per slot |
+| Each guest | Ubuntu 24.04 x64; 4 vCPU, 16 GiB RAM, 80 GiB writable disk capacity |
+| Aggregate guest allocation | At most 8 vCPU and 32 GiB guest RAM; hypervisor overhead is separate |
+| Storage | Existing SSD mount, `/mnt/narrative-ssd/domino-ci-pilot`; no new host volume |
+| Trusted host source | Root-owned broker, controller and policy under `/opt/domino-ci` |
+| Base image | `/mnt/narrative-ssd/domino-ci-pilot/base/ubuntu-24.04-ci.qcow2`, root-owned mode `0444` |
+| Prepared base SHA-256 | `73835938384dafb7c497e6141f44fa4798574c57bf59adddb768d2bf33a992cf` |
+| Dedicated network | `domino-ci-pilot`, `/29`; fixed guest host octets `.2` and `.3`, one per slot; network autostart enabled |
+| Lifecycle | Single-job JIT runner; bounded lifetime; guest, writable disk, seed and job state removed afterward |
 
-The hosted admission job resolves the repository's Node pin and, for Backend, Python pin to exact patch versions; both comparison pools use those versions. Browser runs install the Chromium version selected by the locked `playwright-core` package in both pools. Browser OS libraries and fonts are image prerequisites; the job does not install packages with `sudo`. Backend runs require PostgreSQL 16 at `/usr/lib/postgresql/16/bin`; [the test database helper](../backend/dev_postgres.py) creates a per-task cluster through a private Unix socket, with no database TCP listener. Redis is not a requirement of these workloads.
+The dedicated network was expanded from `/30` to `/29` for the second slot while preserving UUID `c91f55f6-9d8a-4788-a1ae-332d39eaf9f7`. Only this CI network was migrated. Full guest addresses and network/filter definitions are in the [network source](../scripts/ci/libvirt/network.xml) and [filters](../scripts/ci/libvirt/filter.xml).
 
-Each comparison records source SHA, pool, workload, OS/architecture, runtime versions, phase durations and exit status. The pilot keeps timing JSONL and failed browser pictures as Actions artifacts for seven days. It preserves a failing command's status; successful reporting is not successful validation.
+Guest egress permits DNS through the dedicated resolver and public IPv4 TCP port 443 with established replies. Private, host, Tailnet, link-local and metadata IPv4 destinations, all IPv6 and unsolicited inbound access are blocked. This is a range/port boundary, **not a DNS or destination-domain allowlist**: public production HTTPS front doors remain reachable as ordinary public clients. Private RPC/backend networks and sockets, host mounts and wallet/runtime credentials are unavailable to jobs.
 
-Report cold and warm cache runs separately. Include guest provisioning time, queue time, job wall time, resource pressure and teardown evidence alongside the measured workload phases. Additional runner processes share a physical host's capacity; adding them does not create CPU or RAM.
+Host prerequisites include KVM/libvirt, `virsh`, `qemu-img`, `cloud-localds`, libguestfs image tools, `systemd-run` and dedicated bridge DNS support. [Image preparation](../scripts/ci/prepare-image.sh) verifies locked downloads and builds OS dependencies before job execution. Controllers do not bootstrap host packages or alter unrelated services, VMs, containers, networks or disks.
 
-## Cache behavior
+## Profiles and job dependencies
 
-The existing CI's explicit Forge and V2 deployment compilation keys now include OS and architecture alongside compiler/lockfile/source inputs. Architecture-ambiguous legacy fallbacks are removed. The first run under the new key can compile cold.
+- **`normal`:** no guest `sudo`; Node/runtime tooling, Chromium libraries/fonts, Python runtime libraries and PostgreSQL 16 binaries are installed in the image. Workflows install locked dependencies. Browser jobs install the Chromium selected by `playwright-core` and export `DOMINO_BROWSER_PATH`, rather than relying on a global Chrome installation.
+- **`systemd`:** the same disposable guest with guest-only passwordless sudo and systemd as PID 1. CI hygiene needs real unit loading/reloading; Automation OFF creates synthetic users/groups and temporary fixture paths. These privileges do not grant host access, and these jobs receive no deployment secrets.
+- **`deploy`:** a broker admission class mapped to the **normal VM profile**, without sudo. Existing GitHub Cloudflare secrets are supplied transiently to their existing job steps. Deployment code runs only under its retained main/dispatch/source/hold conditions; it receives neither the App PEM nor the broker installation token.
 
-Backend Forge restore and save are separate. After successful fixture builds, fixture qualifications and the V1 release check, CI records source hashes and saves the completed compilation before later Python/PostgreSQL tests. A later test failure no longer discards that compilation. The cache proves reusable build inputs, never that Backend tests or the later V2 release checks passed.
+Backend uses the repository Python pin, PostgreSQL tools at `/usr/lib/postgresql/16/bin`, and the pinned Anvil/Forge/Solidity toolchain. The [database helper](../backend/dev_postgres.py) creates task-local Unix-socket clusters, not a shared database service. Redis is not required. Contract suites retain one dependency closure per invocation because a whole-tree solc-js compile has a known memory constraint.
 
-[Source pruning](../scripts/forge-cache.mjs) still removes changed/deleted sources, their importers and stale artifacts. [Cache policy tests](../scripts/forge-cache.test.mjs) verify architecture-qualified keys/fallbacks and the qualification/save ordering. Contract suites and gas collection continue to execute separately; this pilot does not consolidate or remove either validation pass.
+## Broker authorization and labels
 
-Pilot caches are additionally separated by pool and workload and have no fallback prefixes. Hosted control results and guest results must not reuse one another's artifacts. Dependency downloads and caches contain no credentials or wallet state.
+The [broker](../scripts/ci/clawber_broker.py) polls GitHub outbound over HTTPS, checks queued jobs, and admits work only from its root-owned policy. It never executes a controller or policy supplied by a job checkout.
 
-The Backend fixture record/save steps completed successfully in main runs [41457279408](https://github.com/domino-money/domino/actions/runs/41457279408), [41457965063](https://github.com/domino-money/domino/actions/runs/41457965063) and [41458676942](https://github.com/domino-money/domino/actions/runs/41458676942), before the same four Python failures reproduced from baseline `b374421a`. This confirms early-save execution; it does not establish three distinct cache uploads or a passing Backend suite. These historical results precede the separate clock-bound fixture updates in [PR 435](https://github.com/domino-money/domino/pull/435).
+Admission verifies the private, non-forkable Domino repository and numeric identity; active workflow identity/path; immutable run SHA and current attempt; exact queued job identity/display name; and both original/triggering actors' `write`, `maintain` or `admin` permissions. Allowed events are main pushes, same-repository pull requests targeting main, and authorized manual dispatches subject to each workflow's branch constraints. Fork jobs are refused. `deploy` is never admitted for a PR and requires main.
 
-## Qualification and rollout
+Each admitted job has exactly seven routing labels:
 
-1. Prepare and verify the pinned base image, isolation rules and resource limits; prove that cleanup removes only pilot-owned guest state.
-2. Run `read-worker` in the disposable guest and then the paired Actions workflow. Verify both results at the same full SHA, network restrictions and complete teardown.
-3. Qualify browser and contract choices separately, including cold/warm behavior and failure artifacts. Preserve all assertions, fixed compiler inputs, release manifests and per-suite Forge closures; a whole-tree compile has an existing solc-js memory constraint.
-4. Qualify Backend with the installed PostgreSQL tools and disposable EVM/Unix-socket cleanup. Fix or reproduce known test failures independently of runner performance.
-5. Consider trusted pull-request workloads only in a later change with explicit authorization policy, isolation evidence, capacity limits and hosted recovery. Broad migration is outside this pilot.
-
-Native installer/systemd checks that require privileged disposable users remain hosted. The current guest profile does not make those jobs compatible with a no-`sudo` runner. Deployment and credentialed operational workflows remain separate.
-
-Before comparing performance, record assertion failures, timeouts and service errors at the same SHA in both pools. Baseline main `b374421a` had [Backend and browser failures](https://github.com/domino-money/domino/actions/runs/41207082011) and a [Position journeys assertion failure](https://github.com/domino-money/domino/actions/runs/41207082085); a faster machine is not evidence that those defects were fixed. A smoke pass establishes only the workload and boundaries actually observed.
-
-## Operation and recovery
-
-The host requires an existing SSD mount, KVM/libvirt, `virsh`, `qemu-img`, `cloud-localds`, the libguestfs image tools, `systemd-run` and the dedicated bridge's DNS support. Host prerequisites and network/filter admission are explicit operator setup; the controller does not automatically install packages, define a network or restart host services.
-
-Inspect existing filter/network names first. For **initial creation of new pilot names only**, define the child filter before its parent, then define and start the dedicated network:
-
-```sh
-sudo virsh --connect qemu:///system nwfilter-list
-sudo virsh --connect qemu:///system net-list --all
-sudo virsh --connect qemu:///system nwfilter-define scripts/ci/libvirt/filter-ipv4.xml
-sudo virsh --connect qemu:///system nwfilter-define scripts/ci/libvirt/filter.xml
-sudo virsh --connect qemu:///system net-define scripts/ci/libvirt/network.xml
-sudo virsh --connect qemu:///system net-start domino-ci-pilot
+```text
+self-hosted
+Linux
+X64
+domino-ci
+domino-ci-<run_id>-<run_attempt>
+domino-ci-<normal|systemd|deploy>
+<exact domino-job-... label from runner-policy.json>
 ```
 
-If a named resource exists, inspect its `nwfilter-dumpxml` or `net-dumpxml` first and preserve its existing UUID. Do not blindly redefine an active resource using an initial-creation template. These commands do not enable network autostart and must never target another network or filter.
+The per-job/matrix label prevents a different job in the same run/profile from consuming that runner. Labels select work; they are not authorization. Policy v1 has `repository`, `repository_id`, `base_labels`, `run_label_template` and a `jobs` array whose entries contain `workflow`, `job_name`, `job_label`, `profile`, `lifetime_seconds`. Exact expanded names are allowlisted; no wildcard grants admission. Lifetimes include setup and retain startup headroom, with a 90-minute maximum. Actions job timeouts remain independent.
 
-On 2 November 2026, host preparation added `dnsmasq-base` for the dedicated libvirt bridge and started only the `domino-ci-pilot` network, without enabling its autostart or restarting existing services/containers. This is a host-preparation receipt, not a guest or Actions test result. After a host restart, an operator must review and start the dedicated pilot network before admitting a guest.
+## GitHub App, group and credentials
 
-Host preparation runs from a reviewed checkout, outside the job. [prepare-image.sh](../scripts/ci/prepare-image.sh) verifies the pinned Ubuntu, Node and runner downloads, prepares the OS/browser/PostgreSQL prerequisites, and records the prepared image digest. It refuses a missing SSD mount or an existing final base image; it does not overwrite a running image or register a runner.
+Use a GitHub App whose installation selects only `domino-money/domino`. Required permissions are organization **Self-hosted runners: write**, repository **Actions: read** and **Metadata: read**; no repository Administration permission or PAT is required for the organization runner scope. Keep the provisioned App and installation IDs in the private broker configuration.
 
-```sh
-sudo bash scripts/ci/prepare-image.sh
+Use the dedicated organization runner group `domino-clawber`: visibility `selected`, public repositories disallowed, and the selected repository set verified as exactly the intended Domino repository. The broker checks this group restriction before registration. Record its numeric ID in the private broker configuration.
+
+The App PEM is `/etc/domino-ci/github-app.pem`, root-owned mode `0600`. The [service](../scripts/ci/domino-clawber-broker.service) supplies it through `LoadCredential`; its value is never committed, printed or copied into a guest. Short-lived installation tokens expire in approximately one hour and remain only in broker memory. Only single-use JIT configuration crosses controller stdin. Guest GitHub job tokens and authorized deploy-step secrets are separate from broker credentials.
+
+Existing workflow `contents: read` permissions are preserved. The pilot explicitly disables persisted checkout credentials; do not assume every standard workflow checkout does so. Every job still receives a fresh guest and its checkout/runtime credential state is destroyed with that guest.
+
+## Configuration and service operation
+
+Install reviewed source/policy under root-owned, non-writable-by-jobs `/opt/domino-ci`. Configuration is `/etc/domino-ci/broker.json`, root-owned mode `0600`; broker state is `/var/lib/domino-clawber-broker`, mode `0700`. The following schema example uses illustrative App, installation and runner-group IDs. Replace all three with the provisioned IDs before installation:
+
+```json
+{
+  "app_id": 123456,
+  "installation_id": 12345678,
+  "runner_scope": "organization",
+  "runner_owner": "domino-money",
+  "runner_group_id": 1,
+  "controller": "/opt/domino-ci/clawber_pilot.py",
+  "base_sha256": "73835938384dafb7c497e6141f44fa4798574c57bf59adddb768d2bf33a992cf",
+  "state_directory": "/var/lib/domino-clawber-broker"
+}
 ```
 
-The prepared base is `/mnt/narrative-ssd/domino-ci-pilot/base/ubuntu-24.04-ci.qcow2`; its `.sha256` receipt is the input to the controller. This prepared-image digest is different from the original Ubuntu download digest in `image-lock.json`. The dedicated network and filters must already be installed and active under their pilot names.
+Omit `private_key` so systemd's credential directory supplies it. Omit `base_image` to use the controller's pinned SSD default; the broker requires every ancestor of an explicitly configured image path to be root-owned, while this shared SSD mount is administrator-owned. The service runs the host broker with `/opt/domino-ci/runner-policy.json`; code, configuration, parents and state must satisfy its root-ownership/no-symlink/permission checks.
 
-Once the workflow is integrated on `main`, the operator can request the initial paired comparison:
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now domino-clawber-broker.service
+sudo systemctl status --no-pager domino-clawber-broker.service
+sudo journalctl -u domino-clawber-broker.service -n 80 --no-pager
+```
+
+The broker records durable slot/job/runner identities before registration, retries failed starts with backoff, and revalidates a job immediately before creating JIT credentials. Startup recovery checks both slots and cleans exact recorded runner registrations. A guest lifecycle success is not a test pass: GitHub remains authoritative for the job result.
+
+**Stopping or restarting the service interrupts active CI guests.** Prefer draining first: pause new submissions and wait for the current queue/active slots to empty, observing GitHub and broker release events. There is no dedicated drain command; `systemctl stop` is not a graceful drain operation.
+
+```sh
+sudo systemctl stop domino-clawber-broker.service
+```
+
+For recovery, stop the broker first and let active controller cleanup finish. The controller can recover each exclusively locked slot using root-owned ownership metadata:
+
+```sh
+sudo python3 /opt/domino-ci/clawber_pilot.py --slot 1 --cleanup-slot
+sudo python3 /opt/domino-ci/clawber_pilot.py --slot 2 --cleanup-slot
+```
+
+Cleanup validates exact domain, slot and job-directory identities before removing anything. If a domain cannot be confirmed absent, or recovery metadata is missing/invalid, it fails closed and preserves files for inspection. Never replace this with prefix-wide `virsh destroy`, firewall resets, or broad disk deletion. Verify guest domains, job directories and corresponding GitHub registrations are gone, then restart the broker. Interrupted jobs require an explicit same-SHA rerun; restarting the broker does not turn them into successful checks.
+
+## Manual benchmark and break-glass operation
+
+The manual pilot uses the shared [workload script](../scripts/ci/run-pilot-workload.sh). Default dispatch uses Clawber only:
 
 ```sh
 gh workflow run clawber-ci-pilot.yml \
   --repo domino-money/domino --ref main -f workload=read-worker
-gh run list --repo domino-money/domino \
-  --workflow clawber-ci-pilot.yml --limit 5
-gh run view "$DOMINO_PILOT_RUN_ID" --repo domino-money/domino \
-  --json headSha,event,workflowName,status,conclusion,jobs
 ```
 
-Set `DOMINO_PILOT_RUN_ID` to the intended run. On the operator's Mac, launch only the reviewed full SHA with the prepared-image digest and private SSH profile supplied outside the repository:
+Request a hosted benchmark control explicitly with `-f compare_hosted=true`. Both legs use the same dispatched SHA and runtime patch versions resolved by admission. Record cold/warm cache state, provisioning/queue/job times, resource pressure, failures and teardown separately. No queued guest job is automatically transferred to a hosted pool.
+
+The older [manual launcher](../scripts/ci/start-clawber-pilot.py) is break-glass tooling only, with the broker stopped. It requires an already successful pilot preflight at the exact run/SHA before registration; it cannot bootstrap a queued self-hosted preflight. It accepts historical and current pilot routing labels and keeps the operator's GitHub access on the operator's computer. Use only after inspecting the run, never concurrently with automatic slot admission:
 
 ```sh
 python3 scripts/ci/start-clawber-pilot.py \
@@ -140,38 +141,25 @@ python3 scripts/ci/start-clawber-pilot.py \
   --base-sha256 "$DOMINO_CI_BASE_SHA256"
 ```
 
-Set `DOMINO_PILOT_SOURCE_SHA` to the reviewed 40-character run SHA and `DOMINO_CI_BASE_SHA256` from the prepared-image receipt. The SSH profile must already pin the host key; actual SSH identities/configuration stay outside this document. The launcher refuses a different actor, ref, SHA, workflow, workload or queued label before creating a runner.
+Actual SSH profiles/identities stay outside this repository. The legacy launcher registration path is distinct from the App broker; confirm runner and guest cleanup before re-enabling the service. A repeated job needs its new attempt label. For a hosted comparison rerun, select the actual hosted job `databaseId` from `gh run view --json jobs`; do not substitute a newer main commit.
 
-The reviewed [host controller](../scripts/ci/clawber_pilot.py) must be installed at `/mnt/narrative-ssd/domino-ci-pilot/source/clawber_pilot.py`. The launcher invokes it through fixed noninteractive `sudo`, passing the encoded JIT configuration only on stdin. Its default base image, network, filter and runner directory match this runbook; inspect `--help` before using an override directly. The privileged host controller manages virtualization; contributed job commands still run as the unprivileged guest user. Do not register a persistent runner or place a long-lived GitHub credential on the host to bypass the lifecycle.
+## Cache and validation behavior
 
-Run one pilot comparison at a time. The host controller serializes guests and refuses a stale pilot domain for operator inspection. The launcher defaults to 15 minutes for Read Worker, 90 for contracts, 35 for the browser workload and 50 for Backend; `--timeout-seconds` can override these up to the controller's 90-minute ceiling. These lifetimes include startup and setup. Actions separately retains a five-minute Read Worker limit, 75-minute contract limit, 25-minute browser limit and 40-minute Backend limit.
+Forge and V2 compilation keys include OS/architecture and compiler/lockfile/source inputs; legacy architecture-ambiguous fallbacks are removed. Backend saves completed, qualified fixture compilation before later Python/PostgreSQL tests. [Source pruning](../scripts/forge-cache.mjs) removes invalidated sources/importers/artifacts; a cache is not proof that tests or later V2 release checks passed.
 
-If the Clawber job cannot start, the existing hosted CI still runs. GitHub does not transfer the queued guest job to a hosted pool. Inspect the already recorded hosted result or manually rerun the hosted job for the same SHA; do not silently compare against a newer `main` commit. Select the hosted job's `databaseId`, not an arbitrary number copied from a URL:
+Contract tests and gas snapshots remain separate validation passes. Pilot caches are separated by pool/workload and have no fallback prefixes. No cache contains App credentials, wallet state or production databases.
 
-```sh
-gh run view "$DOMINO_PILOT_RUN_ID" --repo domino-money/domino \
-  --json jobs --jq '.jobs[] | select(.name | contains("github-hosted")) | {name,databaseId}'
-gh run rerun "$DOMINO_PILOT_RUN_ID" --repo domino-money/domino \
-  --job "$DOMINO_PILOT_HOSTED_JOB_ID"
-```
+Workflow/policy guards check all expanded identities, profiles, labels and browser installation. Offline controller/broker/launcher tests use synthetic APIs and host commands. **63 Python and 12 Node focused checks passed during provisioning; these do not qualify the first automatic CI job or every workload/profile.** Full all-jobs execution, cancellation/restart recovery under actual load, and two-slot concurrent workload results remain to be recorded.
 
-Set `DOMINO_PILOT_HOSTED_JOB_ID` to that hosted job's ID. A hosted-only rerun is recovery evidence, not a completed paired comparison. A guest rerun needs a fresh JIT configuration with the new attempt label, and a comparison must retain matching source/runtime identities. GitHub rejects a job rerun while another job in that workflow is still running; wait for that run to finish. For a single-job rerun, the launcher verifies the latest earlier successful admission job at the same immutable run/SHA when admission was not rerun; a failed admission in the current attempt is never bypassed.
+## Current provisioning receipt
 
-Rollback stops further manual pilot admission, unregisters any remaining pilot runner, destroys the pilot guest and its writable state, and leaves the existing hosted workflows active. The controller performs guest shutdown and host-side teardown; if it cannot confirm the domain is absent, it retains the job directory and returns an error for inspection. Its exit status describes the VM lifecycle; the Actions job remains the authority for test outcome.
+The GitHub App was created/installed and its actual permissions authenticated. The dedicated runner group was created and its selected-repository restriction verified. The `/29` dedicated network migration and autostart are configured; the base image digest above is unchanged. The broker service is enabled and running. No queued self-hosted job had yet been admitted at this receipt: first automatic-job and complete migration qualification remain pending.
 
-Cleanup must be scoped to the pilot's recorded resource identifiers and storage root; never use a broad VM, bridge, firewall or disk deletion command. Retain a sanitized receipt showing what was removed and any cleanup that still needs attention. There is no general-purpose cleanup subcommand that deletes arbitrary host resources.
+## Historical manual pilot evidence
 
-## Evidence status
+The following receipts precede the automatic all-jobs architecture. They establish only the stated guest/manual workloads, images, commits and observations.
 
-Hosted CI's hygiene job automatically runs the new controller/launcher unit tests, pilot workflow guards and shell syntax checks without GitHub credentials or host access:
-
-```sh
-python3 -B -m unittest discover -s scripts/ci -p 'test_*.py' -v
-node --test scripts/ci/pilot-workflow.test.mjs
-bash -n scripts/ci/prepare-image.sh scripts/ci/run-pilot-workload.sh
-```
-
-Source changes and local script/policy checks are distinct from a guest run and from an Actions comparison. Record the actual source SHA, run URLs, pool outcomes and cleanup receipt when each step completes. Until then, additional workload choices remain unqualified; this document does not claim a complete CI migration or an infrastructure performance result.
+The Backend fixture record/save steps completed successfully in main runs [41457279408](https://github.com/domino-money/domino/actions/runs/41457279408), [41457965063](https://github.com/domino-money/domino/actions/runs/41457965063) and [41458676942](https://github.com/domino-money/domino/actions/runs/41458676942), before the same four Python failures reproduced from baseline `b374421a`. This confirms early-save execution; it does not establish three distinct cache uploads or a passing Backend suite. These historical results precede the separate clock-bound fixture updates in [PR 435](https://github.com/domino-money/domino/pull/435).
 
 ### Host qualification receipt: 2 November 2026
 
@@ -200,4 +188,4 @@ The first browser attempt stopped before workload execution because the initial 
 
 The whole Clawber job took 5 min 29 s less (23.4%) in this single comparison. Provisioning is separate: the operator process started at 14:33:10 UTC and the guest job at 14:34:27, approximately 77 s later; operator start through job completion was approximately 19 min 13 s. These cold runs do not establish warm-cache behavior or performance for other workloads. Thirty-second sampling over 17 minutes observed peak QEMU resident memory of about 5.6 GiB within the 16 GiB guest limit; this does not qualify concurrent jobs.
 
-After completion, the operator exited 0. Independent inspection confirmed zero pilot runner registrations, zero pilot domains and zero pilot job directories; the base remained root-owned with mode 0444. RPC impact is unqualified because the owner was changing that service in another session and instructed this experiment to disregard those interruptions. Contract and Backend workloads, automatic admission and broad migration remain unqualified and disabled.
+After completion, the operator exited 0. Independent inspection confirmed zero pilot runner registrations, zero pilot domains and zero pilot job directories; the base remained root-owned with mode 0444. RPC impact is unqualified because the owner was changing that service in another session and instructed this experiment to disregard those interruptions. At that pilot stage, Contract and Backend workloads, automatic admission and broad migration had not been qualified. The current all-jobs configuration is described above.

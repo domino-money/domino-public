@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Root-only host controller for one disposable Clawber CI VM.
+"""Root-only host controller for one of two disposable Clawber CI VM slots.
 
 Feed GitHub's encoded_jit_config on stdin, never a PAT or command argument.
-The pinned base already contains the runner/toolchain. The operator must first
-authorize the exact main-branch workflow/actor and create a one-use JIT runner.
+The pinned base already contains the runner/toolchain. The admitting broker must
+authorize the exact workflow/job and create a one-use JIT runner before launch.
 This controller reports VM lifecycle only; GitHub reports the job conclusion.
 """
 from __future__ import annotations
@@ -38,6 +38,9 @@ NETWORK = 'domino-ci-pilot'
 MAC = '52:54:00:dc:1a:02'
 GUEST_IP = '172.30.78.2'
 GATEWAY = '172.30.78.1'
+GUEST_PREFIX = 29
+SLOTS = {1: (GUEST_IP, MAC), 2: ('172.30.78.3', '52:54:00:dc:1a:03')}
+SYSTEMD_SUDOERS = '/etc/sudoers.d/91-domino-ci-systemd'
 URI = 'qemu:///system'
 
 
@@ -60,6 +63,21 @@ class Config:
     nwfilter: str = NETWORK
     runner_dir: str = '/opt/actions-runner'
     timeout_seconds: int = DEFAULT_SECONDS
+    slot: int = 1
+    guest_profile: str = 'normal'
+
+
+def slot_prefix(config):
+    return PREFIX + f'slot{config.slot}-'
+
+
+def slot_directory(config):
+    return config.root / 'jobs' / f'slot-{config.slot}'
+
+
+def owned_domain(name, config):
+    if not re.fullmatch(re.escape(slot_prefix(config)) + r'[0-9a-f]{32}', name):
+        raise PilotError('domain_outside_owned_slot')
 
 
 def read_jit(stream):
@@ -130,11 +148,12 @@ def domain_xml(name, job_dir, config):
     ET.SubElement(cd, 'target', {'dev': 'sda', 'bus': 'sata'})
     ET.SubElement(cd, 'readonly')
     nic = ET.SubElement(devices, 'interface', {'type': 'network'})
-    ET.SubElement(nic, 'mac', {'address': MAC})
+    guest_ip, mac = SLOTS[config.slot]
+    ET.SubElement(nic, 'mac', {'address': mac})
     ET.SubElement(nic, 'source', {'network': config.network})
     ET.SubElement(nic, 'model', {'type': 'virtio'})
     filt = ET.SubElement(nic, 'filterref', {'filter': config.nwfilter})
-    ET.SubElement(filt, 'parameter', {'name': 'IP', 'value': GUEST_IP})
+    ET.SubElement(filt, 'parameter', {'name': 'IP', 'value': guest_ip})
     channel = ET.SubElement(devices, 'channel', {'type': 'unix'})
     ET.SubElement(channel, 'target', {'type': 'virtio', 'name': 'org.qemu.guest_agent.0'})
     serial = ET.SubElement(devices, 'serial', {'type': 'file'})
@@ -145,11 +164,12 @@ def domain_xml(name, job_dir, config):
     return ET.tostring(domain, encoding='unicode') + '\n'
 
 
-def network_config():
+def network_config(config=None):
+    guest_ip, mac = SLOTS[config.slot if config is not None else 1]
     return json.dumps({'version': 2, 'ethernets': {'ci0': {
-        'match': {'macaddress': MAC}, 'set-name': 'ci0',
+        'match': {'macaddress': mac}, 'set-name': 'ci0',
         'dhcp4': False, 'dhcp6': False, 'accept-ra': False, 'link-local': [],
-        'addresses': [GUEST_IP + '/30'],
+        'addresses': [guest_ip + f'/{GUEST_PREFIX}'],
         'routes': [{'to': 'default', 'via': GATEWAY}],
         'nameservers': {'addresses': [GATEWAY]},
     }}}, indent=2) + '\n'
@@ -222,6 +242,15 @@ UMask=0077
             ['systemctl', 'start', '--no-block', 'domino-ephemeral-runner.service'],
         ],
     }
+    if config.guest_profile == 'systemd':
+        # This file exists only in the disposable guest. It grants no host
+        # account, mount, device, socket, or network access.
+        document['write_files'].append({
+            'path': SYSTEMD_SUDOERS, 'owner': 'root:root', 'permissions': '0440',
+            'content': 'runner ALL=(ALL:ALL) NOPASSWD: ALL\n',
+        })
+    else:
+        document['runcmd'].insert(1, ['rm', '-f', SYSTEMD_SUDOERS])
     return '#cloud-config\n' + json.dumps(document, indent=2) + '\n'
 
 
@@ -248,6 +277,15 @@ def owned_path(path, parent=None, *, directory=False, owner=0):
     return path
 
 
+def validate_roots(config):
+    if type(config.slot) is not int or config.slot not in SLOTS:
+        raise PilotError('invalid_slot')
+    if config.guest_profile not in ('normal', 'systemd'):
+        raise PilotError('invalid_guest_profile')
+    owned_path(config.root, directory=True)
+    owned_path(config.root / 'jobs', config.root, directory=True)
+
+
 def validate_config(config):
     if not 1 <= config.timeout_seconds <= MAX_SECONDS:
         raise PilotError('invalid_timeout')
@@ -258,9 +296,8 @@ def validate_config(config):
             raise PilotError('invalid_network_name')
     if not re.fullmatch(r'/opt/[A-Za-z0-9_/-]+', config.runner_dir) or '..' in config.runner_dir:
         raise PilotError('invalid_guest_runner_path')
-    owned_path(config.root, directory=True)
+    validate_roots(config)
     owned_path(config.root / 'base', config.root, directory=True)
-    owned_path(config.root / 'jobs', config.root, directory=True)
     owned_path(config.base_image, config.root / 'base')
     digest = hashlib.sha256()
     with config.base_image.open('rb') as source:
@@ -295,7 +332,50 @@ class Commands:
         return self.run(['virsh', '--connect', URI, *args], **kwargs)
 
 
+def acquire_locks(config):
+    """Fence old one-VM controllers, then reserve this slot exclusively."""
+    descriptors = []
+    try:
+        for filename, kind, error in (
+            ('pilot.lock', fcntl.LOCK_SH, 'legacy_pilot_running'),
+            (f'slot-{config.slot}.lock', fcntl.LOCK_EX, 'pilot_slot_already_running'),
+        ):
+            path = config.root / filename
+            fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+            descriptors.append(fd)
+            owned_path(path, config.root)
+            try:
+                fcntl.flock(fd, kind | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise PilotError(error) from None
+        return descriptors
+    except BaseException:
+        for fd in descriptors:
+            os.close(fd)
+        raise
+
+
+def validate_network(commands, config):
+    """Do not boot slot 2 on the legacy /30 broadcast address."""
+    try:
+        network = ET.fromstring(commands.virsh('net-dumpxml', config.network, capture=True).stdout)
+        addresses = [node for node in network.findall('ip') if node.get('address') == GATEWAY]
+        if (network.findtext('name') != config.network or len(addresses) != 1
+                or not (addresses[0].get('netmask') == '255.255.255.248'
+                        or addresses[0].get('prefix') == str(GUEST_PREFIX))):
+            raise PilotError('dedicated_network_requires_ipv4_29')
+    except ET.ParseError:
+        raise PilotError('invalid_dedicated_network_xml') from None
+
+
 def cleanup(commands, name, job_dir, config):
+    owned_domain(name, config)
+    if job_dir is not None:
+        if job_dir.parent != slot_directory(config):
+            raise PilotError('job_directory_outside_owned_slot')
+        owned_path(job_dir, slot_directory(config), directory=True)
+        if not re.fullmatch(re.escape(name) + r'-[a-z0-9_]{6,32}', job_dir.name):
+            raise PilotError('unsafe_cleanup_path')
     # Cleanup must still run when the workload deadline expired.
     commands.deadline = None
     failed = False
@@ -314,12 +394,47 @@ def cleanup(commands, name, job_dir, config):
     if exists:
         raise PilotError('cleanup_domain_still_present')
     if job_dir is not None:
-        owned_path(job_dir, config.root / 'jobs', directory=True)
-        if not job_dir.name.startswith(name + '-') or not shutil.rmtree.avoids_symlink_attacks:
+        if not shutil.rmtree.avoids_symlink_attacks:
             raise PilotError('unsafe_cleanup_path')
         shutil.rmtree(job_dir)
     if failed:
         raise PilotError('cleanup_command_failed')
+
+
+def cleanup_slot(config, commands=None):
+    """Recover only metadata-proven artifacts of this exclusively locked slot."""
+    commands = commands or Commands()
+    commands.deadline = None
+    directory = slot_directory(config)
+    jobs = {}
+    if directory.exists():
+        owned_path(directory, config.root / 'jobs', directory=True)
+        for path in directory.iterdir():
+            if not path.name.startswith(slot_prefix(config)):
+                continue
+            owned_path(path, directory, directory=True)
+            metadata = owned_path(path / 'controller.json', path)
+            if metadata.stat().st_mode & 0o077:
+                raise PilotError('unsafe_recovery_metadata_permissions')
+            try:
+                data = json.loads(metadata.read_text())
+                name = data['domain']
+                owned_domain(name, config)
+                if (data.get('version') != 1 or data.get('slot') != config.slot
+                        or data.get('job_directory') != str(path)
+                        or data.get('created_by') != 'domino-ci-slot-controller'
+                        or name in jobs
+                        or not re.fullmatch(re.escape(name) + r'-[a-z0-9_]{6,32}', path.name)):
+                    raise PilotError('invalid_recovery_metadata')
+            except (ValueError, KeyError, TypeError):
+                raise PilotError('invalid_recovery_metadata') from None
+            jobs[name] = path
+    listing = commands.virsh('list', '--all', '--name', capture=True).stdout.splitlines()
+    if any(name.startswith(slot_prefix(config)) and name not in jobs for name in listing):
+        raise PilotError('slot_domain_without_owned_metadata')
+    for name, path in jobs.items():
+        cleanup(commands, name, path, config)
+    return {'slot': config.slot, 'lifecycle': 'slot_cleaned', 'cleaned_domains': sorted(jobs)}
 
 
 def run_vm(config, jit, commands=None, *, clock=time.monotonic, sleep=time.sleep):
@@ -327,21 +442,35 @@ def run_vm(config, jit, commands=None, *, clock=time.monotonic, sleep=time.sleep
     deadline = clock() + config.timeout_seconds
     if isinstance(commands, Commands):
         commands.deadline = deadline
-    name = PREFIX + uuid.uuid4().hex
+    name = slot_prefix(config) + uuid.uuid4().hex
     job_dir = None
-    result = {'domain': name, 'lifecycle': 'guest_stopped', 'job_outcome': 'check_github'}
+    result = {'domain': name, 'slot': config.slot, 'guest_profile': config.guest_profile,
+              'lifecycle': 'guest_stopped', 'job_outcome': 'check_github'}
     try:
         listing = commands.virsh('list', '--all', '--name', capture=True).stdout
-        if any(line.startswith(PREFIX) for line in listing.splitlines()):
-            raise PilotError('another_or_orphaned_pilot_vm_exists')
+        domains = [line for line in listing.splitlines() if line.startswith(PREFIX)]
+        if any(line.startswith(slot_prefix(config)) for line in domains):
+            raise PilotError('another_or_orphaned_slot_vm_exists')
+        if any(not any(line.startswith(PREFIX + f'slot{slot}-') for slot in SLOTS) for line in domains):
+            raise PilotError('legacy_or_unknown_pilot_vm_exists')
+        if len(domains) >= len(SLOTS):
+            raise PilotError('pilot_slot_inventory_conflict')
+        validate_network(commands, config)
         account = pwd.getpwnam('libvirt-qemu')
-        job_dir = Path(tempfile.mkdtemp(prefix=name + '-', dir=config.root / 'jobs'))
+        directory = slot_directory(config)
+        directory.mkdir(mode=0o751, exist_ok=True)
+        owned_path(directory, config.root / 'jobs', directory=True)
+        job_dir = Path(tempfile.mkdtemp(prefix=name + '-', dir=directory))
         # Root owns directory entries; QEMU can traverse, but not replace files.
         os.chown(job_dir, 0, account.pw_gid)
         os.chmod(job_dir, 0o710)
+        secure_file(job_dir / 'controller.json', json.dumps({
+            'version': 1, 'created_by': 'domino-ci-slot-controller', 'slot': config.slot,
+            'domain': name, 'job_directory': str(job_dir),
+        }) + '\n')
         secure_file(job_dir / 'user-data', cloud_config(jit, config))
         secure_file(job_dir / 'meta-data', json.dumps({'instance-id': name, 'local-hostname': 'domino-ci'}) + '\n')
-        secure_file(job_dir / 'network-config', network_config())
+        secure_file(job_dir / 'network-config', network_config(config))
         secure_file(job_dir / 'domain.xml', domain_xml(name, job_dir, config))
         commands.run(['qemu-img', 'create', '-q', '-f', 'qcow2', '-F', 'qcow2',
                       '-b', str(config.base_image), str(job_dir / 'disk.qcow2'), '80G'])
@@ -368,36 +497,38 @@ def run_vm(config, jit, commands=None, *, clock=time.monotonic, sleep=time.sleep
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--base-image', type=Path, default=ROOT / 'base/ubuntu-24.04-ci.qcow2')
-    parser.add_argument('--base-sha256', required=True, help='Pinned prepared image SHA-256; never a credential')
+    parser.add_argument('--base-sha256', default='', help='Required to launch: pinned prepared image SHA-256')
     parser.add_argument('--network', default=NETWORK)
     parser.add_argument('--nwfilter', default=NETWORK)
     parser.add_argument('--runner-dir', default='/opt/actions-runner')
     parser.add_argument('--timeout-seconds', type=int, default=DEFAULT_SECONDS)
+    parser.add_argument('--slot', type=int, choices=sorted(SLOTS), default=1)
+    parser.add_argument('--guest-profile', choices=('normal', 'systemd'), default='normal')
+    parser.add_argument('--cleanup-slot', action='store_true', help='Recover only this locked slot; no JIT input')
     args = parser.parse_args(argv)
     if os.geteuid() != 0:
         print(json.dumps({'error': 'host_root_required'}), file=sys.stderr)
         return 1
     os.umask(0o077)
-    config = Config(**vars(args))
-    lock_fd = None
+    values = vars(args).copy()
+    recover = values.pop('cleanup_slot')
+    config = Config(**values)
+    lock_fds = []
     old_handlers = {}
     try:
-        validate_config(config)
-        lock_path = config.root / 'pilot.lock'
-        lock_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
-        owned_path(lock_path, config.root)
-        try:
-            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise PilotError('pilot_already_running') from None
+        validate_roots(config) if recover else validate_config(config)
+        lock_fds = acquire_locks(config)
         def interrupted(signum, _frame):
             for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
                 signal.signal(sig, signal.SIG_IGN)
             raise Interrupted(signum)
         for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
             old_handlers[sig] = signal.signal(sig, interrupted)
-        jit = read_jit(sys.stdin.buffer)
-        print(json.dumps(run_vm(config, jit)))
+        if recover:
+            print(json.dumps(cleanup_slot(config)))
+        else:
+            jit = read_jit(sys.stdin.buffer)
+            print(json.dumps(run_vm(config, jit)))
         return 0
     except Interrupted as error:
         print(json.dumps({'error': str(error)}), file=sys.stderr)
@@ -411,8 +542,8 @@ def main(argv=None):
     finally:
         for sig, handler in old_handlers.items():
             signal.signal(sig, handler)
-        if lock_fd is not None:
-            os.close(lock_fd)
+        for fd in lock_fds:
+            os.close(fd)
 
 
 if __name__ == '__main__':

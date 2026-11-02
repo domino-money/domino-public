@@ -22,7 +22,7 @@ concurrency:
 jobs:
   funding:
     name: Funding, automation and history in browser
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-normal, "domino-job-funding"]
     # 40 since 2026-10-16 (V4): the suite already used 23.5-24 of its 25 minutes on main; V4's blurs and gradients cost
     # more to paint without a GPU (the same 210 tests: 1182 s on main a78996d5, 1438 s on V4), so 25 cancelled it mid-run.
     timeout-minutes: 40
@@ -37,6 +37,14 @@ jobs:
             app/package-lock.json
       - run: npm --prefix web ci --no-audit --no-fund
       - run: npm --prefix app ci --no-audit --no-fund
+      - name: Install the exact locked Chromium
+        run: |
+          export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/domino-browsers"
+          node app/node_modules/playwright-core/cli.js install chromium
+          browser=$(node -e "process.stdout.write(require('./app/node_modules/playwright-core').chromium.executablePath())")
+          test -x "$browser"
+          printf 'PLAYWRIGHT_BROWSERS_PATH=%s\nDOMINO_BROWSER_PATH=%s\n' "$PLAYWRIGHT_BROWSERS_PATH" "$browser" >> "$GITHUB_ENV"
+          "$browser" --version
       - run: npm --prefix app run build:unit
       - run: npm --prefix app run build:wallet-test-v2
       - name: Verify funding, recovery, automation and history with local wallets and services

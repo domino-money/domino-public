@@ -6,7 +6,7 @@ permissions:
 jobs:
   synthetic-ubuntu:
     name: Archive, OFF units and local gas peer
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-systemd, "domino-job-automation-off"]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

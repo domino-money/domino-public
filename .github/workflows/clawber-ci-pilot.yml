@@ -8,6 +8,11 @@ on:
         default: read-worker
         type: choice
         options: [read-worker, contracts-v1, contracts-v2-audit, browser-finance-create, backend]
+      compare_hosted:
+        description: Explicitly include a GitHub-hosted benchmark control
+        type: boolean
+        default: false
+        required: true
 permissions:
   contents: read
 concurrency:
@@ -17,7 +22,7 @@ jobs:
   trusted_main:
     name: Require a dispatched main commit
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-normal, "domino-job-pilot-preflight"]
     timeout-minutes: 5
     outputs:
       node_version: ${{ steps.node.outputs.node-version }}
@@ -48,20 +53,15 @@ jobs:
   compare:
     name: ${{ inputs.workload }} (${{ matrix.pool }})
     needs: trusted_main
-    # The operator must verify the GitHub run, trusted actor, main SHA,
-    # workflow and workload before generating its one-use JIT registration.
-    # The host lifecycle helper does not perform that GitHub authorization.
-    # Labels select a runner; they do not authorize code or grant host access.
-    runs-on: ${{ matrix.labels }}
+    # The broker validates event, actor, source, profile and exact job label
+    # before generating a single-job JIT runner. Labels route, not authorize.
+    # Hosted compute is used only for an explicitly requested benchmark leg.
+    runs-on: ${{ matrix.pool == 'github-hosted' && 'ubuntu-24.04' || fromJSON(format('["self-hosted","Linux","X64","domino-ci","domino-ci-{0}-{1}","domino-ci-normal","domino-job-pilot-{2}"]', github.run_id, github.run_attempt, inputs.workload)) }}
     timeout-minutes: ${{ startsWith(inputs.workload, 'contracts-') && 75 || inputs.workload == 'backend' && 40 || inputs.workload == 'browser-finance-create' && 25 || 5 }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - pool: github-hosted
-            labels: ubuntu-24.04
-          - pool: clawber
-            labels: [self-hosted, Linux, X64, domino-ci-pilot, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}"]
+        pool: ${{ fromJSON(inputs.compare_hosted && '["clawber","github-hosted"]' || '["clawber"]') }}
     env:
       WRANGLER_SEND_METRICS: 'false'
       DOMINO_FAILURE_SHOTS: '1'

@@ -1,0 +1,30 @@
+[Unit]
+Description=Domino two-slot ephemeral GitHub Actions broker
+After=network-online.target libvirtd.service
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+# Only this root-owned host source is executed, never a CI checkout.
+User=root
+Group=root
+UMask=0077
+LoadCredential=github-app.pem:/etc/domino-ci/github-app.pem
+ExecStart=/usr/bin/python3 -B /opt/domino-ci/clawber_broker.py --config /etc/domino-ci/broker.json --policy /opt/domino-ci/runner-policy.json
+StateDirectory=domino-clawber-broker
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=30
+KillMode=control-group
+TimeoutStopSec=300
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectSystem=full
+PrivateTmp=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

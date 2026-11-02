@@ -1,5 +1,6 @@
 """Offline controller/security tests; no libvirt, VM, network, or host mutation."""
 import base64
+from contextlib import contextmanager
 from dataclasses import replace
 import hashlib
 import importlib.util
@@ -28,12 +29,14 @@ def jit(ephemeral=True, extra=None):
 
 
 class FakeCommands:
-    def __init__(self, state='shut off', fail=None):
+    def __init__(self, state='shut off', fail=None, existing=(), netmask='255.255.255.248'):
         self.calls = []
         self.state = state
         self.fail = fail
         self.name = None
         self.defined = False
+        self.existing = set(existing)
+        self.netmask = netmask
 
     def run(self, args, **_kwargs):
         self.calls.append(args)
@@ -52,9 +55,13 @@ class FakeCommands:
             self.name = ET.parse(args[1]).findtext('name')
             self.defined = True
         elif args[0] == 'undefine':
-            self.defined = False
+            if args[1] == self.name:
+                self.defined = False
+            self.existing.discard(args[1])
         elif args[0] == 'list':
-            text = self.name if self.defined else ''
+            text = '\n'.join(sorted(self.existing | ({self.name} if self.defined else set())))
+        elif args[0] == 'net-dumpxml':
+            text = f'<network><name>{pilot.NETWORK}</name><ip address="{pilot.GATEWAY}" netmask="{self.netmask}"/></network>'
         elif args[0] == 'domstate':
             text = self.state
         return SimpleNamespace(returncode=0, stdout=text)
@@ -69,6 +76,7 @@ class PilotTests(unittest.TestCase):
         self.base = self.root / 'base/image.qcow2'
         self.base.write_bytes(b'prepared-image-fixture')
         self.config = pilot.Config(self.base, hashlib.sha256(self.base.read_bytes()).hexdigest(), root=self.root)
+        self.slot_dir = self.root / 'jobs/slot-1'
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -117,9 +125,20 @@ class PilotTests(unittest.TestCase):
     def test_static_network_disables_ipv6(self):
         iface = json.loads(pilot.network_config())['ethernets']['ci0']
         self.assertEqual(iface['match']['macaddress'], pilot.MAC)
-        self.assertEqual(iface['addresses'], [pilot.GUEST_IP + '/30'])
+        self.assertEqual(iface['addresses'], [pilot.GUEST_IP + '/29'])
         self.assertFalse(iface['dhcp6'])
         self.assertFalse(iface['accept-ra'])
+
+    def test_slot_networks_have_distinct_mac_ip_and_filter_parameters(self):
+        first = ET.fromstring(pilot.domain_xml('test', self.slot_dir, self.config))
+        second_config = replace(self.config, slot=2)
+        second = ET.fromstring(pilot.domain_xml('test', self.root / 'jobs/slot-2', second_config))
+        self.assertNotEqual(first.find('devices/interface/mac').get('address'),
+                            second.find('devices/interface/mac').get('address'))
+        self.assertEqual(second.find('devices/interface/filterref/parameter').get('value'), '172.30.78.3')
+        iface = json.loads(pilot.network_config(second_config))['ethernets']['ci0']
+        self.assertEqual(iface['addresses'], ['172.30.78.3/29'])
+        self.assertEqual(iface['match']['macaddress'], second.find('devices/interface/mac').get('address'))
 
     def test_only_shared_base_disables_dac_relabel(self):
         tree = ET.fromstring(pilot.domain_xml('test-vm', self.root / 'jobs/test-vm', self.config))
@@ -152,6 +171,19 @@ class PilotTests(unittest.TestCase):
         self.assertEqual(config['runcmd'][0], ['shutdown', '-P', '+15'])
         compile(launcher, 'guest-launcher', 'exec')
 
+    def test_systemd_sudo_is_guest_only_and_normal_profile_removes_it(self):
+        normal = json.loads(pilot.cloud_config(jit(), self.config).split('\n', 1)[1])
+        systemd = json.loads(pilot.cloud_config(jit(), replace(self.config, guest_profile='systemd')).split('\n', 1)[1])
+        files = {item['path']: item for item in systemd['write_files']}
+        sudoers = files[pilot.SYSTEMD_SUDOERS]
+        self.assertEqual(sudoers['owner'], 'root:root')
+        self.assertEqual(sudoers['permissions'], '0440')
+        self.assertEqual(sudoers['content'], 'runner ALL=(ALL:ALL) NOPASSWD: ALL\n')
+        self.assertIn(['rm', '-f', pilot.SYSTEMD_SUDOERS], normal['runcmd'])
+        self.assertNotIn(pilot.SYSTEMD_SUDOERS, {item['path'] for item in normal['write_files']})
+        xml = ET.fromstring(pilot.domain_xml('test', self.slot_dir, replace(self.config, guest_profile='systemd')))
+        self.assertEqual(xml.findall('.//filesystem') + xml.findall('.//hostdev'), [])
+
     def test_private_file_mode_and_no_overwrite(self):
         path = self.root / 'secret-fixture'
         pilot.secure_file(path, 'fixture')
@@ -170,20 +202,25 @@ class PilotTests(unittest.TestCase):
         with self.assertRaisesRegex(pilot.PilotError, 'ownership_or_permissions'):
             pilot.owned_path(self.base, owner=os.getuid())
 
-    def execute_fake(self, commands, **kwargs):
+    @contextmanager
+    def local_ownership(self):
         account = SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid())
         real_owned = pilot.owned_path
         def checked(path, parent=None, **kw):
             return real_owned(path, parent, owner=os.getuid(), **kw)
         with patch.object(pilot.pwd, 'getpwnam', return_value=account), \
              patch.object(pilot.os, 'chown'), patch.object(pilot, 'owned_path', side_effect=checked):
-            return pilot.run_vm(self.config, jit(), commands, **kwargs)
+            yield
+
+    def execute_fake(self, commands, config=None, **kwargs):
+        with self.local_ownership():
+            return pilot.run_vm(config or self.config, jit(), commands, **kwargs)
 
     def test_lifecycle_secret_never_in_command_arguments_and_cleans(self):
         commands = FakeCommands()
         result = self.execute_fake(commands)
         self.assertEqual(result['job_outcome'], 'check_github')
-        self.assertEqual(list((self.root / 'jobs').iterdir()), [])
+        self.assertEqual(list(self.slot_dir.iterdir()), [])
         self.assertIn('destroy', [c[1] for c in commands.calls if c[0] == 'virsh'])
         self.assertNotIn(jit(), json.dumps(commands.calls))
 
@@ -191,7 +228,7 @@ class PilotTests(unittest.TestCase):
         commands = FakeCommands(fail='start')
         with self.assertRaisesRegex(pilot.PilotError, 'host_command_failed'):
             self.execute_fake(commands)
-        self.assertEqual(list((self.root / 'jobs').iterdir()), [])
+        self.assertEqual(list(self.slot_dir.iterdir()), [])
         self.assertIn(['virsh', 'destroy', commands.name], commands.calls)
 
     def test_timeout_cleans(self):
@@ -199,7 +236,7 @@ class PilotTests(unittest.TestCase):
         ticks = iter([0, self.config.timeout_seconds + 1])
         with self.assertRaisesRegex(pilot.PilotError, 'lifetime_exceeded'):
             self.execute_fake(commands, clock=lambda: next(ticks), sleep=lambda _: None)
-        self.assertEqual(list((self.root / 'jobs').iterdir()), [])
+        self.assertEqual(list(self.slot_dir.iterdir()), [])
 
     def test_interruption_cleans(self):
         commands = FakeCommands(state='running')
@@ -207,17 +244,164 @@ class PilotTests(unittest.TestCase):
             raise pilot.Interrupted(15)
         with self.assertRaises(pilot.Interrupted):
             self.execute_fake(commands, sleep=interrupted)
-        self.assertEqual(list((self.root / 'jobs').iterdir()), [])
+        self.assertEqual(list(self.slot_dir.iterdir()), [])
 
     def test_cannot_delete_disks_without_proving_domain_absent(self):
         commands = FakeCommands(fail='undefine')
         with self.assertRaisesRegex(pilot.PilotError, 'cleanup_domain_still_present'):
             self.execute_fake(commands)
-        self.assertEqual(len(list((self.root / 'jobs').iterdir())), 1)
+        self.assertEqual(len(list(self.slot_dir.iterdir())), 1)
+
+    def test_one_slot_does_not_block_or_clean_the_other_slot(self):
+        other = pilot.PREFIX + 'slot2-' + 'b' * 32
+        commands = FakeCommands(existing=[other, 'unrelated-domain'])
+        result = self.execute_fake(commands)
+        self.assertEqual(result['slot'], 1)
+        self.assertEqual(commands.existing, {other, 'unrelated-domain'})
+        touched = [call[2] for call in commands.calls if call[:2] in (['virsh', 'destroy'], ['virsh', 'undefine'])]
+        self.assertNotIn(other, touched)
+        self.assertNotIn('unrelated-domain', touched)
+
+    def test_same_slot_or_legacy_orphan_blocks_admission(self):
+        for existing in (pilot.PREFIX + 'slot1-' + 'b' * 32, pilot.PREFIX + 'c' * 32):
+            with self.subTest(existing=existing):
+                commands = FakeCommands(existing=[existing])
+                with self.assertRaisesRegex(pilot.PilotError, 'slot_vm_exists|legacy_or_unknown'):
+                    self.execute_fake(commands)
+                self.assertIn(existing, commands.existing)
+                self.assertFalse(any(call[:2] == ['virsh', 'define'] for call in commands.calls))
+
+    def test_legacy_network_is_rejected_before_creating_vm(self):
+        commands = FakeCommands(netmask='255.255.255.252')
+        with self.assertRaisesRegex(pilot.PilotError, 'requires_ipv4_29'):
+            self.execute_fake(commands)
+        self.assertFalse(any(call[:2] == ['virsh', 'define'] for call in commands.calls))
+
+    def test_locks_allow_two_slots_but_not_two_controllers_in_same_slot(self):
+        descriptors = []
+        with self.local_ownership():
+            try:
+                descriptors.extend(pilot.acquire_locks(self.config))
+                descriptors.extend(pilot.acquire_locks(replace(self.config, slot=2)))
+                with self.assertRaisesRegex(pilot.PilotError, 'slot_already_running'):
+                    pilot.acquire_locks(self.config)
+                legacy = os.open(self.root / 'pilot.lock', os.O_RDWR)
+                try:
+                    with self.assertRaises(BlockingIOError):
+                        pilot.fcntl.flock(legacy, pilot.fcntl.LOCK_EX | pilot.fcntl.LOCK_NB)
+                finally:
+                    os.close(legacy)
+            finally:
+                for fd in descriptors:
+                    os.close(fd)
+
+    def test_legacy_exclusive_lock_fences_both_new_slots(self):
+        legacy = os.open(self.root / 'pilot.lock', os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            pilot.fcntl.flock(legacy, pilot.fcntl.LOCK_EX | pilot.fcntl.LOCK_NB)
+            with self.local_ownership():
+                for slot in (1, 2):
+                    with self.assertRaisesRegex(pilot.PilotError, 'legacy_pilot_running'):
+                        pilot.acquire_locks(replace(self.config, slot=slot))
+        finally:
+            os.close(legacy)
+
+    def orphan(self, slot=1):
+        config = replace(self.config, slot=slot)
+        name = pilot.slot_prefix(config) + 'a' * 32
+        parent = pilot.slot_directory(config)
+        parent.mkdir(exist_ok=True)
+        job = parent / (name + '-fixture0')
+        job.mkdir()
+        pilot.secure_file(job / 'controller.json', json.dumps({
+            'version': 1, 'created_by': 'domino-ci-slot-controller', 'slot': slot,
+            'domain': name, 'job_directory': str(job),
+        }))
+        return name, job
+
+    def test_recovery_only_cleans_metadata_proven_slot_and_no_jit(self):
+        name, job = self.orphan()
+        other, other_dir = self.orphan(2)
+        commands = FakeCommands(existing=[name, other, 'unrelated'])
+        with self.local_ownership():
+            report = pilot.cleanup_slot(self.config, commands)
+        self.assertEqual(report['cleaned_domains'], [name])
+        self.assertFalse(job.exists())
+        self.assertTrue(other_dir.exists())
+        self.assertEqual(commands.existing, {other, 'unrelated'})
+
+    def test_recovery_rejects_domain_without_metadata_or_wrong_metadata(self):
+        name = pilot.slot_prefix(self.config) + 'f' * 32
+        with self.local_ownership():
+            with self.assertRaisesRegex(pilot.PilotError, 'without_owned_metadata'):
+                pilot.cleanup_slot(self.config, FakeCommands(existing=[name]))
+        name, job = self.orphan()
+        data = json.loads((job / 'controller.json').read_text())
+        data['slot'] = 2
+        (job / 'controller.json').write_text(json.dumps(data))
+        commands = FakeCommands(existing=[name])
+        with self.local_ownership():
+            with self.assertRaisesRegex(pilot.PilotError, 'invalid_recovery_metadata'):
+                pilot.cleanup_slot(self.config, commands)
+        self.assertTrue(job.exists())
+        self.assertFalse(any(call[:2] == ['virsh', 'destroy'] for call in commands.calls))
+
+    def test_recovery_cli_never_reads_jit_and_cannot_interrupt_active_slot(self):
+        output, errors = io.StringIO(), io.StringIO()
+        report = {'slot': 1, 'lifecycle': 'slot_cleaned', 'cleaned_domains': []}
+        previous_umask = os.umask(0o077)
+        descriptors = []
+        try:
+            with self.local_ownership(), patch.object(pilot, 'Config', return_value=self.config), \
+                 patch.object(pilot.os, 'geteuid', return_value=0), \
+                 patch.object(pilot.sys, 'stdin', SimpleNamespace(buffer=object())), \
+                 patch.object(pilot.sys, 'stdout', output), patch.object(pilot.sys, 'stderr', errors), \
+                 patch.object(pilot, 'cleanup_slot', return_value=report) as recover:
+                self.assertEqual(pilot.main(['--cleanup-slot', '--slot', '1']), 0)
+                self.assertEqual(json.loads(output.getvalue()), report)
+                recover.assert_called_once_with(self.config)
+                recover.reset_mock()
+                descriptors = pilot.acquire_locks(self.config)
+                self.assertEqual(pilot.main(['--cleanup-slot', '--slot', '1']), 1)
+                self.assertEqual(json.loads(errors.getvalue())['error'], 'pilot_slot_already_running')
+                recover.assert_not_called()
+        finally:
+            for fd in descriptors:
+                os.close(fd)
+            os.umask(previous_umask)
+
+    def test_recovery_rejects_readable_or_escaping_metadata_without_touching_vm(self):
+        name, job = self.orphan()
+        metadata = job / 'controller.json'
+        commands = FakeCommands(existing=[name])
+        metadata.chmod(0o644)
+        with self.local_ownership():
+            with self.assertRaisesRegex(pilot.PilotError, 'unsafe_recovery_metadata_permissions'):
+                pilot.cleanup_slot(self.config, commands)
+            metadata.chmod(0o600)
+            data = json.loads(metadata.read_text())
+            data['job_directory'] = str(self.root / 'jobs/slot-2' / job.name)
+            metadata.write_text(json.dumps(data))
+            with self.assertRaisesRegex(pilot.PilotError, 'invalid_recovery_metadata'):
+                pilot.cleanup_slot(self.config, commands)
+        self.assertTrue(job.exists())
+        self.assertEqual(commands.calls, [])
+
+    def test_cleanup_rejects_other_slot_domain_before_libvirt_command(self):
+        commands = FakeCommands()
+        with self.assertRaisesRegex(pilot.PilotError, 'domain_outside_owned_slot'):
+            pilot.cleanup(commands, pilot.PREFIX + 'slot2-' + 'a' * 32, None, self.config)
+        self.assertEqual(commands.calls, [])
 
     def test_max_timeout_is_bounded(self):
         with self.assertRaisesRegex(pilot.PilotError, 'invalid_timeout'):
             pilot.validate_config(replace(self.config, timeout_seconds=5401))
+
+    def test_invalid_slot_and_profile_are_rejected(self):
+        with self.assertRaisesRegex(pilot.PilotError, 'invalid_slot'):
+            pilot.validate_roots(replace(self.config, slot=3))
+        with self.assertRaisesRegex(pilot.PilotError, 'invalid_guest_profile'):
+            pilot.validate_roots(replace(self.config, guest_profile='host-root'))
 
 
 if __name__ == '__main__':

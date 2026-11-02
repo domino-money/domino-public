@@ -28,6 +28,16 @@ class OperatorAuthorization(unittest.TestCase):
     def test_exact_trusted_dispatch(self):
         self.assertIn('domino-ci-123-2', self.check())
 
+    def test_job_specific_routing_is_accepted_without_other_profile_or_job(self):
+        jobs = copy.deepcopy(self.jobs)
+        jobs[1]['labels'] = ['self-hosted', 'Linux', 'X64', 'domino-ci', 'domino-ci-123-2',
+                             'domino-ci-normal', 'domino-job-pilot-read-worker']
+        self.assertIn('domino-job-pilot-read-worker', self.check(jobs=jobs))
+        for replacement in ('domino-ci-systemd', 'domino-job-pilot-backend'):
+            changed = copy.deepcopy(jobs)
+            changed[1]['labels'][-1] = replacement
+            with self.assertRaises(ValueError): self.check(jobs=changed)
+
     def test_other_event_branch_workflow_sha_or_repository(self):
         for key, value in [('event', 'pull_request'), ('head_branch', 'feature'),
                            ('path', '.github/workflows/ci.yml'), ('head_sha', 'b' * 40),

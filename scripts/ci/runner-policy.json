@@ -1,0 +1,182 @@
+{
+  "version": 1,
+  "repository": "domino-money/domino",
+  "repository_id": 1363307729,
+  "base_labels": [
+    "self-hosted",
+    "Linux",
+    "X64",
+    "domino-ci"
+  ],
+  "run_label_template": "domino-ci-{run_id}-{run_attempt}",
+  "jobs": [
+    {
+      "workflow": ".github/workflows/ci.yml",
+      "job_name": "Repository hygiene",
+      "job_label": "domino-job-ci-hygiene",
+      "profile": "systemd",
+      "lifetime_seconds": 900
+    },
+    {
+      "workflow": ".github/workflows/ci.yml",
+      "job_name": "What the change touches",
+      "job_label": "domino-job-ci-changes",
+      "profile": "normal",
+      "lifetime_seconds": 900
+    },
+    {
+      "workflow": ".github/workflows/ci.yml",
+      "job_name": "Frontend",
+      "job_label": "domino-job-ci-frontend",
+      "profile": "normal",
+      "lifetime_seconds": 1500
+    },
+    {
+      "workflow": ".github/workflows/ci.yml",
+      "job_name": "Read Worker",
+      "job_label": "domino-job-ci-read-worker",
+      "profile": "normal",
+      "lifetime_seconds": 900
+    },
+    {
+      "workflow": ".github/workflows/ci.yml",
+      "job_name": "Frontend browser (pages)",
+      "job_label": "domino-job-ci-browser-pages",
+      "profile": "normal",
+      "lifetime_seconds": 2100
+    },
+    {
+      "workflow": ".github/workflows/ci.yml",
+      "job_name": "Frontend browser (finance-create)",
+      "job_label": "domino-job-ci-browser-finance-create",
+      "profile": "normal",
+      "lifetime_seconds": 2100
+    },
+    {
+      "workflow": ".github/workflows/ci.yml",
+      "job_name": "Frontend browser (finance-automation)",
+      "job_label": "domino-job-ci-browser-finance-automation",
+      "profile": "normal",
+      "lifetime_seconds": 2100
+    },
+    {
+      "workflow": ".github/workflows/ci.yml",
+      "job_name": "Frontend browser (finance-positions)",
+      "job_label": "domino-job-ci-browser-finance-positions",
+      "profile": "normal",
+      "lifetime_seconds": 2100
+    },
+    {
+      "workflow": ".github/workflows/ci.yml",
+      "job_name": "Frontend browser (gate)",
+      "job_label": "domino-job-ci-browser-gate",
+      "profile": "normal",
+      "lifetime_seconds": 2100
+    },
+    {
+      "workflow": ".github/workflows/ci.yml",
+      "job_name": "Backend",
+      "job_label": "domino-job-ci-backend",
+      "profile": "normal",
+      "lifetime_seconds": 3000
+    },
+    {
+      "workflow": ".github/workflows/ci.yml",
+      "job_name": "Contracts (v1)",
+      "job_label": "domino-job-ci-contracts-v1",
+      "profile": "normal",
+      "lifetime_seconds": 5400
+    },
+    {
+      "workflow": ".github/workflows/ci.yml",
+      "job_name": "Contracts (v2)",
+      "job_label": "domino-job-ci-contracts-v2",
+      "profile": "normal",
+      "lifetime_seconds": 5400
+    },
+    {
+      "workflow": ".github/workflows/ci.yml",
+      "job_name": "Contracts (v2-audit)",
+      "job_label": "domino-job-ci-contracts-v2-audit",
+      "profile": "normal",
+      "lifetime_seconds": 5400
+    },
+    {
+      "workflow": ".github/workflows/ci.yml",
+      "job_name": "Deploy gated preview",
+      "job_label": "domino-job-ci-preview",
+      "profile": "deploy",
+      "lifetime_seconds": 1500
+    },
+    {
+      "workflow": ".github/workflows/funding-ui.yml",
+      "job_name": "Funding, automation and history in browser",
+      "job_label": "domino-job-funding",
+      "profile": "normal",
+      "lifetime_seconds": 3000
+    },
+    {
+      "workflow": ".github/workflows/automation-off-rehearsal.yml",
+      "job_name": "Archive, OFF units and local gas peer",
+      "job_label": "domino-job-automation-off",
+      "profile": "systemd",
+      "lifetime_seconds": 1200
+    },
+    {
+      "workflow": ".github/workflows/execution-cloudflare-preflight.yml",
+      "job_name": "inspect",
+      "job_label": "domino-job-execution-inspect",
+      "profile": "deploy",
+      "lifetime_seconds": 900
+    },
+    {
+      "workflow": ".github/workflows/read-path-release.yml",
+      "job_name": "release",
+      "job_label": "domino-job-read-path-release",
+      "profile": "deploy",
+      "lifetime_seconds": 1500
+    },
+    {
+      "workflow": ".github/workflows/clawber-ci-pilot.yml",
+      "job_name": "Require a dispatched main commit",
+      "job_label": "domino-job-pilot-preflight",
+      "profile": "normal",
+      "lifetime_seconds": 900
+    },
+    {
+      "workflow": ".github/workflows/clawber-ci-pilot.yml",
+      "job_name": "read-worker (clawber)",
+      "job_label": "domino-job-pilot-read-worker",
+      "profile": "normal",
+      "lifetime_seconds": 900
+    },
+    {
+      "workflow": ".github/workflows/clawber-ci-pilot.yml",
+      "job_name": "contracts-v1 (clawber)",
+      "job_label": "domino-job-pilot-contracts-v1",
+      "profile": "normal",
+      "lifetime_seconds": 5400
+    },
+    {
+      "workflow": ".github/workflows/clawber-ci-pilot.yml",
+      "job_name": "contracts-v2-audit (clawber)",
+      "job_label": "domino-job-pilot-contracts-v2-audit",
+      "profile": "normal",
+      "lifetime_seconds": 5400
+    },
+    {
+      "workflow": ".github/workflows/clawber-ci-pilot.yml",
+      "job_name": "browser-finance-create (clawber)",
+      "job_label": "domino-job-pilot-browser-finance-create",
+      "profile": "normal",
+      "lifetime_seconds": 2100
+    },
+    {
+      "workflow": ".github/workflows/clawber-ci-pilot.yml",
+      "job_name": "backend (clawber)",
+      "job_label": "domino-job-pilot-backend",
+      "profile": "normal",
+      "lifetime_seconds": 3000
+    }
+  ]
+}

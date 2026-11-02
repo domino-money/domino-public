@@ -53,7 +53,9 @@ def authorize(run, jobs, *, actor, sha, workload, prior_jobs=()):
             or workload not in WORKLOADS):
         raise ValueError('Run is not this operator\'s dispatched main-only pilot')
     run_label = f"domino-ci-{run['id']}-{run['run_attempt']}"
-    required = {'self-hosted', 'Linux', 'X64', 'domino-ci-pilot', run_label}
+    legacy = {'self-hosted', 'Linux', 'X64', 'domino-ci-pilot', run_label}
+    current = {'self-hosted', 'Linux', 'X64', 'domino-ci', run_label,
+               'domino-ci-normal', f'domino-job-pilot-{workload}'}
     def same_source(job, attempt):
         return (job.get('run_id') == run['id'] and job.get('run_attempt') == attempt
                 and job.get('head_sha') == sha and job.get('head_branch') == 'main')
@@ -72,12 +74,12 @@ def authorize(run, jobs, *, actor, sha, workload, prior_jobs=()):
             preflight = [j for j in historical if j['run_attempt'] == preflight_attempt]
     queued = [j for j in jobs if j.get('name') == f'{workload} (clawber)'
               and j.get('status') == 'queued' and same_source(j, run['run_attempt'])
-              and required == set(j.get('labels', []))]
+              and set(j.get('labels', [])) in (legacy, current)]
     if (len(preflight) != 1 or preflight[0].get('status') != 'completed'
             or preflight[0].get('conclusion') != 'success'
             or not same_source(preflight[0], preflight_attempt) or len(queued) != 1):
         raise ValueError('Require one queued matching job after a successful trusted-main preflight')
-    return sorted(required)
+    return sorted(queued[0]['labels'])
 
 
 def main():

@@ -17,7 +17,7 @@ concurrency:
 jobs:
   hygiene:
     name: Repository hygiene
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-systemd, "domino-job-ci-hygiene"]
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -25,7 +25,7 @@ jobs:
       - name: Check disposable CI tooling without host or GitHub access
         run: |
           python3 -B -m unittest discover -s scripts/ci -p 'test_*.py' -v
-          node --test scripts/ci/pilot-workflow.test.mjs
+          node --test scripts/ci/pilot-workflow.test.mjs scripts/ci/runner-policy.test.mjs
           bash -n scripts/ci/prepare-image.sh scripts/ci/run-pilot-workload.sh
       - name: Check Solidity hygiene
         run: node --test scripts/check-contract-hygiene.test.mjs && node scripts/check-contract-hygiene.mjs
@@ -93,7 +93,7 @@ jobs:
           systemd-analyze verify --man=no scripts/reference-collector/domino-reference-collector.timer
   changes:
     name: What the change touches
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-normal, "domino-job-ci-changes"]
     timeout-minutes: 5
     outputs:
       browser: ${{ steps.paths.outputs.browser }}
@@ -126,7 +126,7 @@ jobs:
           echo "browser=$browser" | tee -a "$GITHUB_OUTPUT"
   frontend:
     name: Frontend
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-normal, "domino-job-ci-frontend"]
     # The web checks, the shared types and check:app up to its build: about 4
     # minutes on run 36114583875. check:app's browser suites run beside this job
     # in frontend_browser.
@@ -173,6 +173,14 @@ jobs:
       - name: Check S1 position plan types
         run: node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/position-plan-v1/types.ts api-contracts/position-plan-v1/runtime.d.mts
       - run: npm --prefix app ci --no-audit --no-fund
+      - name: Install the exact locked Chromium
+        run: |
+          export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/domino-browsers"
+          node app/node_modules/playwright-core/cli.js install chromium
+          browser=$(node -e "process.stdout.write(require('./app/node_modules/playwright-core').chromium.executablePath())")
+          test -x "$browser"
+          printf 'PLAYWRIGHT_BROWSERS_PATH=%s\nDOMINO_BROWSER_PATH=%s\n' "$PLAYWRIGHT_BROWSERS_PATH" "$browser" >> "$GITHUB_ENV"
+          "$browser" --version
       # check:app up to its build, one step each; its browser suites follow in
       # frontend_browser (scripts/check-app-jobs.test.mjs holds the two lists
       # to check:app).
@@ -187,7 +195,7 @@ jobs:
         run: node --test --test-force-exit api-contracts/read-v2/consumer.browser.test.mjs
   read_bridge:
     name: Read Worker
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-normal, "domino-job-ci-read-worker"]
     # The read Worker's own checks (bridge/ and the read contracts it
     # consumes): about 2 seconds, and no install. A job of their own, so a
     # failure elsewhere never skips them (audit H8: they were a late step of
@@ -203,7 +211,7 @@ jobs:
     name: Frontend browser (${{ matrix.suite }})
     needs: changes
     if: needs.changes.outputs.browser == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-normal, "domino-job-ci-browser-${{ matrix.suite }}"]
     # check:app's browser suites, one job each: test:render is test:pages and
     # then test:finance, and test:gate follows. These 2-vCPU runners give
     # node --test one file at a time, so in one job the suites ran end to end
@@ -246,6 +254,14 @@ jobs:
             app/package-lock.json
       - run: npm --prefix web ci --no-audit --no-fund
       - run: npm --prefix app ci --no-audit --no-fund
+      - name: Install the exact locked Chromium
+        run: |
+          export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/domino-browsers"
+          node app/node_modules/playwright-core/cli.js install chromium
+          browser=$(node -e "process.stdout.write(require('./app/node_modules/playwright-core').chromium.executablePath())")
+          test -x "$browser"
+          printf 'PLAYWRIGHT_BROWSERS_PATH=%s\nDOMINO_BROWSER_PATH=%s\n' "$PLAYWRIGHT_BROWSERS_PATH" "$browser" >> "$GITHUB_ENV"
+          "$browser" --version
       # What check:app has built by the time its browser suites run: the unit
       # build, which the fake chains and the gated server's middleware load,
       # and dist.
@@ -274,7 +290,7 @@ jobs:
           fi
   backend:
     name: Backend
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-normal, "domino-job-ci-backend"]
     # The artifact build for the EVM tests (issue #144) adds a full Forge
     # compilation. Last 60 runs: 13-19 minutes warm (backend tests 11.5-16).
     # Cold, the three builds add about 8: 25 minutes on run 36927967030 (#284).
@@ -422,7 +438,7 @@ jobs:
         run: python backend/dev_postgres.py stop
   contracts:
     name: Contracts (${{ matrix.part }})
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-normal, "domino-job-ci-contracts-${{ matrix.part }}"]
     # Two jobs in parallel, each with its own Forge cache: v1 runs every suite
     # outside contracts/test/v2, v2 the V2 suites and the V2 export check. One
     # job no longer fit a cold run: the 22 V1 suites alone took 33.4-35.1 min
@@ -528,7 +544,7 @@ jobs:
     name: Deploy gated preview
     needs: [hygiene, frontend, read_bridge, frontend_browser, backend, contracts]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-deploy, "domino-job-ci-preview"]
     timeout-minutes: 15
     # One upload at a time. Main runs no longer wait for each other (the
     # concurrency at the top), so two may reach this job close together: a
