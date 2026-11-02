@@ -161,7 +161,7 @@ python3 scripts/staging/continuous_egress_policy.py < pins.json > candidate.json
 |---|---|---|
 | `/etc/domino/continuous-reads/policy.nft` | 0600 | the whole table, every identity, default deny |
 | `/etc/domino/continuous-reads/<role>.hosts` | 0644 | for each enabled unit with pins, and `write.hosts` for the writer, whose units bind it; edge names are not pinned here |
-| `/etc/systemd/system/domino-<role>.service.d/60-continuous-reads.conf` | 0644 | for each enabled unit: bound to the egress service and the target, address allow-list, hosts bind |
+| `/etc/systemd/system/domino-<role>.service.d/60-continuous-reads.conf` | 0644 | for each enabled unit: bound to the egress service and the target, no start limit (`StartLimitIntervalSec=0`: the unit restarts for as long as it fails), address allow-list, hosts bind |
 | `/etc/systemd/system/domino-continuous-reads.target` | 0644 | `Requires=` the egress service and the read path (reader, gateway, tunnel); `Wants=` each enabled family |
 
 A family's drop-in also carries `ExecStart=` with the installer's exact

@@ -399,10 +399,13 @@ def render(snapshot):
         if unit is None:
             continue
         units.append(unit)
+        # A member restarts for as long as it fails: with the default start limit (3 in a minute) a
+        # listener that failed its first starts stayed failed until someone started it by hand
+        # (execution-status, 2 Nov 2026).
         dropin = ['# Explicit continuous read activation; fail closed behind the scoped nft policy.',
                   '[Unit]', f'BindsTo={EGRESS_UNIT}', f'After={EGRESS_UNIT} network-online.target',
                   'Wants=network-online.target', f'PartOf={TARGET}',
-                  'ConditionPathExists=', f'ConditionPathExists={READY}']
+                  'ConditionPathExists=', f'ConditionPathExists={READY}', 'StartLimitIntervalSec=0']
         if role == 'gateway' and 'read' in enabled:
             dropin += ['Requires=domino-read.service', 'After=domino-read.service']
         dropin += ['[Service]', 'IPAddressAllow=', 'IPAddressDeny=', 'IPAddressDeny=any',

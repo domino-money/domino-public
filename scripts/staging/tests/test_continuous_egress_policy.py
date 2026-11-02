@@ -237,6 +237,22 @@ class ContinuousEgressTests(unittest.TestCase):
                                          {host: addresses for host, addresses in PINS.items()}))
         self.assertNotIn(path, without['artifacts'])
 
+    def test_every_member_restarts_for_as_long_as_it_fails(self):
+        every = LIVE_ENABLED + ('auth', 'onboarding', 'deposit', 'performance',
+                                'performance-collector', 'execution-status', 'execution-signer', 'position-plan',
+                                'v2-automation', 'crosschain', 'monitor')
+        data = {**snapshot(every, {**PINS, **UNISWAP, **BRIDGES, **TELEGRAM}),
+                'identities': identities(plan_listener=True, automation=True, bridge=True, monitor=True)}
+        result = policy.render(data)
+        dropins = {path: text for path, text in result['artifacts'].items() if path.endswith('/' + policy.DROPIN)}
+        self.assertTrue({f'/etc/systemd/system/domino-{role}.service.d/{policy.DROPIN}'
+                         for role in ('read', 'gateway', 'tunnel', 'auth', 'execution-status', 'position-plan',
+                                      'crosschain')} <= set(dropins))
+        for path, text in dropins.items():
+            with self.subTest(path=path):
+                unit_section = text.split('[Service]')[0]
+                self.assertIn('\nStartLimitIntervalSec=0\n', unit_section)
+
     def test_a_refused_connection_attempt_is_reset_and_any_other_packet_still_dropped(self):
         every = LIVE_ENABLED + ('auth', 'onboarding', 'deposit', 'performance',
                                 'performance-collector', 'execution-status', 'execution-signer', 'position-plan',
@@ -304,12 +320,12 @@ class ContinuousEgressTests(unittest.TestCase):
     def test_the_read_path_drop_ins_and_target_are_the_installed_ones(self):
         result = policy.render(snapshot())
         read = dropin(result, 'read').splitlines()
-        self.assertEqual(read[:9], [
+        self.assertEqual(read[:10], [
             '# Explicit continuous read activation; fail closed behind the scoped nft policy.',
             '[Unit]', 'BindsTo=domino-continuous-egress.service',
             'After=domino-continuous-egress.service network-online.target', 'Wants=network-online.target',
             'PartOf=domino-continuous-reads.target', 'ConditionPathExists=',
-            'ConditionPathExists=/run/domino-continuous-reads.ready', '[Service]'])
+            'ConditionPathExists=/run/domino-continuous-reads.ready', 'StartLimitIntervalSec=0', '[Service]'])
         allowed = [line for line in read if line.startswith('IPAddressAllow=') and line != 'IPAddressAllow=']
         self.assertEqual(allowed, ['IPAddressAllow=127.0.0.1/32'] + [
             f'IPAddressAllow={address}/32' for address in sorted(
