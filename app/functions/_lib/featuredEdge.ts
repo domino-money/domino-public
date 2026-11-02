@@ -67,7 +67,7 @@
  * reaches every visitor at once and takes the entry out.
  * The page trusts an X-Domino-Edge-Age up to ERROR_SECONDS (src/lib/read/bridgeSource.ts EDGE_AGE_MAX_MS, an hour since
  * 2026-10-30), so a stand-in is dated by its real age. The featured list judges its freshness by the list's own
- * servedAt and generatedAt (lib/read/featuredList.ts, 72 h), so nothing on screen changes.
+ * servedAt and its selection's end (lib/read/featuredList.ts, 36 h), so nothing on screen changes.
  */
 import { APP_ORIGIN, type BridgeEnv } from './bridge'
 import { answerFromEdge, type EdgeCache, type EdgeRuntime } from './publicEdge'

@@ -155,7 +155,10 @@ test('FEATURED_DENY is empty, and a pool named in it is left out of any list', (
 
 // --- the fallback table, always by the server's clock ---
 
-test('fallback: current and repaired while valid are the server’s list with its title; carried_over, manual and a stale list are neutral; past 72 h, none, or no pools left is the embedded list', () => {
+test('fallback: current and repaired while valid are the server’s list with its title; carried_over, manual and a stale list are neutral; past its limit, none, or no pools left is the embedded list', () => {
+  // Changed on purpose 2026-11-02 (rugged's Top pools diagnosis, item 1): the limit is 36 h from the selection's end.
+  const SELECTED_AT = CURRENT.window.end;
+  const shortValid = SELECTED_AT + 30 * 3600;
   const current = featured.listFrom(answered(answer([A, B])));
   assert.equal(current.source, 'server');
   assert.deepEqual(idsOf(current), [A.poolId, B.poolId]);
@@ -167,8 +170,10 @@ test('fallback: current and repaired while valid are the server’s list with it
   for (const [label, body] of [
     ['carried_over', answer([A, B], { status: 'carried_over' })],
     ['manual', read('valid/manual.json')],
-    ['stale', answer([A, B], { servedAt: CURRENT.validUntil + 1 })],
-    ['stale up to 72 h', answer([A, B], { servedAt: CURRENT.generatedAt + 72 * 3600 })],
+    ['stale', answer([A, B], { validUntil: shortValid, servedAt: shortValid + 1 })],
+    ['stale up to 36 h', answer([A, B], { validUntil: shortValid, servedAt: SELECTED_AT + 36 * 3600 })],
+    ['carried_over up to 36 h', answer([A, B], { status: 'carried_over', servedAt: SELECTED_AT + 36 * 3600 })],
+    ['manual up to 72 h', { ...read('valid/manual.json'), servedAt: read('valid/manual.json').generatedAt + 72 * 3600 }],
   ]) {
     const list = featured.listFrom(answered(body));
     assert.equal(list.source, 'server_neutral', label);
@@ -176,7 +181,10 @@ test('fallback: current and repaired while valid are the server’s list with it
     assert.ok(list.entries.length > 0, label);
   }
   for (const [label, outcome] of [
-    ['older than 72 h', answered(answer([A, B], { servedAt: CURRENT.generatedAt + 72 * 3600 + 1 }))],
+    ['older than 36 h', answered(answer([A, B], { servedAt: SELECTED_AT + 36 * 3600 + 1 }))],
+    // 2 Nov's revision 94: a repair at 15:00 moved generatedAt, and the list still counts from its selection.
+    ['repaired later, older than 36 h', answered(answer([A, B], { status: 'carried_over', generatedAt: SELECTED_AT + 3 * 3600, effectiveAt: SELECTED_AT + 3 * 3600, servedAt: SELECTED_AT + 36 * 3600 + 1 }))],
+    ['manual, older than 72 h', answered({ ...read('valid/manual.json'), servedAt: read('valid/manual.json').generatedAt + 72 * 3600 + 1 })],
     ['none', answered(read('valid/none.json'))],
     ['none with withdrawn', answered(read('valid/none-with-withdrawn.json'))],
     ['every pool dropped', answered(answer([pool(id('f6'), addr('f6'), 'USDG')]))],
@@ -772,13 +780,18 @@ test('refresh: a disabled route falls back, and a recovered server list is admit
 
 test('the same list gone stale keeps its pools and drops its criterion title', async () => {
   const first = answered(answer([A, B], { listId: listId('01') }));
-  const stale = answered(answer([A, B], { listId: listId('01'), servedAt: CURRENT.validUntil + 60 }));
-  const { store } = scripted(first, stale);
+  const shortValid = CURRENT.window.end + 30 * 3600;
+  const stale = answered(answer([A, B], { listId: listId('01'), validUntil: shortValid, servedAt: shortValid + 60 }));
+  const past = answered(answer([A, B], { listId: listId('01'), validUntil: shortValid, servedAt: CURRENT.window.end + 36 * 3600 + 1 }));
+  const { store } = scripted(first, stale, past);
   await store.ensure();
   assert.equal(store.getSnapshot().source, 'server');
   await store.refresh();
   assert.equal(store.getSnapshot().source, 'server_neutral');
   assert.deepEqual(idsOf(store.getSnapshot()), [A.poolId, B.poolId]);
+  await store.refresh();
+  assert.equal(store.getSnapshot().source, 'bundled', 'an open tab leaves the list once it passes its limit');
+  assert.deepEqual(idsOf(store.getSnapshot()), SELECTED_POOLS);
 });
 
 test('before its first answer the store paints the embedded list; a read that throws settles on it', async () => {

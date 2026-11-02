@@ -1056,11 +1056,11 @@ test('(r) a list served and current: its pools in its order, read first, under "
   }
 });
 
-test('(s) the list off (route_not_available), none, older than 72 h or invalid: the embedded six under "Selected pools", nothing else changed', async () => {
+test('(s) the list off (route_not_available), none, older than 36 h or invalid: the embedded six under "Selected pools", nothing else changed', async () => {
   for (const [label, answer] of [
     ['route_not_available', () => v5(404, { error: 'route_not_available' })],
     ['none', () => v5(200, JSON.parse(readFileSync(new URL('../../api-contracts/read-v5/fixtures/valid/none.json', import.meta.url), 'utf8')))],
-    ['older than 72 h', () => v5(200, servedList({ servedAt: LIST.generatedAt + 72 * 3600 + 1 }))],
+    ['older than 36 h', () => v5(200, servedList({ servedAt: LIST.window.end + 36 * 3600 + 1 }))],
     ['invalid', () => v5(200, { ...servedList(), extra: true })],
   ]) {
     const { context, page, errors } = await visit(withList(answer));
@@ -1079,8 +1079,9 @@ test('(s) the list off (route_not_available), none, older than 72 h or invalid: 
   }
 });
 
-test('(t) a stale list (validUntil passed, within 72 h) and a carried_over one keep their pools under the neutral title', async () => {
-  for (const [label, patch] of [['stale', { servedAt: LIST.validUntil + 60 }], ['carried_over', { status: 'carried_over' }]]) {
+test('(t) a stale list (validUntil passed, within 36 h) and a carried_over one keep their pools under the neutral title', async () => {
+  const shortValid = LIST.window.end + 30 * 3600;
+  for (const [label, patch] of [['stale', { validUntil: shortValid, servedAt: shortValid + 60 }], ['carried_over', { status: 'carried_over' }]]) {
     const { context, page } = await visit(withList(() => v5(200, servedList(patch))));
     try {
       assert.equal(await settled(page), 'none', label);

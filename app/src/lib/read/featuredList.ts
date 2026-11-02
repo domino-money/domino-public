@@ -17,9 +17,12 @@
  * Which list, always by the server's clock (never this browser's):
  *
  *   current or repaired, servedAt <= validUntil        the server's, "Top pools · last 24h" (`server`)
- *   carried_over or manual, or stale up to 72 h        the server's, the neutral title (`server_neutral`)
- *   none, route off, older than 72 h, invalid, any     the embedded list, the neutral title (`bundled`)
+ *   carried_over or manual, or stale up to the limit   the server's, the neutral title (`server_neutral`)
+ *   none, route off, past the limit, invalid, any      the embedded list, the neutral title (`bundled`)
  *   other failure, the 1.5 s passed, nothing kept
+ *
+ * The limit: 36 h from the selection's `window.end`; a list with no selection behind it (`manual`, whose window is
+ * null), 72 h from its `generatedAt`.
  *
  * The Home is never empty: the embedded list (config/selectedPools.ts with
  * its labels) stands in whenever the server's cannot, and paints the rows
@@ -80,8 +83,14 @@ export const FEATURED_DEADLINE_MS = 1_500
 export const FEATURED_FIRST_DEADLINE_MS = 3_500
 /** After a first read that found no answer, the list is asked again this long on, then this long after each (see the header). */
 export const FEATURED_RETRY_MS: readonly number[] = [3_000, 6_000, 12_000]
-/** A list served this long after it was generated is not shown at all (§11.2). */
-export const FEATURED_MAX_AGE_SECONDS = 72 * 3600
+/**
+ * A list served this long after its selection ended is not shown at all (§11.2). Changed on purpose 2026-11-02 (rugged's
+ * Top pools diagnosis, item 1): it was 72 h from `generatedAt`, which every repair renews, so the list selected on 16 Oct
+ * stayed five days. Now the policy's validHours, from the selection's `window.end`.
+ */
+export const FEATURED_MAX_AGE_SECONDS = 36 * 3600
+/** The same for a list with no selection behind it (`manual`: its window is null), from its `generatedAt`. */
+export const FEATURED_MANUAL_MAX_AGE_SECONDS = 72 * 3600
 
 /**
  * Pools a featured list never shows, lowercase: the owner's emergency brake on
@@ -307,8 +316,9 @@ export function listFrom(answer: FeaturedAnswer): FeaturedList {
   if (answer.kind !== 'list') return BUNDLED_LIST
   const { answer: body, pools } = answer.valid
   const { servedAt, generatedAt, validUntil } = body
-  // Every time is the server's own. A list without them, or older than 72 h when served, is not shown.
-  if (pools.length === 0 || generatedAt === null || validUntil === null || servedAt > generatedAt + FEATURED_MAX_AGE_SECONDS) return BUNDLED_LIST
+  // Every time is the server's own. A list without them, or past its limit when served, is not shown.
+  if (pools.length === 0 || generatedAt === null || validUntil === null) return BUNDLED_LIST
+  if (servedAt > (body.window ? body.window.end + FEATURED_MAX_AGE_SECONDS : generatedAt + FEATURED_MANUAL_MAX_AGE_SECONDS)) return BUNDLED_LIST
   const current = (body.status === 'current' || body.status === 'repaired') && servedAt <= validUntil
   // The criterion title only for a list that names the rules it was ranked by. The method line that spelled them out
   // under the title was removed 2026-09-28 (the owner: "Não precisa ter essa descrição"); the docs page says how.
