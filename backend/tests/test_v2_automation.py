@@ -1,5 +1,5 @@
-"""The V2 automation service's configuration and command line, its return of a closed vault's reserves, and what a
-paused vault costs a pass."""
+"""The V2 automation service's configuration and command line, its return of a closed vault's reserves, what a
+paused vault costs a pass, and no Auto-exit on an empty position."""
 import contextlib
 import copy
 from dataclasses import replace
@@ -20,10 +20,11 @@ from eth_hash.auto import keccak
 
 from discovery import DataError, parse_block
 from v2_abi import function
+from v2_autoexit import MandateWatcher
 import v2_automation as automation
 from v2_automation import ChainAutomation, build, checked_config, load_automation_config, main
 from v2_chains import chain as profile
-from v2_executor import CallReverted
+from v2_executor import CallReverted, Journal
 from v2_manifest import checked_deployment
 from v2_observation import PublisherPolicy
 from v2_plan import return_reserves_calldata, return_subject
@@ -31,6 +32,7 @@ from v2_planner import PlannerConfig
 from v2_rpc import ChainEndpoints, Endpoint
 from v2_uniswap import PoolRef, UniswapReader, v3_pool_address
 from v2_vaults import VaultRecord
+from v2_waiting import read_waiting_file
 from v2_fixtures import HEAD, FakeChain, Revert
 from test_v2_manifest import manifest_document
 from test_v2_planner import RICH, member, vault_state
@@ -398,6 +400,7 @@ class PassChain:
         self.pool = PoolRef(dex, TOKEN_A, TOKEN_B, 3000, 60)
         self.manager = uniswap.v4.positionManager if dex == 4 else uniswap.v3.positionManager
         self.ranges, self.liquidity = {}, {}  # by token id; a burned token has no liquidity entry
+        self.owed = {}  # v3: tokensOwed by token id, (0, 0) when absent
         self.halted = False
         self.fake.on(self.deployment.registry, function('IDominoRegistry', 'automationHalted'), lambda: (self.halted,))
         (self._v4 if dex == 4 else self._v3)()
@@ -434,7 +437,7 @@ class PassChain:
                 raise Revert()  # the manager's 'Invalid token ID'
             lower, upper = self.ranges[token_id]
             return (0, ZERO, pool.currency0, pool.currency1, pool.fee, lower, upper, self.liquidity[token_id],
-                    0, 0, 0, 0)
+                    0, 0, *self.owed.get(token_id, (0, 0)))
         on(manager, function('IUniswapV3PositionManagerMinimal', 'positions'), positions)
         on(manager, function('IUniswapV3PositionManagerMinimal', 'ownerOf'), lambda token_id: (self.OWNER,))
         on(factory, function('IUniswapV3FactoryMinimal', 'getPool'), lambda a, b, fee: (address,))
@@ -482,6 +485,7 @@ class FakeVault:
     def __init__(self, chain, address, root):
         self.chain, self.address, self.root = chain, address, root
         self.paused, self.nonce, self.last, self.reserves, self.members = True, 9, 0, (0, 0), [root]
+        self.lots = {}  # (token id, token) -> (uncharged, charged), (0, 0) when absent
         chain.ranges[root], chain.liquidity[root] = (-600, 600), 10**18
         pool, on = chain.pool, chain.fake.on
         raw = (pool.dex, pool.currency0, pool.currency1, pool.fee, pool.tick_spacing, pool.hooks)
@@ -496,7 +500,8 @@ class FakeVault:
         on(address, function('IDominoVaultLedger', 'lastExecutionAt'), lambda: (self.last,))
         on(address, function('IDominoVaultLedger', 'quoteCurrency'), lambda: (pool.currency1,))
         on(address, function('IDominoVaultLedger', 'member'), self.member)
-        on(address, function('IDominoVaultLedger', 'lot'), lambda token_id, token: ((0, 0),))
+        on(address, function('IDominoVaultLedger', 'lot'), lambda token_id, token: (self.lots.get((token_id, token),
+                                                                                                    (0, 0)),))
         self.record = VaultRecord(address, PassChain.OWNER, root, chain.dex, 1)
 
     def member(self, token_id):
@@ -644,6 +649,177 @@ class PausedVaultTests(unittest.TestCase):
         vault.paused, vault.last = False, chain.head.block.timestamp - 10
         (entry,), cost = chain.run(service, [vault], 3 + self.FULL[3])
         self.assertEqual((entry['reason'], cost), ('too_soon', 3 + self.FULL[3]))
+
+
+class EmptyPositionExitTests(unittest.TestCase):
+    """The owner's rule, no Auto-exit on an empty position, after the stop-loss of 6 Oct 2026 on #3589588 that fired
+    on a root emptied outside Domino and withdrew 0 and 0. Through the pass's own exits (ChainAutomation._exits) on
+    PassChain's fake Base, v4 and v3, with the positions read by the real Uniswap reader and the billed calls counted:
+    a mandate whose anchor crossed a trigger, on a position with no liquidity, nothing owed (v3's tokensOwed included)
+    and no lot in its vault, is neither signed, simulated nor sent. It is kept (never forgotten), waits with
+    `position_empty`, recorded for the read API, and fires as before once the position holds something again."""
+
+    MANDATE = '0x' + '5e' * 32
+    ROOT = 7
+    SPOT = 2**96  # PassChain's pools, v3 and v4
+    # One active mandate costs a pass 15 billed calls: its record (1), the module's two parameters (2), the vault's exit
+    # module, owner and pool (3), and its position (v4: 9; v3: 8, and the pool's oracle ring, 1, for the TWAP).
+    COST = {4: 15, 3: 15}
+    LOTS = 2  # the vault's lot of the position in each pool token, read only for an otherwise empty position
+
+    class Executor:
+        def __init__(self, journal):
+            self.journal, self.calls = journal, []
+
+        def presimulate(self, target, data, block):
+            self.calls.append((target, data, block))
+            return 480_000, 400_000
+
+    class Publisher:
+        def __init__(self):
+            self.calls = []
+
+        def observe(self, pool, block, *, max_age_seconds):
+            self.calls.append((pool, block, max_age_seconds))
+            observation = type('Observation', (), {'valid_until': block.timestamp + 90})()
+            return type('Signed', (), {'observation': observation, 'evidence': lambda _: b'signed'})()
+
+    def chain(self, dex, *, below=SPOT):
+        """A vault on `dex` with the exit module on and one active mandate on its root, receiving both tokens; at
+        the pools' spot, `below` fires it."""
+        chain = PassChain(dex)
+        vault = chain.vault('0x' + 'a4' * 20, self.ROOT)
+        vault.paused = False
+        module, on = chain.deployment.auto_exit, chain.fake.on
+        on(vault.address, function('IDominoVault', 'exitModule'), lambda: (module,))
+        record = (PassChain.OWNER, chain.head.block.timestamp + 86400, 100, 0, 1, vault.address, ZERO, below, 0,
+                  self.ROOT)
+        on(module, function('IDominoAutoExitExtension', 'mandateOf'), lambda mandate_hash: (record,))
+        on(module, function('IDominoAutoExitExtension', 'maxObservationAgeSeconds'), lambda: (300,))
+        on(module, function('IDominoAutoExitExtension', 'minTwapSeconds'), lambda: (600,))
+        return chain, vault
+
+    def service(self, chain, vault, *, keys=True):
+        directory = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, directory)
+        journal = Journal(directory / 'journal.sqlite', 8453, OPERATOR)
+        self.addCleanup(journal.close)
+        service = chain.service(vault, executor=self.Executor(journal) if keys else None)
+        service.waiting_file = directory / 'base-8453.waiting.json'
+        # The mandate an earlier scan found; the head is before the module's deployment block, so nothing is scanned.
+        watcher = MandateWatcher(chain.deployment)
+        watcher.hashes[self.MANDATE] = 1
+        watcher.registered[self.MANDATE] = chain.head.block.timestamp - 3600  # an hour before the head
+        service.mandates, service.index = watcher, None
+        return service
+
+    def exits(self, chain, service, publisher, budget):
+        """One pass's exits: the mandate's entry and the billed calls it cost. A call past `budget` fails the test."""
+        service._pass = {'references': None, 'growth': {}, 'min_twap': None, 'oracles': {}, 'halted': None}
+        rpc = chain.endpoints.read_rpc(anchor=chain.head.block, batch_reads=True, max_requests=600)
+        before = sum(chain.endpoints.calls().values())
+        chain.fake.budget = len(chain.fake.log) + budget
+        try:
+            entry, = service._exits(chain.head, rpc, UniswapReader(BASE, rpc), publisher)
+        finally:
+            chain.fake.budget = None
+        return entry, sum(chain.endpoints.calls().values()) - before
+
+    def lots_read(self, chain, vault):
+        """Whether the pass's last two calls were the vault's lot of the root in each pool token, at the head."""
+        last = [(params[0]['to'], params[0]['data'][:10], params[1]) for _, _, params in chain.fake.log[-2:]]
+        return last == [(vault.address, selector('lot(uint256,address)'), chain.head.block.tag)] * 2
+
+    def test_an_empty_position_with_nothing_owed_waits_and_fires_once_liquidity_returns(self):
+        for dex in (4, 3):
+            with self.subTest(dex=dex):
+                chain, vault = self.chain(dex)
+                chain.liquidity[self.ROOT] = 0  # its owner took everything out on Uniswap, fees included
+                service, publisher = self.service(chain, vault), self.Publisher()
+                for _ in range(2):  # pass after pass, while it stays empty
+                    entry, cost = self.exits(chain, service, publisher, self.COST[dex] + self.LOTS)
+                    self.assertEqual((entry['act'], entry['reason'], cost),
+                                     (False, 'position_empty', self.COST[dex] + self.LOTS))
+                    self.assertNotIn('plan', entry)
+                    self.assertTrue(self.lots_read(chain, vault))
+                    # Nothing signed or simulated, and the mandate is kept: the next pass reads it again.
+                    self.assertEqual((publisher.calls, service.executor.calls), ([], []))
+                    self.assertNotIn(self.MANDATE, service.mandates.final)
+                # Why it waits reaches the read API, as the indexer reads the file (a code read-v6 admits as is).
+                service._record_waiting({'vaults': [], 'exits': [entry]}, chain.head.block)
+                self.assertEqual(service.executor.journal.waiting()['mandates'][self.MANDATE]['reason'],
+                                 'position_empty')
+                status, content = read_waiting_file(service.waiting_file, 8453)
+                self.assertEqual((status, content['mandates'][self.MANDATE]['reason']), ('read', 'position_empty'))
+                # Liquidity comes back: it fires as before, and a position that holds liquidity costs nothing more.
+                chain.liquidity[self.ROOT] = 10**18
+                entry, cost = self.exits(chain, service, publisher, self.COST[dex])
+                self.assertEqual((entry['act'], entry['reason'], entry['simulation'], cost),
+                                 (True, 'triggered', 'passed', self.COST[dex]))
+                self.assertEqual(len(publisher.calls), 1)
+                (target, calldata, _), = service.executor.calls
+                self.assertEqual((target, calldata), (chain.deployment.auto_exit, entry['plan']['calldata']))
+
+    def test_an_empty_position_that_is_still_owed_something_is_exited(self):
+        cases = [(3, 'v3 tokens owed in token0', {'owed': (5, 0)}), (3, 'v3 tokens owed in token1', {'owed': (0, 5)})]
+        for dex in (4, 3):
+            for token in (0, 1):
+                cases += [(dex, f'v{dex} uncharged lot in token{token}', {'lot': (token, (5, 0))}),
+                          (dex, f'v{dex} charged lot in token{token}', {'lot': (token, (0, 5))})]
+        for dex, label, case in cases:
+            with self.subTest(label):
+                chain, vault = self.chain(dex)
+                chain.liquidity[self.ROOT] = 0
+                if 'owed' in case:  # decreased outside Domino and not collected: the exit collects it
+                    chain.owed[self.ROOT] = case['owed']
+                else:  # the vault pays the position's lots to the owner in the exit
+                    token, lot = case['lot']
+                    vault.lots[(self.ROOT, (chain.pool.currency0, chain.pool.currency1)[token])] = lot
+                service, publisher = self.service(chain, vault), self.Publisher()
+                reads = 0 if 'owed' in case else self.LOTS  # what is owed is in the position's own read
+                entry, cost = self.exits(chain, service, publisher, self.COST[dex] + reads)
+                self.assertEqual((entry['act'], entry['reason'], entry['simulation'], cost),
+                                 (True, 'triggered', 'passed', self.COST[dex] + reads))
+                self.assertEqual((len(publisher.calls), len(service.executor.calls)), (1, 1))
+
+    def test_a_mandate_whose_trigger_is_not_reached_reads_nothing_more(self):
+        for dex in (4, 3):
+            with self.subTest(dex=dex):
+                chain, vault = self.chain(dex, below=self.SPOT - 1)
+                chain.liquidity[self.ROOT] = 0
+                service = self.service(chain, vault)
+                entry, cost = self.exits(chain, service, self.Publisher(), self.COST[dex])
+                self.assertEqual((entry['act'], entry['reason'], cost), (False, 'trigger_not_reached', self.COST[dex]))
+
+    def test_the_dry_run_says_it_too(self):
+        # `plan`, keyless: no publisher, no executor.
+        for dex in (4, 3):
+            with self.subTest(dex=dex):
+                chain, vault = self.chain(dex)
+                chain.liquidity[self.ROOT] = 0
+                service = self.service(chain, vault, keys=False)
+                entry, _ = self.exits(chain, service, None, self.COST[dex] + self.LOTS)
+                self.assertEqual((entry['act'], entry['reason']), (False, 'position_empty'))
+                chain.liquidity[self.ROOT] = 10**18
+                entry, _ = self.exits(chain, service, None, self.COST[dex])
+                self.assertEqual((entry['act'], entry['reason']), (True, 'triggered_keyless'))
+
+    def test_on_the_twap_too(self):
+        # A v3 pool whose ring holds the module's window, the mandate registered long before: the anchor is the
+        # TWAP (read through the anchor, scripted here), never a signature.
+        chain, vault = self.chain(3)
+        chain.liquidity[self.ROOT] = 0
+        service, publisher = self.service(chain, vault), self.Publisher()
+        with patch.object(automation, 'twap_guaranteed', lambda rpc, chain_, pool, window, block: True), \
+                patch.object(automation, 'twap_price', lambda rpc, deployment, pool, window, block: self.SPOT):
+            budget = self.COST[3] - 1 + self.LOTS  # the ring is not read
+            entry, cost = self.exits(chain, service, publisher, budget)
+            self.assertEqual((entry['anchorSource'], entry['act'], entry['reason'], cost),
+                             ('twap', False, 'position_empty', budget))
+            chain.liquidity[self.ROOT] = 10**18
+            entry, _ = self.exits(chain, service, publisher, self.COST[3] - 1)
+        self.assertEqual((entry['anchorSource'], entry['act'], entry['reason']), ('twap', True, 'triggered'))
+        self.assertEqual((publisher.calls, len(service.executor.calls)), ([], 1))
 
 
 if __name__ == '__main__':

@@ -13,7 +13,9 @@ pattern, never a plain key on the VM). Each pass:
 1. reads the head from the chain's shared follower (v2_head) and reconciles
    the operator's journal: nothing new is claimed while one is unresolved;
 2. auto-exits first (a stop-loss is time-sensitive): every active mandate
-   whose anchor crossed a trigger is presimulated and sent (v2_autoexit);
+   whose anchor crossed a trigger is presimulated and sent (v2_autoexit),
+   unless its position is empty (no liquidity, nothing owed, no lots): then
+   it waits, still active, with `position_empty`;
 3. returns: a vault whose owner closed the root (no liquidity left, or
    burned), with no active successor and reserves left, gets one
    returnReserves() (IDominoVaultLedger), which pays the owner alone, for no
@@ -49,8 +51,8 @@ import time
 from discovery import DataError, address
 from execution_cli import private_file
 from local_config import load_config
-from v2_autoexit import (MandateWatcher, eligible, module_parameters, plan_exit, position_ref, read_mandates,
-                         twap_exit_evidence, vault_facts)
+from v2_autoexit import (MandateWatcher, eligible, module_parameters, nothing_to_exit, plan_exit, position_ref,
+                         read_mandates, twap_exit_evidence, vault_facts)
 from v2_chains import DEX_V4, default_registry
 from v2_manifest import load_deployment
 from v2_executor import CallReverted, ChainExecutor, GasPolicy, Journal, OperatorKey, OperatorRpc
@@ -622,10 +624,19 @@ class ChainAutomation:
                     entry['anchorSource'] = 'signed' if twap is None else 'twap'
                 if twap is None:
                     anchor = position.pool.sqrt_price_x96  # what the publisher signs at this block
-                    if not mandate.triggered(anchor):
-                        entry.update(act=False, reason='trigger_not_reached')
-                        entries.append(entry)
-                        continue
+                else:
+                    anchor = twap_price(rpc, self.deployment, pool, window, block)
+                if not mandate.triggered(anchor):
+                    entry.update(act=False, reason='trigger_not_reached')
+                    entries.append(entry)
+                    continue
+                if nothing_to_exit(rpc, mandate, pool, position, block):
+                    # It would fire on nothing (the owner's rule: no Auto-exit on an empty position). Nothing is
+                    # signed or simulated; it is not forgotten, so it fires once the position holds something again.
+                    entry.update(act=False, reason='position_empty')
+                    entries.append(entry)
+                    continue
+                if twap is None:
                     if publisher is None:
                         entry.update(act=True, reason='triggered_keyless')
                         entries.append(entry)
@@ -633,8 +644,7 @@ class ChainAutomation:
                     signed = publisher.observe(pool, block, max_age_seconds=parameters.max_observation_age_seconds)
                     evidence, deadline = signed.evidence(), signed.observation.valid_until
                 else:
-                    anchor, evidence = twap_price(rpc, self.deployment, pool, window, block), twap
-                    deadline = block.timestamp + self.deadline_seconds
+                    evidence, deadline = twap, block.timestamp + self.deadline_seconds
                 exit_plan = plan_exit(mandate, pool, position, anchor, evidence, deadline)
                 if exit_plan is None:
                     entry.update(act=False, reason='trigger_not_reached')

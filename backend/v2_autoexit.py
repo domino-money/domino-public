@@ -19,16 +19,21 @@ component autoExit) holds owners' signed one-shot ExitMandates. The operator:
    registration (the timestamp of the block of its MandateRegistered log):
    until the whole window lies after it, the publisher signs the spot instead,
    so prices from before the owner turned Auto-exit on never fire it;
-3. builds IDominoAutoExit.Execution: the evidence; for a conversion one pool
+3. never fires on an empty position (nothing_to_exit, the owner's rule after
+   the exit of 6 Oct 2026 that withdrew 0 and 0 from a position emptied outside
+   Domino): no liquidity, nothing owed on it and no lots in the vault for it.
+   Nothing is signed or simulated; the mandate stays active, waits with
+   `position_empty`, and fires as before once the position holds something;
+4. builds IDominoAutoExit.Execution: the evidence; for a conversion one pool
    leg through the vault's own pool selling the other token for convertTo
    with amountIn 0, which the module fills with everything withdrawn, and a
    positive minAmountOut under the module's own fee-aware floor at the
    anchor; and removal minimums the position's principal meets anywhere the
    band lets the spot be (at the band's edges), so the band, not a guess,
    bounds the removal;
-4. hands the calldata to the executor, which presimulates it before anything
+5. hands the calldata to the executor, which presimulates it before anything
    is signed. Executing one mandate does not end other mandates on the same
-   position (they fail later: the position is gone).
+   position: the position it emptied leaves them waiting (step 3).
 """
 from dataclasses import dataclass
 from math import isqrt
@@ -45,6 +50,7 @@ from v4_math import MAX_SQRT, MIN_SQRT
 
 AUTO_EXIT = 'IDominoAutoExit'
 EXTENSION = 'IDominoAutoExitExtension'
+LEDGER = 'IDominoVaultLedger'
 STATUS_ACTIVE = 1
 RECEIVE_BOTH, RECEIVE_CONVERTED = 0, 1
 Q96 = 1 << 96
@@ -207,6 +213,20 @@ def conversion_legs(mandate, pool):
     return (SwapLeg(LEG_V3_POOL, ZERO, source, mandate.convert_to, 0, 1, v3_path(source, pool.fee, mandate.convert_to)),)
 
 
+def nothing_to_exit(rpc, mandate, pool, position, block):
+    """Whether executing the mandate at `block` would deliver nothing, so it must not run (the owner's rule: no
+    Auto-exit on an empty position). executeExit removes the position's liquidity, collects what it is owed (its fees;
+    on v3 also what an earlier decrease left uncollected, tokensOwed) and pays the owner the position's lots in the
+    vault (uncharged plus charged, in either pool token); with none of the three, the exit of 6 Oct 2026 withdrew 0
+    and 0 and the operator paid the gas. `position` is the pass's own read at `block` (v2_uniswap: fees_owed on v3
+    and v4 alike); the lots are read at that same block, and only once the position itself holds nothing."""
+    if position.liquidity or any(position.fees_owed):
+        return False
+    (lot0,), (lot1,) = calls(rpc, block, [(mandate.vault, function(LEDGER, 'lot'), (mandate.token_id, pool.currency0)),
+                                          (mandate.vault, function(LEDGER, 'lot'), (mandate.token_id, pool.currency1))])
+    return not any((*lot0, *lot1))
+
+
 @dataclass(frozen=True)
 class ExitPlan:
     mandate: Mandate
@@ -248,5 +268,5 @@ def position_ref(chain, pool, token_id):
 
 
 __all__ = ['Mandate', 'MandateWatcher', 'ModuleParameters', 'PoolRef', 'band_edges', 'conversion_legs', 'eligible',
-           'module_parameters', 'plan_exit', 'position_ref', 'read_mandates', 'removal_minimums',
+           'module_parameters', 'nothing_to_exit', 'plan_exit', 'position_ref', 'read_mandates', 'removal_minimums',
            'twap_exit_evidence', 'vault_facts']

@@ -256,7 +256,9 @@ class PassTests(unittest.TestCase):
                                                 'registered_at': registered_at})()
         service.index = None
         spot = 2**96 - 5
-        position = type('Position', (), {'pool': type('State', (), {'sqrt_price_x96': spot})()})()
+        # A position that holds liquidity: nothing_to_exit reads nothing more for it.
+        position = type('Position', (), {'pool': type('State', (), {'sqrt_price_x96': spot})(), 'liquidity': 10**18,
+                                         'fees_owed': (0, 0)})()
         uniswap = type('Uniswap', (), {'position': lambda _, ref, block: position})()
         planned = []
 

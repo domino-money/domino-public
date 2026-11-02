@@ -13,8 +13,8 @@ from eth_hash.auto import keccak
 
 from discovery import Block, DataError
 from v2_abi import event
-from v2_autoexit import (Mandate, MandateWatcher, band_edges, conversion_legs, eligible, plan_exit, removal_minimums,
-                         twap_exit_evidence, ModuleParameters)
+from v2_autoexit import (Mandate, MandateWatcher, band_edges, conversion_legs, eligible, nothing_to_exit, plan_exit,
+                         removal_minimums, twap_exit_evidence, ModuleParameters)
 from v2_chains import chain as profile
 from v2_manifest import checked_deployment
 from v2_observation import within_band
@@ -130,6 +130,57 @@ class ExecutionTests(unittest.TestCase):
     def test_a_v3_exit_window_is_at_least_the_modules_minimum(self):
         self.assertEqual(twap_exit_evidence(ModuleParameters(300, 600), 120), (600, twap_evidence(600)))
         self.assertEqual(twap_exit_evidence(ModuleParameters(300, 600), 900), (900, twap_evidence(900)))
+
+
+class EmptyPositionTests(unittest.TestCase):
+    """The owner's rule, no Auto-exit on an empty position (nothing_to_exit): empty is no liquidity, nothing owed on
+    it (its fees, and on v3 tokensOwed: v2_uniswap's fees_owed) and no lot in the vault for it, uncharged or charged,
+    in either pool token (executeExit pays the owner those)."""
+
+    BLOCK = Block(1234, '0x' + '12' * 32, 1_790_000_000)
+    LOT = '0x' + keccak(b'lot(uint256,address)')[:4].hex()
+
+    class Vault:
+        """The vault's lot(tokenId, token), through eth_call; every read kept."""
+        call_gas_limit = 10**7
+
+        def __init__(self, lots):
+            self.lots, self.reads = lots, []
+
+        def request(self, method, params):
+            call, tag = params
+            self.reads.append((method, call['to'], call['data'][:10], tag))
+            token_id, token = decode(['uint256', 'address'], bytes.fromhex(call['data'][10:]))
+            return '0x' + encode(['(uint128,uint128)'], [self.lots.get((token_id, token.lower()), (0, 0))]).hex()
+
+    @staticmethod
+    def position(liquidity=0, owed=(0, 0)):
+        return type('Position', (), {'liquidity': liquidity, 'fees_owed': owed})()
+
+    def empty(self, position, lots=None):
+        rpc = self.Vault(lots or {})
+        return nothing_to_exit(rpc, mandate(), POOL3, position, self.BLOCK), rpc.reads
+
+    def test_no_liquidity_nothing_owed_and_no_lots_is_empty(self):
+        empty, reads = self.empty(self.position())
+        self.assertTrue(empty)
+        # The mandate's position's lots in its vault, both pool tokens, at the pass's own block.
+        self.assertEqual(reads, [('eth_call', VAULT, self.LOT, self.BLOCK.tag)] * 2)
+
+    def test_liquidity_or_anything_owed_is_not_empty_and_reads_nothing_more(self):
+        for label, position in (('liquidity', self.position(liquidity=1)), ('owed token0', self.position(owed=(1, 0))),
+                                ('owed token1', self.position(owed=(0, 1)))):
+            with self.subTest(label):
+                self.assertEqual(self.empty(position), (False, []))
+
+    def test_a_lot_the_vault_holds_for_it_is_something_to_exit(self):
+        token_id = mandate().token_id
+        for token in (POOL3.currency0, POOL3.currency1):
+            for lot in ((1, 0), (0, 1)):  # uncharged, charged
+                with self.subTest(token=token, lot=lot):
+                    self.assertFalse(self.empty(self.position(), {(token_id, token): lot})[0])
+        # Another position's lots are not this one's.
+        self.assertTrue(self.empty(self.position(), {(token_id + 1, POOL3.currency0): (5, 5)})[0])
 
 
 class WatchTests(unittest.TestCase):

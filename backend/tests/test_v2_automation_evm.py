@@ -1047,5 +1047,141 @@ class AutomationEvmTests(unittest.TestCase):
         return '0x' + registered.decode({'topics': log['topics'], 'data': log['data']})['mandateHash'].hex()
 
 
+@unittest.skipUnless(os.environ.get('DOMINO_TEST_EVM') == '1', 'requires isolated local Anvil')
+class EmptyPositionExitEvmTests(AutomationEvmTests):
+    """The owner's rule, no Auto-exit on an empty position, on the real contracts: AutomationEvmTests' fixture and
+    helpers on a chain of its own (load_tests below runs none of the tests it inherits). On AutomationEvmTests' chain
+    every vault its tests create stays, and each test's new service reads them all in its first pass: 583 of the
+    pass's 600 calls by its last test (2 Nov 2026), so vaults added there run the later tests out of budget."""
+
+    def mandate_status(self, mandate_hash):
+        return self.local.call(self.deployment.auto_exit, 'mandateStatus(bytes32)', ['uint8'], ['bytes32'],
+                               [bytes.fromhex(mandate_hash[2:])])[0]
+
+    def v3_owed(self, token_id):
+        return self.local.call(self.chain.uniswap.v3.positionManager, 'positions(uint256)',
+                               ['uint96', 'address', 'address', 'address', 'uint24', 'int24', 'int24', 'uint128',
+                                'uint256', 'uint256', 'uint128', 'uint128'], ['uint256'], [token_id])[10:12]
+
+    def v3_protected_root(self, token, nonce):
+        """A fresh v3 pool (no ring: the signed spot anchors), the owner's root on it in a vault created paused with
+        the exit module on (protection without compounding), and a mandate receiving both tokens whose trigger the
+        spot has crossed."""
+        local = self.local
+        driver = local.deploy(self.deployer, 'OfficialV3Fixture.sol', 'OfficialV3SwapDriver')
+        pool, address = self.fresh_v3_pool(token, driver)
+        root = self.v3_position(self.owner, pool, 3 * 10**18)
+        vault = self.vault(root, paused=True, dex=3)
+        local.send(self.owner, vault, calldata('setExitModule(address)', ['address'], [self.deployment.auto_exit]),
+                   impersonate=True)
+        spot, = local.call(address, 'slot0()', ['uint160'])
+        return root, vault, self.register_mandate(vault, root, below=spot * 101 // 100, convert_to=0, nonce=nonce)
+
+    def v3_decrease_all(self, root, *, collect):
+        manager = self.chain.uniswap.v3.positionManager
+        decrease, take = '(uint256,uint128,uint256,uint256,uint256)', '(uint256,address,uint128,uint128)'
+        self.local.send(self.owner, manager, calldata(f'decreaseLiquidity({decrease})', [decrease], [
+            (root, self.v3_liquidity(root), 0, 0, self.chain_time() + 600)]), impersonate=True)
+        if collect:
+            self.local.send(self.owner, manager, calldata(f'collect({take})', [take], [
+                (root, self.owner, 2**128 - 1, 2**128 - 1)]), impersonate=True)
+
+    def test_an_exit_never_fires_on_a_root_its_owner_emptied_on_uniswap(self):
+        # 6 Oct 2026, #3589588 on Robinhood: the owner emptied the root on Uniswap (RootDisarmed, changed outside
+        # Domino), its stop-loss stayed active, fired, and withdrew 0 and 0 for the operator's gas. It now waits.
+        token_id = self.position(self.owner, 10**20)
+        vault = self.vault(token_id)
+        self.local.send(self.owner, vault, calldata('setExitModule(address)', ['address'], [self.deployment.auto_exit]),
+                        impersonate=True)
+        price = self.slot0(self.pool)[0]
+        mandate_hash = self.register_mandate(vault, token_id, below=price * 101 // 100, convert_to=0, nonce=31)
+        self.close(token_id)  # all its liquidity out, then everything to the owner (TAKE_PAIR)
+        self.local.mine(35, 2)  # the price holds still over the publisher's look-back: it would sign
+        lots = [self.local.call(vault, 'lot(uint256,address)', ['(uint128,uint128)'], ['uint256', 'address'],
+                                [token_id, token])[0] for token in (self.pool.currency0, self.pool.currency1)]
+        self.assertEqual((self.liquidity(token_id), lots), (0, [(0, 0), (0, 0)]))
+        self.assertFalse(self.local.call(vault, 'rootArmed()', ['bool'])[0])
+        service = self.service()
+        report = service.run_once()
+        entry = {e['mandate']: e for e in report['exits']}[mandate_hash]
+        self.assertEqual((entry['act'], entry['reason']), (False, 'position_empty'), entry)
+        self.assertNotEqual((report['submitted'] or {}).get('kind'), 'exit', report)
+        self.assertEqual(self.mandate_status(mandate_hash), 1)  # still active
+        self.assertEqual(service.executor.journal.waiting()['mandates'][mandate_hash]['reason'], 'position_empty')
+        # Keep it from later tests' passes, and the vault from their compounds.
+        self.local.send(self.owner, self.deployment.auto_exit, calldata('revokeMandate(bytes32)', ['bytes32'],
+                                                                       [bytes.fromhex(mandate_hash[2:])]),
+                        impersonate=True)
+        self.local.send(self.owner, vault, calldata('pause()'), impersonate=True)
+
+    def test_on_v3_an_exit_waits_on_an_emptied_root_and_fires_once_liquidity_returns(self):
+        local = self.local
+        root, vault, mandate_hash = self.v3_protected_root('0x6000000000000000000000000000000000000006', 32)
+        self.v3_decrease_all(root, collect=True)  # the owner takes everything out on Uniswap
+        local.mine(35, 2)
+        self.assertEqual((self.v3_liquidity(root), self.v3_owed(root)), (0, (0, 0)))
+        service = self.service()
+        report = service.run_once()
+        entry = {e['mandate']: e for e in report['exits']}[mandate_hash]
+        self.assertEqual((entry['anchorSource'], entry['act'], entry['reason']), ('signed', False, 'position_empty'),
+                         entry)
+        self.assertNotEqual((report['submitted'] or {}).get('kind'), 'exit', report)
+        self.assertEqual(self.mandate_status(mandate_hash), 1)
+        self.assertEqual(service.executor.journal.waiting()['mandates'][mandate_hash]['reason'], 'position_empty')
+        # Liquidity comes back (on v3 anyone may add to a position): the same mandate fires as before.
+        increase = '(uint256,uint256,uint256,uint256,uint256,uint256)'
+        local.send(self.deployer, self.chain.uniswap.v3.positionManager, calldata(
+            f'increaseLiquidity({increase})', [increase], [(root, 10**18, 10**18, 0, 0, self.chain_time() + 600)]))
+        added = self.v3_liquidity(root)
+        self.assertGreater(added, 0)
+        local.mine(35, 2)
+        report = service.run_once()
+        entry = {e['mandate']: e for e in report['exits']}[mandate_hash]
+        self.assertEqual((entry['act'], entry['reason'], entry['simulation']), (True, 'triggered', 'passed'), entry)
+        submitted = report['submitted']
+        self.assertEqual((submitted['kind'], submitted['state']), ('exit', 'submitted'), report)
+        local.mine(1, 1)
+        service.run_once()
+        intent = service.executor.journal.intent(submitted['intent'])
+        self.assertEqual(intent['state'], 'confirmed', intent)
+        effect = json.loads(intent['effect'])
+        withdrawn, = self.logs(effect, 'IDominoVault', 'ExitExecuted', vault)
+        executed, = self.logs(effect, 'IDominoAutoExit', 'MandateExecuted', self.deployment.auto_exit)
+        self.assertTrue(withdrawn['amount0'] > 0 and withdrawn['amount1'] > 0, withdrawn)
+        self.assertTrue(executed['amount0'] > 0 and executed['amount1'] > 0, executed)
+        self.assertEqual((self.mandate_status(mandate_hash), self.v3_liquidity(root)), (3, 0))
+
+    def test_on_v3_an_exit_still_collects_what_an_emptied_root_is_owed(self):
+        # The owner took the liquidity out on Uniswap but did not collect it: the position owes it (tokensOwed),
+        # and the exit's collect delivers it.
+        local = self.local
+        root, vault, mandate_hash = self.v3_protected_root('0x7000000000000000000000000000000000000007', 33)
+        self.v3_decrease_all(root, collect=False)
+        local.mine(35, 2)
+        owed = self.v3_owed(root)
+        self.assertEqual(self.v3_liquidity(root), 0)
+        self.assertTrue(owed[0] > 0 and owed[1] > 0, owed)
+        service = self.service()
+        report = service.run_once()
+        entry = {e['mandate']: e for e in report['exits']}[mandate_hash]
+        self.assertEqual((entry['act'], entry['reason'], entry['simulation']), (True, 'triggered', 'passed'), entry)
+        submitted = report['submitted']
+        self.assertEqual((submitted['kind'], submitted['state']), ('exit', 'submitted'), report)
+        local.mine(1, 1)
+        service.run_once()
+        intent = service.executor.journal.intent(submitted['intent'])
+        self.assertEqual(intent['state'], 'confirmed', intent)
+        withdrawn, = self.logs(json.loads(intent['effect']), 'IDominoVault', 'ExitExecuted', vault)
+        self.assertEqual((withdrawn['amount0'], withdrawn['amount1']), owed)
+        self.assertEqual((self.mandate_status(mandate_hash), self.v3_owed(root)), (3, (0, 0)))
+
+
+def load_tests(loader, tests, pattern):
+    """Each test once: EmptyPositionExitEvmTests' own, not the ones it inherits from AutomationEvmTests."""
+    inherited = set(vars(AutomationEvmTests))
+    return unittest.TestSuite(test for suite in tests for test in suite
+                              if not (type(test) is EmptyPositionExitEvmTests and test._testMethodName in inherited))
+
+
 if __name__ == '__main__':
     unittest.main()
