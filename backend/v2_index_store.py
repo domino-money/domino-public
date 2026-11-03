@@ -436,17 +436,48 @@ class V2Reader:
           WHERE v.owner=%s ORDER BY v.chain_id,v.block_number,v.log_index LIMIT %s''', (wallet, limit)).fetchall()
 
     def positions(self, wallet, limit):
-        """Positions the wallet holds now (as last read), or that its vaults
-        manage, or that its S1 actions named and are not read yet."""
-        return self.conn.execute('''SELECT p.*,s.block_number AS s_block,s.block_hash AS s_hash,
+        """Positions the wallet holds now (as last read), or whose vault is
+        one of the wallet's while the wallet or that vault holds them or they
+        are not read live, or that its S1 actions named and are not read yet.
+
+        A position's vault is the one that took it last, from the events
+        (positions.vault and source keep the first sighting): a vault whose
+        root it is, at the arming of its creation or of a rearm (arming needs
+        the root's approval, and on v4 its subscription, for that vault alone,
+        so a newer vault replaces an older one), or the vault that minted it as
+        a successor, whichever is newer. Each row carries that vault
+        (link_vault, link_role, link_owner) and its events since then that
+        may end the link (link_events); v2_read_service.vault_link decides."""
+        # The candidates: held by the wallet as last read, the roots of its vaults, and positions first seen for it
+        # (the successors its vaults minted included). Only they are linked, never the whole table.
+        return self.conn.execute('''WITH candidates AS (
+            SELECT chain_id,dex,token_id FROM domino_v2.position_snapshots WHERE owner=%(w)s AND status='live'
+            UNION SELECT chain_id,dex,root_token_id FROM domino_v2.vaults WHERE owner=%(w)s
+            UNION SELECT chain_id,dex,token_id FROM domino_v2.positions WHERE wallet=%(w)s)
+          SELECT p.*,s.block_number AS s_block,s.block_hash AS s_hash,
           s.block_timestamp AS s_timestamp,s.status AS s_status,s.owner AS s_owner,s.state AS s_state,
-          s.reason AS s_reason,s.read_at AS s_read_at
-          FROM domino_v2.positions p LEFT JOIN domino_v2.position_snapshots s
+          s.reason AS s_reason,s.read_at AS s_read_at,t.vault AS link_vault,t.role AS link_role,
+          tv.owner AS link_owner,e.events AS link_events
+          FROM candidates c JOIN domino_v2.positions p
+            ON p.chain_id=c.chain_id AND p.dex=c.dex AND p.token_id=c.token_id
+          LEFT JOIN domino_v2.position_snapshots s
             ON s.chain_id=p.chain_id AND s.dex=p.dex AND s.token_id=p.token_id
+          LEFT JOIN LATERAL (SELECT x.vault,x.role,x.block_number,x.log_index FROM (
+              SELECT r.address AS vault,'root' AS role,r.block_number,r.log_index FROM domino_v2.logs i
+                JOIN domino_v2.logs r ON r.chain_id=i.chain_id AND r.address=i.address AND r.event='RootRearmed'
+                WHERE i.chain_id=p.chain_id AND i.dex=p.dex AND i.token_id=p.token_id AND i.event='Initialized'
+              UNION ALL SELECT l.address,'successor',l.block_number,l.log_index FROM domino_v2.logs l
+                WHERE l.chain_id=p.chain_id AND l.dex=p.dex AND l.token_id=p.token_id AND l.event='SuccessorCreated') x
+            ORDER BY x.block_number DESC,x.log_index DESC LIMIT 1) t ON true
+          LEFT JOIN domino_v2.vaults tv ON tv.chain_id=p.chain_id AND tv.vault=t.vault
+          LEFT JOIN LATERAL (SELECT jsonb_agg(jsonb_build_object('event',l.event,'args',l.args)
+              ORDER BY l.block_number,l.log_index) AS events FROM domino_v2.logs l
+            WHERE l.chain_id=p.chain_id AND l.address=t.vault AND (l.block_number,l.log_index)>(t.block_number,t.log_index)
+              AND (l.event IN ('RootDisarmed','ExitModuleSet')
+                OR (l.event IN ('ExitExecuted','ChildWithdrawn') AND l.token_id=p.token_id))) e ON true
           WHERE (s.status IS DISTINCT FROM 'burned') AND (
             (s.status='live' AND s.owner=%(w)s)
-            OR (p.vault IS NOT NULL AND EXISTS(SELECT 1 FROM domino_v2.vaults v WHERE v.chain_id=p.chain_id
-                AND v.vault=p.vault AND v.owner=%(w)s) AND (s.status IS DISTINCT FROM 'live' OR s.owner IN (%(w)s,p.vault)))
+            OR (tv.owner=%(w)s AND (s.status IS DISTINCT FROM 'live' OR s.owner IN (%(w)s,t.vault)))
             OR (p.wallet=%(w)s AND (s.status IS NULL OR s.status='unavailable')))
           ORDER BY p.chain_id,p.first_block,p.dex,p.token_id LIMIT %(n)s''', {'w': wallet, 'n': limit}).fetchall()
 

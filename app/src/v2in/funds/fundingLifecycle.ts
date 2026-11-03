@@ -36,3 +36,13 @@ export function canDiscardFunding(intent: FundingIntent | null, scope: string, a
   return intent !== null && intent.scope !== scope && fundingNeverSent(intent) &&
     !activity.running && activity.deposits === 0 && activity.pending === 0 && activity.unsettled === 0
 }
+
+/**
+ * Added 2026-11-02 (review A2): whether a step handed to the wallet still holds this destination's transfer, its arrival
+ * and its cleanup: one held open for this destination (finance/v2/crosschain.ts UnsettledStore). Any hold of the wallet
+ * did, of any origin and destination, and one marked "may have gone" (`passed`) stays so until it is removed: every
+ * later transfer of this wallet then waited on "Waiting for funds…" after its funds arrived.
+ */
+export function openHoldFor(held: readonly { state: 'open' | 'passed'; destinationChainId: number }[], destinationChainId: number): boolean {
+  return held.some((entry) => entry.state === 'open' && entry.destinationChainId === destinationChainId)
+}

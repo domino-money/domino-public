@@ -265,3 +265,47 @@ test('stop() cancels the timer and drops a call in flight', async () => {
   assert.deepEqual(t.clock.pending(), []);
   assert.equal(t.poll.current().stopped, 'aborted');
 });
+
+// Added 2026-11-02 (review M3): Across answered `awaiting_deposit` every ~10 s, for good, for a deposit that never reached
+// it (one that reverted, was dropped, or was replaced in the wallet under another hash). It is asked less often the longer
+// the bridge has not seen it: at most once a minute after ten minutes, at most every five minutes after an hour.
+test('a deposit the bridge has not seen is asked less often the longer it waits; once seen, the answer’s own pace again', async () => {
+  const { awaitingWaitMs, SLOW_AWAITING_AFTER_MS, QUIET_AWAITING_AFTER_MS } = build('polling');
+  assert.equal(SLOW_AWAITING_AFTER_MS, 10 * 60_000);
+  assert.equal(QUIET_AWAITING_AFTER_MS, 60 * 60_000);
+  assert.equal(awaitingWaitMs(10_000, null), 10_000, 'seen: the answer’s own wait');
+  assert.equal(awaitingWaitMs(10_000, SLOW_AWAITING_AFTER_MS - 1), 10_000);
+  assert.equal(awaitingWaitMs(10_000, SLOW_AWAITING_AFTER_MS), 60_000);
+  assert.equal(awaitingWaitMs(10_000, QUIET_AWAITING_AFTER_MS), MAX_WAIT_SECONDS * 1000);
+  assert.equal(awaitingWaitMs(400_000, SLOW_AWAITING_AFTER_MS), 400_000, 'never sooner than the answer says');
+  const again = () => derived('variants/status.relay-awaiting.json', (s) => {
+    s.transition = 'unchanged';
+    s.request.previousState = 'awaiting_deposit';
+  });
+  const t = poller(relayRecord());
+  const step = async (ms) => {
+    if (t.transport.remaining('status') === 0) t.transport.script('status', reply(200, again()));
+    t.clock.advance(ms);
+    await flush();
+  };
+  t.transport.script('status', reply(200, fixture('variants/status.relay-awaiting.json')));
+  t.poll.start();
+  await flush();
+  assert.deepEqual(t.clock.pending(), [10_000], 'at first, every 10 s');
+  let asked = t.sent().length;
+  for (let elapsed = 0; elapsed < SLOW_AWAITING_AFTER_MS; elapsed += 10_000) await step(10_000);
+  assert.ok(t.sent().length - asked >= 59, 'every 10 s for ten minutes');
+  assert.deepEqual(t.clock.pending(), [60_000], 'then once a minute');
+  asked = t.sent().length;
+  for (let elapsed = 0; elapsed < QUIET_AWAITING_AFTER_MS - SLOW_AWAITING_AFTER_MS; elapsed += 60_000) await step(60_000);
+  assert.ok(t.sent().length - asked <= 51, `about once a minute until the hour (${t.sent().length - asked})`);
+  assert.deepEqual(t.clock.pending(), [MAX_WAIT_SECONDS * 1000], 'then every five minutes');
+  assert.equal(t.updates.at(-1).record.lastState, 'awaiting_deposit');
+  // Seen at last: the answer's own pace again.
+  t.transport.script('status', reply(200, relayPending()));
+  t.clock.advance(MAX_WAIT_SECONDS * 1000);
+  await flush();
+  assert.equal(t.updates.at(-1).record.lastState, 'pending');
+  assert.deepEqual(t.clock.pending(), [10_000]);
+  assert.deepEqual(t.transport.unscripted(), []);
+});

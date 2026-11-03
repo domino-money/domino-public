@@ -134,6 +134,9 @@ export const FUNDS_TEXT = {
   whyThisRoute: 'Why this route',
   approvalReverted: (origin: string) => `The approval failed on ${origin}. Nothing was deposited.`,
   depositReverted: (origin: string) => `The deposit failed on ${origin}. Nothing was bridged.`,
+  // Added 2026-11-02 (review M3): a deposit that will not complete as followed, before the person removes it.
+  depositUnseen: (provider: string, origin: string) => `${provider} hasn't seen this deposit yet. Check your wallet's activity on ${origin}: if the deposit failed or was replaced, remove it here. If it went through, it still arrives in your wallet.`,
+  depositUnfollowable: (origin: string) => `This transfer can't be followed any more. Check your wallet's activity on ${origin}: if the deposit failed or was replaced, remove it here. If it went through, it still arrives in your wallet.`,
   notSaved: "This page couldn't save your deposit for later. Keep this page open until it arrives.",
   onTheWay: 'On the way',
   /** Changed on purpose 2026-10-06 (the owner's point 4): the network alone; the bridge is in Details. */

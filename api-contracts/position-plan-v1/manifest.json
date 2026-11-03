@@ -103,7 +103,7 @@
     },
     {
       "path": "backend/v2_position_plan_service.py",
-      "sha256": "2355789d192265cf6937cec71e7266978d8f632fddd2d3f8ce51143b49c54369"
+      "sha256": "32119b52fc3c80184df0e8ec5103dba96e9708a29c03107519f01753555beb48"
     },
     {
       "path": "backend/v2_position_plan_api.py",

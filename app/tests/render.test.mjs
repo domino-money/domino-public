@@ -1262,14 +1262,17 @@ async function catalogueOnly(page, label) {
   assert.equal(await page.locator('[data-home-marquee] a').count(), 0, `${label}: the pool strip shows nothing without a figure`);
   assert.equal(await page.locator('[data-ticker]').count(), 0, `${label}: no read-lab ticker on Home`);
   // 2026-09-26 (featured pools v1 §11.2): with no list served, the embedded list in its order under today's title and
-  // no Pinned chip; every link names the pool and USDG, the token to verify it with (§11.6). The method line is gone
-  // for every list since 2026-09-28 (the owner).
+  // no Pinned chip; every link names the pool and USDG (ETH/TORCH's, TORCH), the token to verify it with (§11.6). The
+  // method line is gone for every list since 2026-09-28 (the owner).
   assert.equal(await page.locator('#pools [data-featured-source]').getAttribute('data-featured-source'), 'bundled', `${label}: the embedded list`);
   assert.equal(await page.locator('#pools h2').first().innerText(), 'Selected pools', `${label}: today's title`);
   assert.deepEqual(await rows.evaluateAll((trs) => trs.map((tr) => tr.getAttribute('data-pool-catalogue'))), SELECTED, `${label}: the embedded six, in order`);
   assert.equal(await page.locator('[data-pinned]').count(), 0, `${label}: no Pinned chip`);
   const USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168';
-  assert.deepEqual(await rows.evaluateAll((trs) => trs.map((tr) => tr.querySelector('a').getAttribute('href'))), SELECTED.map((id) => `#/pool/${id}/${USDG}`), `${label}: row links`);
+  // Changed on purpose 2026-11-02 (the owner's new embedded list): ETH/TORCH, third, holds no USDG. Its row names both
+  // currencies, and its link names TORCH, the one of them that is a contract (native ETH names none).
+  const TORCH = '0x000050e18ffa3f8f7ad170eb9cef160eb3ed1111';
+  assert.deepEqual(await rows.evaluateAll((trs) => trs.map((tr) => tr.querySelector('a').getAttribute('href'))), SELECTED.map((id, index) => `#/pool/${id}/${index === 2 ? TORCH : USDG}`), `${label}: row links`);
 }
 
 /**

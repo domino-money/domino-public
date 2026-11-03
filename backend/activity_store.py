@@ -23,7 +23,10 @@ class PgActivity:
 
     @staticmethod
     def tail(conn,pool_id):
-        return conn.execute('SELECT * FROM domino_activity.chunks WHERE pool_id=%s ORDER BY end_block DESC LIMIT 1',
+        # Chunks are contiguous (each starts at the pool's next_block) and never overlap, so the last by start_block is
+        # the last by end_block; (pool_id,start_block) is the primary key, while end_block has no index and sorting
+        # by it read every chunk of a pool (PONS/USDG: 76,954) past the 5 s statement timeout (2 Nov 2026).
+        return conn.execute('SELECT * FROM domino_activity.chunks WHERE pool_id=%s ORDER BY start_block DESC LIMIT 1',
                             (pool_id,)).fetchone()
 
     def anchor(self,pool_id):

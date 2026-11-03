@@ -242,8 +242,22 @@ it. This is an `eth_call` node budget, not a transaction or a wallet charge. The
 is no automatic gas escalation, gas-error retry or gas-triggered RPC failover.
 The existing request count, response size and total deadline still apply.
 
-Explicit node out-of-gas responses become `rpc_call_gas_limit`; explicit EVM
-reverts become `rpc_call_reverted`. Unknown or ambiguous provider failures remain
+Reads of Robinhood's Uniswap v4 StateView and PositionManager carry 30,000,000
+(`TRUSTED_READ_CALL_GAS`) whatever the profile: their code is fixed and their
+views bound their own computation. 30M passed at the spike below on the hosted
+provider, and V2's Multicall3 reads already send it to the same endpoints. On
+Nitro an `eth_call`'s gas must first cover the call's L1 data cost, which moves
+with the L1 price. On 29 Oct 2026 that cost alone passed 5M gas at the blocks of
+20:59–21:31 and 22:22–22:28 UTC, and every read under it failed, on the node and
+on the hosted provider. Any other contract keeps the profile.
+
+Explicit node out-of-gas responses become `rpc_call_gas_limit`, and so does a
+call refused before it ran because its gas did not cover that intrinsic cost
+(`err: intrinsic gas too low (supplied gas N)` and its bare forms). Internally
+the latter is `RpcIntrinsicGas`: it says nothing about the contract, so the V2
+index takes it as transient instead of keeping it, and an activity chunk whose
+end block meets it shrinks its span (`AdaptiveSpan`). Explicit EVM reverts
+become `rpc_call_reverted`. Unknown or ambiguous provider failures remain
 `rpc_error`. Revert data takes precedence over words in a revert reason, so a
 token's `revert("out of gas")` is not presented as a proven budget failure. A
 proxy can wrap an inner out-of-gas in an ordinary revert; this cannot be diagnosed

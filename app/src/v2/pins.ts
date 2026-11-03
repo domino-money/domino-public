@@ -32,7 +32,11 @@ export const READ_V6_PIN = {
   // not shown (v2_read_service.py, v2_index_store.py); same version, same schemas and fixtures.
   // Changed on purpose (data) 2026-11-02: read_gateway.py and read_api.py, which the manifest hashes, raise a visitor's
   // provider budget and the stored lanes for the public launch; same version, same schemas and fixtures.
-  manifestSha256: 'ba7f86fc35836d63827098e47c81263142af24153146ef27792226a5ab0f261b',
+  // Changed on purpose (data) 2026-11-02: a position's `vault` is the vault it belongs to now, from the events (a newer
+  // vault for the same root replaces the old one; null once that vault let it go: Leave automation, its auto-exit, a
+  // successor withdrawn), not the first vault forever (v2_index_store.py, v2_read_service.py, the README); same
+  // version, same schemas and fixtures.
+  manifestSha256: '4dc7de6702afe07c758d888547f2e4071780dc54c4e19d0c22a2796fb5ddefa1',
 } as const
 
 export const POSITION_PLAN_V1_PIN = {
@@ -42,5 +46,8 @@ export const POSITION_PLAN_V1_PIN = {
   // Changed on purpose (data) 2026-10-06: authenticated_api.py, which the manifest hashes, lets a family accept a second
   // contract version for a switch window (crosschain-v1's); position-plan-v1 keeps its one, and its files and version
   // are unchanged.
-  manifestSha256: '95ffcc7d7c31a7a22d7f74b909c3cfcdf94c9036ae6443b5a75d6b15eb0ee930',
+  // Changed on purpose (data) 2026-11-02: v2_position_plan_service.py, which the manifest hashes, keeps a read refused
+  // for its intrinsic gas (an L1 price spike) as upstream_unavailable now that it reads as rpc_call_gas_limit; no
+  // route, schema, error code or version moved.
+  manifestSha256: 'aa85f81be7aab84f9a4de6f3bf39c98290e8ef118fb838e28d2d597ea3221cbd',
 } as const

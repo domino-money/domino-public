@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import { test } from 'node:test';
 
 const require = createRequire(import.meta.url);
-const { fundingNeverSent, canDiscardFunding, fundingDepositKey, fundingTerminal, fundingOwnsDeposit, fundingFinished } = require('../../.test-build/app/src/v2in/funds/fundingLifecycle.js');
+const { fundingNeverSent, canDiscardFunding, fundingDepositKey, fundingTerminal, fundingOwnsDeposit, fundingFinished, openHoldFor } = require('../../.test-build/app/src/v2in/funds/fundingLifecycle.js');
 const { parseFunding } = require('../../.test-build/app/src/v2in/funds/fundingIntent.js');
 const OWNER = `0x${'11'.repeat(20)}`;
 const HASH = `0x${'ab'.repeat(32)}`;
@@ -95,4 +95,15 @@ test('completed earlier funding can be retired without erasing public hashes, bu
   assert.equal(fundingFinished(intent('settled', HASH), []), true, 'already reconciled metadata can retire after the user removed its journal row');
   assert.equal(fundingFinished(intent('settled'), []), false, 'corrupt metadata without a transaction is not a completed transfer');
   assert.equal(fundingFinished({ ...intent('settled', HASH), legs: [] }, []), false);
+});
+
+// Added 2026-11-02 (review A2): a hold of the wallet, of any origin and destination, and a deposit marked "may have gone"
+// for good, kept every later transfer of this wallet on "Waiting for funds…" after its funds arrived.
+test('only a step still open in the wallet for this destination holds its arrival and its cleanup', () => {
+  const hold = (state, destinationChainId) => ({ originChainId: 42161, nonce: '3', kind: 'deposit', quote: `${'ab'.repeat(32)}:1`, provider: 'relay', destinationChainId, at: 1, state });
+  assert.equal(openHoldFor([hold('open', 4663)], 4663), true, 'open, here');
+  assert.equal(openHoldFor([hold('passed', 4663)], 4663), false, 'a deposit that may have gone is said by its own card, with Remove');
+  assert.equal(openHoldFor([hold('open', 8453)], 4663), false, 'another destination’s');
+  assert.equal(openHoldFor([hold('passed', 8453), hold('open', 4663)], 4663), true);
+  assert.equal(openHoldFor([], 4663), false);
 });

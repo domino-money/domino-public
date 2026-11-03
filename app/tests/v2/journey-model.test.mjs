@@ -147,7 +147,11 @@ test('§2.6.5 and §7.5: a pool with no price needs a starting price; 2,500 USDG
   assert.equal(machine.canContinue('pool', state).ok, false);
   assert.equal(machine.canContinue('pool', state).reason, 'Set a starting price to continue.');
   assert.equal(state.range, null, 'no range without a price');
-  const forward = machine.startingPrice(rh, { base: 'currency0', text: '2,500' });
+  // Changed on purpose 2026-11-02 (review M4): typed as "2500"; a one-group "2,500" is refused as ambiguous (2.5 for
+  // someone who writes a decimal comma), and a page-style "2,500.0" is still read.
+  assert.equal(machine.startingPrice(rh, { base: 'currency0', text: '2,500' }), null);
+  assert.equal(machine.startingPrice(rh, { base: 'currency0', text: '2,500.0' })?.tick, -198080);
+  const forward = machine.startingPrice(rh, { base: 'currency0', text: '2500' });
   assert.equal(forward.sqrtPriceX96, 3961408125713216879677197n);
   assert.equal(forward.tick, -198080);
   const inverse = machine.startingPrice(rh, { base: 'currency1', text: '0.0004' });

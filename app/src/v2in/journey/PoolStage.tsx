@@ -9,6 +9,7 @@ import type { TokenCandidate } from '../../lib/read/screens/tokens'
 import { v2Chain } from '../../v2/chains'
 import type { V2Gate } from '../../v2/gate'
 import { pricesAtSqrt, typedBothWays, parsePriceText } from '../../v2/plan/initialPrice'
+import { figureHint } from '../../lib/create/typedFigure'
 import { ZERO_ADDRESS, type Address, type Dex, type PoolRef, type V2ChainId } from '../../v2/types'
 import { JOURNEY_POOL_CREATION_OFFERED, NEW_POOL_TITLE } from './constants'
 import { useJourneyNetwork } from './context'
@@ -369,7 +370,8 @@ function StartingPrice({ pool, value, onChange }: { pool: JourneyPool; value: St
         </div>
       </div>
       {typed && <p className="text-body" data-new-pool-both="">{JOURNEY.newPool.both(`1 ${base} = ${typed.forward} ${quote}`, `1 ${quote} = ${typed.inverse} ${base}`)}</p>}
-      {current.text !== '' && !exact && <p className="dm-error">{JOURNEY.newPool.invalid}</p>}
+      {/* Review M4 (2026-11-02): a comma the reading refuses says what it needs (lib/create/typedFigure.ts). */}
+      {current.text !== '' && !exact && <p className="dm-error">{figureHint(current.text) ?? JOURNEY.newPool.invalid}</p>}
       {exact && back && (
         <details className="dm-details" data-new-pool-details="">
           <summary>{CREATE_DETAILS}</summary>

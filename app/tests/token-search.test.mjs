@@ -205,12 +205,19 @@ test('only a selectable answer is handed over: an unreadable token, whose reason
 // Changed on purpose 2026-10-04 (the owner's new embedded list): the six tokens are PONS, USDG, ORBIO, CASHCAT, UBIK and
 // VIRTUAL. The list still holds native ETH, in ETH/USDG as before, but that row names no addresses (only a read of the
 // pool says native or wrapped), so ETH is not among them; WETH, whose pool left the list, is not either.
-test('the selected pools’ catalogue names six tokens by address, no ether among them (the ETH/USDG row names none), and USDG is found by name', () => {
+// Changed on purpose 2026-11-02 (the owner's new embedded list): seven tokens, PONS, USDG, ETH, TORCH, CASHCAT, PRIORS
+// and VIRTUAL. ETH/TORCH holds no USDG, so its row names both currencies, native ETH by the zero address as its pool key
+// does (the read service answers that address as native ETH); the ETH/USDG row still names none. WETH is not among them.
+test('the selected pools’ catalogue names seven tokens by address, native ETH by ETH/TORCH’s row, and USDG, ETH and TORCH are found by name', () => {
+  const ZERO = `0x${'0'.repeat(40)}`;
+  const TORCH = '0x000050e18ffa3f8f7ad170eb9cef160eb3ed1111';
   const known = knownTokens({ catalogue: catalogueTokens(), candidates: [] });
-  assert.deepEqual(known.map((token) => token.label), ['PONS', 'USDG', 'ORBIO', 'CASHCAT', 'UBIK', 'VIRTUAL']);
+  assert.deepEqual(known.map((token) => token.label), ['PONS', 'USDG', 'ETH', 'TORCH', 'CASHCAT', 'PRIORS', 'VIRTUAL']);
   assert.ok(known.every((token) => token.sources.length === 1 && token.sources[0] === 'catalogue' && token.candidate === null));
-  assert.ok(!known.some((token) => token.key === `0x${'0'.repeat(40)}`), 'the ETH/USDG row has no addresses, so native ETH is not a catalogue token');
+  assert.equal(known.find((token) => token.key === ZERO)?.artwork, 'ETH', 'native ETH, by the zero address ETH/TORCH names');
   assert.ok(!known.some((token) => token.key === WETH), 'no selected pool holds WETH');
   assert.deepEqual(hits(searchTokens('usdg', known)), [USDG]);
+  assert.deepEqual(hits(searchTokens('eth', known)), [ZERO]);
+  assert.deepEqual(hits(searchTokens('torch', known)), [TORCH]);
   assert.deepEqual(hits(searchTokens('cashcat', known)), ['0x020bfc650a365f8bb26819deaabf3e21291018b4']);
 });

@@ -130,7 +130,13 @@ export const PRODUCER_PIN = {
       // Changed on purpose (data) 2026-11-02: read_gateway.py and read_api.py, which the manifest hashes, raise a
       // visitor's provider budget to 30, then 300 a minute, and the stored lanes to eight for the public launch; no
       // read-v1 route, schema or version moved.
-      manifestSha256: 'cd7bfbc3e2cd1b5ae86525294d2281fc39c863c27fd27ecec4fb2097d4998416',
+      // Changed on purpose (data) 2026-11-02: activity_store.py and activity_indexer.py, which the manifest hashes, read
+      // a pool's newest chunks by start_block, through the primary key; no read-v1 route, schema or version moved.
+      // Changed on purpose (data) 2026-11-02: discovery.py, which the manifest hashes, reads StateView and the
+      // PositionManager with a 30M gas ceiling and takes "err: intrinsic gas too low (supplied gas N)" as
+      // rpc_call_gas_limit, an existing reason code (an L1 price spike failed every read on 29 Oct); no read-v1 route,
+      // schema, reason code or version moved.
+      manifestSha256: '1f9169f5e0fdd327d137ee1530cda44c7a68e261e1046290ec975e3b1db8069e',
     },
     'session-v1': {
       version: '3.0.0-rc.4',
@@ -172,7 +178,9 @@ export const READ_V2_PIN = {
   // client; no read-v2 route, schema or version moved.
   // Changed on purpose (data) 2026-11-02: read_gateway.py and read_api.py raise a visitor's provider budget and the
   // stored lanes for the public launch; no read-v2 route, schema or version moved.
-  manifestSha256: 'a08ac9ca8a5fec161637c5d62e2195fc77e5dbd4d9ecf1f6081e77ebd068519b',
+  // Changed on purpose (data) 2026-11-02: discovery.py reads StateView and the PositionManager with a 30M gas
+  // ceiling and takes an intrinsic gas refusal as rpc_call_gas_limit; no read-v2 route, schema or version moved.
+  manifestSha256: '01ae9e0936095b267c8c2c3a418096ec070070fed5ddbac86c49502d9136830d',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */

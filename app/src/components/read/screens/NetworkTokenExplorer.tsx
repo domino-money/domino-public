@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import type { NetworkResolved, NetworkToken, OtherChains } from '../../../lib/create/otherChains'
+import { TOKEN_LOOKALIKE, type NetworkResolved, type NetworkToken, type OtherChains } from '../../../lib/create/otherChains'
 import type { PoolOption } from '../../../lib/read/screens/poolsList'
 import type { TokenDisplay } from '../../../lib/read/types'
 import type { NetworkTokenLocation } from '../../explore/routes'
@@ -43,7 +43,9 @@ export function NetworkTokenExplorer({ location, others, checking, initial = nul
       chainId, network, unread: true,
       token: { origin: 'read', chainId, address, symbol: null, decimals: null, readStatus: 'partial', artwork: null },
     }
-    const read = row.unread ? others.resolve(row, controller.signal) : Promise.resolve({ ok: true, token: row.token } as const)
+    // Changed on purpose 2026-11-02 (review M1): a search hit listed with its warning (it passes for one of the network's
+    // own currencies) is resolved too, so its page says why instead of offering New position on it; it was used as found.
+    const read = row.unread || row.warning !== undefined ? others.resolve({ ...row, unread: true }, controller.signal) : Promise.resolve({ ok: true, token: row.token } as const)
     void read.then((resolved) => {
       if (controller.signal.aborted) return
       // An answer for a different currency is never used, even if its address alone happens to match.
@@ -58,13 +60,16 @@ export function NetworkTokenExplorer({ location, others, checking, initial = nul
   // A token that did not read is read again on its own, quietly and a few times, while the page is visible; an answer
   // about another token (identity_mismatch) is not asked again.
   const failedCode = result && !result.ok ? result.code : null
+  // Added 2026-11-02 (review M1): a token that passes for one of the network's own currencies is refused for good: its
+  // warning is said, as Robinhood Chain's token page says it (StoredTokenExplorer), and nothing opens New position on it.
+  const warned = result && !result.ok && result.code === TOKEN_LOOKALIKE ? result.reason : null
   useEffect(() => {
-    if (failedCode === null || failedCode === 'identity_mismatch' || attempt >= READ_AGAIN_MS.length) return
+    if (failedCode === null || failedCode === 'identity_mismatch' || failedCode === TOKEN_LOOKALIKE || attempt >= READ_AGAIN_MS.length) return
     return whenVisibleAfter(READ_AGAIN_MS[attempt], () => { setAnswer(null); setAttempt((value) => value + 1) })
   }, [failedCode, attempt])
   // Still read, or waiting to be read again; `spent`: a token that did not read after its last quiet re-ask. An answer
   // about another token, and an origin where the network is closed, rest blank.
-  const asked = !!others && !!network && failedCode !== 'identity_mismatch'
+  const asked = !!others && !!network && failedCode !== 'identity_mismatch' && failedCode !== TOKEN_LOOKALIKE
   const spent = asked && failedCode !== null && attempt >= READ_AGAIN_MS.length
   const resting = checking || (asked && !spent)
 
@@ -98,6 +103,7 @@ export function NetworkTokenExplorer({ location, others, checking, initial = nul
           StoredTokenExplorer); once its quiet re-asks are spent it says what to do, in the Robinhood Chain page's words. */}
       {!token && resting && <Skeleton className="mt-6 h-5 w-48" />}
       {!token && spent && <p className="mt-6 text-body text-fg-muted" data-network-token-spent="">Reload the page to see this token’s pools.</p>}
+      {warned && <p role="alert" className="dm-pool-warning mt-6" data-token-warning="lookalike">{warned}</p>}
       {token && others && <section className="dm-mkt-found animate-rise" aria-labelledby="network-found-pools-title" data-found-pools="">
         <h2 id="network-found-pools-title" className="dm-title">Pools</h2>
         <Card className="mt-3 p-2 dm-lit">

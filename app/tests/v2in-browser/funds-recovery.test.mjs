@@ -14,7 +14,7 @@ import { WALLET_V2_DIST } from '../support/wallet-dist.mjs';
 import { pressContinue } from '../support/new-position.mjs';
 
 const require = createRequire(import.meta.url);
-const { depositJournalKey } = require('../../.test-build/app/src/finance/v2/crosschain.js');
+const { depositJournalKey, unsettledKey } = require('../../.test-build/app/src/finance/v2/crosschain.js');
 const fundingKey = `domino.funding.v1:${S2_OWNER}:4663`;
 const shots = () => { const path = resolve(import.meta.dirname, '../../.test-artifacts'); mkdirSync(path, { recursive: true }); return path; };
 const amount = (page) => page.locator('li[data-step="amount"] [data-pair-side="1"] input[inputmode="decimal"]');
@@ -301,6 +301,101 @@ test('restored sending metadata stays unknown and cannot become another transfer
     assert.equal(s.quotes().length, 0, 'an unknown accepted transfer is not replaced by a new quote');
     assert.equal(await amount(s.page).inputValue(), '20');
     assert.equal(JSON.parse(await s.page.evaluate((key) => localStorage.getItem(key), fundingKey)).legs[0].state, 'sending', 'restoring does not alter durable evidence');
+  } finally { await s.close(); }
+});
+
+// Added 2026-11-02 (review A2): a transfer whose wallet answer was lost before anything was held (a reload during the
+// network switch) answered "may still be pending" for good to "I cancelled the request in my wallet"; nothing could fund
+// the position again. Nothing this page could still send is held there, so the person's word lets it go.
+test('an unknown transfer with nothing held: “I cancelled the request in my wallet” lets it go, with no network switch, and the position can be funded again', async () => {
+  const s = await openFundingPage(browser, { bridge: true, served: together(homeReads(), chainReads(42161, ARB_USDC)), intent: { key: fundingKey, value: JSON.stringify(restoredIntent()) } });
+  try {
+    await typeUsdg(s, '20'); await signIn(s);
+    await s.page.locator('[data-funding-leg-state="unknown"]').waitFor();
+    await s.page.locator('[data-funds-run-forget]').click();
+    await s.page.locator('[data-funding-state="ready"] [data-funds-deposit-button]').waitFor({ timeout: 30_000 });
+    assert.equal(await s.page.evaluate((key) => localStorage.getItem(key), fundingKey), null, 'the old transfer, never sent, is let go');
+    assert.deepEqual(s.quotes().map((quote) => [quote.destinationToken, quote.amountRaw]), [[USDG, '20000000']]);
+    assert.equal(s.wallet.calls('wallet_switchEthereumChain').length, 0, 'nothing held there to read: no network switch');
+    assert.equal(s.wallet.calls('wallet_sendCalls').length + s.wallet.calls('eth_sendTransaction').length, 0);
+  } finally { await s.close(); }
+});
+
+// Added 2026-11-02 (review A2): a deposit the chain may have taken (its nonce was used, no hash came back) stayed "passed"
+// for good: no card said it, nothing removed it, and it kept every later transfer of this wallet waiting. Its card says it
+// now, with Remove, which ends the transfer it belonged to.
+test('a deposit that may have gone is said with Remove; Remove ends its transfer, and the position can be funded again', async () => {
+  const passed = { originChainId: 42161, nonce: '3', kind: 'deposit', quote: `${'ab'.repeat(32)}:1791300000`, provider: 'across', destinationChainId: 4663, at: 1791300000, state: 'passed' };
+  const s = await openFundingPage(browser, { bridge: true, served: together(homeReads(), chainReads(42161, ARB_USDC)),
+    intent: { key: fundingKey, value: JSON.stringify(restoredIntent()) }, held: { key: unsettledKey(S2_OWNER), value: JSON.stringify([passed]) } });
+  try {
+    await typeUsdg(s, '20'); await signIn(s);
+    const card = s.page.locator('[data-funds-held="42161"][data-funds-held-state="passed"]');
+    await card.waitFor();
+    assert.match(await card.innerText(), /probably went through[\s\S]*Check your wallet activity on Arbitrum One before you deposit again/);
+    assert.equal(await s.page.locator('[data-funds-run-forget]').count(), 0, 'its card says what happened; nothing to cancel');
+    assert.equal(await s.page.locator('[data-funds-deposit-button]').count(), 0, 'no new transfer while it may be on its way');
+    assert.equal(s.quotes().length, 0);
+    await card.locator('[data-funds-held-remove]').click();
+    await s.page.locator('[data-funding-state="ready"] [data-funds-deposit-button]').waitFor({ timeout: 30_000 });
+    assert.equal(await s.page.locator('[data-funds-held]').count(), 0);
+    assert.equal(await s.page.evaluate((key) => localStorage.getItem(key), unsettledKey(S2_OWNER)), null, 'the hold is gone');
+    assert.equal(await s.page.evaluate((key) => localStorage.getItem(key), fundingKey), null, 'and the transfer it belonged to: that deposit is never sent again');
+    assert.equal(s.wallet.calls('wallet_sendCalls').length + s.wallet.calls('eth_sendTransaction').length, 0);
+  } finally { await s.close(); }
+});
+
+// Added 2026-11-02 (review M3): only `filled` and `refunded` ended a deposit, so one whose own transaction reverted on its
+// origin was followed for good ("Waiting for Relay to see your deposit…"), held its destination, and could not be removed.
+test('a deposit whose own transaction reverts on its origin: nothing was bridged, it is said, and the transfer may go on', { timeout: 120_000 }, async () => {
+  const origin = createOriginChain({ owner: S2_OWNER, chainId: 42161 });
+  origin.state.tokenBalances.set(ARB_USDC, 200_000_000n);
+  origin.state.decimals.set(ARB_USDC, 6);
+  const s = await openFundingPage(browser, { bridge: true, served: together(homeReads(), chainReads(42161, ARB_USDC)), switching: true, sendOn: origin,
+    balances: { native: { 42161: 10n ** 18n }, tokens: { [`42161:${ARB_USDC}`]: { balance: 200_000_000n, decimals: 6 } } } });
+  // The approval goes through; the deposit after it reverts once mined (the fake origin reads the flag as it sends).
+  const push = origin.state.sent.push.bind(origin.state.sent);
+  origin.state.sent.push = (...txs) => { const count = push(...txs); if (count === 2) origin.revertNext(); return count; };
+  try {
+    const offer = await offerReady(s);
+    await offer.locator('[data-funds-deposit-button]').click();
+    const said = s.page.locator('[data-funds-run-notice][data-error-code="deposit_reverted"]');
+    await said.waitFor({ timeout: 60_000 });
+    assert.equal(origin.state.sent.length, 2, 'the deposit went, and reverted on Arbitrum One');
+    assert.equal(await said.innerText(), 'The deposit failed on Arbitrum One. Nothing was bridged.');
+    await s.page.locator('[data-funds-deposit-button]', { hasText: 'Continue remaining transfer' }).waitFor({ timeout: 30_000 });
+    const stored = JSON.parse(await s.page.evaluate((key) => localStorage.getItem(key), fundingKey));
+    assert.deepEqual(stored.legs.map((leg) => [leg.state, leg.depositTxHash]), [['stopped', null]], 'nothing was bridged: the leg may be sent again');
+    assert.deepEqual(JSON.parse(await s.page.evaluate((key) => localStorage.getItem(key), journal().key) ?? '[]'), [], 'nothing left to follow');
+    assert.equal(await s.page.locator('[data-funds-deposit]').count(), 0, 'its card goes with it');
+    assert.equal(origin.state.sent.length, 2, 'nothing more was sent');
+  } finally { await s.close(); }
+});
+
+// Added 2026-11-02 (review M3): a deposit the bridge never sees (dropped, or replaced in the wallet under another hash)
+// could not be removed, and held every later transfer to its destination for good.
+test('a deposit the bridge never sees: after 30 minutes it may be removed with a warning, which ends its transfer and frees the destination', { timeout: 120_000 }, async () => {
+  const HASH = `0x${'e1'.repeat(32)}`;
+  const sent = restoredIntent('sent'); sent.legs[0].depositTxHash = HASH;
+  const record = { provider: 'relay', originChainId: 42161, destinationChainId: 4663, depositTxHash: HASH, requestId: `0x${'17'.repeat(32)}`, lastState: 'awaiting_deposit' };
+  const s = await openFundingPage(browser, { bridge: true, served: together(homeReads(), chainReads(42161, ARB_USDC)), clock: true,
+    intent: { key: fundingKey, value: JSON.stringify(sent) }, journal: { key: journal().key, value: JSON.stringify([record]) } });
+  try {
+    await typeUsdg(s, '20'); await signIn(s);
+    const card = s.page.locator(`[data-funds-deposit="${HASH}"]`);
+    await card.waitFor();
+    assert.equal(await card.locator('[data-funds-remove]').count(), 0, 'on its way: never removed');
+    assert.equal(s.quotes().length, 0, 'it holds its destination');
+    for (let minute = 0; minute < 31; minute++) await s.page.clock.fastForward(60_000);
+    const warning = card.locator('[data-funds-stuck="unseen"]');
+    await warning.waitFor();
+    assert.match(await warning.innerText(), /hasn't seen this deposit yet\. Check your wallet's activity on Arbitrum One/);
+    await card.locator('[data-funds-remove="stuck"]').click();
+    await s.page.locator('[data-funding-state="ready"] [data-funds-deposit-button]').waitFor({ timeout: 30_000 });
+    assert.equal(await s.page.evaluate((key) => localStorage.getItem(key), fundingKey), null, 'its transfer ends: that deposit is never sent again');
+    assert.deepEqual(JSON.parse(await s.page.evaluate((key) => localStorage.getItem(key), journal().key) ?? '[]'), []);
+    assert.deepEqual(s.quotes().map((quote) => [quote.destinationToken, quote.amountRaw]), [[USDG, '20000000']]);
+    assert.equal(s.wallet.calls('wallet_sendCalls').length + s.wallet.calls('eth_sendTransaction').length, 0);
   } finally { await s.close(); }
 });
 

@@ -13,7 +13,7 @@ import { FUNDS_TEXT, senderCopy } from './copy'
 import { reconcileBalances } from './reconcile'
 import type { FundsServices } from './services'
 import { ZERO_ADDRESS } from '../../v2/types'
-import { availableBalance, transferTitle, type TransferProgress } from './transferView'
+import { availableBalance, stuckDeposit, transferTitle, UNSEEN_DEPOSIT_MS, type TransferProgress } from './transferView'
 import { TransferRoute } from './TransferRoute'
 
 type Hex = `0x${string}`
@@ -174,6 +174,7 @@ export function DepositStatus({
   onProgress,
   currentIntent = true,
   onContinue,
+  onFailed,
 }: {
   deposit: TrackedDeposit
   services: FundsServices
@@ -210,6 +211,11 @@ export function DepositStatus({
    * missing status is not proof that the transfer failed and must not unlock a replacement transfer.
    */
   onSettled?: () => void
+  /**
+   * Added 2026-11-02 (review M3): called once when the deposit's own transaction reverted on the origin, read by this
+   * page: the chain's proof that nothing left the wallet for the bridge, so its transfer may go on.
+   */
+  onFailed?: () => void
   /** Presentation only; never releases a transfer lock or starts another operation. */
   onProgress?: (progress: TransferProgress) => void
   /** A recovered transfer for another position is tracked without claiming it funds this one. */
@@ -225,9 +231,11 @@ export function DepositStatus({
   const [statusRetry, setStatusRetry] = useState(0)
   // The record as tracking last left it: tracking starts again from there (Changed on purpose 2026-10-05).
   const initial = useRef(record)
+  // Changed on purpose 2026-11-02 (review M3): a deposit whose own transaction reverted is not asked about any more.
+  const reverted = receipt === 'reverted'
 
   useEffect(() => {
-    if (!access.startsWith('ready:')) return
+    if (!access.startsWith('ready:') || reverted) return
     const poller = createStatusPoller({
       client: services.client,
       runtime: services.runtime,
@@ -246,7 +254,7 @@ export function DepositStatus({
     })
     poller.start()
     return () => poller.stop()
-  }, [services, owner, journal, access, statusRetry])
+  }, [services, owner, journal, access, statusRetry, reverted])
 
   // The deposit transaction's own receipt on the origin, for a deposit this page sent: "Included", then "Finalized".
   useEffect(() => {
@@ -341,9 +349,21 @@ export function DepositStatus({
   const stopped = poll?.stopped ?? null
   // A failed status read is not a failed transfer. Keep unknown deposits tracked and reserved until a terminal answer.
   const done = view.terminal
+  // Added 2026-11-02 (review M3): the bridge has not seen it for UNSEEN_DEPOSIT_MS of this page's following (a state
+  // shown never moves back, so once seen it stays seen).
+  const unseen = view.state === null || view.state === 'awaiting_deposit'
+  const [late, setLate] = useState(false)
+  useEffect(() => {
+    if (!unseen) return
+    return services.clock.setTimer(() => setLate(true), UNSEEN_DEPOSIT_MS)
+  }, [unseen, services])
+  const stuck = stuckDeposit({ state: view.state, stopped, receipt, unseenMs: late && unseen ? UNSEEN_DEPOSIT_MS : null })
+  const failed = useRef(onFailed)
+  useEffect(() => { failed.current = onFailed })
+  useEffect(() => { if (reverted) failed.current?.() }, [reverted])
   const progress = useRef(onProgress)
   useEffect(() => { progress.current = onProgress })
-  useEffect(() => { progress.current?.({ state: view.state, balance: balanceState }) }, [view.state, balanceState])
+  useEffect(() => { progress.current?.({ state: view.state, balance: balanceState, stuck }) }, [view.state, balanceState, stuck])
   const settled = useRef(onSettled)
   useEffect(() => {
     settled.current = onSettled
@@ -386,6 +406,18 @@ export function DepositStatus({
         <p role="alert" className="dm-error mt-2" data-funds-deposit-reverted="">
           {FUNDS_TEXT.depositReverted(origin)}
         </p>
+      )}
+      {/* Added 2026-11-02 (review M3): a deposit that will not complete as followed may be removed by the person; one that
+          may still be on its way says so first. Removing one of this transfer's ends the transfer (BringFunds). */}
+      {(stuck === 'unfollowable' || stuck === 'unseen') && (
+        <p role="status" className="dm-hint mt-2" data-funds-stuck={stuck}>
+          {stuck === 'unseen' ? FUNDS_TEXT.depositUnseen(PROVIDER_NAME[record.provider], origin) : FUNDS_TEXT.depositUnfollowable(origin)}
+        </p>
+      )}
+      {stuck !== null && (
+        <Button variant="ghost" size="sm" className="mt-2" onClick={onRemove} data-funds-remove="stuck">
+          {FUNDS_TEXT.remove}
+        </Button>
       )}
       {!deposit.journaled && deposit.review && (
         <p className="dm-hint mt-2" data-funds-not-saved="">

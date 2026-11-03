@@ -19,7 +19,7 @@ BindReadOnlyPaths=/etc/domino/continuous-reads/write.hosts:/etc/hosts
 # new Domino pool joins without editing this unit; one it cannot register (the
 # catalogue lacks its Initialize block) is reported under notRegistered. 35 s
 # keeps the run, its start-up and a step in progress inside the timer's minute.
-ExecStart=@QUEUE_ROOT@/venv/bin/python -B manage_activity.py --follow --domino-positions --quiet --span 100000 --span-floor 5000 --span-ceiling 100000 --max-passes 0 --max-seconds 35 --poll-seconds 5 --lag 100 --max-consecutive-failures 20 --max-rpc-calls 200000 --max-header-calls 200000
+ExecStart=@QUEUE_ROOT@/venv/bin/python -B manage_activity.py --follow --domino-positions --quiet --span 100000 --span-floor 10 --span-ceiling 100000 --max-passes 1 --lag 100 --max-consecutive-failures 20 --max-rpc-calls 200000 --max-header-calls 200000
 Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 TimeoutStartSec=90
 UMask=0077

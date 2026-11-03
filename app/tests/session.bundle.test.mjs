@@ -1331,7 +1331,17 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // fixes, five areas merged): CI measured .wallet-test-dist all lazy at 407,817 B, 817 B over its 407,000 B (404,000 B
     // + 3,000 B test-only); dist all lazy is 334,290 B. Raise all lazy to 405,500 B: the overshoot rounded up to 0.5 kB
     // plus one more 0.5 kB of headroom. No dependency, every other ceiling unchanged.
-    for (const [family, files, productionBudget] of [['initial entry', first, 242_000], ['route screens', routes, 191_000], ['session/public reads', base, 168_000], ['financial', financial, 347_000], ['pool history chart', poolChart, 13_000], ['all lazy', allLazy, 405_500], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 664_000], ['V2 fixture data', fixtureData, 13_000]]) {
+    // Changed on purpose 2026-11-02 (launch batch: the four backend and ops fixes of #452 and the seven app fixes of
+    // review M1-M4, A1, A2 and B2 and the featured fallback list, merged as one PR): main is already over domino v2's
+    // ceiling. Since #443, CI measures 664,043 B for domino v2 in dist, 43 B over 664,000 B, and 407,885 B for all
+    // lazy in .wallet-test-dist, 615 B under its 408,500 B (405,500 B + 3,000 B test-only; run 41476165786 on
+    // d7469cd7). The backend fixes change no family: CI measured them on main to the byte (run 41512227100). Clean Mac
+    // builds with gzip 9, one of main with those fixes and one of this branch, put the app fixes at +3,637 B in domino
+    // v2 (662,632 B to 666,269 B; .wallet-test-v2-dist +3,659 B) and +753 B in that all lazy (406,954 B to 407,707 B).
+    // On CI that is about 667,680 B, 3,680 B over 664,000 B, and 408,638 B, 138 B over 408,500 B. Raise domino v2 to
+    // 668,500 B and all lazy to 406,500 B: each overshoot rounded up to 0.5 kB, plus one more 0.5 kB of headroom. No
+    // dependency, and every other ceiling unchanged.
+    for (const [family, files, productionBudget] of [['initial entry', first, 242_000], ['route screens', routes, 191_000], ['session/public reads', base, 168_000], ['financial', financial, 347_000], ['pool history chart', poolChart, 13_000], ['all lazy', allLazy, 406_500], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 668_500], ['V2 fixture data', fixtureData, 13_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       const testOnly = dir !== DIST && (family === 'financial' || family === 'all lazy');
       const budget = productionBudget + (testOnly ? 3_000 : 0);

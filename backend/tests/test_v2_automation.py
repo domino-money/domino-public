@@ -34,6 +34,7 @@ from v2_uniswap import PoolRef, UniswapReader, v3_pool_address
 from v2_vaults import VaultRecord
 from v2_waiting import read_waiting_file
 from v2_fixtures import HEAD, FakeChain, Revert
+from test_v2_executor import ExecutorTestCase
 from test_v2_manifest import manifest_document
 from test_v2_planner import RICH, member, vault_state
 from test_v2_planner_domino import domino_vault
@@ -649,6 +650,48 @@ class PausedVaultTests(unittest.TestCase):
         vault.paused, vault.last = False, chain.head.block.timestamp - 10
         (entry,), cost = chain.run(service, [vault], 3 + self.FULL[3])
         self.assertEqual((entry['reason'], cost), ('too_soon', 3 + self.FULL[3]))
+
+
+class MonitorReportTests(ExecutorTestCase):
+    """Every pass with keys reports what the production monitor alerts on (docs/OPS_MONITOR.md): the journal's
+    intents in 'attention' with since when, and the rolling 24-hour spend the daily cap counts. The executor is
+    test_v2_executor's, on its scripted chain; the pass finds no vault."""
+
+    def run_pass(self):
+        head = type('Head', (), {'block': self.head(), 'base_fee_per_gas': self.fake.base_fee})()
+        service = ChainAutomation(chain=BASE, deployment=self.deployment, endpoints=self.endpoints,
+                                  follower=type('Follower', (), {'head': lambda follower: head})(),
+                                  planner=PlannerConfig(), observations=PublisherPolicy(), price_references=(),
+                                  earnings_window_seconds=600, twap_seconds=600, exit_twap_seconds=600,
+                                  deadline_seconds=120, executor=self.executor, auto_exit=False)
+
+        def clients(automation_service, pinned):
+            automation_service.index = None
+            return None, None, None, None
+        with patch.object(ChainAutomation, '_clients', clients), \
+                patch.object(type(self.deployment), 'verify_code', lambda *args, **kwargs: None), \
+                patch.object(service.discovery, 'scan', return_value=[]):
+            report = service.run_once()
+        json.dumps(report)  # what `serve` prints, one line a pass
+        return report
+
+    def test_every_pass_reports_the_intents_in_attention_and_the_days_spend(self):
+        report = self.run_pass()
+        self.assertEqual((report['attention'], report['gas']), ([], {'spentWei': '0', 'dailyCapWei': str(3 * 10**16)}))
+        outcome = self.submit()
+        reserved = self.executor.journal.intent(outcome.intent)['reserved_wei']
+        self.assertEqual(self.run_pass()['gas']['spentWei'], reserved)  # in flight: what it reserved counts
+        self.fake.pool.clear()
+        self.fake.nonce = 1  # something else spent its nonce
+        entered = self.fake.timestamp
+        report = self.run_pass()
+        self.assertEqual(report['reconciled'],
+                         [{'intent': outcome.intent, 'state': 'attention', 'reason': 'nonce_consumed_without_receipt'}])
+        self.assertEqual(report['attention'],
+                         [{'intent': outcome.intent, 'reason': 'nonce_consumed_without_receipt', 'since': entered}])
+        self.assertEqual(self.run_pass()['attention'], report['attention'])  # until an operator acknowledges it
+        self.executor.journal.acknowledge(outcome.intent)
+        self.assertEqual(self.run_pass()['attention'], [])
 
 
 class EmptyPositionExitTests(unittest.TestCase):

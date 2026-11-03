@@ -371,6 +371,20 @@ export function createOriginSender(
     fail(at === 'open' ? 'wallet_request_open' : 'pending_wallet_transaction')
   }
 
+  /**
+   * Added 2026-11-02 (review A2): a step held for this owner on its origin before the wallet is asked (`holdOffer`), and
+   * let go once its outcome is known (a hash, a refusal, nothing asked), only while the hold is still that step's.
+   */
+  const holdOffer = (offer: UnsettledOffer) => {
+    // A deposit marked "may have gone" on this origin keeps its place (one hold per origin): it is said until the person
+    // removes it, and its quote is never offered again. A step offered after it is then held only by this page.
+    if (!unsettled.list(owner).some((entry) => entry.originChainId === offer.originChainId)) unsettled.put(owner, offer)
+  }
+  const letGoOffer = (offer: UnsettledOffer) => {
+    const held = unsettled.list(owner).find((entry) => entry.originChainId === offer.originChainId)
+    if (held && held.state === 'open' && held.nonce === offer.nonce && held.kind === offer.kind && held.quote === offer.quote) unsettled.drop(owner, offer.originChainId)
+  }
+
   /** The quote's deposit, once handed to the wallet on this page (or held unsettled after a reload), is never offered again. */
   const depositOffered = (quote: Pick<QuotePlan, 'requestFingerprint' | 'requestedAt'>): boolean => {
     const key = quoteKeyOf(quote)
@@ -477,11 +491,23 @@ export function createOriginSender(
       })
       // Offered from here on: never again from this review, whatever the wallet answers.
       state.offered.add(kind)
+      // Changed on purpose 2026-11-02 (review A2): the origin is held for this owner BEFORE the wallet is asked, so a page
+      // reloaded or closed during the prompt still knows the step and its nonce. It was held only once an answer came back
+      // lost, so a reload left an open request with no record, and "I cancelled the request in my wallet" found nothing
+      // to let go ("may still be pending", for good). Let go below once the wallet gives a hash (the step is followed by
+      // it) or refuses, or when nothing was asked; kept when the answer is lost, as before (F1).
+      const offer: UnsettledOffer = { originChainId: origin, nonce: nonce.toString(), kind, quote: quoteKey, provider: plan.provider, destinationChainId: plan.destinationChainId, at: Math.floor(now()), state: 'open' }
+      holdOffer(offer)
+      const letGo = () => letGoOffer(offer)
       let hash: unknown = null
       try {
         hash = await rpc('eth_sendTransaction', [transaction], {
-          // Only this exact claim, only after a definite refusal.
-          onRefusal: () => wallet.releaseRejectedNonce(origin, nonce, claim),
+          // Only this exact claim, only after a definite refusal, one that comes after the window too: nothing was sent,
+          // so its hold goes as well.
+          onRefusal: async () => {
+            await wallet.releaseRejectedNonce(origin, nonce, claim)
+            letGo()
+          },
           answerKept: true,
         })
       } catch (error) {
@@ -489,6 +515,7 @@ export function createOriginSender(
           // The port refused before the provider was invoked: the wallet never saw it (F9).
           await wallet.releaseRejectedNonce(origin, nonce, claim)
           state.offered.delete(kind)
+          letGo()
           throw error
         }
         if (definiteRefusal(error)) throw error
@@ -498,18 +525,10 @@ export function createOriginSender(
       if (typeof hash !== 'string' || !HASH.test(lower(hash))) {
         // A time-out, a lost or malformed answer: it may have been sent. Its nonce stays held, this quote's step is sent
         // for this page, and the origin is held for this owner until the chain or the person settles it (F1).
-        unsettled.put(owner, {
-          originChainId: origin,
-          nonce: nonce.toString(),
-          kind,
-          quote: quoteKey,
-          provider: plan.provider,
-          destinationChainId: plan.destinationChainId,
-          at: Math.floor(now()),
-          state: 'open',
-        })
+        unsettled.put(owner, offer)
         return fail('wallet_result_unknown')
       }
+      letGo()
       const sentHash = lower(hash) as Hex
       state.sent.set(sentHash, { kind, transaction })
       if (kind === 'approval') return { hash: sentHash, journaled: false, record: null }
@@ -601,6 +620,10 @@ export function createOriginSender(
       // Offered from here on: never again from this review, whatever the wallet answers.
       state.offered.add('approval')
       state.offered.add('deposit')
+      // Changed on purpose 2026-11-02 (review A2): held before the wallet is asked, as a step's (`send`): let go when the
+      // wallet names the batch (then kept among the batches), refuses it, or was never asked; kept when its answer is lost.
+      const offer: UnsettledOffer = { originChainId: origin, nonce: nonce.toString(), kind: 'deposit', quote: quoteKey, provider: plan.provider, destinationChainId: plan.destinationChainId, at: Math.floor(now()), state: 'open' }
+      holdOffer(offer)
       let claim: string | undefined
       let asked = false
       const latch: BatchWallet = {
@@ -617,6 +640,7 @@ export function createOriginSender(
           const answer = await rpc(method, params, {
             onRefusal: async () => {
               if (claim !== undefined) await letGoBatch(origin, key, claim)
+              letGoOffer(offer)
             },
             answerKept: true,
           })
@@ -635,6 +659,7 @@ export function createOriginSender(
         if (!asked || message === 'batch_unsupported' || message === 'batch_upgrade_declined' || message === 'wallet_review_expired') {
           // Nothing the wallet can run was asked: the claim goes, and the same review may still go step by step.
           state.offered.clear()
+          letGoOffer(offer)
           if (claim !== undefined) await letGoBatch(origin, key, claim)
           if (message === 'batch_unsupported' || message === 'batch_upgrade_declined') return fail(message)
           if (message === 'wallet_review_expired') return fail(!wallet.current() ? 'wallet_identity_changed' : wallet.chainId() !== origin ? 'wallet_wrong_chain' : 'quote_expired')
@@ -647,16 +672,7 @@ export function createOriginSender(
         // Handed to the wallet with no usable answer: it may run. This quote's deposit is sent for this page, and the
         // origin is held for this owner until the chain or the person settles it (F1), as a step's.
         offeredQuotes.add(quoteKey)
-        unsettled.put(owner, {
-          originChainId: origin,
-          nonce: nonce.toString(),
-          kind: 'deposit',
-          quote: quoteKey,
-          provider: plan.provider,
-          destinationChainId: plan.destinationChainId,
-          at: Math.floor(now()),
-          state: 'open',
-        })
+        unsettled.put(owner, offer)
         return fail('wallet_result_unknown')
       }
       offeredQuotes.add(quoteKey)
@@ -672,8 +688,11 @@ export function createOriginSender(
       })
       try {
         batches.put(owner, entry)
+        // Kept among the batches from here on (Changed on purpose 2026-11-02, review A2): its hold goes.
+        letGoOffer(offer)
       } catch {
-        // An id this page cannot keep: followed on this page only (batchStatus takes the entry itself).
+        // An id this page cannot keep: followed on this page only (batchStatus takes the entry itself); the origin stays
+        // held, so a reload still knows something of this owner may run there.
       }
       return entry
     })
@@ -816,19 +835,33 @@ export function createOriginSender(
    * handed to the wallet on `origin` with no answer is gone from the wallet. Heard only while the chain shows its nonce
    * still the next one with nothing pending; then its latch and the hold are let go and nothing is sent. Otherwise where
    * the nonce stands: `passed` (it was taken: a deposit is then kept as "may have gone"), `pending`, or `none`.
+   *
+   * Changed on purpose 2026-11-02 (review A2): every answer now says what the person may do next.
+   *   - `settled`: an approval whose nonce the chain took. Nothing of its deposit was sent (a deposit follows only its
+   *     approval's receipt), so the transfer may be reviewed again; the allowance is read then. It answered `passed`,
+   *     and its transfer stayed "unknown" for good.
+   *   - `passed`: a deposit the chain may have taken, also when it was already marked so (it answered `none`, as if
+   *     nothing were held).
+   *   - `pending`: a batch the wallet took on that origin and has not named yet is in flight too.
+   *   - `none`: nothing this page handed to the wallet on that origin is held: a step is held before the wallet is asked
+   *     (`send`), so nothing it could still send was recorded there.
    */
-  async function forgetUnsettled(origin: number): Promise<'forgotten' | 'passed' | 'pending' | 'none'> {
+  async function forgetUnsettled(origin: number): Promise<'forgotten' | 'settled' | 'passed' | 'pending' | 'none'> {
     return exclusive(async () => {
-      const open = unsettled.list(owner).find((offer) => offer.originChainId === origin && offer.state === 'open')
-      if (!open) return 'none'
+      const held = unsettled.list(owner).find((offer) => offer.originChainId === origin)
+      if (!held) return batches.list(owner).some((entry) => entry.originChainId === origin) ? 'pending' : 'none'
+      if (held.state === 'passed') return 'passed'
       const rpc = caller(origin, ORIGIN_READ_S)
       await identity(rpc, origin)
-      const nonce = BigInt(open.nonce)
+      const nonce = BigInt(held.nonce)
       const at = await standing(rpc, nonce)
       if (at === 'passed') {
         await wallet.forgetNonce?.(origin, nonce)
-        if (open.kind === 'approval') unsettled.drop(owner, origin)
-        else unsettled.put(owner, { ...open, state: 'passed' })
+        if (held.kind === 'approval') {
+          unsettled.drop(owner, origin)
+          return 'settled'
+        }
+        unsettled.put(owner, { ...held, state: 'passed' })
         return 'passed'
       }
       if (at !== 'open') return 'pending'

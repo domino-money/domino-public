@@ -1,8 +1,9 @@
 import type { ChainBalancesResponse, ChainPoolsResponse, ChainTokensResponse, LivePool, LiveToken } from 'api-contracts/read-v6/types'
 import { rawFromFact, type CurrencyBalance } from '../../../lib/create/budgets'
-import { PROTOCOL_FEE_UNDESCRIBED, type NetworkPoolFacts, type NetworkResolved, type NetworkToken, type OtherChainId } from '../../../lib/create/otherChains'
+import { PROTOCOL_FEE_UNDESCRIBED, TOKEN_LOOKALIKE, type NetworkPoolFacts, type NetworkResolved, type NetworkToken, type OtherChainId } from '../../../lib/create/otherChains'
 import { amountFact } from '../../../lib/read/pagers'
 import { poolIdKey } from '../../../lib/read/screens/identity'
+import { mixesInto, symbolReading } from '../../../lib/symbolReading'
 import type { PoolOption } from '../../../lib/read/screens/poolsList'
 import type { TransientCandidate } from '../../../lib/read/screens/transient'
 import type { TokenDisplay } from '../../../lib/read/types'
@@ -38,12 +39,43 @@ export function symbolRank(symbol: string | null, query: string): number {
  * Whether a token passes for one of the network's own currencies (ETH, WETH, USDC) without being it: its symbol is theirs
  * and its address is not. Such a token is listed with a warning and never chosen (as today's search does on Robinhood
  * Chain, its rule I1): a symbol is anyone's to write.
+ *
+ * Changed on purpose 2026-11-02 (review M1, "the same rule as Robinhood Chain"): a symbol is compared as it reads
+ * (lib/symbolReading.ts symbolReading and mixesInto, the reading Robinhood Chain's own look-alike rule uses,
+ * config/mainTokens.ts readsAsMainToken, audit I2), so "USDС" with a Cyrillic С, "U5DC" or "W ETH" pass for the network's
+ * own currency too; it compared lower-case text, which only an exact "USDC" matched.
  */
 export function lookalikeOf(chainId: OtherChainId, token: { address: string; symbol: string | null }): string | null {
-  const symbol = (token.symbol ?? '').trim().toLowerCase()
+  const symbol = (token.symbol ?? '').trim()
   if (!symbol) return null
-  const own = profileTokens(chainId).find((entry) => (entry.symbol ?? '').toLowerCase() === symbol)
+  const reading = symbolReading(symbol)
+  const own = profileTokens(chainId).find((entry) => entry.symbol !== null && (symbolReading(entry.symbol) === reading || mixesInto(symbol, entry.symbol.toUpperCase())))
   return own && own.address !== token.address.toLowerCase() ? (own.symbol ?? null) : null
+}
+
+/**
+ * Added 2026-11-02 (review M1): a token of another network as one a person may choose, or refused when it passes for
+ * one of the network's own currencies (`lookalikeOf`), whichever way it came: a pasted address chosen in the search, a
+ * link #/new/network/<chain>/<token>/<pool> (Markets' token page and its pool rows open New position by one), or that
+ * token's Markets page. The search already listed such a token with its warning and never chose it; a link took any token
+ * with decimals, so a "USDC" an attacker deployed on Base opened New position chosen, with no word about it. As today's
+ * journey refuses such a token on Robinhood Chain (audit I1), in the words its search and its token page say it with
+ * (../copy.ts JOURNEY.pool.lookalikeRefused, lib/read/screens/lookalike.ts warningText's).
+ */
+export function usableNetworkToken(chainId: OtherChainId, token: TokenDisplay): NetworkResolved {
+  const main = lookalikeOf(chainId, token)
+  if (main === null) return { ok: true, token }
+  return { ok: false, code: TOKEN_LOOKALIKE, reason: JOURNEY.pool.lookalikeRefused(main) }
+}
+
+/**
+ * Added 2026-11-02 (review M1): the keys of the listed pools one of whose tokens passes for one of the network's own
+ * currencies (`lookalikeOf`): a link's proposed pool is never chosen among them (components/read/screens/PoolPicker.tsx
+ * NetworkPoolPicker), as a Robinhood Chain link's pool with a look-alike is refused (components/create/Journey.tsx,
+ * audit I1).
+ */
+export function lookalikePools(chainId: OtherChainId, options: readonly PoolOption[]): string[] {
+  return options.filter((option) => option.currencies.some((currency) => lookalikeOf(chainId, currency) !== null)).map((option) => option.key)
 }
 
 /**
@@ -69,11 +101,15 @@ function tokenOf(chainId: OtherChainId, live: LiveToken): TokenDisplay {
   return displayOf(chainId, own ?? { address, symbol: cleanSymbol(live.symbol), decimals: live.decimals })
 }
 
-/** The token a pasted address names on its network, from the chain-pools answer about it (pure), or why it cannot be used. */
+/**
+ * The token a pasted address names on its network, from the chain-pools answer about it (pure), or why it cannot be used.
+ * Changed on purpose 2026-11-02 (review M1): one that passes for one of the network's own currencies is refused
+ * (`usableNetworkToken`); it was used, whatever it called itself.
+ */
 export function resolvedOf(chainId: OtherChainId, address: string, answer: ChainPoolsResponse): NetworkResolved {
   const live = answer.tokens.find((token) => token.address.toLowerCase() === address.toLowerCase())
   if (!live || live.decimals === null) return { ok: false, code: 'token_decimals_unknown', reason: JOURNEY.pool.decimalsUnknown }
-  return { ok: true, token: tokenOf(chainId, live) }
+  return usableNetworkToken(chainId, tokenOf(chainId, live))
 }
 
 /**

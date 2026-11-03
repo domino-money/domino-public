@@ -5,7 +5,7 @@ import { feeWords } from '../../../lib/format/fee'
 import { readNow } from '../../../lib/markets'
 import { COPY, failureText } from '../../../lib/read/screens/copy'
 import { cataloguePoolId, createCatalogueSession, verifyCandidate, type CatalogueSession, type CatalogueSnapshot } from '../../../lib/read/screens/catalogueSession'
-import { PROTOCOL_FEE_UNDESCRIBED, figuresShownUntil, networkAprNote, networkFigureNote, networkRows, poolOnOtherChain, type NetworkPools } from '../../../lib/create/otherChains'
+import { PROTOCOL_FEE_UNDESCRIBED, figuresShownUntil, linkedNetworkPool, networkAprNote, networkFigureNote, networkRows, poolOnOtherChain, type NetworkPools } from '../../../lib/create/otherChains'
 import { dexStore } from '../../../lib/read/dexFigures'
 import { keptCreatePools, readCreatePools, type PoolsAnswer } from '../../../lib/create/poolsAhead'
 import { NATIVE_CURRENCY, type AddressKey, type PoolIdKey } from '../../../lib/read/screens/identity'
@@ -732,6 +732,7 @@ export function NetworkPoolPicker({
   browse = false,
   onOpen,
   hint = null,
+  hintRefused = null,
 }: {
   read: (signal: AbortSignal) => Promise<NetworkPools>
   network: string | null
@@ -750,6 +751,11 @@ export function NetworkPoolPicker({
    * when this network's own pools read lists exactly that pool, as a Robinhood Chain link's pool is verified.
    */
   hint?: string | null
+  /**
+   * Added 2026-11-02 (review M1): what the list says when it refuses the proposed pool (one of its tokens passes for one of
+   * the network's own currencies, the read's `warned`): New position's words for a link's pool refused on Robinhood Chain.
+   */
+  hintRefused?: string | null
 }) {
   // The read as it was handed in when this list mounted: the caller remounts the list (its key) for another token.
   const reader = useRef(read)
@@ -823,7 +829,13 @@ export function NetworkPoolPicker({
   }, [until, chainId, subject, clock])
   // QA round 2, N5: the proposed pool, chosen once when this network's own read lists it, and never over a choice made.
   const hinted = useRef(false)
-  const proposed = hint === null || browse ? null : (options.find((option) => option.key.toLowerCase() === hint.toLowerCase()) ?? null)
+  // Changed on purpose 2026-11-02 (review M1): never one with a token that passes for one of the network's own currencies
+  // (the read's `warned`, lib/create/otherChains.ts linkedNetworkPool): refused as a Robinhood Chain link's pool with a
+  // look-alike is (components/create/Journey.tsx, audit I1), in the same words (StageToken's withdrawn line), and the list
+  // stays open for another pool. It was chosen.
+  const linked = browse ? null : linkedNetworkPool(options, hint, result.kind === 'ok' ? result.warned : undefined)
+  const proposed = linked !== null && !linked.refused ? linked.option : null
+  const refusedHint = linked?.refused === true
   useEffect(() => {
     if (proposed === null || hinted.current || pending !== null) return
     hinted.current = true
@@ -842,6 +854,8 @@ export function NetworkPoolPicker({
   return (
     <div className="grid gap-3" data-picker="pool" data-picker-variant="create" data-picker-network={options[0]?.currencies[0].chainId ?? ''} data-pools-state={result.kind === 'failed' ? result.code : waiting ? 'loading' : result.kind}>
       <p role="status" aria-live="polite" className="sr-only">{result.kind === 'loading' || waiting || readingAgain ? COPY.picker.poolsLoading : result.kind === 'failed' && !browse ? result.reason : ''}</p>
+      {/* Review M1: the link's pool refused, said as StageToken says a Robinhood Chain link's (data-preselect-withdrawn). */}
+      {refusedHint && pending === null && hintRefused && <p className="text-caption text-fg-muted" data-preselect-withdrawn="">{hintRefused}</p>}
       {(result.kind === 'loading' || waiting || readingAgain) && <RestingCreateRows />}
       {result.kind === 'failed' && !readingAgain && (
         <p className="px-1 py-4 text-center text-body text-fg-muted" data-pools-unavailable={result.code}>

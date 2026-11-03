@@ -353,7 +353,17 @@ class ChainAutomation:
             entry.pop('plan', None)
         if act and self.executor is not None:
             self._record_waiting(report, block)
+            report.update(self._journal_state())
         return report
+
+    def _journal_state(self):
+        """What the production monitor watches in the journal (docs/OPS_MONITOR.md), after this pass's own claim:
+        each intent in 'attention' and since when it has stopped the signer, and the rolling 24-hour spend the daily
+        cap counts (what was paid, else what is reserved) against `gas.dailyCapWei`."""
+        journal = self.executor.journal
+        return {'attention': journal.attention_since(),
+                'gas': {'spentWei': str(journal.spent_today(journal.clock())),
+                        'dailyCapWei': str(self.executor.policy.daily_cap_wei)}}
 
     def _record_waiting(self, report, block):
         """Each vault's and mandate's reason, since when it has held (`since` and

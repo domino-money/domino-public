@@ -15,7 +15,7 @@ import type { Address, V2ChainId } from '../../v2/types'
 import type { V2Transports } from '../transports'
 import { JOURNEY } from './copy'
 import { journeyError } from './errors'
-import { READER_POOLS_CACHE_MS, balanceTokens, balancesOfAnswer, factsOfAnswer, lookalikeOf, passingAfter, pastedOf, poolsOfAnswer, rereadOf, resolvedOf, rowsOfTokens, symbolRank } from './model/chainReads'
+import { READER_POOLS_CACHE_MS, balanceTokens, balancesOfAnswer, factsOfAnswer, lookalikeOf, lookalikePools, passingAfter, pastedOf, poolsOfAnswer, rereadOf, resolvedOf, rowsOfTokens, symbolRank, usableNetworkToken } from './model/chainReads'
 import { createNetworkSearch, searchable, type SearchAnswer } from './model/networkSearch'
 import { displayOf, factsOfFound, listedPools, networkTokens, readableNetworks, optionOf, poolsToRead, refOf } from './model/networks'
 import { chainPoolsOn, patiently, servedOn, type ReadGate, type Served } from './served'
@@ -197,7 +197,9 @@ export function otherChainsFor(gates: JourneyGates | null, { walletFallback = tr
         const [read] = await inTurn(async () => (await connectJourney(row.chainId, gate.contracts)).zap.readTokens([row.token.address as Address]))
         if (signal.aborted) return { ok: false, code: 'aborted', reason: '' }
         if (!read || read.decimals === null) return { ok: false, code: 'token_decimals_unknown', reason: JOURNEY.pool.decimalsUnknown }
-        return { ok: true, token: displayOf(row.chainId, { address: read.address, symbol: cleanSymbol(read.symbol), decimals: read.decimals }) }
+        // Changed on purpose 2026-11-02 (review M1): read through the wallet, a token passing for one of the network's own
+        // currencies is refused as the service's answer refuses it (./model/chainReads.ts resolvedOf).
+        return usableNetworkToken(row.chainId, displayOf(row.chainId, { address: read.address, symbol: cleanSymbol(read.symbol), decimals: read.decimals }))
       } catch (error) {
         return { ok: false, ...failure(error, row.chainId) }
       }
@@ -212,12 +214,17 @@ export function otherChainsFor(gates: JourneyGates | null, { walletFallback = tr
       dexStore.askOn(chainId, subject)
       const said = await patiently(() => chainPools(chainId, token.address), signal)
       if (signal.aborted) return { kind: 'ok', options: [] }
-      if (said.kind === 'ok') return { kind: 'ok', options: poolsOfAnswer(chainId, token, said.body, said.receivedAt), facts: factsOfAnswer(said.body), subject }
+      // Changed on purpose 2026-11-02 (review M1): with the pools a link may never choose (`warned`), each answer's own.
+      if (said.kind === 'ok') {
+        const options = poolsOfAnswer(chainId, token, said.body, said.receivedAt)
+        return { kind: 'ok', options, facts: factsOfAnswer(said.body), subject, warned: lookalikePools(chainId, options) }
+      }
       if (gate.mode !== 'live' || !walletFallback) return { kind: 'failed', ...unread(chainId) }
       try {
         const read = await inTurn(async () => (await connectJourney(chainId, gate.contracts)).zap.readPools(poolsToRead(chainId, token.address as Address)))
         if (signal.aborted) return { kind: 'ok', options: [] }
-        return { kind: 'ok', options: listedPools(chainId, token, read, Date.now()), facts: factsOfFound(read), subject }
+        const options = listedPools(chainId, token, read, Date.now())
+        return { kind: 'ok', options, facts: factsOfFound(read), subject, warned: lookalikePools(chainId, options) }
       } catch (error) {
         return { kind: 'failed', ...failure(error, chainId) }
       }

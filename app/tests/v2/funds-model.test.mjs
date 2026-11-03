@@ -200,7 +200,10 @@ test('the form: exact amounts, slippage in the service bounds, destination gas, 
   assert.equal(model.amountRawOf('0', 6), null);
   // Changed on purpose 2026-10-30 (QA round 2, N99): thousands separators are read as New position's amount step reads
   // them (a funding amount Domino writes itself is grouped); a decimal comma or a minus is refused.
-  assert.equal(model.amountRawOf('1,000', 6), '1000000000');
+  // Changed on purpose 2026-11-02 (review M4): a one-group "1,000" is refused as ambiguous (1 for someone who writes a
+  // decimal comma), and Domino writes its own amounts with no separator (tests/v2/typed-figure.test.mjs).
+  assert.equal(model.amountRawOf('1,000', 6), null, 'one group, no dot: 1 or 1000, never guessed');
+  assert.equal(model.amountRawOf('1,000,000', 6), '1000000000000');
   assert.equal(model.amountRawOf('1,000.50', 6), '1000500000');
   assert.equal(model.amountRawOf(' 0.5 ', 18), '500000000000000000', 'spaces around it are dropped');
   assert.equal(model.amountRawOf('0,5', 18), null, 'a decimal comma is refused, never read as 5');

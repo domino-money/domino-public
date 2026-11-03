@@ -127,5 +127,44 @@ class ChunkIndexPostgresTests(unittest.TestCase):
                     self.assertTrue(any('chunk_start' in node.get('Filter', '') for node in scans), scans)
 
 
+
+# The two reads of a pool's newest chunks: the tail (activity_store) and the reconcile's last 64 (activity_indexer).
+NEWEST_READ = re.compile(r"(SELECT [^'\"]*?FROM domino_activity\.chunks\s+WHERE pool_id=%s ORDER BY \w+ DESC LIMIT (\d+))")
+
+
+def newest_reads():
+    return {name: [(' '.join(query.split()), int(limit)) for query, limit in NEWEST_READ.findall((BACKEND / name).read_text())]
+            for name in ('activity_store.py', 'activity_indexer.py')}
+
+
+@unittest.skipUnless(os.environ.get('DOMINO_TEST_POSTGRES') == '1', 'requires disposable PostgreSQL databases')
+class NewestChunkPostgresTests(unittest.TestCase):
+    """2 Nov 2026: sorting a pool's chunks by end_block, which has no index, read all of them (PONS/USDG: 76,954)
+    past the 5 s statement timeout, failing queue runs as catalogue_database_unavailable. Chunks are contiguous, so
+    the primary key (pool_id, start_block) gives the same newest chunk, reading only what the LIMIT returns."""
+    settings = ChunkIndexPostgresTests.settings
+
+    def test_the_newest_chunks_are_read_backwards_through_the_primary_key(self):
+        reads = newest_reads()
+        self.assertEqual({name: len(found) for name, found in reads.items()},
+                         {'activity_store.py': 1, 'activity_indexer.py': 1})
+        with psycopg.connect(**self.settings, user=ADMIN, row_factory=dict_row) as conn, \
+                conn.transaction(force_rollback=True):
+            conn.execute(SEED)
+            pool = conn.execute(f'SELECT {POOL_ID.format(1)} AS pool').fetchone()['pool']
+            newest = conn.execute('SELECT max(end_block) AS b FROM domino_activity.chunks WHERE pool_id=%s',
+                                  (pool,)).fetchone()['b']
+            for name, ((query, limit),) in reads.items():
+                with self.subTest(store=name):
+                    self.assertEqual(conn.execute(query, (pool,)).fetchone()['end_block'], newest)
+                    plan = conn.execute('EXPLAIN (ANALYZE, FORMAT JSON) ' + query, (pool,)).fetchone()['QUERY PLAN']
+                    scans = list(nodes(plan[0]['Plan']))
+                    self.assertFalse(any(node['Node Type'] == 'Sort' for node in scans), scans)
+                    used = [node for node in scans if node.get('Index Name') == 'chunks_pkey']
+                    self.assertEqual(len(used), 1, scans)
+                    self.assertEqual(used[0]['Scan Direction'], 'Backward')
+                    self.assertLessEqual(float(used[0]['Actual Rows']), limit)
+
+
 if __name__ == '__main__':
     unittest.main()

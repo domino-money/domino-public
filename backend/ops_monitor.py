@@ -4,8 +4,9 @@ alerts and a daily summary on Telegram, and a public status snapshot for the ope
 
 It only reads:
 - unit states (systemctl show);
-- the services' own JSON lines (journalctl, as a member of systemd-journal): the V2 automation's passes, the V2
-  indexers' rounds, V1's cycles, and the listeners' request lines;
+- the services' own JSON lines (journalctl, as a member of systemd-journal): the V2 automation's passes (each with
+  its journal's intents in 'attention' and its 24-hour gas spend against the daily cap), the V2 indexers' rounds,
+  V1's cycles, and the listeners' request lines;
 - the chains: operator balances, the own node's head, and the V2 registry's logs, through the same endpoint files
   and sealed URLs as the services;
 - the disk.
@@ -21,6 +22,7 @@ monitor checks and writes the snapshot, and Telegram stays off.
 import argparse
 from dataclasses import dataclass, field
 import datetime
+import functools
 import json
 import os
 from pathlib import Path
@@ -40,6 +42,9 @@ MARK = {OK: '🟢', WARN: '🟡', CRIT: '🔴'}
 CONFIG_KEYS = {'schemaVersion', 'kind', 'telegram', 'intervalSeconds', 'summaryHourUtc', 'statusFile', 'stateFile',
                'services', 'timers', 'automation', 'indexers', 'listeners', 'v1Automation', 'chains', 'balances',
                'headLag', 'disk'}
+# Optional, with their defaults: a configuration written before them still loads as it is.
+OPTIONAL_KEYS = {'featured'}
+FEATURED_UNIT = 'domino-featured.service'
 UNIT = re.compile(r'[a-z0-9][a-z0-9@._-]{0,120}\.(?:service|timer)')
 ADDRESS = re.compile(r'0x[0-9a-f]{40}')
 CHAIN = re.compile(r'[a-z0-9]+-[0-9]+')
@@ -51,6 +56,25 @@ MAX_MESSAGE = 3900  # Telegram's limit is 4096 characters
 # restart, a slow read or one late pass alerts no one.
 CONFIRM_CYCLES = 2
 REALERT_CRIT_SECONDS = 3 * 3600
+# A V2 intent in 'attention' stops its chain's signer until an operator acknowledges it: no compound, no exit and no
+# return is sent there meanwhile. Past this it is critical.
+ATTENTION_SECONDS = 15 * 60
+# A chain's rolling 24-hour gas spend, as its automation's journal counts it against `gas.dailyCapWei`: a warning from
+# this share of the cap, critical at the cap.
+GAS_WARN_PERCENT = 80
+# The automation's refusal at its daily cap: the gas check says it once, never each pass.
+GAS_CAP_REFUSAL = 'v2_daily_gas_cap'
+# The Top pools list (featured_live, through `manage_featured.py serve`): one line every 30 s while live, the longest
+# silence being a selection's tick (321 s from 20 Oct to 2 Nov 2026).
+FEATURED_SILENT_SECONDS = 10 * 60
+# The day's list is published by the selection hour + featured_live.PUBLISH_BY_MINUTES (30); then a minute for the
+# last tick's line.
+FEATURED_PUBLISH_MINUTES = 31
+FEATURED_STALE_SECONDS = 2 * 24 * 3600
+FEATURED_MIN_POOLS = 3
+# Where a monitor without the list's history finds its last publication, once.
+FEATURED_BACKFILL_SINCE = '-7d'
+FEATURED_SERVED = r'"publication": \{"status": "served"'
 RECENT = 50
 HOUR = 3600
 DAY = 24 * HOUR
@@ -88,6 +112,7 @@ class Config:
     balances: tuple
     head_lag: dict
     disk: dict
+    featured: str | None = FEATURED_UNIT
 
 
 def _int(value, low, high, code):
@@ -107,8 +132,9 @@ def _unit(value, code):
 
 def checked_config(document):
     """A validated configuration; refuses it whole, with the offending section's code."""
-    require(type(document) is dict and set(document) == CONFIG_KEYS and document.get('schemaVersion') == 1
-            and type(document['schemaVersion']) is int and document.get('kind') == KIND, 'monitor_config_invalid')
+    require(type(document) is dict and CONFIG_KEYS <= set(document) <= CONFIG_KEYS | OPTIONAL_KEYS
+            and document.get('schemaVersion') == 1 and type(document['schemaVersion']) is int
+            and document.get('kind') == KIND, 'monitor_config_invalid')
     telegram = document['telegram']
     require(type(telegram) is dict and set(telegram) == {'credential', 'chatId'}
             and type(telegram['credential']) is str and re.fullmatch(r'[a-z0-9][a-z0-9-]{0,62}', telegram['credential'])
@@ -162,6 +188,7 @@ def checked_config(document):
                                                                              'monitor_config_disk'),
             'monitor_config_disk')
     v1 = document['v1Automation']
+    featured = document.get('featured', FEATURED_UNIT)
     return Config(
         credential=telegram['credential'], chat_id=telegram['chatId'],
         interval=_int(document['intervalSeconds'], 15, 600, 'monitor_config_interval'),
@@ -177,7 +204,8 @@ def checked_config(document):
         listeners=tuple(_unit(u, 'monitor_config_listeners') for u in listeners),
         v1_automation=None if v1 is None else _unit(v1, 'monitor_config_v1'),
         chains={k: {'rpc': dict(v['rpc']), 'registry': v['registry']} for k, v in chains.items()},
-        balances=tuple(checked_balances), head_lag=dict(head), disk=dict(disk))
+        balances=tuple(checked_balances), head_lag=dict(head), disk=dict(disk),
+        featured=None if featured is None else _unit(featured, 'monitor_config_featured'))
 
 
 def load_config(path):
@@ -213,11 +241,12 @@ def unit_states(units, run):
     return parse_show(raw)
 
 
-def journal_lines(unit, cursor, run, *, since='-15min'):
-    """New entries of one unit: (cursor, epoch seconds, message). Without a cursor, the last `since`."""
+def journal_lines(unit, cursor, run, *, since='-15min', grep=None):
+    """New entries of one unit: (cursor, epoch seconds, message). Without a cursor, the last `since`. With `grep` (a
+    PCRE2 pattern on the message), only the entries that match it, newest first (journalctl's order then)."""
     position = [f'--after-cursor={cursor}'] if cursor else [f'--since={since}']
     raw = run(['/usr/bin/journalctl', '--no-pager', '-o', 'json', '--output-fields=MESSAGE', '-n',
-               str(MAX_JOURNAL_LINES), '-u', unit, *position])
+               str(MAX_JOURNAL_LINES), '-u', unit, *position, *([f'--grep={grep}'] if grep else [])])
     entries = []
     for line in raw.splitlines():
         try:
@@ -305,6 +334,8 @@ class Check:
     key: str
     level: int
     text: str
+    # The consecutive cycles this level must hold before it counts (transitions).
+    confirm: int = CONFIRM_CYCLES
 
 
 @dataclass
@@ -316,8 +347,8 @@ class Cycle:
     sections: dict = field(default_factory=dict)
     quiet: set = field(default_factory=set)
 
-    def check(self, key, level, text):
-        self.checks.append(Check(key, level, text))
+    def check(self, key, level, text, *, confirm=CONFIRM_CYCLES):
+        self.checks.append(Check(key, level, text, confirm))
 
     def event(self, level, text, unit=None):
         if unit not in self.quiet:
@@ -342,15 +373,23 @@ def check_units(cycle, config, state, states):
     for unit in config.services:
         props = states.get(unit, {})
         active, sub = props.get('ActiveState', 'unknown'), props.get('SubState', '')
+        confirm = CONFIRM_CYCLES
         if props.get('LoadState') != 'loaded':
             level, text = CRIT, f'{unit}: não carregada ({props.get("LoadState", "ausente")})'
         elif active in ('active', 'reloading'):
             level, text = OK, f'{unit}: ativa'
         elif active == 'activating':
             level, text = WARN, f'{unit}: iniciando'
+        elif active == 'failed':
+            # systemd gave up on it: its restarts or its start limit are spent (a restart it schedules is
+            # `activating`). Alerted at the first cycle that sees it: on 2 Nov 2026 domino-execution-status stayed
+            # failed for 80 s, was started again before a second cycle, and no one heard of it.
+            level, text, confirm = CRIT, f'{unit}: falhou ({props.get("Result") or sub})', 1
         else:
+            # Stopped (inactive), stopping or in maintenance: a service the configuration lists should run. A
+            # deploy's own restart passes through here in about a second, so this one waits for its second cycle.
             level, text = CRIT, f'{unit}: {active} ({sub or props.get("Result", "")})'
-        cycle.check(f'unit:{unit}', level, text)
+        cycle.check(f'unit:{unit}', level, text, confirm=confirm)
         restarts = int(props.get('NRestarts') or 0)
         before = state['restarts'].get(unit)
         if before is not None and restarts > before:
@@ -371,12 +410,77 @@ def check_units(cycle, config, state, states):
     cycle.sections['units'] = section
 
 
+def pass_journal(report):
+    """What a pass reports of its journal (v2_automation's `attention` and `gas`): the intents in 'attention' with
+    since when, and the rolling 24-hour gas spend with the daily cap, as strings of wei. None when the pass carries
+    none (a release before them) or carries them malformed."""
+    attention, gas = report.get('attention'), report.get('gas')
+    if type(attention) is not list or type(gas) is not dict:
+        return None
+    if not all(type(item) is dict and type(item.get('intent')) is str and type(item.get('since')) is int
+               for item in attention):
+        return None
+    spent, cap = gas.get('spentWei'), gas.get('dailyCapWei')
+    if not all(type(value) is str and re.fullmatch(r'[0-9]{1,40}', value) for value in (spent, cap)) or not int(cap):
+        return None
+    return {'attention': [{'intent': item['intent'][:66], 'reason': str(item.get('reason') or '')[:80],
+                           'since': item['since']} for item in attention],
+            'gas': {'spentWei': spent, 'dailyCapWei': cap}}
+
+
+def journal_reported(mine):
+    """Whether the chain's latest pass reported its journal (pass_journal). A pass of a release before those fields,
+    or one that carried them malformed, leaves the last report stale: never read as the current one."""
+    return mine.get('journalAt') is not None and (mine.get('lastPassAt') or 0) <= mine['journalAt']
+
+
+def check_attention(cycle, chain, mine):
+    """The chain's signer held by an intent in 'attention' past ATTENTION_SECONDS: critical until acknowledged."""
+    key, attention = f'automation:{chain}:attention', mine.get('attention')
+    if mine.get('lastPassAt') is None:
+        return  # no pass yet: the passes check is critical
+    if not journal_reported(mine):
+        cycle.check(key, WARN, f'automação {chain}: os passes não informam attention nem gás (release da automação '
+                               f'anterior a esses campos)')
+        return
+    if not attention:
+        cycle.check(key, OK, f'automação {chain}: nenhuma intent em attention')
+        return
+    oldest = min(attention, key=lambda item: item['since'])
+    held = cycle.now - oldest['since']
+    if held >= ATTENTION_SECONDS:
+        cycle.check(key, CRIT, f'automação {chain}: intent {oldest["intent"][:12]}… em attention há {ago(held)} '
+                               f'({oldest["reason"]}): nada é enviado até o acknowledge')
+    else:
+        # Announced as an event when the pass reconciled it; critical once it holds the signer this long.
+        cycle.check(key, OK, f'automação {chain}: intent {oldest["intent"][:12]}… em attention há {ago(held)}')
+
+
+def check_gas(cycle, chain, mine, capped):
+    """The chain's rolling 24-hour gas spend against its daily cap: a warning from GAS_WARN_PERCENT, critical at the
+    cap. A claim reserves its gas before it is sent and is refused when it would pass the cap, so the spend stops
+    just short of it: a pass refused at the cap (`capped`, this cycle) is the cap reached too."""
+    if not journal_reported(mine):
+        return  # check_attention warns that the passes do not report it
+    spent, cap = int(mine['gas']['spentWei']), int(mine['gas']['dailyCapWei'])
+    text = f'automação {chain}: gás de 24 h {eth(spent)} de {eth(cap)} ETH ({spent * 100 // cap}% do teto diário)'
+    if spent >= cap or capped:
+        cycle.check(f'automation:{chain}:gas', CRIT, text + (': a automação não envia mais' if spent >= cap else
+                                                             ': um envio foi recusado no teto'))
+    elif spent * 100 >= cap * GAS_WARN_PERCENT:
+        cycle.check(f'automation:{chain}:gas', WARN, text)
+    else:
+        cycle.check(f'automation:{chain}:gas', OK, text)
+
+
 def check_automation(cycle, config, state, read):
     section = {}
     for chain, entry in config.automation.items():
         mine = state['automation'].setdefault(chain, {'lastPassAt': None, 'errors': 0, 'signer': None,
                                                       'signerPasses': 0, 'vaults': None, 'exits': None,
-                                                      'block': None, 'lastError': None})
+                                                      'block': None, 'lastError': None, 'attention': None,
+                                                      'gas': None, 'journalAt': None})
+        capped = False
         for _, at, message in read(entry['unit']):
             report = json_message(message)
             if report is None:
@@ -390,6 +494,9 @@ def check_automation(cycle, config, state, read):
                 continue
             mine.update(lastPassAt=at, errors=0, block=report.get('block'), vaults=len(report.get('vaults') or []),
                         exits=len(report.get('exits') or []))
+            journal = pass_journal(report)
+            if journal is not None:
+                mine.update(journal, journalAt=at)
             count(state, cycle.now, f'automation-pass:{chain}')
             signer = report.get('signer')
             mine['signerPasses'] = mine['signerPasses'] + 1 if signer and signer == mine['signer'] else (1 if signer else 0)
@@ -398,7 +505,9 @@ def check_automation(cycle, config, state, read):
             if submitted:
                 state_name = str(submitted.get('state'))
                 count(state, cycle.now, f'automation-submitted:{chain}:{state_name}')
-                if state_name != 'refused' or submitted.get('reason') != 'v2_executor_disabled':
+                if state_name == 'refused' and submitted.get('reason') == GAS_CAP_REFUSAL:
+                    capped = True  # every pass with a candidate is refused until the window moves: one level
+                elif state_name != 'refused' or submitted.get('reason') != 'v2_executor_disabled':
                     level = WARN if state_name == 'refused' else OK
                     cycle.event(level, f'automação {chain}: {submitted.get("kind")} {submitted.get("target")} '
                                        f'→ {state_name} {submitted.get("reason") or ""}'.rstrip(), entry['unit'])
@@ -432,8 +541,10 @@ def check_automation(cycle, config, state, read):
             cycle.check(f'automation:{chain}:signer', level, f'automação {chain}: signer {signer}')
         else:
             cycle.check(f'automation:{chain}:signer', OK, f'automação {chain}: signer ok')
-        section[chain] = {key: mine[key] for key in ('lastPassAt', 'block', 'vaults', 'exits', 'signer', 'errors',
-                                                     'lastError')}
+        check_attention(cycle, chain, mine)
+        check_gas(cycle, chain, mine, capped)
+        section[chain] = {key: mine.get(key) for key in ('lastPassAt', 'block', 'vaults', 'exits', 'signer', 'errors',
+                                                         'lastError', 'attention', 'gas')}
         section[chain]['passes24h'] = counted(state, cycle.now, f'automation-pass:{chain}')
         section[chain]['errors24h'] = counted(state, cycle.now, f'automation-error:{chain}')
     cycle.sections['automation'] = section
@@ -507,6 +618,151 @@ def check_listeners(cycle, config, state, read):
         section[unit] = {'requests24h': counted_prefix(state, cycle.now, f'requests:{unit}:'),
                          'errors5xxHour': recent}
     cycle.sections['listeners'] = section
+
+
+@functools.lru_cache(maxsize=1)
+def featured_policy(path=Path(__file__).resolve().parent / 'featured_policy.json'):
+    """(the list's size, its selection hour UTC) from the featured policy this release carries, read as data: its
+    own modules (featured_pools) would load the database driver for two numbers."""
+    policy = json.loads(Path(path).read_text())
+    return policy['size'], policy['selectionHourUtc']
+
+
+def utc_day(at):
+    return datetime.datetime.fromtimestamp(at, datetime.timezone.utc).strftime('%Y-%m-%d')
+
+
+def featured_reason(day):
+    """Why a day's list was not published, from what the day's lines said."""
+    if day is None:
+        return 'o monitor não leu a janela desse dia'
+    parts = [f'publicação {day.get("publication") or "não vista"}']
+    selection = day.get('selection')
+    parts.append(f'seleção {selection["outcome"]}, {selection["eligible"]} elegível(is) de {selection["evaluated"]} '
+                 f'avaliado(s)' if selection else 'seleção não vista')
+    if day.get('unready'):
+        parts.append('novatos não prontos: ' + ', '.join(f'{pool[:12]}… {reason}'
+                                                         for pool, reason in sorted(day['unready'].items())))
+    return '; '.join(parts)
+
+
+def featured_backfill(mine, unit, run):
+    """A monitor without the list's history (its first read is the last 15 minutes) finds the last publication in
+    the unit's journal of the last 7 days, once. A search that fails is tried again the next cycle."""
+    try:
+        found = journal_lines(unit, None, run, since=FEATURED_BACKFILL_SINCE, grep=FEATURED_SERVED)
+    except subprocess.CalledProcessError as error:
+        # journalctl --grep exits 1 without a word when nothing matches (systemd 255, checked on the VM); a bad
+        # pattern or any other failure says why on stderr.
+        if error.returncode != 1 or (error.stdout or '').strip() or (error.stderr or '').strip():
+            return
+        found = []
+    except Exception:
+        return
+    for _, at, message in found:
+        line = json_message(message) or {}
+        publication = (line.get('live') or {}).get('publication') or {}
+        if publication.get('status') == 'served' and (mine['publishedAt'] is None or at > mine['publishedAt']):
+            mine.update(publishedAt=at, revision=publication.get('revision'))
+    mine['backfilled'] = True
+
+
+def featured_lines(cycle, state, mine, entries, unit, size):
+    """What the service's ticks say: its phase and mode, the day's selection and publication, the list's size (its
+    vacancies), and each withdrawal, an event."""
+    for _, at, message in entries:
+        line = json_message(message)
+        if line is None or line.get('service') != 'featured':
+            continue
+        mine['lastLineAt'] = at
+        if line.get('status') == 'retry':
+            mine['lastError'] = str(line.get('reason'))[:80]
+            continue
+        mine['phase'] = line.get('phase')
+        day = mine['days'].setdefault(utc_day(at), {'selection': None, 'publication': None, 'unready': None})
+        for old in sorted(mine['days'])[:-3]:
+            del mine['days'][old]
+        selection = line.get('selection')
+        if type(selection) is dict and selection.get('outcome') not in (None, 'already_done'):
+            day['selection'] = {key: selection.get(key) for key in ('outcome', 'eligible', 'evaluated')}
+        live = line.get('live')
+        if type(live) is not dict:
+            continue
+        mine['mode'] = live.get('mode')
+        publication = live.get('publication')
+        if type(publication) is dict and publication.get('status') != 'published':
+            # 'published' says only that the served list is the day's, which a carried list becomes at 12:30.
+            day['publication'] = str(publication.get('status'))[:40]
+            if publication.get('status') == 'served':
+                mine.update(publishedAt=at, revision=publication.get('revision'))
+            elif publication.get('status') == 'warming' and type(publication.get('unready')) is dict:
+                day['unready'] = {str(pool)[:66]: str(reason)[:40] for pool, reason in publication['unready'].items()}
+        health = live.get('health')
+        if type(health) is not dict:
+            continue
+        vacant = health.get('vacant', 0 if health.get('status') == 'healthy' else size)
+        if health.get('status') in ('healthy', 'idle') and type(vacant) is int:
+            mine['pools'] = max(0, size - vacant)
+        if type(health.get('removed')) is dict:
+            for pool, reason in sorted(health['removed'].items()):
+                count(state, cycle.now, 'featured-withdrawn')
+                cycle.event(WARN, f'Top pools: pool {str(pool)[:12]}… retirado ({str(reason)[:60]})', unit)
+
+
+def check_featured(cycle, config, state, read, run):
+    """The Top pools list: the service's lines, the day's publication, the served list's age and size."""
+    unit = config.featured
+    if unit is None:
+        return
+    mine = state.setdefault('featured', {})
+    for key, value in (('lastLineAt', None), ('phase', None), ('mode', None), ('lastError', None),
+                       ('publishedAt', None), ('revision', None), ('backfilled', False), ('pools', None), ('days', {})):
+        mine.setdefault(key, value)
+    size, hour = featured_policy()
+    if not mine['backfilled']:
+        featured_backfill(mine, unit, run)
+    featured_lines(cycle, state, mine, read(unit), unit, size)
+    now, last = cycle.now, mine['lastLineAt']
+    if last is None:
+        cycle.check('featured:lines', CRIT, 'Top pools: nenhuma linha do serviço vista')
+    elif mine['phase'] == 'shadow':
+        cycle.check('featured:lines', OK, 'Top pools: fase shadow, nada servido')  # its idle ticks print nothing
+    elif now - last >= FEATURED_SILENT_SECONDS:
+        cycle.check('featured:lines', CRIT, f'Top pools: o serviço não registra nada há {ago(now - last)}')
+    else:
+        cycle.check('featured:lines', OK, 'Top pools: serviço registrando')
+    cycle.sections['featured'] = {key: mine[key] for key in ('lastLineAt', 'phase', 'mode', 'publishedAt', 'revision',
+                                                             'pools', 'lastError')}
+    cycle.sections['featured']['withdrawn24h'] = counted(state, now, 'featured-withdrawn')
+    if mine['phase'] != 'live' or mine['mode'] != 'auto':
+        return  # nothing served, or the owner's own list (manual, off): no selection to publish or to age
+    # The latest publication due: today's once its window closed, else yesterday's. A list published since that
+    # day's midnight is the day's, or a newer one.
+    midnight = (now // DAY) * DAY
+    due = midnight + hour * HOUR + FEATURED_PUBLISH_MINUTES * 60
+    if now < due:
+        due -= DAY
+    published = mine['publishedAt']
+    if published is not None and published >= (due // DAY) * DAY:
+        cycle.check('featured:publication', OK, f'Top pools: lista de {stamp(published)} publicada')
+    else:
+        day = utc_day(due)
+        cycle.check('featured:publication', WARN, f'Top pools: a lista de {day[8:10]}/{day[5:7]} não foi publicada '
+                                                  f'({featured_reason(mine["days"].get(day))})')
+    if published is None:
+        if mine['backfilled']:
+            cycle.check('featured:age', CRIT, 'Top pools: nenhuma publicação no journal dos últimos 7 dias')
+        else:
+            cycle.check('featured:age', WARN, 'Top pools: idade da lista desconhecida (a busca no journal falhou)')
+    elif now - published >= FEATURED_STALE_SECONDS:
+        cycle.check('featured:age', CRIT, f'Top pools: a lista no ar é de {stamp(published)}, há '
+                                          f'{ago(now - published)}')
+    else:
+        cycle.check('featured:age', OK, f'Top pools: lista de {stamp(published)}')
+    if mine['pools'] is not None:
+        level = CRIT if mine['pools'] < FEATURED_MIN_POOLS else OK
+        cycle.check('featured:pools', level, f'Top pools: {mine["pools"]} pool(s) no ar'
+                                             + (f' (mínimo {FEATURED_MIN_POOLS})' if level else ''))
 
 
 def check_disk(cycle, config, usage=shutil.disk_usage):
@@ -649,8 +905,9 @@ def decode_registry(log, catalog=None):
 
 # ---------------------------------------------------------------- alert policy
 def transitions(cycle, state):
-    """Confirmed level changes as messages. A level holds for CONFIRM_CYCLES cycles before it counts; a critical
-    one is repeated every REALERT_CRIT_SECONDS while it lasts; a return to normal is announced once."""
+    """Confirmed level changes as messages. A level holds for its check's `confirm` cycles (CONFIRM_CYCLES, a failed
+    unit's 1) before it counts; a critical one is repeated every REALERT_CRIT_SECONDS while it lasts; a return to
+    normal is announced once."""
     messages = []
     seen = set()
     for check in cycle.checks:
@@ -667,7 +924,7 @@ def transitions(cycle, state):
             pending = [check.level, 0]
         pending[1] += 1
         state['pending'][check.key] = pending
-        if pending[1] < CONFIRM_CYCLES:
+        if pending[1] < check.confirm:
             continue
         state['pending'].pop(check.key, None)
         state['levels'][check.key] = check.level
@@ -746,6 +1003,13 @@ def summary_text(cycle, state):
     node = cycle.sections.get('heads', {}).get('node')
     if node:
         lines.append(f'Nó {node["chain"]}: atraso máximo {ago(node["maxLag24h"])}')
+    featured = cycle.sections.get('featured')
+    if featured:
+        published = featured['publishedAt']
+        pools = '?' if featured['pools'] is None else featured['pools']
+        lines.append((f'Top pools: lista publicada em {stamp(published)}' if published else
+                      'Top pools: nenhuma publicação conhecida')
+                     + f', {pools} pool(s) no ar, {featured["withdrawn24h"]} retirada(s) em 24 h')
     restarts = sum(counted_prefix(state, cycle.now, 'restart:').values())
     lines.append(f'Reinícios automáticos: {restarts}')
     open_checks = [c for c in cycle.checks if state['levels'].get(c.key, OK) > OK]
@@ -868,6 +1132,7 @@ def cycle_once(config, state, *, run=run_command, chains=None, now=None, node=no
     check_indexers(cycle, config, state, read)
     check_v1(cycle, config, state, read)
     check_listeners(cycle, config, state, read)
+    check_featured(cycle, config, state, read, run)
     check_chains(cycle, config, state, chains or Chains(config), node=node, catalog=catalog)
     check_disk(cycle, config, usage)
     state['lastCheck'] = int(cycle.now)

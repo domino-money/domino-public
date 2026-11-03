@@ -12,6 +12,7 @@
  *
  * Pure: no viem, no wallet.
  */
+import { readFigure, type Decimal } from '../../lib/create/typedFigure'
 
 export const MIN_SQRT_PRICE = 4295128739n
 export const MAX_SQRT_PRICE = 1461446703485210103287273052203988822378723970342n
@@ -78,11 +79,18 @@ export interface PriceFraction {
 }
 
 /**
- * What a person typed as a price ("2,500", "0.0004", "1.25"): commas as thousands separators and surrounding spaces are
- * dropped; anything else that is not a plain positive decimal with at most 40 whole and 36 fraction digits is null.
+ * What a person typed as a price ("2500", "0.0004", "1.25"): surrounding spaces are dropped; anything else that is not a
+ * plain positive decimal with at most 40 whole and 36 fraction digits is null.
+ *
+ * Changed on purpose 2026-11-02 (review of the money PRs, M4): every comma was dropped, so a starting price typed "1,5"
+ * set the new pool at 15, and "1,250" at 1250. Commas are read by lib/create/typedFigure.ts's rule now: a page-style
+ * "2,500.5" or "2,500,000" loses its separators, an ambiguous "2,500" is refused, and "1,5" is 1.5 where the person's
+ * language writes a decimal comma (`decimal`, handed in by a test).
  */
-export function parsePriceText(typed: string): PriceFraction | null {
-  const clean = typed.trim().replace(/,/g, '')
+export function parsePriceText(typed: string, decimal?: Decimal): PriceFraction | null {
+  const read = readFigure(typed, decimal)
+  if (!read.ok) return null
+  const clean = read.text
   const match = /^([0-9]{1,40})(?:\.([0-9]{1,36}))?$/.exec(clean)
   if (!match) return null
   const whole = match[1].replace(/^0+(?=[0-9])/, '')

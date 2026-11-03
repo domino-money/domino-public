@@ -28,13 +28,14 @@ export const WALLET_NAME = 'Position V2 Wallet';
 /** DEX Screener's API and images, where V1's optional token artwork is looked up (tests/support/new-position.mjs ARTWORK). */
 const ARTWORK = /^https:\/\/(api|cdn)\.dexscreener\.com\//;
 
-export async function openPositionPage(browser, chain, { dist = WALLET_V2_DIST, hash, read6 = {}, planner = () => undefined, intercept = () => undefined, live = true, open = true, script = live, contracts, connect = true, viewport = { width: 1180, height: 960 }, s1 = {}, routes = [], creations = [], prepare = null } = {}) {
+export async function openPositionPage(browser, chain, { dist = WALLET_V2_DIST, hash, read6 = {}, planner = () => undefined, intercept = () => undefined, live = true, open = true, script = live, contracts, connect = true, viewport = { width: 1180, height: 960 }, s1 = {}, routes = [], creations = [], prepare = null, locale = null } = {}) {
   const fake = createFakeSession();
   const server = createWalletServer({ fake, dist, routes: [...routes, confirmationRoute(chain)] });
   await new Promise((done) => server.listen(0, '127.0.0.1', done));
   const origin = `http://127.0.0.1:${server.address().port}`;
   fake.origin = origin;
-  const context = await browser.newContext({ viewport });
+  // `locale` (2026-11-02, review M4): the browser's language, which says how a typed decimal comma is read; Chrome's own otherwise.
+  const context = await browser.newContext({ viewport, ...(locale ? { locale } : {}) });
   const foreign = [], csp = [], errors = [];
   const artwork = [];
   await context.route((url) => !url.href.startsWith(origin), (route) => {

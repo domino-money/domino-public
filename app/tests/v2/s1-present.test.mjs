@@ -65,7 +65,9 @@ test('typed amounts and slippage', () => {
   assert.equal(p.parseUnitsText(' 0.5 ', 18), 500_000_000_000_000_000n, 'spaces around it are dropped');
   assert.equal(p.parseUnitsText('-1.5', 18), null);
   assert.equal(p.parseUnitsText('10,00', 6), null, 'commas that do not group thousands');
-  assert.equal(p.parseUnitsText('1,000', null), 1_000n, 'raw units may be grouped too');
+  assert.equal(p.parseUnitsText('1,000,000', null), 1_000_000n, 'raw units may be grouped too');
+  // Changed on purpose 2026-11-02 (review M4): one group and no dot is 1 or 1000, never guessed (tests/v2/typed-figure.test.mjs).
+  assert.equal(p.parseUnitsText('1,000', null), null);
   assert.equal(p.slippageBpsOf('0.5', 10, 500), 50);
   assert.equal(p.slippageBpsOf('5%', 10, 500), 500);
   assert.equal(p.slippageBpsOf('0.1', 10, 500), 10);

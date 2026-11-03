@@ -96,3 +96,67 @@ class MandateWaitingTests(unittest.TestCase):
             with self.subTest(changed=changed):
                 self.assertEqual(self.mandate(changed)['waiting']['reason'], 'exit_module_not_enabled')
 
+
+
+class VaultLinkTests(unittest.TestCase):
+    """read-v6's `vault` of a position: the vault it belongs to now (v2_read_service.vault_link). The 2 Nov 2026 review
+    found the index kept a position's first vault forever: the app's Setup takes any link as "automated", so a position
+    that left its vault (Leave automation) was never offered again, and a position with a new vault named the old one."""
+    ROOT = {'address': VAULT, 'role': 'root'}
+    SUCCESSOR = {'address': VAULT, 'role': 'successor'}
+    ON = ('ExitModuleSet', {'module': fixtures.MODULE, 'stateNonce': 3})
+    OFF = ('ExitModuleSet', {'module': fixtures.ZERO, 'stateNonce': 4})
+
+    @staticmethod
+    def disarmed(reason):
+        return ('RootDisarmed', {'reason': reason, 'stateNonce': 2})
+
+    def link(self, events=(), *, successor=False, status='live', owner=None):
+        if successor:  # held by the vault, as an active successor is
+            owner = owner or VAULT
+            row = fixtures.position_row(8, 'vault_successor', VAULT, status=status, owner=owner, link_events=events,
+                                        state=fixtures.position_state(owner, subscriber=None, approved=None))
+        else:
+            row = fixtures.position_row(7, 'vault_root', VAULT, status=status, owner=owner or WALLET,
+                                        link_events=events)
+        position, = fixtures.portfolio(positions=[row])['positions']
+        return position['vault']
+
+    def test_a_root_the_vault_let_go_has_no_vault(self):
+        exited = ('ExitExecuted', {'module': fixtures.MODULE, 'tokenId': 7, 'amount0': 5, 'amount1': 6,
+                                   'stateNonce': 3})
+        cases = {'held since its arming': ([], self.ROOT),
+                 'left by its owner (exitAll)': ([self.OFF, self.disarmed(7)], None),
+                 'closed by the auto-exit': ([self.disarmed(6), exited], None),
+                 'closed by the auto-exit after a disarm (no second RootDisarmed)': ([self.disarmed(2), exited], None),
+                 'burned': ([self.disarmed(3)], None),
+                 # The owner rearms these in the same vault: the position is still the vault's.
+                 'unsubscribed or transferred': ([self.disarmed(1)], self.ROOT),
+                 'changed outside Domino': ([self.disarmed(2)], self.ROOT),
+                 'custody lost': ([self.disarmed(4)], self.ROOT),
+                 'v3 checkpoint mismatch': ([self.disarmed(5)], self.ROOT),
+                 # An exit needs the approval alone: Auto-exit turned back on after Leave protects the root again.
+                 'Auto-exit turned back on after Leave': ([self.disarmed(7), self.ON], self.ROOT),
+                 'then turned off again, or a second Leave': ([self.disarmed(7), self.ON, self.OFF], None),
+                 'Auto-exit on and off while armed': ([self.ON, self.OFF], self.ROOT)}
+        for name, (events, expected) in cases.items():
+            with self.subTest(case=name):
+                self.assertEqual(self.link(events), expected)
+
+    def test_a_successor_withdrawn_to_the_wallet_has_no_vault(self):
+        self.assertEqual(self.link(successor=True), self.SUCCESSOR)
+        # The root's own end leaves an active successor in the vault (an auto-exit of the root withdraws no child).
+        self.assertEqual(self.link([self.disarmed(6)], successor=True), self.SUCCESSOR)
+        withdrawn = [('ChildWithdrawn', {'tokenId': 8, 'stateNonce': 5})]
+        self.assertIsNone(self.link(withdrawn, successor=True, owner=WALLET))
+
+    def test_a_position_another_wallet_holds_is_no_vaults(self):
+        # A vault acts on its root only while its owner holds it; the old owner's vault is not the new holder's.
+        self.assertIsNone(self.link(owner=OTHER))
+        self.assertIsNone(self.link(successor=True, owner=OTHER))
+        # Held by its vault's owner, by the vault itself, or not read live: the events decide.
+        self.assertEqual(self.link(owner=WALLET), self.ROOT)
+        self.assertEqual(self.link(successor=True, owner=VAULT), self.SUCCESSOR)
+        for status in ('unavailable', None):
+            with self.subTest(status=status):
+                self.assertEqual(self.link(status=status), self.ROOT)

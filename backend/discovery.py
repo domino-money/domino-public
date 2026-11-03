@@ -46,6 +46,23 @@ TRADING_QUOTE_HEADERS = {
 # for arbitrary token contracts. Smaller profiles are useful for trusted probes.
 MAX_READ_CALL_GAS = 500_000
 DEFAULT_READ_CALL_GAS = MAX_READ_CALL_GAS
+# Robinhood's Uniswap v4 StateView and PositionManager are fixed code whose views
+# read storage and return: their computation is bounded by that code, not by the
+# gas a call carries. On Nitro an eth_call's gas must also cover the call's L1
+# data cost (the poster cost over the block's L2 base fee) before any code runs,
+# and at an L1 price spike that alone passed 5M gas: on 29 Oct 2026, at the
+# blocks of 20:59-21:31 and 22:22-22:28 UTC, every eth_call under it failed with
+# "intrinsic gas too low", on the node and the hosted provider alike, and 30M
+# passed there. Reads of these two carry those 30M, the gas V2's Multicall3 reads
+# already send to the same endpoints (v2_quotes.MULTICALL_GAS), within Nitro's
+# default RPC gas cap (50M). Every other contract keeps MAX_READ_CALL_GAS.
+TRUSTED_READ_CALL_GAS = 30_000_000
+TRUSTED_READ_TARGETS = frozenset({STATE_VIEW, POSITION_MANAGER})
+# The refusal of a call whose gas does not cover its intrinsic cost: bare, as
+# geth's state transition words it (": have N, want M"), or as eth_call wraps it
+# ("err: ... (supplied gas N)", what the node and the provider answered).
+INTRINSIC_GAS_MESSAGE = re.compile(r'(?:err: )?intrinsic gas too low(?:: have [0-9]{1,20}, want [0-9]{1,20})?'
+                                   r'(?: \(supplied gas [0-9]{1,20}\))?')
 
 
 class DataError(ValueError):
@@ -54,6 +71,13 @@ class DataError(ValueError):
 
 class RpcStateUnavailable(DataError):
     """Internal retry signal; the existing public error contract stays rpc_error."""
+
+
+class RpcIntrinsicGas(DataError):
+    """Internal signal: the call never ran, because its gas did not cover the
+    intrinsic cost, which on Nitro moves with the L1 price block by block. It
+    says nothing about the contract. The public code stays rpc_call_gas_limit;
+    a reader that keeps what it reads retries later instead of keeping it."""
 
 
 def rpc_failure(method, error):
@@ -68,6 +92,8 @@ def rpc_failure(method, error):
                              r'(?:\(owner [0-9a-f]{64}\) )?\(path [0-9a-f]*\) [^\r\n]+',
                              error['message'])):
         return RpcStateUnavailable('rpc_error')
+    if code == 'rpc_call_gas_limit' and INTRINSIC_GAS_MESSAGE.fullmatch(error['message'].strip().lower()):
+        return RpcIntrinsicGas(code)
     return DataError(code)
 
 
@@ -92,8 +118,8 @@ def rpc_error_code(method, error):
     # Structured/unknown data may contain a nested revert: do not guess.
     if data not in (None, '0x'):
         return 'rpc_error'
-    if (message in ('out of gas', 'intrinsic gas too low', 'execution ran out of gas',
-                    'evm error outofgas')
+    if (message in ('out of gas', 'execution ran out of gas', 'evm error outofgas')
+            or INTRINSIC_GAS_MESSAGE.fullmatch(message)
             or re.fullmatch(r'gas required exceeds allowance \([0-9]{1,10}\)', message)):
         return 'rpc_call_gas_limit'
     return 'rpc_error'
@@ -611,7 +637,7 @@ class ReadRpc:
                              and re.fullmatch(r'0x(?:[0-9a-fA-F]{2})*',tx['data']))
                     if valid:
                         gas = quantity(tx['gas'])
-                        if not 21_000 <= gas <= self.call_gas_limit:
+                        if not 21_000 <= gas <= self.call_gas(tx['to']):
                             raise DataError('invalid_read_call_gas_limit')
                     params[0] = dict(tx) if isinstance(tx,dict) else tx
                 elif valid:
@@ -666,9 +692,15 @@ class ReadRpc:
                 outcomes.append(item['result'])
         return outcomes
 
+    def call_gas(self, target):
+        """The gas an eth_call to `target` (lower case) may carry: TRUSTED_READ_CALL_GAS for
+        TRUSTED_READ_TARGETS, which bound their own computation, this client's profile for any other."""
+        return TRUSTED_READ_CALL_GAS if target in TRUSTED_READ_TARGETS else self.call_gas_limit
+
     def call_params(self, target, signature, inputs=(), values=(), *, block):
         calldata = '0x' + (keccak(signature.encode())[:4] + encode(inputs, values)).hex()
-        return [{'to':address(target),'data':calldata,'gas':hex(self.call_gas_limit)},block]
+        target = address(target)
+        return [{'to':target,'data':calldata,'gas':hex(self.call_gas(target))},block]
 
     def call_raw(self, target, signature, inputs=(), values=(), *, block):
         return self.request('eth_call',self.call_params(target,signature,inputs,values,block=block))

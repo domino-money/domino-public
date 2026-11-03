@@ -10,7 +10,7 @@ import { SLIPPAGE_MAX_BPS, SLIPPAGE_MIN_BPS } from '../slippage'
 import { STEP_DEADLINE_S } from '../setup'
 import { V3_POSITION_MANAGER_ABI, V4_POSITION_MANAGER_ABI } from './abi'
 import { gasCost, type GasCost } from './receipt'
-import { includedCloses, pendingClose } from './closeJournal'
+import { includedCloses, pendingClose, settleClose, type PendingClose } from './closeJournal'
 import { refuseUnlessLive } from './liveLock'
 import { WalletNotAsked, createTransactor, refused, revertIn, type PreparedV2, type Rpc, type V2GasBudget, type V2Receipt, type V2Wallet } from './transact'
 
@@ -127,6 +127,13 @@ export interface DirectCloseRecovery {
   originalHash?: Hex
 }
 export type DirectCloseDescription = Pick<DirectCloseMany, 'chainId' | 'dex' | 'positions'>
+/**
+ * What became of a close whose wallet answer never came (review A1, `settleLostClose`): let go by the chain (`settled`:
+ * past its deadline, it can no longer run) or on the person's word (`forgotten`); else held, by where its nonce stands:
+ * `open` (still the next one, nothing pending: the wallet may still show it), `pending`, or `passed` (taken: it may have
+ * gone through).
+ */
+export type LostClose = 'settled' | 'forgotten' | 'open' | 'pending' | 'passed'
 
 /** Whether an address is a Domino V2 vault of this chain, read at `block` through the rpc it is handed (the zap client's `vaultProbe`). */
 export type VaultProbe = (rpc: Rpc, address: Address, block: Hex | 'latest') => Promise<boolean>
@@ -196,11 +203,115 @@ export function createDirectClient(wallet: V2Wallet, chain: V2Chain, now: () => 
   const flightKey = (dex: Dex, tokenId: bigint) => `${chain.chainId}|${owner}|${dex}|${tokenId}`
 
   const managerOf = (dex: Dex): Address => (dex === 3 ? chain.uniswap.v3.positionManager : chain.uniswap.v4.positionManager)
-  const heldByJournal = (dex: Dex, ids: readonly bigint[]): boolean => {
-    if (typeof localStorage === 'undefined') return false
+  /**
+   * What the close journal (./closeJournal.ts) holds of these positions on this chain: nothing; a close that is not
+   * settled (`held`: handed to the wallet with its hash, or in a block and not final yet); or the intent of a close whose
+   * wallet answer never came (the row itself: no hash, let go only by `settleLost`).
+   */
+  const journalHold = (dex: Dex, ids: readonly bigint[]): 'none' | 'held' | PendingClose => {
+    if (typeof localStorage === 'undefined') return 'none'
+    const holds = (row: PendingClose) => row.chainId === chain.chainId && row.dex === dex && ids.some((id) => row.tokenIds.includes(String(id)))
     const pending = pendingClose(owner)
     // Changed on purpose 2026-10-14 (incident C3): a close in a block and not final yet holds its positions too (./closeJournal.ts).
-    return [...(pending ? [pending] : []), ...includedCloses(owner)].some((row) => row.chainId === chain.chainId && row.dex === dex && ids.some((id) => row.tokenIds.includes(String(id))))
+    if (includedCloses(owner).some(holds)) return 'held'
+    return !pending || !holds(pending) ? 'none' : pending.hash === null ? pending : 'held'
+  }
+  const heldByJournal = (dex: Dex, ids: readonly bigint[]): boolean => journalHold(dex, ids) !== 'none'
+  /** This client's own hold on a position (fix F2) for the close `intent` handed to the wallet with no answer back. */
+  const lostFlight = (dex: Dex, id: bigint, intent: PendingClose): boolean => {
+    const flight = inFlight.get(flightKey(dex, id))
+    return !!flight && flight.hash === null && flight.data?.toLowerCase() === intent.data && flight.nonce !== undefined && BigInt(flight.nonce) === BigInt(intent.nonce)
+  }
+  /** Whether a direct exit of these positions is already in flight from this client, other than the lost close `hold`. */
+  const flying = (dex: Dex, ids: readonly bigint[], hold: 'none' | 'held' | PendingClose): boolean =>
+    ids.some((id) => inFlight.has(flightKey(dex, id)) && !(typeof hold === 'object' && lostFlight(dex, id, hold)))
+
+  /**
+   * The exact close of a group a recovery hint names: each inner call this client's own recipe for its position, paying
+   * the owner (v4: DECREASE_LIQUIDITY then TAKE_PAIR, no hook data; v3: decreaseLiquidity then collect), else
+   * `transaction_does_not_match_review`. Its deadline: the earliest of its calls', past which the position manager
+   * refuses the whole multicall. Moved on purpose 2026-11-02 (review A1) out of `recoverCloseMany`, unchanged, so a lost
+   * close's deadline is read by the same checks.
+   */
+  function closeRecipe(dex: Dex, tokenIds: readonly bigint[], data: Hex): { deadline: bigint } {
+    const outer = decodeFunctionData({ abi: V3_MULTICALL_ABI, data })
+    if (outer.functionName !== 'multicall' || outer.args[0].length !== tokenIds.length) fail('transaction_does_not_match_review')
+    let earliest: bigint | null = null
+    for (const [index, call] of outer.args[0].entries()) {
+      const tokenId = tokenIds[index]
+      let canonical: Hex
+      let deadline: bigint
+      if (dex === 4) {
+        const decoded = decodeFunctionData({ abi: V4_POSITION_MANAGER_ABI, data: call })
+        if (decoded.functionName !== 'modifyLiquidities') return fail('transaction_does_not_match_review')
+        const [unlock, until] = decoded.args as readonly [Hex, bigint]
+        const [actions, params] = decodeAbiParameters(unlockParameters, unlock)
+        if (actions !== '0x0111' || params.length !== 2) return fail('transaction_does_not_match_review')
+        const [id, liquidity, min0, min1, hookData] = decodeAbiParameters(decreaseParameters, params[0])
+        const [token0, token1, recipient] = decodeAbiParameters(takePairParameters, params[1])
+        if (id !== tokenId || liquidity <= 0n || hookData !== '0x' || lower(recipient) !== owner) return fail('transaction_does_not_match_review')
+        canonical = closeData(id, liquidity, min0, min1, lower(token0), lower(token1), owner, until)
+        deadline = until
+      } else {
+        const inner = decodeFunctionData({ abi: V3_MULTICALL_ABI, data: call }).args[0]
+        if (inner.length !== 2) return fail('transaction_does_not_match_review')
+        const decoded = decodeFunctionData({ abi: V3_POSITION_MANAGER_ABI, data: inner[0] })
+        if (decoded.functionName !== 'decreaseLiquidity') return fail('transaction_does_not_match_review')
+        const [args] = decoded.args as readonly [{ tokenId: bigint; liquidity: bigint; amount0Min: bigint; amount1Min: bigint; deadline: bigint }]
+        if (args.tokenId !== tokenId || args.liquidity <= 0n) return fail('transaction_does_not_match_review')
+        canonical = v3CloseData(args.tokenId, args.liquidity, args.amount0Min, args.amount1Min, owner, args.deadline)
+        deadline = args.deadline
+      }
+      if (canonical !== call.toLowerCase()) fail('transaction_does_not_match_review')
+      if (earliest === null || deadline < earliest) earliest = deadline
+    }
+    return { deadline: earliest ?? fail('transaction_does_not_match_review') }
+  }
+
+  /**
+   * Added 2026-11-02 (review A1: "Close positions: a request that never reaches the chain locks the group and its
+   * positions' direct exits for good"). The intent of a close is kept before the wallet is asked (./closeJournal.ts
+   * beginClose), with no hash until the wallet gives one. When that answer is lost (a reload or a closed tab during the
+   * prompt, an error that is not a refusal, a time-out), the intent held the group and every direct exit of its
+   * positions in that browser for good. It is let go now:
+   *   - once the chain says it can no longer close anything: the latest block is past the close's own deadline (in its
+   *     calldata, STEP_DEADLINE_S after its review), after which the position manager refuses the whole call, so a late
+   *     inclusion reverts and nothing of it can happen any more;
+   *   - or on the person's word that they rejected or closed it in the wallet (`rejected`, V1's "I rejected it in my
+   *     wallet", ../setup.ts forgetOpenRequest), heard only while the chain shows its nonce still the next one with
+   *     nothing pending, so nothing of it was sent.
+   * Never on a guess while it may still go through: a phone's wallet may still show it after a reload here. When it is
+   * let go, so are this client's own hold on its positions and, while its nonce is still free, that nonce's latch (here
+   * and in the page's journal, transact.ts forgetOffered): nothing is sent. `settled` (the chain) or `forgotten` (the
+   * person) then; otherwise where its nonce stands, and the intent stays: `open` (the wallet may still show it),
+   * `pending` (a transaction of this owner is pending on this chain) or `passed` (its nonce was taken: it may have gone
+   * through with a hash this page never got). Call inside `bounded`.
+   */
+  async function settleLost(rpc: Rpc, intent: PendingClose, rejected: boolean): Promise<LostClose> {
+    if (intent.hash !== null || intent.wallet !== owner || intent.chainId !== chain.chainId || intent.positionManager !== managerOf(intent.dex)) return fail('invalid_close_intent')
+    await t.identity(rpc)
+    const ids = intent.tokenIds.map(BigInt)
+    let deadline: bigint | null
+    try {
+      deadline = closeRecipe(intent.dex, ids, intent.data).deadline
+    } catch {
+      // Not this app's recipe (the journal is a hint): only the person's word lets it go.
+      deadline = null
+    }
+    const block = await t.latestBlock(rpc)
+    const nonce = BigInt(intent.nonce)
+    const standing = await t.nonceStanding(rpc, nonce)
+    const expired = deadline !== null && block.timestamp > deadline
+    if (!expired && !(rejected && standing === 'open')) return standing === 'behind' ? 'pending' : standing
+    if (standing === 'open') await t.forgetOffered(rpc, nonce)
+    for (const id of ids) if (lostFlight(intent.dex, id, intent)) inFlight.delete(flightKey(intent.dex, id))
+    await settleClose(intent)
+    return expired ? 'settled' : 'forgotten'
+  }
+  /** Before a review of these positions: a lost close that holds them (`hold`) is asked of the chain, in an operation of its own. */
+  async function settleHold(hold: 'none' | 'held' | PendingClose): Promise<void> {
+    if (typeof hold !== 'object') return
+    if ((await t.bounded((rpc) => settleLost(rpc, hold, false))) !== 'settled') fail('close_request_unsettled')
   }
   async function read<T>(rpc: Rpc, to: Address, abi: Abi, functionName: string, args: readonly unknown[], block: Hex | 'latest', from?: Address): Promise<T> {
     const data = encodeFunctionData({ abi, functionName, args })
@@ -334,7 +445,11 @@ export function createDirectClient(wallet: V2Wallet, chain: V2Chain, now: () => 
   async function prepareCloseMany(dex: Dex, tokenIds: readonly bigint[], slippageBps: number, gas: V2GasBudget | null = null): Promise<DirectCloseMany> {
     if (tokenIds.length === 0 || tokenIds.length > MAX_CLOSE_POSITIONS || new Set(tokenIds.map(String)).size !== tokenIds.length) fail('invalid_position_id')
     if (!Number.isSafeInteger(slippageBps) || slippageBps < SLIPPAGE_MIN_BPS || slippageBps > SLIPPAGE_MAX_BPS) fail('invalid_slippage')
-    if (heldByJournal(dex, tokenIds) || tokenIds.some((id) => inFlight.has(flightKey(dex, id)))) fail('review_already_sent')
+    const hold = journalHold(dex, tokenIds)
+    if (hold === 'held' || flying(dex, tokenIds, hold)) fail('review_already_sent')
+    // Changed on purpose 2026-11-02 (review A1): a close of them whose wallet answer never came is let go here once the
+    // chain says it can no longer run; until then they stay held (`close_request_unsettled`).
+    await settleHold(hold)
     return t.bounded(async (rpc) => {
       const { block, positions, automation } = await readGroup(rpc, dex, tokenIds)
       if (positions.some((position) => position.liquidity === 0n)) fail('position_already_empty')
@@ -358,8 +473,12 @@ export function createDirectClient(wallet: V2Wallet, chain: V2Chain, now: () => 
   }
 
   async function prepare(kind: DirectKind, dex: Dex, tokenId: bigint, slippageBps: number | null, gas: V2GasBudget | null, part?: bigint): Promise<DirectPrepared> {
-    if (heldByJournal(dex, [tokenId]) || inFlight.has(flightKey(dex, tokenId))) return fail('review_already_sent')
+    const hold = journalHold(dex, [tokenId])
+    if (hold === 'held' || flying(dex, [tokenId], hold)) return fail('review_already_sent')
     if (kind === 'close' && (slippageBps === null || !Number.isSafeInteger(slippageBps) || slippageBps < SLIPPAGE_MIN_BPS || slippageBps > SLIPPAGE_MAX_BPS)) return fail('invalid_slippage')
+    // Changed on purpose 2026-11-02 (review A1): Close position, Collect fees and Withdraw of a position a lost close of
+    // Close positions holds: let go once the chain says it can no longer run (`settleLost`), refused until then.
+    await settleHold(hold)
     return t.bounded(async (rpc) => {
       const state = await readPosition(rpc, dex, tokenId)
       if (kind === 'close' && state.liquidity === 0n) fail('position_already_empty')
@@ -446,32 +565,7 @@ export function createDirectClient(wallet: V2Wallet, chain: V2Chain, now: () => 
      * one-operation lock in the background, so the person's next review or send met "wallet_action_busy". */
     recoverCloseMany: async (hint: DirectCloseRecovery, describe = true): Promise<{ receipt: V2Receipt; description: DirectCloseDescription | null; replaced: boolean; replacementFinal: boolean }> => {
       if (!/^0x[0-9a-f]{64}$/.test(hint.hash) || !/^0x[0-9a-f]+$/.test(hint.nonce) || hint.data.length > 65_536 || hint.tokenIds.length < 1 || hint.tokenIds.length > MAX_CLOSE_POSITIONS || new Set(hint.tokenIds.map(String)).size !== hint.tokenIds.length) fail('invalid_position_id')
-      const outer = decodeFunctionData({ abi: V3_MULTICALL_ABI, data: hint.data })
-      if (outer.functionName !== 'multicall' || outer.args[0].length !== hint.tokenIds.length) fail('transaction_does_not_match_review')
-      outer.args[0].forEach((data, index) => {
-        const tokenId = hint.tokenIds[index]
-        let canonical: Hex
-        if (hint.dex === 4) {
-          const call = decodeFunctionData({ abi: V4_POSITION_MANAGER_ABI, data })
-          if (call.functionName !== 'modifyLiquidities') return fail('transaction_does_not_match_review')
-          const [unlock, deadline] = call.args as readonly [Hex, bigint]
-          const [actions, params] = decodeAbiParameters(unlockParameters, unlock)
-          if (actions !== '0x0111' || params.length !== 2) return fail('transaction_does_not_match_review')
-          const [id, liquidity, min0, min1, hookData] = decodeAbiParameters(decreaseParameters, params[0])
-          const [token0, token1, recipient] = decodeAbiParameters(takePairParameters, params[1])
-          if (id !== tokenId || liquidity <= 0n || hookData !== '0x' || lower(recipient) !== owner) return fail('transaction_does_not_match_review')
-          canonical = closeData(id, liquidity, min0, min1, lower(token0), lower(token1), owner, deadline)
-        } else {
-          const inner = decodeFunctionData({ abi: V3_MULTICALL_ABI, data }).args[0]
-          if (inner.length !== 2) return fail('transaction_does_not_match_review')
-          const call = decodeFunctionData({ abi: V3_POSITION_MANAGER_ABI, data: inner[0] })
-          if (call.functionName !== 'decreaseLiquidity') return fail('transaction_does_not_match_review')
-          const [args] = call.args as readonly [{ tokenId: bigint; liquidity: bigint; amount0Min: bigint; amount1Min: bigint; deadline: bigint }]
-          if (args.tokenId !== tokenId || args.liquidity <= 0n) return fail('transaction_does_not_match_review')
-          canonical = v3CloseData(args.tokenId, args.liquidity, args.amount0Min, args.amount1Min, owner, args.deadline)
-        }
-        if (canonical !== data.toLowerCase()) fail('transaction_does_not_match_review')
-      })
+      closeRecipe(hint.dex, hint.tokenIds, hint.data)
       const reviewed = { from: owner, to: managerOf(hint.dex), data: hint.data, value: '0x0' as Hex, nonce: hint.nonce, chainId: `0x${chain.chainId.toString(16)}` as Hex }
       const recovered = hint.originalHash !== hint.hash ? await t.replacement(hint.originalHash ?? null, hint.hash, reviewed) : { receipt: await t.receipt(hint.hash, reviewed), replaced: false, final: false }
       const { receipt } = recovered
@@ -518,6 +612,12 @@ export function createDirectClient(wallet: V2Wallet, chain: V2Chain, now: () => 
       }
     },
     wasGroupOffered: (prepared: DirectCloseMany) => t.wasOffered(prepared.step),
+    /**
+     * Added 2026-11-02 (review A1): the close `intent` of this owner on this chain, kept with no hash because the wallet's
+     * answer never came, asked of the chain, or let go on the person's word (`rejected`: "I rejected it in my wallet").
+     * `settleLost` above says when; nothing is sent.
+     */
+    settleLostClose: (intent: PendingClose, rejected = false): Promise<LostClose> => t.bounded((rpc) => settleLost(rpc, intent, rejected)),
     /**
      * Offers a prepared exit to the wallet once (the shared sender's discipline: simulated again, the chain read last),
      * holding its position's in-flight latch (fix F2) from before the wallet is asked.

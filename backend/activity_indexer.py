@@ -92,7 +92,7 @@ class ActivityIndexer:
 
     def reconcile(self,conn,row):
         checks=conn.execute('''SELECT end_block,end_hash FROM domino_activity.chunks
-          WHERE pool_id=%s ORDER BY end_block DESC LIMIT 64''',(row['pool_id'],)).fetchall()
+          WHERE pool_id=%s ORDER BY start_block DESC LIMIT 64''',(row['pool_id'],)).fetchall()
         if checks and self.chain.block(checks[0]['end_block']).hash==checks[0]['end_hash']:
             return None
         if not checks and self.chain.block(row['start_block']-1).hash==row['base_hash']:

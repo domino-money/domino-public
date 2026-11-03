@@ -159,9 +159,14 @@ class AdaptiveSpan:
     a correctness one: every accepted chunk is still validated and reconciled by
     the indexer, and a rejected range commits nothing.
     """
+    # rpc_call_gas_limit: a chunk reads state at its end block, and on Nitro the
+    # gas an eth_call needs before it runs moves with that block's L1 price. A
+    # chunk whose end falls in such a spike (29 Oct 2026: four queue requests
+    # failed at the same end block for days) ends elsewhere once smaller.
     SHRINK_REASONS = frozenset({'response_too_large', 'activity_log_budget_exhausted',
                                 'invalid_logs_response', 'read_deadline_exceeded',
-                                'rpc_log_range_too_large', 'invalid_rpc_batch'})
+                                'rpc_log_range_too_large', 'invalid_rpc_batch',
+                                'rpc_call_gas_limit'})
 
     def __init__(self, span, *, floor=1000, ceiling=100_000, growth_passes=8):
         if not 1 <= floor <= span <= ceiling:

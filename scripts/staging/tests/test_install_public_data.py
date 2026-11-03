@@ -104,7 +104,7 @@ class PublicInstallTests(unittest.TestCase):
         service=units['domino-activity-follow.service']
         for field in ('Type=oneshot','User=domino-write','SupplementaryGroups=domino-db','ProtectSystem=strict',
                       'BindsTo=domino-continuous-egress.service','PartOf=domino-public-data.target',
-                      'manage_activity.py --follow --domino-positions --quiet','--max-seconds 35',
+                      'manage_activity.py --follow --domino-positions --quiet','--max-passes 1 ','--span-floor 10 ',
                       'TimeoutStartSec=90',f'WorkingDirectory={self.base}/current/backend',
                       f'ExecStart={self.queue}/venv/bin/python -B manage_activity.py'):
             self.assertIn(field,service)
@@ -196,7 +196,9 @@ class PublicInstallTests(unittest.TestCase):
         units=self.plan()['units']
         queue=units['domino-queue-worker.service.d/90-public-data.conf']
         for setting in ('--max-pools 64','--max-steps 1','--max-seconds 50','--max-rpc-calls 2048','--max-header-calls 1000',
-                        '--search-seconds 20','--claim-reserve-seconds 10','--search-span 1000000'):
+                        '--search-seconds 20','--claim-reserve-seconds 10','--search-span 1000000',
+                        # A dense pool's 1,000 blocks held more than the 2,000 events a chunk may (2 Nov 2026).
+                        '--span-floor 10 '):
             self.assertIn(setting,queue)
         # A head-relative window cannot reach a pool older than the catalogue.
         self.assertNotIn('--search-back-blocks',queue)

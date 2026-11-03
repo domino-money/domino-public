@@ -135,6 +135,7 @@
     "src/lib/read/screens/appScript.ts",
     "src/lib/read/screens/appMarkets.ts",
     "src/lib/create/journey.ts",
+    "src/lib/create/typedPrice.ts",
     "src/lib/create/pairAmount.ts",
     "src/lib/create/mintPlan.ts",
     "src/lib/create/depositPlan.ts",

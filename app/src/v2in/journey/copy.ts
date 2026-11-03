@@ -39,6 +39,13 @@ export const JOURNEY = {
      */
     lookalike: (main: string) => `Not the ${main} Domino uses`,
     /**
+     * Added 2026-11-02 (review M1): such a token refused when a link, a pasted address or its Markets page brings it
+     * (./model/chainReads.ts usableNetworkToken), in Robinhood Chain's words for one (lib/read/screens/lookalike.ts
+     * warningText, 'token'; tests/v2/chain-reads.test.mjs holds them equal). Not imported from there: that would move the
+     * page's shared chunks for one sentence.
+     */
+    lookalikeRefused: (main: string) => `This isn’t the ${main} Domino uses. Adding money to its pools can lose it.`,
+    /**
      * Added 2026-10-30 (QA round 2, SWEEP): a token's pools on another network that its read could not bring, after its
      * own quiet re-asks; the way on, never "Pool search on Base is unavailable right now."
      */

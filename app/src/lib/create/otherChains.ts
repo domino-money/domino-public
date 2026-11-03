@@ -100,7 +100,18 @@ export interface NetworkPoolFacts {
  * their figures (lowercase; native ETH by the zero address, as the provider names it).
  */
 export type NetworkPools =
-  | { kind: 'ok'; options: PoolOption[]; facts?: Readonly<Record<string, NetworkPoolFacts>>; subject?: string }
+  | {
+      kind: 'ok'
+      options: PoolOption[]
+      facts?: Readonly<Record<string, NetworkPoolFacts>>
+      subject?: string
+      /**
+       * Added 2026-11-02 (review M1): the keys of the listed pools one of whose tokens passes for one of the network's own
+       * currencies (src/v2in/journey/model/chainReads.ts lookalikePools): a link's proposed pool is never chosen among them,
+       * as a Robinhood Chain link's pool with a look-alike is refused (components/create/Journey.tsx, audit I1).
+       */
+      warned?: readonly string[]
+    }
   | { kind: 'failed'; code: string; reason: string }
 
 /**
@@ -383,6 +394,27 @@ export function preselectOf<E>(entries: readonly E[], factsOf: (entry: E) => Hit
 }
 
 export type NetworkResolved = { ok: true; token: TokenDisplay } | { ok: false; code: string; reason: string }
+
+/**
+ * Added 2026-11-02 (review M1): the code of a token refused because it passes for one of its network's own currencies
+ * (src/v2in/journey/model/chainReads.ts usableNetworkToken): final, never read again, its reason the warning itself.
+ */
+export const TOKEN_LOOKALIKE = 'token_lookalike'
+
+/**
+ * Added 2026-11-02 (review M1): the pool another network's link proposes (#/new/network/<chain>/<token>/<pool>), as that
+ * network's pool list takes it (components/read/screens/PoolPicker.tsx NetworkPoolPicker): the row its own read lists
+ * under that key, chosen once, or `refused` when one of the row's tokens passes for one of the network's own currencies
+ * (`warned`, NetworkPools), as a Robinhood Chain link's pool with a look-alike is refused (components/create/Journey.tsx,
+ * audit I1). Null when the link proposed none, or the read lists no such pool. Pure.
+ */
+export function linkedNetworkPool(options: readonly PoolOption[], hint: string | null, warned: readonly string[] = []): { option: PoolOption; refused: boolean } | null {
+  if (hint === null) return null
+  const key = hint.toLowerCase()
+  const option = options.find((entry) => entry.key.toLowerCase() === key)
+  if (!option) return null
+  return { option, refused: warned.some((entry) => entry.toLowerCase() === key) }
+}
 
 export interface OtherChains {
   /** Public pool discovery can be available while this origin's creation service remains closed. */

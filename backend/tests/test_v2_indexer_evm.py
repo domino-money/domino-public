@@ -433,7 +433,9 @@ class IndexedJourneyTests(unittest.TestCase):
         self.assertTrue(vault['autoExitEnabled'])
         self.assertEqual((vault['totals']['executions'], vault['totals']['compounds']), (1, 1))
         position = next(p for p in body['positions'] if p['tokenId'] == str(self.token_id))
-        self.assertEqual(position['vault'], {'address': self.vault, 'role': 'root'})
+        # Changed on purpose 2026-11-02: its auto-exit closed the root, so the vault let it go (read-v6's `vault` is
+        # the vault a position belongs to now); the vault stays listed above, with its history.
+        self.assertIsNone(position['vault'])
         self.assertEqual((position['state']['status'], position['state']['liquidity']), ('live', '0'))
         mandates = {m['mandateHash']: m for m in body['mandates']}
         self.assertEqual(mandates[self.exit_hash]['status'], 'executed')

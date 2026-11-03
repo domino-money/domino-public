@@ -5,6 +5,8 @@
  * goes on Home and Markets, and to keep it there: tests/read-public.browser.test.mjs uses it.
  * Changed on purpose 2026-10-04 (the owner: the embedded list approved on 4 Oct, PR #322): the recorded overview holds
  * three entries built by hand, for USDG/ORBIO, USDG/UBIK and USDG/VIRTUAL; read-public.browser.test.mjs says how.
+ * Changed on purpose 2026-11-02 (the owner: the embedded list approved on 2 Nov): three more the same way, for ETH/USDG
+ * 0.05%, ETH/TORCH and USDG/PRIORS, with the TORCH and PRIORS tokens.
  *
  * Latency is per edge route, in milliseconds, on top of the local server's own time:
  *   - `edge`: every /api request's round trip to the edge (the Worker answers capabilities itself);

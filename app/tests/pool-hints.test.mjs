@@ -32,9 +32,10 @@ const USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168';
 const USDG_BODY = JSON.parse(readFileSync(new URL('./support/dexscreener-usdg.json', import.meta.url), 'utf8'));
 const ETH_BODY = JSON.parse(readFileSync(new URL('./support/dexscreener-eth.json', import.meta.url), 'utf8'));
 const WETH = '0x0bd7d308f8e1639fab988df18a8011f41eacad73';
-const UBIK = '0x812486eaea648819853f8e372dc9f1516c7868bd';
-/** The featured pools (config/selectedPools.ts), in catalogue order: the owner's embedded list of 2026-10-04. */
-const [ETH_USDG, PONS_USDG, USDG_ORBIO, CASHCAT_USDG, USDG_UBIK, USDG_VIRTUAL] = SELECTED_POOLS;
+const TORCH = '0x000050e18ffa3f8f7ad170eb9cef160eb3ed1111';
+const PRIORS = '0xedbf91223639800bcd5756815caf908df3b890be';
+/** The featured pools (config/selectedPools.ts), in catalogue order: the owner's embedded list of 2026-11-02. */
+const [ETH_USDG, PONS_USDG, ETH_TORCH, CASHCAT_USDG, USDG_PRIORS, USDG_VIRTUAL] = SELECTED_POOLS;
 
 /** The fixture's one pool with another id, key, liquidity or volume. */
 function pool({ poolId, liquidity = '10.00', volume = '1234.56', hooks = ZERO, dynamic = false, integration = 'hookless_fixed_fee', fee = 3000, metrics = true } = {}) {
@@ -141,14 +142,22 @@ test('the pools read names the hinted pools and asks for exactly that many, and 
 // Changed on purpose 2026-10-04 (the owner's new embedded list): the six are now ETH/USDG, PONS/USDG, USDG/ORBIO,
 // CASHCAT/USDG, USDG/UBIK and USDG/VIRTUAL, each in featuredPools.ts's hookless fixed-fee set. No featured pool holds
 // WETH or U any more: WETH names none, so native ETH's pool is still not named for it, and UBIK stands where U stood.
+// Changed on purpose 2026-11-02 (the owner's new embedded list): ETH/USDG 0.05%, PONS/USDG, ETH/TORCH, CASHCAT/USDG,
+// USDG/PRIORS and USDG/VIRTUAL, each in the hookless fixed-fee set. Five hold USDG; ETH/TORCH holds native ETH and TORCH,
+// as its row's addresses say, so native ETH now names two pools, and PRIORS stands where UBIK stood.
 test('the featured pools that hold the token, in catalogue order; ETH/USDG by the native ETH its pool was read to hold', () => {
-  assert.deepEqual(featured.featuredPoolIds(USDG, null), [ETH_USDG, PONS_USDG, USDG_ORBIO, CASHCAT_USDG, USDG_UBIK, USDG_VIRTUAL], 'all six hold USDG');
-  assert.deepEqual(featured.featuredPoolIds(ZERO, null), [ETH_USDG], 'native ETH');
+  assert.deepEqual(featured.featuredPoolIds(USDG, null), [ETH_USDG, PONS_USDG, CASHCAT_USDG, USDG_PRIORS, USDG_VIRTUAL], 'all five that hold USDG');
+  assert.deepEqual(featured.featuredPoolIds(ZERO, null), [ETH_USDG, ETH_TORCH], 'native ETH');
   assert.deepEqual(featured.featuredPoolIds(ZERO, USDG), [ETH_USDG]);
   assert.deepEqual(featured.featuredPoolIds(USDG, ZERO), [ETH_USDG], 'USDG with native ETH on the other side');
-  assert.deepEqual(featured.featuredPoolIds(WETH, null), [], 'wrapped ether is another token: native ETH’s pool is not named for it');
+  assert.deepEqual(featured.featuredPoolIds(ZERO, TORCH), [ETH_TORCH]);
+  assert.deepEqual(featured.featuredPoolIds(TORCH, null), [ETH_TORCH]);
+  assert.deepEqual(featured.featuredPoolIds(TORCH, ZERO), [ETH_TORCH], 'TORCH with native ETH on the other side');
+  assert.deepEqual(featured.featuredPoolIds(TORCH, USDG), [], 'no featured pool holds TORCH with USDG');
+  assert.deepEqual(featured.featuredPoolIds(WETH, null), [], 'wrapped ether is another token: native ETH’s pools are not named for it');
   assert.deepEqual(featured.featuredPoolIds(WETH, ZERO), []);
-  assert.deepEqual(featured.featuredPoolIds(UBIK, null), [USDG_UBIK]);
+  assert.deepEqual(featured.featuredPoolIds(WETH, TORCH), []);
+  assert.deepEqual(featured.featuredPoolIds(PRIORS, null), [USDG_PRIORS]);
   assert.deepEqual(featured.featuredPoolIds(USDG, PONS), [PONS_USDG], 'the second asset must be the other side');
   assert.deepEqual(featured.featuredPoolIds(PONS, USDG), [PONS_USDG]);
   assert.deepEqual(featured.featuredPoolIds(PONS, WETH), []);
@@ -158,31 +167,33 @@ test('the featured pools that hold the token, in catalogue order; ETH/USDG by th
 // Changed on purpose 2026-10-04 (the owner's new embedded list): the same saved USDG reply against the new six. Its
 // sample holds three of them, PONS/USDG second, USDG/ORBIO fifth and USDG/UBIK tenth, and leaves out the other three;
 // the two the request reaches are each named once, where the featured pools are.
+// Changed on purpose 2026-11-02 (the owner's new embedded list): five featured pools hold USDG, and the same saved reply
+// holds one of them, PONS/USDG, second; it is named once, where the featured pools are, and five hints follow.
 test('USDG: the featured pools first, then the provider’s hints, each once, ten at most, and exactly that many asked for', () => {
   const provider = hints.v4PoolHints(USDG_BODY, USDG, null);
   assert.equal(provider.length, 10);
-  for (const poolId of [ETH_USDG, CASHCAT_USDG, USDG_VIRTUAL]) assert.equal(provider.includes(poolId), false, `the provider’s sample leaves out ${poolId}`);
-  assert.deepEqual([PONS_USDG, USDG_ORBIO, USDG_UBIK].map((poolId) => provider.indexOf(poolId)), [1, 4, 9], 'three featured pools are in it: second, fifth and tenth');
+  for (const poolId of [ETH_USDG, ETH_TORCH, CASHCAT_USDG, USDG_PRIORS, USDG_VIRTUAL]) assert.equal(provider.includes(poolId), false, `the provider’s sample leaves out ${poolId}`);
+  assert.equal(provider.indexOf(PONS_USDG), 1, 'one featured pool is in it, second');
   const request = pools.usablePoolsRequest(USDG, null, provider);
   assert.deepEqual(request, {
     token: USDG,
     maxPools: 10,
     poolIds: [
-      ETH_USDG, PONS_USDG, USDG_ORBIO, CASHCAT_USDG, USDG_UBIK, USDG_VIRTUAL,
-      // Then the provider's most liquid, PONS/USDG and USDG/ORBIO not twice.
+      ETH_USDG, PONS_USDG, CASHCAT_USDG, USDG_PRIORS, USDG_VIRTUAL,
+      // Then the provider's most liquid, PONS/USDG not twice.
       '0x486435a1f76cd58193f854c6e6213cd05fd58d637865d02065ff558b387fa6ea',
-      provider[2], provider[3], provider[5],
+      provider[2], provider[3], provider[4], provider[5],
     ],
   });
   assert.equal(new Set(request.poolIds).size, 10, 'each once');
   // Hints that are slow or missing still leave the featured pools, not the catalogue's first twelve by id.
-  assert.deepEqual(pools.usablePoolsRequest(USDG, null, []), { token: USDG, maxPools: 6, poolIds: [ETH_USDG, PONS_USDG, USDG_ORBIO, CASHCAT_USDG, USDG_UBIK, USDG_VIRTUAL] });
+  assert.deepEqual(pools.usablePoolsRequest(USDG, null, []), { token: USDG, maxPools: 5, poolIds: [ETH_USDG, PONS_USDG, CASHCAT_USDG, USDG_PRIORS, USDG_VIRTUAL] });
   // A second asset keeps only the featured pools with it on the other side.
   assert.deepEqual(pools.usablePoolsRequest(USDG, PONS, [id('a')]), { token: USDG, pairedToken: PONS, maxPools: 2, poolIds: [PONS_USDG, id('a')] });
-  // Six featured and eleven hints: ten at most.
+  // Five featured and eleven hints: ten at most.
   const eleven = [...'123456789ab'].map(id);
   const capped = pools.usablePoolsRequest(USDG, null, eleven);
-  assert.deepEqual(capped.poolIds, [ETH_USDG, PONS_USDG, USDG_ORBIO, CASHCAT_USDG, USDG_UBIK, USDG_VIRTUAL, ...eleven.slice(0, 4)]);
+  assert.deepEqual(capped.poolIds, [ETH_USDG, PONS_USDG, CASHCAT_USDG, USDG_PRIORS, USDG_VIRTUAL, ...eleven.slice(0, 5)]);
   assert.equal(capped.maxPools, 10);
   // A hint that repeats a featured pool is named once, where the featured pools are.
   assert.deepEqual(pools.usablePoolsRequest(PONS, null, [id('a'), PONS_USDG, id('b')]), { token: PONS, maxPools: 3, poolIds: [PONS_USDG, id('a'), id('b')] });
@@ -191,16 +202,20 @@ test('USDG: the featured pools first, then the provider’s hints, each once, te
   }
 });
 
-test('native ETH: its featured pool first, then the provider’s native ETH pools, asked by the zero address', async () => {
+// Changed on purpose 2026-11-02 (the owner's new embedded list): native ETH's featured pools are ETH/USDG 0.05% and
+// ETH/TORCH. The saved ETH reply holds the first, third in its sample (the 0.01% pool, fifth, is now one of the
+// provider's own), and not ETH/TORCH. Both come first, then the provider's, ETH/USDG not twice, ten at most.
+test('native ETH: its featured pools first, then the provider’s native ETH pools, asked by the zero address', async () => {
   const provider = await hints.poolHints(ZERO, null, async (address) => (address === ZERO ? ETH_BODY : null));
   assert.equal(provider.length, 10, 'ETH alone is asked, by the zero address the provider lists native ETH under');
   assert.equal(provider[0], '0xbac3aa3b91584a53a579b3c999a56756e954e59247e497bad1d25a4334bde551', 'the most liquid, hooked or not: the chain decides');
-  assert.equal(provider.indexOf(ETH_USDG), 4);
+  assert.equal(provider.indexOf(ETH_USDG), 2);
+  assert.equal(provider.includes(ETH_TORCH), false);
   const request = pools.usablePoolsRequest(ZERO, null, provider);
-  assert.equal(request.poolIds[0], ETH_USDG);
-  assert.deepEqual(request.poolIds.slice(1), [...provider.slice(0, 4), ...provider.slice(5)], 'then the rest, ETH/USDG not twice');
+  assert.deepEqual(request.poolIds.slice(0, 2), [ETH_USDG, ETH_TORCH]);
+  assert.deepEqual(request.poolIds.slice(2), [...provider.slice(0, 2), ...provider.slice(3, 9)], 'then the rest, ETH/USDG not twice, ten at most');
   assert.equal(request.maxPools, 10);
-  assert.deepEqual(pools.usablePoolsRequest(ZERO, null, []), { token: ZERO, maxPools: 1, poolIds: [ETH_USDG] }, 'no hints: the featured pool alone');
+  assert.deepEqual(pools.usablePoolsRequest(ZERO, null, []), { token: ZERO, maxPools: 2, poolIds: [ETH_USDG, ETH_TORCH] }, 'no hints: the featured pools alone');
   assert.equal(runtime.validateRequest('pools', request), true);
 });
 

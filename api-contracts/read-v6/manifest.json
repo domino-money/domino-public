@@ -868,7 +868,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "db82629e5a9a60abea43a681f1c0565a1cdb26ffd3de3744da7ed7e369ddbea1"
+      "sha256": "61ecfcd10a6a6928364cb2fddf6258dba175303cf96695c52457965b2fcbfa96"
     },
     {
       "path": "consumer.test.mjs",
@@ -883,11 +883,11 @@
     },
     {
       "path": "backend/v2_read_service.py",
-      "sha256": "66cb5f3431e24eef5c12680dc6c1bd2ccff8f8e393f5a7fd3704dd3ca89b01a7"
+      "sha256": "83850d8a54e5e5affa2fac90aaef5349840a0035f7c3491549fc5adf08cc953a"
     },
     {
       "path": "backend/v2_index_store.py",
-      "sha256": "0cdd5c8c0e03e9f344959a2faedb8344498a883658fb40413fb55d976c378bad"
+      "sha256": "3058c83b34ab8e69b1a9b13e290441dca5f52bb660c870090d06e40a17ab0877"
     },
     {
       "path": "backend/v2_chain_reads.py",
@@ -931,7 +931,7 @@
     },
     {
       "path": "backend/tests/read_v6_contract_fixtures.py",
-      "sha256": "2e058c75adc3f5109a06aae7651551cf7148388e4bf6d6a2d6315377c3f68445"
+      "sha256": "c9b281a0c55fc682538649670b64d9a6ae2807c46fc3f01be44bd880315a397b"
     },
     {
       "path": "backend/tests/v2_index_fixtures.py",

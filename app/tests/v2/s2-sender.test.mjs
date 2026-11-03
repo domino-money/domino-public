@@ -709,3 +709,139 @@ test('batches kept: closed entries only, public data, at most eight per owner', 
   storage.setItem(batchJournalKey(OWNER), JSON.stringify([entry(1), { ...entry(2), extra: true }, 'x']));
   assert.deepEqual(createBatchJournal(storage).list(OWNER).map((e) => e.batchId), ['id-1'], 'anything else is left out, never repaired');
 });
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Added 2026-11-02 (review A2, REVISAO_DINHEIRO_LOGIN.md: "Bring funds: an uncertain wallet answer leaves the transfer with
+// no way out"). A step was held only once its answer came back lost, so a reload or a closed tab during the prompt left
+// an open request with no record, and "I cancelled the request in my wallet" answered "may still be pending" for good;
+// an approval the chain then took answered `passed`, and so did a deposit once (`none` after). A step is held before the
+// wallet is asked now, let go once the wallet answers, and every answer to the person's word says what may happen next.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** A wallet whose send the test answers itself, for a prompt still open (or closed after its window). */
+function heldPrompt(origin) {
+  const answer = { asked: false };
+  const wallet = { ...origin.wallet, request: (method, params) => method === 'eth_sendTransaction'
+    ? new Promise((resolve, reject) => { answer.asked = true; answer.resolve = resolve; answer.reject = reject; })
+    : origin.wallet.request(method, params) };
+  return { wallet, answer };
+}
+const until = async (check) => {
+  for (let i = 0; i < 500 && !check(); i++) await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(check(), 'reached');
+};
+
+test('A2: a step is held before the wallet is asked: a reload during the prompt finds it, and the person’s word lets it go while its nonce is free', async () => {
+  for (const kind of ['approval', 'deposit']) {
+    const storage = memoryStorage();
+    const s = lab();
+    if (kind === 'deposit') covered(s);
+    const { wallet, answer } = heldPrompt(s.origin);
+    const sender = createOriginSender(wallet, { runtime, monoMs: () => s.clock.now, journal: s.journal, unsettled: createUnsettledStore(storage) });
+    const sending = sender.send(await sender.review(s.input), kind).catch((error) => error);
+    await until(() => answer.asked);
+    // The page is reloaded while the wallet shows the request.
+    assert.deepEqual(createUnsettledStore(storage).list(OWNER).map((o) => [o.originChainId, o.kind, o.nonce, o.state]), [[10, kind, '3', 'open']], `${kind}: held before the wallet answered`);
+    const reloaded = createOriginSender(s.origin.wallet, { runtime, monoMs: () => s.clock.now, journal: s.journal, unsettled: createUnsettledStore(storage) });
+    assert.equal(await codeOf(reloaded.review({ ...s.input, quote: laterQuote(s.quote) })), 'wallet_request_open', 'nothing more is offered there meanwhile');
+    assert.equal(await reloaded.forgetUnsettled(10), 'forgotten', 'its nonce is still free: the person’s word lets it go');
+    assert.deepEqual(createUnsettledStore(storage).list(OWNER), []);
+    answer.reject(Object.assign(new Error('User rejected the request.'), { code: 4001 }));
+    await sending;
+    assert.equal(s.origin.state.sent.length, 0);
+  }
+});
+
+test('A2: the hold goes once the wallet answers: a hash, a refusal, a refusal after its window, or nothing asked', async () => {
+  const fresh = () => {
+    const s = lab();
+    const unsettled = createUnsettledStore(null);
+    return { s, unsettled, sender: createOriginSender(s.origin.wallet, { runtime, monoMs: () => s.clock.now, journal: s.journal, unsettled }) };
+  };
+  const a = fresh();
+  await a.sender.send(await a.sender.review(a.s.input), 'approval');
+  assert.deepEqual(a.unsettled.list(OWNER), [], 'a hash: the step is followed by it');
+  const b = fresh();
+  b.s.origin.state.nextSend = 'refuse';
+  assert.equal(await codeOf(b.sender.send(await b.sender.review(b.s.input), 'approval')), 'declined');
+  assert.deepEqual(b.unsettled.list(OWNER), [], 'a refusal: nothing was sent');
+  // The window closes first (0.8 s left on the quote): held, as an unknown outcome; the wallet's refusal comes after.
+  const c = lab();
+  c.clock.now = 120_000 - SEND_MARGIN_MS - 800;
+  const { wallet, answer } = heldPrompt(c.origin);
+  const unsettled = createUnsettledStore(null);
+  const sender = createOriginSender(wallet, { runtime, monoMs: () => c.clock.now, journal: c.journal, unsettled });
+  assert.equal(await codeOf(sender.send(await sender.review(c.input), 'approval')), 'wallet_result_unknown');
+  assert.deepEqual(unsettled.list(OWNER).map((o) => o.state), ['open'], 'held while the wallet may still send it');
+  answer.reject(Object.assign(new Error('User rejected the request.'), { code: 4001 }));
+  await until(() => unsettled.list(OWNER).length === 0);
+  assert.equal(c.origin.claims.size, 0, 'and its claim');
+  // The port refuses the send itself before the provider is invoked (its window closed after the last chain read, F9):
+  // the wallet never saw it.
+  const d = lab();
+  const wall = { now: 1_000_000 };
+  const held = createUnsettledStore(null);
+  const request = d.origin.wallet.request;
+  const late = { ...d.origin.wallet, request: async (method, params) => {
+    const reply = await request(method, params);
+    if (method === 'eth_chainId' && d.origin.claims.size > 0) wall.now += 1_000;
+    return reply;
+  } };
+  const port = createOriginSender(late, { runtime, monoMs: () => d.clock.now, journal: d.journal, unsettled: held, now: () => wall.now });
+  assert.equal(await codeOf(port.send(await port.review(d.input), 'approval')), 'wallet_action_expired');
+  assert.ok(!d.origin.state.asked.includes('eth_sendTransaction'));
+  assert.deepEqual(held.list(OWNER), [], 'nothing asked: nothing held');
+});
+
+test('A2: an approval the chain took after its answer was lost settles on the person’s word: its deposit was never sent, and may be reviewed again', async () => {
+  const s = lab();
+  const unsettled = createUnsettledStore(null);
+  const sender = createOriginSender(s.origin.wallet, { runtime, monoMs: () => s.clock.now, journal: s.journal, unsettled });
+  s.origin.state.nextSend = 'broadcast-lost';
+  assert.equal(await codeOf(sender.send(await sender.review(s.input), 'approval')), 'wallet_result_unknown');
+  assert.equal(s.origin.state.sent.length, 1, 'the wallet sent it after all, and the chain took its nonce');
+  assert.equal(await sender.forgetUnsettled(10), 'settled');
+  assert.deepEqual(unsettled.list(OWNER), []);
+  assert.equal(await sender.forgetUnsettled(10), 'none', 'nothing held there any more');
+  const again = await sender.review({ ...s.input, quote: laterQuote(s.quote) });
+  assert.deepEqual(again.plan.steps.map((step) => step.kind), ['deposit'], 'the allowance is on chain: the deposit goes alone');
+});
+
+test('A2: a deposit the chain may have taken answers passed every time the person asks, never none; a batch in flight answers pending', async () => {
+  const s = lab();
+  const unsettled = createUnsettledStore(null);
+  const sender = createOriginSender(s.origin.wallet, { runtime, monoMs: () => s.clock.now, journal: s.journal, unsettled });
+  covered(s);
+  s.origin.state.nextSend = 'broadcast-lost';
+  assert.equal(await codeOf(sender.send(await sender.review(s.input), 'deposit')), 'wallet_result_unknown');
+  assert.equal(await sender.forgetUnsettled(10), 'passed');
+  const asked = s.origin.mark();
+  assert.equal(await sender.forgetUnsettled(10), 'passed', 'once marked it answered none, as if nothing were held');
+  assert.deepEqual(asked(), [], 'said from the hold, without asking the wallet');
+  assert.deepEqual(unsettled.list(OWNER).map((o) => [o.kind, o.state]), [['deposit', 'passed']]);
+  // A deliberate new deposit from there (another quote) keeps that hold in place while it is asked, and takes its place
+  // only when its own answer is lost, as before.
+  const next = { ...s.input, quote: laterQuote(s.quote) };
+  await sender.send(await sender.review(next), 'deposit');
+  assert.deepEqual(unsettled.list(OWNER).map((o) => [o.kind, o.state, o.nonce]), [['deposit', 'passed', '3']], 'its answer came: the earlier hold stays');
+  s.origin.state.nextSend = 'unknown';
+  assert.equal(await codeOf(sender.send(await sender.review({ ...s.input, quote: laterQuote(s.quote, 60) }), 'deposit')), 'wallet_result_unknown');
+  assert.deepEqual(unsettled.list(OWNER).map((o) => [o.kind, o.state, o.nonce]), [['deposit', 'open', '5']], 'lost: held open in its place');
+  const b = batchLab({ mine: 'manual' });
+  await b.sender.sendBatch(await b.sender.review(b.input));
+  assert.deepEqual(b.unsettled.list(OWNER), [], 'a batch the wallet took is kept among the batches, not held');
+  assert.equal(await b.sender.forgetUnsettled(10), 'pending', 'it is in flight: the person’s word cannot settle it');
+});
+
+test('A2: a batch is held before the wallet is asked, and kept among the batches once the wallet names it', async () => {
+  const s = batchLab({ mine: 'manual' });
+  const review = await s.sender.review(s.input);
+  s.origin.state.nextBatch = 'wait';
+  const sending = s.sender.sendBatch(review);
+  await until(() => typeof s.origin.state.answerBatch === 'function');
+  assert.deepEqual(createUnsettledStore(s.storage).list(OWNER).map((o) => [o.kind, o.nonce, o.state]), [['deposit', '3', 'open']], 'a reload during the prompt still knows it');
+  s.origin.state.answerBatch();
+  const entry = await sending;
+  assert.deepEqual(s.unsettled.list(OWNER), []);
+  assert.deepEqual(s.batches.list(OWNER), [entry]);
+});

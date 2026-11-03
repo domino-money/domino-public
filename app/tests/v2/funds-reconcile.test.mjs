@@ -5,7 +5,7 @@ import { test } from 'node:test';
 const require = createRequire(import.meta.url);
 const { balanceSnapshot, reconcileBalances, BALANCE_CACHE_WAIT_MS, BALANCE_RECONCILE_ATTEMPTS } = require('../../.test-build/app/src/v2in/funds/reconcile.js');
 const { fundsServices } = require('../../.test-build/app/src/v2in/funds/services.js');
-const { transferTitle, availableBalance } = require('../../.test-build/app/src/v2in/funds/transferView.js');
+const { transferTitle, availableBalance, stuckDeposit, UNSEEN_DEPOSIT_MS } = require('../../.test-build/app/src/v2in/funds/transferView.js');
 const OWNER = `0x${'aa'.repeat(20)}`;
 const TOKEN = `0x${'11'.repeat(20)}`;
 const snapshot = (block, raw = '0') => ({ block, hash: `0x${block.toString(16).padStart(64, '0')}`, timestamp: 1_700_000_000 + block, balances: [{ token: TOKEN, raw }] });
@@ -149,4 +149,22 @@ test('simultaneous arrivals share an in-flight read, with no settled cache and n
   assert.equal(reads, 3, 'the next snapshot is requested again, not reused from a stale cache');
   waiting.splice(0).forEach((done) => done());
   await next;
+});
+
+// Added 2026-11-02 (review M3): only `filled` and `refunded` ended a deposit, so one whose own transaction reverted, was
+// dropped, or was replaced in the wallet was followed, and held its destination, for good. Why one will not complete:
+test('a deposit that will not complete as followed is said, and only a reverted one lets go by itself', () => {
+  const at = (change = {}) => stuckDeposit({ state: 'awaiting_deposit', stopped: null, receipt: 'pending', unseenMs: 0, ...change });
+  assert.equal(UNSEEN_DEPOSIT_MS, 30 * 60_000);
+  assert.equal(at(), null, 'still on its way');
+  assert.equal(at({ receipt: 'reverted' }), 'reverted', 'its own transaction reverted: nothing left the wallet');
+  assert.equal(at({ state: 'refund_failed', receipt: null }), 'refund_failed');
+  for (const stopped of ['not_found', 'unexpected', 'bug']) assert.equal(at({ stopped, receipt: null }), 'unfollowable', stopped);
+  for (const stopped of ['session', 'account', 'feature_off', 'gate', 'aborted']) assert.equal(at({ stopped, receipt: null }), null, `${stopped}: tracking resumes`);
+  assert.equal(at({ unseenMs: UNSEEN_DEPOSIT_MS - 1 }), null);
+  assert.equal(at({ unseenMs: UNSEEN_DEPOSIT_MS }), 'unseen');
+  assert.equal(at({ state: null, receipt: null, unseenMs: UNSEEN_DEPOSIT_MS }), 'unseen', 'no answer yet either');
+  assert.equal(at({ state: 'pending', unseenMs: UNSEEN_DEPOSIT_MS }), null, 'the bridge has seen it: it is on its way');
+  assert.equal(at({ unseenMs: null }), null);
+  for (const state of ['filled', 'refunded']) assert.equal(at({ state, receipt: 'reverted', stopped: 'not_found', unseenMs: UNSEEN_DEPOSIT_MS }), null, `${state}: done`);
 });

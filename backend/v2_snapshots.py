@@ -22,7 +22,8 @@ import re
 
 from eth_hash.auto import keccak
 
-from discovery import ZERO, DataError, address, bytes32, decode_result, decode_symbol, prefetched, quantity
+from discovery import (ZERO, DataError, RpcIntrinsicGas, address, bytes32, decode_result, decode_symbol,
+                       prefetched, quantity)
 from v2_abi import function
 from v2_chains import DEX_V3
 from v2_rpc import MAX_LOG_WINDOWS, batched_reads
@@ -40,6 +41,14 @@ MAX_POSITIONS_PER_VAULT = 256
 TRANSIENT = frozenset({'network_unavailable', 'request_budget_exhausted', 'v2_rpc_endpoints_cooling',
                        'read_deadline_exceeded', 'snapshot_reorganized', 'http_429', 'http_502', 'http_503',
                        'http_504', 'block_unavailable', 'rpc_error', 'invalid_rpc_envelope', 'missing_rpc_result'})
+
+
+def transient(error):
+    """Whether a read failed for a reason that says nothing about what it read, so the
+    pass stops and reads it again later instead of keeping the failure. A call whose gas
+    did not cover its intrinsic cost never ran (discovery.RpcIntrinsicGas: on Nitro, an L1
+    price spike); one that ran out of gas did, and is kept as rpc_call_gas_limit."""
+    return str(error) in TRANSIENT or isinstance(error, RpcIntrinsicGas)
 
 
 def _calls(rpc, block, calls):
@@ -129,7 +138,7 @@ def read_position(rpc, chain, block, dex, token_id, last_event_block):
         position = UniswapReader(chain, rpc).position(PositionRef(dex, manager, token_id), block)
     except DataError as error:
         code = str(error)
-        if code in TRANSIENT:
+        if transient(error):
             raise
         # Absent info (v4) or a manager that reverts on the token (v3) is a
         # burn only when the manager's own Transfer to zero proves it.
@@ -187,7 +196,7 @@ def read_tokens(rpc, block, tokens):
         try:
             decimals, = decode_result(['uint8'], prefetched(raw_decimals))
         except DataError as error:
-            if str(error) in TRANSIENT:
+            if transient(error):
                 raise
             issues['decimals'] = str(error)
         try:
@@ -196,7 +205,7 @@ def read_tokens(rpc, block, tokens):
                 raise DataError('invalid_symbol_text')
             symbol = value
         except DataError as error:
-            if str(error) in TRANSIENT:
+            if transient(error):
                 raise
             issues['symbol'] = str(error)
         status = 'available' if not issues else 'unavailable' if len(issues) == 2 else 'partial'

@@ -1,6 +1,7 @@
 import { amountText } from '../../components/positions/walletSteps'
 import { edgePrice } from '../autoexit/form'
 import { MAX_TICK, MIN_TICK, sqrtPriceAtTick } from '../../lib/read/screens/poolRange'
+import { readFigure, type Decimal } from '../../lib/create/typedFigure'
 import type { V2Chain } from '../../v2/chains'
 import { safeText } from '../../v2/errors'
 import { orientationOf, type PriceOrientation } from '../../v2/trigger'
@@ -77,10 +78,16 @@ export function amountWords(raw: bigint, token: TokenView): { text: string; exac
   return { text: `${shown.text} ${token.label}`, exact: `${shown.exact} ${token.label}`, raw: false }
 }
 
-/** An amount the person typed in a token's units, as raw units; null when it cannot be read or has too many decimals. */
-export function rawFromText(text: string, decimals: number): bigint | null {
-  const t = text.trim()
-  const match = /^(0|[1-9]\d{0,59})(?:\.(\d+))?$/.exec(t)
+/**
+ * An amount the person typed in a token's units, as raw units; null when it cannot be read or has too many decimals.
+ * Changed on purpose 2026-11-02 (review of the money PRs, M4): read by the rule every typed figure for a transaction is
+ * read by (lib/create/typedFigure.ts): a page-style "1,250.5" loses its separators, "1,5" is 1.5 where the person's
+ * language writes a decimal comma, and an ambiguous "1,250" is refused. It refused every comma. `decimal`: for a test.
+ */
+export function rawFromText(text: string, decimals: number, decimal?: Decimal): bigint | null {
+  const read = readFigure(text, decimal)
+  if (!read.ok) return null
+  const match = /^(0|[1-9]\d{0,59})(?:\.(\d+))?$/.exec(read.text)
   if (!match) return null
   const [, integer, fraction = ''] = match
   if (fraction.length > decimals) return null

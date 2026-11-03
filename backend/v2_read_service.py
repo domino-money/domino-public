@@ -21,6 +21,10 @@ MODES = {1: 'simple', 2: 'domino'}
 LEG_KINDS = {1: 'universal_router', 2: 'v3_pool', 3: 'v4_pool'}
 FEE_KINDS = {1: 'assisted_swap', 2: 'automation', 3: 'auto_exit'}
 AUTOMATION_RATE = {'simple': 200, 'domino': 400}
+# RootDisarmed reasons after which a vault is done with its root: burned, left by the owner (exitAll). The auto-exit's
+# end (6) is its ExitExecuted, which follows it always, and also comes alone for a root disarmed already. The other
+# reasons wait for the owner's rearm in the same vault.
+ENDING_DISARMS = frozenset({3, 7})
 
 
 def _snapshot(number, block_hash, timestamp):
@@ -276,12 +280,52 @@ def position_entry(row, now):
                      'liquidity': s['liquidity'], 'sqrtPriceX96': s['sqrtPriceX96'], 'tick': int(s['tick']),
                      'inRange': s['inRange'], 'feesOwed': list(s['feesOwed']),
                      'principalAtSpot': list(s['principalAtSpot'])}
-    link = None
-    if row['vault'] is not None:
-        link = {'address': row['vault'], 'role': 'root' if row['source'] == 'vault_root' else 'successor'}
     return {'chainId': chain_id, 'dex': dex, 'positionManager': _manager(chain_id, dex),
-            'tokenId': str(int(row['token_id'])), 'vault': link, 'firstSeenBlock': int(row['first_block']),
+            'tokenId': str(int(row['token_id'])), 'vault': vault_link(row), 'firstSeenBlock': int(row['first_block']),
             'state': state}
+
+
+def vault_link(row):
+    """The vault the position belongs to now, as read-v6's `vault`, or None.
+
+    The reader gives the vault that took the position last (v2_index_store's
+    positions: link_vault, link_role, link_owner) and that vault's events
+    since then that may end the link (link_events), oldest first. It ends when
+    the vault lets the position go:
+    - a successor withdrawn to the wallet (ChildWithdrawn: withdrawChild,
+      exitAll, or the auto-exit of that successor);
+    - a root the owner left (RootDisarmed exit_all), that the auto-exit closed
+      (ExitExecuted, after RootDisarmed auto_exit or alone when it was
+      disarmed already) or that was burned (RootDisarmed burned).
+    An exit needs the root's approval alone, so turning the vault's Auto-exit
+    back on after that (ExitModuleSet to the module) makes the root the
+    vault's again, until the module is off again ("Turn off", or a second
+    exitAll, which then disarms nothing). A root disarmed for another reason
+    (unsubscribed, changed outside Domino, custody, checkpoint) stays the
+    vault's: its owner rearms it there. A position another wallet holds, as
+    last read, is no vault's: a vault acts on its root only while the vault's
+    owner holds it.
+    """
+    vault, role = row['link_vault'], row['link_role']
+    if vault is None:
+        return None
+    if row['s_status'] == 'live' and row['s_owner'] not in (row['link_owner'], vault):
+        return None
+    state = 'held'
+    for entry in row['link_events'] or []:
+        event, a = entry['event'], entry['args']
+        if role == 'successor':
+            if event == 'ChildWithdrawn':
+                state = 'left'
+        elif event == 'ExitExecuted' or (event == 'RootDisarmed' and int(a['reason']) in ENDING_DISARMS):
+            state = 'left'
+        elif event == 'ExitModuleSet':
+            enabled = a['module'] not in (None, ZERO)
+            if enabled and state == 'left':
+                state = 'protected'
+            elif not enabled and state == 'protected':
+                state = 'left'
+    return None if state == 'left' else {'address': vault, 'role': role}
 
 
 def mandate_entry(row, now, *, halted, vaults, positions, waiting=None):

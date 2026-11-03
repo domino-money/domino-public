@@ -93,7 +93,11 @@ export async function connectPosition(gate: OpenGate, allowSwitch = true): Promi
   return connection
 }
 
-/** Checking an already offered close never depends on the planner's availability and exposes no sender. */
+/**
+ * Checking an already offered close never depends on the planner's availability and exposes no sender. Changed on
+ * purpose 2026-11-02 (review A1): nor does letting go of a close whose wallet answer never came (`settleLostClose`:
+ * reads, and the person's word; finance/v2/direct.ts).
+ */
 export async function connectPositionReceipt(chainId: V2ChainId) {
   const wallet = await v2Wallet()
   if (!wallet.current()) throw new Error('wallet_identity_changed')
@@ -103,5 +107,5 @@ export async function connectPositionReceipt(chainId: V2ChainId) {
     if (outcome !== 'switched') throw new WalletNotice(v2SwitchNotice(outcome, v2Chain(chainId).name), outcome)
   }
   const direct = createDirectClient(wallet, v2Chain(chainId), undefined, directCode(chainId), null, null)
-  return { chainId, wallet, recoverCloseMany: direct.recoverCloseMany }
+  return { chainId, wallet, recoverCloseMany: direct.recoverCloseMany, settleLostClose: direct.settleLostClose }
 }

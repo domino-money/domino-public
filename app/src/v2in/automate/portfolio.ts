@@ -119,6 +119,21 @@ export function vaultsOfPosition(body: PortfolioResponse, chainId: V2ChainId, to
 }
 
 /**
+ * Added 2026-11-02 (the money review, M2): the wallet's own vaults of a position its page has no position to draw for:
+ * read-v6 lists no such position (its NFT was burned, as a Change range or a close burns an unarmed root) or lists it
+ * with no live read (`unavailable`, `not_read`). By `vaultsOfPosition`'s rule (the listing's vaults, never the NFT),
+ * those whose owner is the wallet this answer is about; none for an answer about another wallet. While there is one,
+ * the page draws the automation without a position (./PositionAutomation.tsx, as Robinhood Chain's own page does,
+ * screens/PositionDetail.tsx), so its reserves can be withdrawn or sent to another address, what it holds loose
+ * recovered, and its automation left. The page showed only "This position isn't in your wallet's list." Pure.
+ */
+export function ownVaultsOfPosition(body: PortfolioResponse, wallet: string, chainId: V2ChainId, tokenId: string, dex: 3 | 4): readonly PositionVault[] {
+  const who = wallet.toLowerCase()
+  if (body.wallet.toLowerCase() !== who) return []
+  return vaultsOfPosition(body, chainId, tokenId, dex).filter(({ vault }) => vault.owner.toLowerCase() === who)
+}
+
+/**
  * A listed vault's reserves (read-v6 `state.reserves`: per pool token, the total, "Fees collected, not yet reinvested",
  * and the idle part), as raw amounts, or `known: false` when its state was not read or could not be: then they are a
  * dash with the reason, never zeros. `held` is whether any of them is above zero (rev3: then "Withdraw to wallet").

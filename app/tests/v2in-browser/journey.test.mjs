@@ -1374,6 +1374,44 @@ test('(p) a wallet short of the amount stays at funding; no quote or wallet tran
   } finally { await s.close(); }
 });
 
+// Added 2026-11-02 (review of the money PRs, M4: "1,250" was read as 1250, a thousand times the 1.25 that someone who
+// writes a decimal comma meant; the launch audience is Brazilian). In a browser set to Brazilian Portuguese, "1,5" is 1.5
+// and the plan is asked for 1.5 USDG; "1,250" is refused in both languages, saying both readings, and nothing is quoted;
+// in a browser set to English, "1,5" still asks for a dot (src/lib/create/typedFigure.ts).
+for (const locale of ['pt-BR', 'en-US']) test(`(m4) a comma typed in a ${locale} browser is never a thousand times the amount`, async () => {
+  const chain = createV2Chain({ chainId: 4663, timestamp: now(), balances: { [USDG_RH]: 5_000_000_000n }, pools: [{ pool: POOL_RH, sqrtPriceX96: SQRT, tick: TICK, liquidity: 10n ** 16n }] });
+  chain.switchTo(4663);
+  const read = createReadStub({ answer: robinhoodRead });
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, planner: robinhoodPlanner([]),
+    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true, locale,
+  });
+  try {
+    const page = s.page;
+    assert.equal(await page.evaluate(() => navigator.language), locale);
+    await toReview(page, '1,250', USDG_RH, true);
+    const amount = current(page, 'amount');
+    const field = amount.locator('[data-pair-side="1"] input[inputmode="decimal"]');
+    const reason = page.locator('#continue-reason');
+    await page.waitForFunction(() => document.querySelector('#continue-reason')?.textContent?.includes('could mean'), null, { timeout: 30_000 });
+    assert.equal(await reason.innerText(), '1,250 could mean 1.25 or 1250. Type 1.25 or 1250.');
+    assert.equal(await footerButton(amount, 'Continue').isDisabled(), true, 'never read as 1250');
+    await field.fill('1,5');
+    if (locale === 'pt-BR') {
+      await page.waitForFunction(() => !document.querySelector('#continue-reason')?.textContent?.includes('could mean'), null, { timeout: 30_000 });
+      await pressContinue(amount);
+      for (let i = 0; i < 300 && s.planned.length === 0; i += 1) await new Promise((done) => setTimeout(done, 100));
+      const inputs = s.planned.at(-1)?.inputs ?? [];
+      assert.deepEqual(inputs.filter((input) => input.token === USDG_RH).map((input) => input.amountRaw), ['1500000'], 'asked for 1.5 USDG');
+    } else {
+      await page.waitForFunction(() => document.querySelector('#continue-reason')?.textContent === 'Use a dot for decimals, like 0.5.', null, { timeout: 30_000 });
+      assert.equal(await footerButton(amount, 'Continue').isDisabled(), true);
+      assert.equal(s.planned.length, 0, 'nothing quoted for a refused amount');
+    }
+    assert.equal(chain.sends.length, 0);
+  } finally { await s.close(); }
+});
+
 // Added 2026-10-06 (the review of point 4, ux #4, a second look): a deposit from another network delivers only a network's
 // stable, ETH or WETH. A wallet short of any other token is told to add it to the wallet, as today's Review says, never to
 // bring it from another network, even with Amount's bring-funds offer open (S2 live, as in (p)).

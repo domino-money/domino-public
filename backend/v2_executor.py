@@ -365,6 +365,14 @@ class Journal:
                                   (self.chain_id, self.signer))
         return [row[0] for row in cursor.fetchall()]
 
+    def attention_since(self):
+        """Each intent in 'attention', its reason and since when it has stopped the signer: the time it entered
+        'attention', since nothing but `acknowledge` writes to such an intent again."""
+        cursor = self._db.execute("SELECT id, reason, updated_at FROM intents WHERE chain_id=? AND signer=? AND"
+                                  " state='attention' ORDER BY nonce", (self.chain_id, self.signer))
+        return [{'intent': identifier, 'reason': reason, 'since': int(at)}
+                for identifier, reason, at in cursor.fetchall()]
+
     def spent_today(self, now):
         """Native wei committed in the last 24 hours: what was paid, else what is reserved."""
         cursor = self._db.execute('SELECT reserved_wei, spent_wei FROM intents WHERE chain_id=? AND signer=?'

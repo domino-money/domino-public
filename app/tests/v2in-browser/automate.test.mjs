@@ -650,6 +650,118 @@ test('live: a root closed by the S1 exit (burned) keeps its vault\'s fees on its
   }
 });
 
+// Added 2026-11-02 (the money review, M2). On Base, Arbitrum One and Robinhood Chain's v3, the position page is the V2 one
+// (src/v2in/position/PositionPage.tsx): a root NFT burned by Change range or a close, which read-v6 no longer lists, drew only
+// "This position isn't in your wallet's list.", and Positions' "Review in position" led there, so the vault's reserves could
+// not be withdrawn and its automation not left. The page now draws the automation without a position, as Robinhood Chain's
+// own page does (the test above), for a vault the wallet owns; a position with no vault of the wallet's still draws none.
+const BASE = require('../../.test-build/app/src/v2/chains.js').v2Chain(8453);
+const BASE_USDC = BASE.chargeCurrencies.find((token) => token.decimals === 6).address;
+/** listing()'s answer moved to Base: its pool's USDG is Base's USDC, and Base's index is current (the fixture's is stale). */
+async function onBase(listed) {
+  const body = JSON.parse(JSON.stringify(listed.body).replaceAll(USDG, BASE_USDC));
+  const current = body.chains.find((entry) => entry.chainId === 4663);
+  body.chains = body.chains.map((entry) => ({ ...structuredClone(current), chainId: entry.chainId }));
+  body.coverage = 'complete';
+  for (const item of [...body.vaults, ...body.tokens, ...body.positions]) item.chainId = 8453;
+  for (const item of body.positions) item.positionManager = BASE.uniswap.v4.positionManager;
+  body.tokens.find((token) => token.address === BASE_USDC).symbol = 'USDC';
+  const readRuntime = await import('../../../api-contracts/read-v6/runtime.mjs');
+  assert.equal(readRuntime.validateResponse('portfolio', body), true, 'the answer on Base is a valid portfolio');
+  return { status: 200, body };
+}
+
+test('live: Base, a root burned by Change range is not in the wallet\'s list: Positions leads to its page, which keeps its vault\'s screen; "Withdraw to wallet" takes both tokens', async () => {
+  const usdc = BASE_USDC;
+  const pool = { currency0: ZERO, currency1: usdc, fee: 3000, tickSpacing: 60 };
+  const chain = createVaultChain({ chainId: 8453, atomic: 'ready', simulateV1: true, positions: [{ dex: 4, tokenId: ROOT, pool, tickLower: -600, tickUpper: 600 }] });
+  const vault = await chain.seedVault({ dex: 4, tokenId: ROOT, startPaused: false });
+  chain.setIdle(vault, usdc, 5_000_000n);
+  chain.setIdle(vault, ZERO, 2_000_000_000_000_000n);
+  chain.closeRoot(4, ROOT, { burn: true, by: ZAP });
+  const portfolio = await onBase(listing(chain, vault, { armed: false, reason: 'burned', reserves: [[ZERO, 2_000_000_000_000_000n], [USDG, 5_000_000n]], root: null, waiting: waitingOf('reserves_returnable') }));
+  assert.deepEqual(portfolio.body.positions, [], 'read-v6 lists no burned NFT');
+  const s = await openLive(chain, { hash: '/positions', read6: { portfolio }, v1: rootOnV1({ burned: true }) });
+  const { page } = s;
+  try {
+    // Positions: the vault's hint, and its link to the position's page on Base.
+    const link = page.locator('[data-automation-recovery] a', { hasText: `Position #${ROOT}` });
+    await link.waitFor({ timeout: 30_000 });
+    assert.equal(await link.getAttribute('href'), `#/positions/base-v4-${ROOT}`);
+    await link.click();
+    // The page: still not in the wallet's list, now with the vault's own control above that sentence.
+    const empty = page.locator('[data-empty="position-v2"][data-position-reason="position_not_listed"]');
+    await empty.waitFor({ timeout: 30_000 });
+    assert.match(await empty.innerText(), /This position isn’t in your wallet’s list\./);
+    await expandAutomation(page);
+    const card = page.locator(`[data-automation-panel] section[data-vault-card="${vault}"]`);
+    await card.waitFor({ timeout: 30_000 });
+    assert.equal(await card.getAttribute('data-vault-reserves'), 'held');
+    assert.equal(await card.locator('[data-vault-pill]').innerText(), 'Closed');
+    assert.equal(await card.locator('[data-vault-held] [data-reserves="held"]').innerText(), '0.002 ETH + 5 USDC');
+    // The owner's ways out, as on Robinhood Chain's own page: its reserves back, Leave automation; Withdraw under Details.
+    assert.deepEqual(await card.locator('[data-vault-open]').evaluateAll((buttons) => buttons.map((b) => b.getAttribute('data-vault-open'))), ['return', 'leave']);
+    assert.deepEqual(await card.locator('[data-vault-more]').evaluateAll((buttons) => buttons.map((b) => b.getAttribute('data-vault-more'))), ['withdraw']);
+    assert.equal(await page.locator('[data-automation-setup], [data-automation-exit-entry], [data-v2in-exit]').count(), 0, 'nothing that needs the NFT is offered');
+    await page.locator('[data-automation-management]').screenshot({ path: join(shots(), 'v2in-reserves-burned-root-base.png'), animations: 'disabled' });
+
+    await card.locator('details[data-vault-details] > summary').click();
+    await card.locator('[data-vault-more="withdraw"]').click();
+    const dialog = page.locator('[role="dialog"][data-v2in-dialog="vault-withdraw"]');
+    await dialog.waitFor();
+    await dialog.locator('[data-wallet-steps="vault-withdraw"] li[data-wallet-step="withdraw-all-batch"]').waitFor({ timeout: 30_000 });
+    assert.match(await dialog.locator('[data-vault-receive="withdraw"]').innerText(), /You receive\s+0\.002 ETH\s*5 USDC/);
+    await page.waitForFunction(() => document.querySelector('[data-v2in-send="withdraw"]')?.disabled === false, null, { timeout: 30_000 });
+    assert.deepEqual(chain.sends, [], 'ready, for the person to confirm');
+    await dialog.locator('[data-v2in-send="withdraw"]').click();
+    await dialog.locator('[data-v2in-close]').waitFor({ timeout: 30_000 });
+    assert.equal(chain.log.filter((method) => method === 'wallet_sendCalls').length, 1, 'one wallet prompt');
+    const [batch] = chain.batches;
+    assert.equal(BigInt(batch.chainId), 8453n, 'on Base');
+    assert.deepEqual(batch.calls.map((call) => [call.to.toLowerCase(), selectorOf(call.data)]), [[vault, SELECTOR.withdrawReserves], [vault, SELECTOR.withdrawReserves]]);
+    assert.deepEqual(batch.calls.map((call) => vaultArgs(call.data)), [[ZERO, 2_000_000_000_000_000n, OWNER.toLowerCase()], [usdc, 5_000_000n, OWNER.toLowerCase()]], 'each names the owner as the recipient');
+    assert.deepEqual(chain.paid.filter((p) => p.why === 'withdrawReserves').map((p) => [p.to, p.tokens[0], p.amounts[0]]), [[OWNER, ZERO, 2_000_000_000_000_000n], [OWNER, usdc, 5_000_000n]], 'everything to the owner, no fee');
+    await dialog.locator('[data-v2in-close]').click();
+
+    // A position with no vault of the wallet's draws the sentence alone, as before.
+    await page.evaluate(() => { location.hash = '#/positions/base-v4-424242'; });
+    await page.locator('[data-empty="position-v2"][data-position-reason="position_not_listed"]').waitFor({ timeout: 30_000 });
+    await page.waitForTimeout(500);
+    assert.equal(await page.locator('[data-automation-control]').count(), 0);
+  } finally {
+    await s.close();
+  }
+});
+
+// Added 2026-11-02 (the money review, M2): a root read-v6 lists with no live read (its read failed: `unavailable`) drew only
+// its title too; it keeps its vault's screen the same way.
+test('live: Base, a root listed with no live read keeps its vault\'s screen: its reserves can be withdrawn', async () => {
+  const pool = { currency0: ZERO, currency1: BASE_USDC, fee: 3000, tickSpacing: 60 };
+  const liquidity = 10n ** 18n;
+  const chain = createVaultChain({ chainId: 8453, atomic: 'ready', simulateV1: true, positions: [{ dex: 4, tokenId: ROOT, pool, tickLower: -600, tickUpper: 600, liquidity }] });
+  const vault = await chain.seedVault({ dex: 4, tokenId: ROOT, startPaused: false });
+  chain.setIdle(vault, BASE_USDC, 5_000_000n);
+  const listed = listing(chain, vault, { armed: true, reserves: [[ZERO, 0n], [USDG, 5_000_000n]], root: { owner: OWNER, liquidity } });
+  const read = listed.body.positions[0].state.snapshot;
+  listed.body.positions[0].state = { status: 'unavailable', snapshot: read, freshness: { status: 'stale', ageSeconds: 600 }, reason: 'position_read_failed' };
+  const portfolio = await onBase(listed);
+  const s = await openLive(chain, { hash: `/positions/base-v4-${ROOT}`, read6: { portfolio }, v1: rootOnV1({ liquidity }) });
+  const { page } = s;
+  try {
+    await page.locator('[data-empty="position-v2"][data-position-reason="unavailable"]').waitFor({ timeout: 30_000 });
+    await expandAutomation(page);
+    const card = page.locator(`[data-automation-panel] section[data-vault-card="${vault}"]`);
+    await card.waitFor({ timeout: 30_000 });
+    assert.equal(await card.getAttribute('data-vault-reserves'), 'held');
+    assert.equal(await card.locator('[data-vault-held] [data-reserves="held"]').innerText(), '5 USDC');
+    assert.ok(await card.locator('[data-vault-open="withdraw"], [data-vault-more="withdraw"]').count(), 'Withdraw to wallet is offered');
+    assert.ok(await card.locator('[data-vault-open="leave"], [data-vault-more="leave"]').count(), 'and Leave automation');
+    assert.deepEqual(chain.sends, []);
+  } finally {
+    await s.close();
+  }
+});
+
 // Added 2026-10-04 (rugged97's delta of 4 Oct §2 item 1, #317): a withdrawal names its recipient.
 test('live: a token that refuses the owner\'s wallet: Withdraw to wallet leads (never Return), says why before the wallet and offers "Send to another address you own"; the address typed (never the refusing wallet), the fees go there', async () => {
   const chain = createVaultChain({ chainId: 4663, simulateV1: true, positions: [{ dex: 4, tokenId: ROOT, pool: POOL, tickLower: -600, tickUpper: 600 }] });

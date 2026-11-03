@@ -102,6 +102,9 @@ function load(name, dependencies, expose = '') {
     // 2026-10-01 (audit): pairs named as their price is written (E21), look-alike tokens (I1), failures that pass (A25),
     // and the stand-in figures (V1): the real rules have their own tests; here the page's use of them.
     inPriceOrder: (entry) => entry, poolWarning: () => null, warningText: () => '',
+    // 2026-11-02 (review M1): another network's link's pool as New position's list takes it, the real rule (its own test
+    // is tests/v2/chain-reads.test.mjs).
+    linkedNetworkPool: (...args) => real('src/lib/create/otherChains.ts').linkedNetworkPool(...args),
     pricePair: require('../.test-build/app/src/lib/read/orientation.js').pricePair,
     isTransient: (outcome) => outcome?.state === 'busy' || outcome?.state === 'unavailable',
     useFallbackRow: (row) => row, usePoolStandIns: () => null, useFallbackRows: (rows) => rows,

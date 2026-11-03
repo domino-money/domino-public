@@ -94,17 +94,17 @@ class IndexerTests(unittest.TestCase):
                            ('ChargeCurrencySet', {'token': USDG, 'rank': 1})):
             self.chain.emit('registry', name, args, address=registry, number=10, tx='registry')
 
-    def create_vault(self, number, *, vault=VAULT, root=7):
+    def create_vault(self, number, *, vault=VAULT, root=7, owner=OWNER):
         factory = self.contracts['vaultFactory.v4']
         tx = f'create:{vault}'
-        self.chain.emit('vault', 'Initialized', {'owner': OWNER, 'dex': 4, 'rootTokenId': root, 'mode': 1},
+        self.chain.emit('vault', 'Initialized', {'owner': owner, 'dex': 4, 'rootTokenId': root, 'mode': 1},
                         address=vault, number=number, tx=tx)
         self.chain.emit('vault', 'PolicyChanged', {'policy': POLICY, 'stateNonce': 1}, address=vault, number=number,
                         tx=tx)
         self.chain.emit('vault', 'LimitsChanged', {'limits': LIMITS, 'stateNonce': 1}, address=vault, number=number,
                         tx=tx)
         self.chain.emit('vault', 'RootRearmed', {'stateNonce': 1}, address=vault, number=number, tx=tx)
-        self.chain.emit('vault_factory', 'VaultCreated', {'owner': OWNER, 'vault': vault, 'rootTokenId': root,
+        self.chain.emit('vault_factory', 'VaultCreated', {'owner': owner, 'vault': vault, 'rootTokenId': root,
                                                           'dex': 4, 'ownerNonce': 0}, address=factory, number=number, tx=tx)
 
     def s1_create(self, number, *, token_id=9, label='s1'):
@@ -619,6 +619,23 @@ class IndexerTests(unittest.TestCase):
         self.assertEqual(self.rows('SELECT status,reason FROM domino_v2.vault_snapshots'),
                          [('unavailable', 'rpc_call_reverted')])
 
+    def test_a_vault_view_refused_before_it_ran_waits_for_the_next_pass(self):
+        # On Nitro a call's gas first pays its L1 data cost; at an L1 price spike every read under it is refused
+        # before it runs (29 Oct 2026). Not the vault's state: the pass stops and reads it again, as for rpc_error.
+        self.register()
+        self.create_vault(22)
+        self.serve_vault()
+        paused = function('IDominoVault', 'paused').selector
+        self.chain.calls[(VAULT, paused)] = lambda data, block: {
+            'code': -32000, 'message': 'err: intrinsic gas too low (supplied gas 500000)'}
+        enrichment = self.indexer.step(span=100)['enrichment']
+        self.assertEqual((enrichment['status'], enrichment['reason'], enrichment['vaults']),
+                         ('interrupted', 'rpc_call_gas_limit', 0))
+        self.assertEqual(self.rows('SELECT count(*) FROM domino_v2.vault_snapshots'), [(0,)])
+        self.serve_vault()
+        self.indexer.step(span=100)
+        self.assertEqual(self.rows('SELECT status FROM domino_v2.vault_snapshots'), [('read',)])
+
     def test_an_unknown_vault_code_owner_mismatch_is_unavailable(self):
         self.register()
         self.create_vault(22)
@@ -627,6 +644,133 @@ class IndexerTests(unittest.TestCase):
         self.indexer.step(span=100)
         self.assertEqual(self.rows('SELECT status,reason FROM domino_v2.vault_snapshots'),
                          [('unavailable', 'v2_vault_state_mismatch')])
+
+    # --------------------------------------------------------- vault links
+    # The 2 Nov 2026 review: the index kept a position's first vault forever. The app's Setup takes any link as
+    # "automated", so a position that left its vault (Leave automation) was never offered again, and a position with
+    # a new vault still named the old one (Robinhood v4 #3589588, 6 Oct). read-v6 now names the vault that holds it.
+    ROOT_OF = staticmethod(lambda vault: {'address': vault, 'role': 'root'})
+
+    def emit_vault(self, number, vault, entries, tx):
+        """One transaction of `vault`'s events, (event, args), at block `number`."""
+        for name, args in entries:
+            self.chain.emit('vault', name, args, address=vault, number=number, tx=tx)
+
+    def exit_executed(self, number, vault, token_id, entries=()):
+        """The auto-exit of `token_id` in `vault`: the vault's events, its ExitExecuted, the module's MandateExecuted."""
+        module = self.contracts['autoExit']
+        self.emit_vault(number, vault, [*entries, ('ExitExecuted', {'module': module, 'tokenId': token_id,
+                                                                    'amount0': 0, 'amount1': 0, 'stateNonce': 9})],
+                        f'exit:{token_id}')
+        self.chain.emit('auto_exit', 'MandateExecuted', {'mandateHash': MANDATE, 'anchorSqrtPriceX96': 2**96,
+                                                         'recipient': OWNER, 'amount0': 0, 'amount1': 0},
+                        address=module, number=number, tx=f'exit:{token_id}')
+
+    def links(self, wallet=OWNER):
+        """Index what was emitted; then read-v6's vault of each position the wallet's portfolio lists."""
+        while self.indexer.step(span=1000, enrich=False)['status'] == 'indexed':
+            pass
+        portfolio = V2ReadService(self.store, clock=lambda: self.clock[0]).portfolio(wallet)
+        return {int(p['tokenId']): p['vault'] for p in portfolio['positions']}
+
+    def hold(self, token_id, owner):
+        """A live read of position `token_id` at the latest checkpoint: `owner` holds it."""
+        from psycopg.types.json import Jsonb
+        from read_v6_contract_fixtures import position_state
+        (block, block_hash, timestamp), = self.rows('''SELECT end_block,end_hash,end_timestamp
+          FROM domino_v2.checkpoints ORDER BY end_block DESC LIMIT 1''')
+        with admin() as conn:
+            conn.execute('''INSERT INTO domino_v2.position_snapshots(chain_id,dex,token_id,block_number,block_hash,
+              block_timestamp,status,owner,state,read_at) VALUES(4663,4,%s,%s,%s,%s,'live',%s,%s,%s)''',
+                         (token_id, block, block_hash, timestamp, owner,
+                          Jsonb(position_state(owner, subscriber=None, approved=None)), self.clock[0]))
+
+    def test_a_position_names_the_vault_that_holds_it_now(self):
+        old, new = VAULT, '0x' + 'a7' * 20
+        module = self.contracts['autoExit']
+        self.register()
+        self.create_vault(22, vault=old)
+        self.assertEqual(self.links(), {7: self.ROOT_OF(old)})
+        steps = [('Leave automation (exitAll)', old, [('RootDisarmed', {'reason': 7, 'stateNonce': 2})], None),
+                 # An exit needs the approval alone: its Auto-exit turned back on protects the root again.
+                 ('its Auto-exit turned back on', old, [('ExitModuleSet', {'module': module, 'stateNonce': 3})], old),
+                 # The root is disarmed already, so the second exitAll only turns the module off.
+                 ('Leave again', old, [('ExitModuleSet', {'module': ZERO, 'stateNonce': 4})], None),
+                 ('a new vault for the same root', new, None, new),
+                 ('the old vault rearmed (approval and subscription back)', old, [('RootRearmed', {'stateNonce': 5})],
+                  old)]
+        for name, vault, entries, expected in steps:
+            with self.subTest(step=name):
+                self.chain.mine(5)
+                if entries is None:
+                    self.create_vault(self.chain.head, vault=vault)
+                else:
+                    self.emit_vault(self.chain.head, vault, entries, name)
+                self.assertEqual(self.links(), {7: None if expected is None else self.ROOT_OF(expected)})
+
+    def test_the_robinhood_position_that_got_a_new_vault(self):
+        # #3589588 as the index holds it: Leave on its first vault (exit_all), a protection-only vault for it, its
+        # owner's own change (changed outside Domino: still that vault's, for a rearm), then its Auto-exit closed it
+        # with nothing left (0 and 0). read-v6 kept naming the first vault.
+        old, new = VAULT, '0x' + 'a7' * 20
+        self.register()
+        self.create_vault(22, vault=old)
+        self.emit_vault(24, old, [('RootDisarmed', {'reason': 7, 'stateNonce': 2})], 'leave')
+        self.create_vault(26, vault=new)
+        self.emit_vault(27, new, [('ExitModuleSet', {'module': self.contracts['autoExit'], 'stateNonce': 2})], 'on')
+        self.emit_vault(28, new, [('RootDisarmed', {'reason': 2, 'stateNonce': 3})], 'changed')
+        self.assertEqual(self.links(), {7: self.ROOT_OF(new)})
+        self.chain.mine(5)
+        self.exit_executed(self.chain.head, new, 7)
+        self.assertEqual(self.links(), {7: None})
+
+    def test_a_successor_is_its_vaults_until_it_goes_to_the_wallet(self):
+        self.register()
+        self.create_vault(22)
+        for number, token_id in ((24, 8), (26, 9)):
+            self.emit_vault(number, VAULT, [('SuccessorCreated', {'parentTokenId': 7, 'tokenId': token_id,
+                                                                  'stateNonce': number}),
+                                            ('Executed', {'planHash': PLAN, 'action': 2, 'stateNonce': number})],
+                            f'mint:{token_id}')
+        root, successor = self.ROOT_OF(VAULT), {'address': VAULT, 'role': 'successor'}
+        self.assertEqual(self.links(), {7: root, 8: successor, 9: successor})
+        self.chain.mine(5)
+        self.emit_vault(self.chain.head, VAULT, [('ChildWithdrawn', {'tokenId': 8, 'stateNonce': 30})], 'withdraw')
+        self.assertEqual(self.links(), {7: root, 8: None, 9: successor})
+        # The auto-exit of the other one sends it to the wallet too; the root stays the vault's.
+        self.chain.mine(5)
+        self.exit_executed(self.chain.head, VAULT, 9, [('ChildWithdrawn', {'tokenId': 9, 'stateNonce': 9})])
+        self.assertEqual(self.links(), {7: root, 8: None, 9: None})
+
+    def test_a_position_another_wallet_holds_is_not_its_old_owners_vaults(self):
+        # A vault acts on its root only while its owner holds it. The NFT went to OTHER, who set up a vault of its own.
+        new = '0x' + 'a7' * 20
+        self.register()
+        self.create_vault(22)
+        self.links()
+        self.hold(7, OTHER)
+        self.assertEqual(self.links(OTHER), {7: None})
+        self.assertEqual(self.links(OWNER), {})
+        self.chain.mine(5)
+        self.create_vault(self.chain.head, vault=new, owner=OTHER)
+        self.assertEqual(self.links(OTHER), {7: self.ROOT_OF(new)})
+        # Not read live yet: listed by its vault, the new owner's.
+        with admin() as conn:
+            conn.execute('DELETE FROM domino_v2.position_snapshots')
+        self.assertEqual(self.links(OTHER), {7: self.ROOT_OF(new)})
+
+    def test_a_rewind_takes_the_link_back_with_its_events(self):
+        old, new = VAULT, '0x' + 'a7' * 20
+        self.register()
+        self.create_vault(22, vault=old)
+        self.emit_vault(24, old, [('RootDisarmed', {'reason': 7, 'stateNonce': 2})], 'leave')
+        self.create_vault(32, vault=new)
+        while self.indexer.step(span=10, enrich=False)['status'] == 'indexed':
+            pass
+        self.assertEqual(self.links(), {7: self.ROOT_OF(new)})
+        self.chain.reorg(31)  # the new vault's creation is gone
+        self.assertEqual(self.indexer.step(span=10, enrich=False), {'status': 'rewound', 'through': 29})
+        self.assertEqual(self.links(), {7: None})
 
 
 if __name__ == '__main__':

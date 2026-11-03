@@ -703,6 +703,19 @@ export function createTransactor(wallet: V2Wallet, chain: V2Chain, now: () => nu
     /** Whether this step was handed to the wallet: its nonce is held until the chain says what became of it. */
     wasOffered: (prepared: PreparedV2) => offered.has(`${prepared.chainId}|${BigInt(prepared.transaction.nonce)}`),
     /**
+     * Added 2026-11-02 (review A1, Close positions): where `nonce` stands for this owner on this chain, as V1's
+     * ../setup.ts nonceStanding and S2's ./crosschain.ts `standing` say it: taken (`passed`), still the next one with
+     * nothing pending (`open`), the next one behind something pending (`pending`), or ahead of the chain (`behind`).
+     * Reads only. Call inside `bounded`.
+     */
+    async nonceStanding(rpc: Rpc, nonce: bigint): Promise<'passed' | 'open' | 'pending' | 'behind'> {
+      const latest = quantity(await rpc('eth_getTransactionCount', [owner, 'latest']))
+      const pending = quantity(await rpc('eth_getTransactionCount', [owner, 'pending']))
+      if (latest > nonce) return 'passed'
+      if (latest < nonce) return 'behind'
+      return pending > latest ? 'pending' : 'open'
+    },
+    /**
      * Changed on purpose (data) 2026-10-02 (Domino V2 rev2 review, F3): "I rejected it in my wallet" for a step this
      * transactor offered with no answer. Its latch here and in the page's journal is let go only while the chain shows
      * that nonce still the next one with nothing pending (V1's rule, ../setup.ts forgetOpenRequest); true when it was.

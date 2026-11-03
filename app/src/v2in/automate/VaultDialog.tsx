@@ -13,6 +13,7 @@ import { openAutomation, type AutomationSession } from './session'
 import { recordVaultEvents, rememberApproval } from './store'
 import { useStepsRun, WalletSteps, type StepOutcome, type WalletStep } from './steps'
 import { amountWords, shortAddress, type TokenView } from './tokens'
+import { figureHint } from '../../lib/create/typedFigure'
 import { Check, Details, ErrorLine, Fact, FlowDialog, LockedNote } from './ui'
 import { protectionVault, restartsAfterLeave, recoverPositionInput, recoverTokenInput, withdrawRecipientInput, type VaultActionKind, type VaultReserve, type VaultView } from './vaultView'
 
@@ -589,8 +590,10 @@ export function VaultDialog({ kind, view, tokens: receivedTokens, gate, subject 
 
   // What a half-typed recovery still needs, in the clients' own words; nothing while a field is empty.
   const tokenProblem = typedToken && !typedToken.ok && typedToken.problem === 'token' ? CLOSED_TEXT.vault_invalid_token : null
+  // Review M4 (2026-11-02): a comma the reading refuses (an ambiguous "1,250", or a decimal comma where the person's
+  // language writes a dot) says what it needs (lib/create/typedFigure.ts); raw units take whole numbers only.
   const amountProblem = typedToken && !typedToken.ok && typedToken.problem === 'amount'
-    ? (typedToken.token?.decimals === null ? 'Enter a whole number of raw units, greater than zero.' : `Enter an amount greater than zero, with at most ${typedToken.token?.decimals ?? 0} decimals.`)
+    ? (typedToken.token?.decimals === null ? 'Enter a whole number of raw units, greater than zero.' : figureHint(settled.amount) ?? `Enter an amount greater than zero, with at most ${typedToken.token?.decimals ?? 0} decimals.`)
     : null
   const idProblem = kind === 'recover-position' && settled.id.trim() !== '' && typedId === null ? CLOSED_TEXT.vault_invalid_token_id : null
   const amountUnit = typedToken?.token

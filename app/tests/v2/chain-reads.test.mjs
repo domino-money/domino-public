@@ -307,3 +307,48 @@ test('a busy reader’s refusal is kept for every caller until its Retry-After h
   assert.notEqual(reuse.ask(other, reading('again', { kind: 'ok' })), failed);
   assert.deepEqual(asked, ['busy', 'after', 'failed', 'again']);
 });
+
+// Added 2026-11-02 (review M1, REVISAO_DINHEIRO_LOGIN.md). A link #/new/network/8453/<token>/<pool> opened New position
+// with any token that had decimals chosen (resolvedOf), and the link's pool chosen as soon as Base's own read listed it:
+// an attacker's "USDC" on Base, its pool against WETH, opened chosen with no word about it. The search lists such a
+// token with its warning and never chooses it; Robinhood Chain's link refuses a pool with one (audit I1). Now the same
+// rule refuses it, whichever way it comes (a link, a pasted address chosen in the search, its Markets page), and a link's
+// pool with one is marked so the network's list never chooses it.
+test('review M1: a token passing for one of the network’s own currencies is never resolved for use, and a pool with one is marked for the link', () => {
+  const FAKE = '0x9999999999999999999999999999999999999999';
+  const token = (address, symbol, decimals = 6) => ({ address, decimals, price: null, priceReason: 'no_pool', status: 'available', symbol });
+  const answer = (symbol) => {
+    const said = structuredClone(fixture('chain-pools'));
+    said.tokens = [...said.tokens.filter((entry) => entry.address !== FAKE), token(FAKE, symbol)];
+    return said;
+  };
+  const refusal = (main) => ({ ok: false, code: 'token_lookalike', reason: `This isn’t the ${main} Domino uses. Adding money to its pools can lose it.` });
+  // Robinhood Chain's own words for such a token (its search and token page), kept equal here.
+  const { warningText } = require(`${BUILD}lib/read/screens/lookalike.js`);
+  for (const main of ['USDC', 'WETH', 'ETH']) assert.equal(refusal(main).reason, warningText({ kind: 'lookalike', address: FAKE, main }, 'token'));
+  // A "USDC" an attacker deployed: refused, in the words the search and the token pages use, as are the ways it can be
+  // spelled to read as USDC (a Cyrillic С, a 5 for an S, a space inside): Robinhood Chain's own reading (audit I2).
+  for (const symbol of ['USDC', 'usdc', 'USDС', 'U5DC', 'US DC']) assert.deepEqual(reads.resolvedOf(8453, FAKE, answer(symbol)), refusal('USDC'), symbol);
+  assert.deepEqual(reads.resolvedOf(42161, FAKE, answer('WETH')), refusal('WETH'), 'Arbitrum One: its own WETH');
+  assert.deepEqual(reads.resolvedOf(8453, FAKE, answer('ETH')), refusal('ETH'));
+  // Any other token, and the network's own currencies at their own addresses, as before.
+  assert.equal(reads.resolvedOf(8453, LIVE, fixture('chain-pools')).ok, true);
+  assert.equal(reads.resolvedOf(8453, FAKE, answer('USDbC')).ok, true, 'another symbol is not a look-alike');
+  assert.equal(reads.resolvedOf(8453, WETH_BASE, fixture('chain-pools')).ok, true, 'Base’s own WETH');
+  assert.equal(reads.lookalikeOf(8453, { address: USDC_BASE, symbol: 'USDC' }), null);
+  assert.equal(reads.lookalikeOf(8453, { address: FAKE, symbol: 'USDС' }), 'USDC');
+  // Read through the wallet (the search's fallback), the same rule.
+  assert.deepEqual(reads.usableNetworkToken(8453, networks.displayOf(8453, { address: FAKE, symbol: 'USDC', decimals: 6 })), refusal('USDC'));
+  assert.equal(reads.usableNetworkToken(8453, chosen).ok, true);
+  // A pool with such a token is marked; the link's pool is then refused, never chosen; a pool without one is chosen.
+  const pooled = answer('USDC');
+  pooled.pools.push({ ...structuredClone(pooled.pools[1]), id: `0x${'ab'.repeat(32)}`, pool: { ...pooled.pools[1].pool, currency0: LIVE, currency1: FAKE } });
+  const rows = reads.poolsOfAnswer(8453, chosen, pooled, 1_000_000);
+  assert.equal(rows.length, 3);
+  const warned = reads.lookalikePools(8453, rows);
+  assert.deepEqual(warned, [`0x${'ab'.repeat(32)}`]);
+  assert.deepEqual(otherChains.linkedNetworkPool(rows, `0x${'AB'.repeat(32)}`, warned), { option: rows[2], refused: true });
+  assert.deepEqual(otherChains.linkedNetworkPool(rows, rows[1].key, warned), { option: rows[1], refused: false });
+  assert.equal(otherChains.linkedNetworkPool(rows, `0x${'cd'.repeat(32)}`, warned), null, 'a pool the read does not list is never chosen');
+  assert.equal(otherChains.linkedNetworkPool(rows, null, warned), null);
+});

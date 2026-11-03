@@ -151,9 +151,14 @@ def position_state(owner=WALLET, *, tick=60, lower=-600, upper=600, subscriber=V
 
 
 def position_row(token_id, source, vault, *, status='live', owner=WALLET, state=None, dex=4, first=73_390_000,
-                 last_event=73_399_000, read_at=NOW - 500):
+                 last_event=73_399_000, read_at=NOW - 500, link_events=()):
+    """The reader's row: the first sighting (source, vault), the vault that took it last (here the same) and that
+    vault's events since then (link_events)."""
     row = {'chain_id': CHAIN, 'dex': dex, 'token_id': token_id, 'source': source, 'vault': vault, 'wallet': WALLET,
-           'first_block': first, 'last_event_block': last_event}
+           'first_block': first, 'last_event_block': last_event, 'link_vault': vault,
+           'link_role': None if vault is None else 'root' if source == 'vault_root' else 'successor',
+           'link_owner': None if vault is None else WALLET,
+           'link_events': [{'event': name, 'args': jsonify(args)} for name, args in link_events] or None}
     if status is None:
         row.update(s_block=None, s_hash=None, s_timestamp=None, s_status=None, s_owner=None, s_state=None,
                    s_reason=None, s_read_at=None)

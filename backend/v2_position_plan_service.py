@@ -10,7 +10,7 @@ import time
 
 from pydantic import ValidationError
 
-from discovery import DataError
+from discovery import DataError, RpcIntrinsicGas
 from read_deadline import check_read_deadline
 from v2_position_plan import PlanError
 from v2_position_plan_models import (CONTRACT_VERSION, MAX_RESPONSE, PositionPlanError, validate_request,
@@ -29,7 +29,8 @@ def plan_failure(error):
     code = str(error)
     if code == 'read_deadline_exceeded':
         return PositionPlanError('request_timeout')
-    if code.startswith('http_') or code in UNAVAILABLE:
+    # A call that never ran for its intrinsic gas (an L1 price spike on Nitro) is a provider not answering now.
+    if code.startswith('http_') or code in UNAVAILABLE or isinstance(error, RpcIntrinsicGas):
         return PositionPlanError('upstream_unavailable')
     return PositionPlanError('upstream_invalid_response')
 

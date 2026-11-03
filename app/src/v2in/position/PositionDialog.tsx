@@ -14,7 +14,7 @@ import { CHANGE_RANGE_BURNS_WHEN_ALL, EXIT_BURNS, EXIT_PAUSE_COPY, EXIT_REARM_CO
 import { COPY } from './copy'
 import { useDirectExit } from './directRun'
 import { AmountsField, RangeField, RangePicture, ReceiveField, ShareField } from './Fields'
-import { initialAmounts, initialRange, inputsOf, shareOf, ticksOf, type AmountsValue, type RangeValue } from './forms'
+import { amountsHint, initialAmounts, initialRange, inputsOf, rangeHint, shareOf, ticksOf, type AmountsValue, type RangeValue } from './forms'
 import type { ActionPosition, VaultReserves } from './model'
 import { DirectReceiptUnread, DirectReceiptView, ZapReceiptView } from './Receipt'
 import { Review } from './Review'
@@ -158,6 +158,9 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, av
   const ready = bps !== null && (mode === 'increase' ? inputs !== null : mode === 'changeRange' ? ticks !== null && !sameRange && position.liquidity > 0n : position.liquidity > 0n)
   // What a waiting Review button says is missing (Changed on purpose 2026-10-03: never a dead grey bar).
   const missing = bps === null ? COPY.form.checkSlippage : mode === 'increase' && inputs === null ? COPY.form.enterAmount : mode === 'changeRange' && ticks === null ? COPY.form.enterPrices : mode === 'changeRange' && sameRange ? COPY.form.differentRange : COPY.form.review
+  // Added 2026-11-02 (review M4): what a typed figure's comma needs (an ambiguous "1,250", or a decimal comma where the
+  // person's language writes a dot), said under its field; the waiting button keeps its short words.
+  const commaHint = mode === 'increase' ? amountsHint(amounts, pool) : mode === 'changeRange' ? rangeHint(range) : null
 
   // A collect opens straight on its review, as V1's Collect fees does: the position read through the wallet. A close
   // too (V1's Close position), all of it, and again at a new slippage (Advanced, under its review).
@@ -320,6 +323,7 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, av
 
       {phase === 'form' && mode === 'increase' && <AmountsField chainId={chainId} position={position} book={book} value={amounts} onChange={setAmounts} />}
       {phase === 'form' && mode === 'changeRange' && <RangeField position={position} book={book} value={range} onChange={setRange} ticks={ticks} sameRange={sameRange} />}
+      {phase === 'form' && commaHint !== null && <p className="dm-error" role="alert" data-position-comma-hint="">{commaHint}</p>}
       {/* (QA round 2, WD-MAX) What there is to take out, as token rows; Max (the default) takes every bit of it, by the same
           full exit as Close position, so nothing is ever typed. */}
       {phase === 'form' && mode === 'exit' && available && (

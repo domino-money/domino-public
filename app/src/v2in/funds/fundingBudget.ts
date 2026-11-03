@@ -93,7 +93,9 @@ export function remotePayment(chainId: number, poolTokens: readonly string[], ad
   if (raw >= RAW_LIMIT || poolTokens.some((token) => token.toLowerCase() === address.toLowerCase())) return null
   const token = destinationChoices().find((chain) => chain.chainId === chainId)?.tokens.find((entry) => entry.address.toLowerCase() === address.toLowerCase())
   if (!token) return null
-  const text = formatUnitsExact(raw.toString(), token.decimals)
+  // Changed on purpose 2026-11-02 (review M4): written with no thousands separator, as every amount the page puts in a
+  // field (./model.ts continueWith): a grouped "1,250" is refused as ambiguous when it is read back (lib/create/typedFigure.ts).
+  const text = formatUnitsExact(raw.toString(), token.decimals)?.replace(/,/g, '') ?? null
   if (!text) return null
   return { token: { origin: 'read', chainId, address: token.address.toLowerCase(), symbol: token.symbol, decimals: token.decimals, readStatus: 'available', artwork: holdingArtwork(chainId, token.address) }, text, estimated: true }
 }

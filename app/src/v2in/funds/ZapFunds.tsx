@@ -16,8 +16,9 @@ import { REVIEW_GAS_RESERVE_WEI } from '../../lib/create/reviewPlan'
 type Read = { key: string; balances: ReadonlyMap<string, bigint> | null; again?: boolean }
 /**
  * The funding offer's scope: the flow, the wallet and the choices. Changed on purpose 2026-10-30 (QA round 2, N75): an
- * amount's text is taken without spaces around it and without its thousands separators, so the separators Amount adds
- * once its field is left (../journey/AmountStage.tsx) are the same amount, never a new offer.
+ * amount's text is taken without spaces around it and without its thousands separators, so a grouped figure is the same
+ * amount, never a new offer. A key only: the amounts themselves are read by ../journey/model/state.ts inputsOf (since
+ * 2026-11-02, review M4, Amount draws its separators without writing them into the amount).
  */
 export const zapFundingScope = (state: JourneyState, walletKey: string | null, flowKey: string): string => {
   const text = Object.fromEntries(Object.entries(state.amounts.text).map(([token, typed]) => [token, typed.trim().replace(/,/g, '')]))

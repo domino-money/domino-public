@@ -14,7 +14,10 @@ const BUILD = '../../.test-build/app/src/';
 const { initialSqrtPrice, parsePriceText, pricesAtSqrt, sqrtPriceAtTick, tickAtSqrtPrice, typedBothWays, fractionText, MIN_SQRT_PRICE, MAX_SQRT_PRICE } = require(`${BUILD}v2/plan/initialPrice.js`);
 
 test('§7.5: 2,500 USDG per ETH (18 and 6 decimals), stated either way, is 3961408125713216879677197 at tick -198080', () => {
-  const forward = initialSqrtPrice({ price: parsePriceText('2,500'), base: 'currency0', decimals0: 18, decimals1: 6 });
+  // Changed on purpose 2026-11-02 (review M4): typed as "2500"; a one-group "2,500" is ambiguous (2.5 for someone who
+  // writes a decimal comma) and refused, never read as 2500 (tests/v2/typed-figure.test.mjs).
+  assert.equal(parsePriceText('2,500'), null);
+  const forward = initialSqrtPrice({ price: parsePriceText('2500'), base: 'currency0', decimals0: 18, decimals1: 6 });
   assert.deepEqual(forward, { sqrtPriceX96: 3961408125713216879677197n, tick: -198080 });
   const inverse = initialSqrtPrice({ price: parsePriceText('0.0004'), base: 'currency1', decimals0: 18, decimals1: 6 });
   assert.deepEqual(inverse, forward);

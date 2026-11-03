@@ -3,7 +3,7 @@ import { Journey } from '../../components/create/Journey'
 import type { NetworkTokenLocation } from '../../components/explore/routes'
 import { PageHeader, PageShell } from '../../components/ui'
 import { CREATE } from '../../lib/create/copy'
-import { networkCandidate, OtherChainsContext, type NetworkResolved } from '../../lib/create/otherChains'
+import { networkCandidate, OtherChainsContext, TOKEN_LOOKALIKE, type NetworkResolved } from '../../lib/create/otherChains'
 import { PoolPricesContext } from '../../lib/create/poolPrices'
 import { SlotBoundary, SlotFailed } from '../../lib/read/screens/slots'
 import type { V2ChainId } from '../../v2/types'
@@ -104,10 +104,14 @@ export default function NewPositionV2({ flow, poolId, linkToken, networkToken = 
     setFinder(false)
     window.location.hash = `#/new/${id}`
   }
+  // Added 2026-11-02 (review M1): a linked token that passes for one of its network's own currencies (./model/chainReads.ts
+  // usableNetworkToken) never opens New position chosen: its warning is said, in the words the search and the token pages
+  // use, as a Robinhood Chain link to a pool with a look-alike is refused (components/create/Journey.tsx, audit I1).
+  const lookalike = linkedResult?.ok === false && linkedResult.code === TOKEN_LOOKALIKE
   const body: ReactNode = networkToken && !linkedCandidate ? (
     <PageShell width="flow">
       <PageHeader size="display" title={CREATE.page.title} />
-      <p className="dm-hint" role="status" data-network-handoff={linkedResult?.ok === false || (gates && !linkedReader) ? 'unavailable' : 'loading'}>
+      <p className={lookalike ? 'dm-pool-warning' : 'dm-hint'} role={lookalike ? 'alert' : 'status'} data-network-handoff={linkedResult?.ok === false || (gates && !linkedReader) ? 'unavailable' : 'loading'} data-token-warning={lookalike ? 'lookalike' : undefined}>
         {/* With no other network's gate open, the gate's own status (the review of QA round 2: searching again cannot open it). */}
         {linkedResult?.ok === false ? linkedResult.reason : gates && !linkedReader ? JOURNEY.pool.networkClosed('this network') : 'Finding pools on this network…'}
       </p>

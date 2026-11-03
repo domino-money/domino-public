@@ -31,15 +31,17 @@ export const WALLET_NAME = 'Journey Wallet';
  * (2026-10-06): no planner stands in for the plan route, so the owner's journey asks the plan for a signed-in session only,
  * as the site does (src/v2in/journey/source.ts testPlannerOn); the wallet a suite connects stays signed out. `clock`
  * (2026-10-06): Playwright's fake clock, installed before the page loads; it ticks on its own, and a suite jumps it
- * forward with `page.clock.fastForward`.
+ * forward with `page.clock.fastForward`. `locale` (2026-11-02): the browser's language ("pt-BR", "en-US"), for a suite about
+ * how a typed decimal comma is read (src/lib/create/typedFigure.ts); Chrome's own when absent.
  */
-export async function openJourney(browser, chain, { dist, hash = '#/new', planner = () => undefined, intercept = () => undefined, contracts = {}, live = [], originOpen = true, connect = true, routes = [], viewport = { width: 1280, height: 1000 }, zapOnRobinhood = false, artwork = false, chainReads = null, read6 = null, dex = null, clock = false, refresh = false } = {}) {
+export async function openJourney(browser, chain, { dist, hash = '#/new', planner = () => undefined, intercept = () => undefined, contracts = {}, live = [], originOpen = true, connect = true, routes = [], viewport = { width: 1280, height: 1000 }, zapOnRobinhood = false, artwork = false, chainReads = null, read6 = null, dex = null, clock = false, refresh = false, locale = null } = {}) {
   const fake = createFakeSession();
   const server = createWalletServer({ fake, dist, routes: [...routes, confirmationRoute(chain)] });
   await new Promise((done) => server.listen(0, '127.0.0.1', done));
   const origin = `http://127.0.0.1:${server.address().port}`;
   fake.origin = origin;
-  const context = await browser.newContext({ viewport });
+  // `locale` (2026-11-02, review M4): the browser's language, which says how a typed decimal comma is read; Chrome's own otherwise.
+  const context = await browser.newContext({ viewport, ...(locale ? { locale } : {}) });
   if (clock) await context.clock.install();
   const foreign = [], csp = [], errors = [], planned = [];
   await context.route((url) => !url.href.startsWith(origin), (route) => {

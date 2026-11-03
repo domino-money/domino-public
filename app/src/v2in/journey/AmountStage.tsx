@@ -4,7 +4,7 @@ import { IconPlus } from '../../components/icons'
 import { Segmented } from '../../components/ui'
 import { CREATE } from '../../lib/create/copy'
 import { slippageBpsFrom, slippageValue, slippageWritten } from '../../lib/create/slippage'
-import { groupDigits } from '../../v2/plan/present'
+import { groupedAmount } from '../../lib/create/amountText'
 import { ZERO_ADDRESS, type Address } from '../../v2/types'
 import { JOURNEY_SLIPPAGE_WARNING_ABOVE_BPS } from './constants'
 import { JOURNEY } from './copy'
@@ -14,16 +14,6 @@ import { SlippageControl } from './SlippageControl'
 import { decimalsOf, labelOf, tokenBook } from './tokens'
 import { ZapFunds } from '../funds/ZapFunds'
 import type { FundingContinuation } from '../funds/BringFunds'
-
-/**
- * QA round 2, N75 (2026-10-30): a whole part of four digits or more gets its thousands separators once the field is left,
- * never while typing, so the caret never jumps ("5000000.5" becomes "5,000,000.5"). Text only: the amount it reads is the
- * same (./model/state.ts reads it with parseUnitsText, which drops them), and anything else stays as typed.
- */
-function groupedOnLeave(text: string): string {
-  const match = /^([1-9]\d{3,})(\.\d+)?$/.exec(text.trim())
-  return match ? `${groupDigits(match[1])}${match[2] ?? ''}` : text
-}
 
 /**
  * Step 3, Amount, on Domino's new contracts (spec F7 rev2 §2.6.1 "o que depositar": one or both of the pool's tokens, or
@@ -44,6 +34,12 @@ export function AmountStage({ state, onAmounts, onSlippage, flowKey, onContinuat
   const value = slippageValue(state.slippage)
   const kept = slippageBpsFrom(state.slippage)
   const [opened] = useState(() => value > JOURNEY_SLIPPAGE_WARNING_ABOVE_BPS)
+  // QA round 2, N75 (2026-10-30): a field nobody is typing in draws its amount with thousands separators, never the one
+  // being typed in, so the caret never jumps ("5000000.5" shows "5,000,000.5"). Changed on purpose 2026-11-02 (review of
+  // the money PRs, M4): drawn only, as New position's own fields do (components/create/PairedAmounts.tsx). The separators
+  // were written into the amount once its field was left, so "1250" was read back as "1,250", which is refused now as
+  // ambiguous (1.25 for someone who writes a decimal comma; lib/create/typedFigure.ts).
+  const [editing, setEditing] = useState<Address | null>(null)
   const pool = state.pool
   if (!pool) return null
   const others = otherTokens(state.chainId, pool.pool)
@@ -96,13 +92,11 @@ export function AmountStage({ state, onAmounts, onSlippage, flowKey, onContinuat
                   }
                   inputMode="decimal"
                   placeholder="0"
-                  value={text}
-                  onChange={(event) => set(token, event.target.value)}
                   // N75: raw units (a token whose decimals were never read) stay as typed.
-                  onBlur={decimals === null ? undefined : () => {
-                    const shown = groupedOnLeave(text)
-                    if (shown !== text) set(token, shown)
-                  }}
+                  value={editing === token || decimals === null ? text : groupedAmount(text)}
+                  onChange={(event) => set(token, event.target.value)}
+                  onFocus={() => setEditing(token)}
+                  onBlur={() => setEditing((was) => (was === token ? null : was))}
                   error={problem}
                   below={decimals === null ? <p className="dm-hint">{`${JOURNEY.amount.rawUnits} of ${labelOf(book, token)}`}</p> : null}
                 />

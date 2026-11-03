@@ -20,7 +20,7 @@ export function FilterBar({
   const options = [
     { value: null, label: 'All tokens', separatorAfter: true },
     // An embedded row without addresses (ETH/USDG) names its tokens by its pool's read currencies, for this filter only
-    // (audit B9, 2026-10-01): the catalogue itself never carries native ETH's zero address.
+    // (audit B9, 2026-10-01): that row itself never carries native ETH's zero address. ETH/TORCH (2026-11-02) names it.
     ...catalogueTokens(featured.entries.map((entry) => (entry.addresses || !READ_CURRENCIES[entry.poolId] ? entry : { ...entry, addresses: READ_CURRENCIES[entry.poolId] }))).map((token) => ({
       value: token.address,
       // Text only, in <bdi>: a featured list's labels are its symbols, untrusted text.

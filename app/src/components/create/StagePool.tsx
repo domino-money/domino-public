@@ -95,6 +95,7 @@ export function PoolList({
         onPending={onPool}
         onPreview={onPreview}
         hint={hint}
+        hintRefused={CREATE.token.preselectWithdrawn}
       />
     )
   }

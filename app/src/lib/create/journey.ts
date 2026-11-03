@@ -28,6 +28,7 @@ import type { TokenDisplay } from '../read/types'
 import type { BudgetFields } from './budgets'
 import { CREATE } from './copy'
 import { amountText } from './amountText'
+import type { Decimal } from './typedFigure'
 import { pairedAmount, rangeTakesOnly } from './pairAmount'
 import { SLIPPAGE_DEFAULT_BPS, slippageBpsFrom, slippageWritten } from './slippage'
 
@@ -218,7 +219,10 @@ export function linkedDepositToken(option: PoolOption, preferred: AddressKey): T
 
 export type Preselect = { ok: true; key: PoolIdKey; catalogue: PoolCatalogueEntry | null } | { ok: false; reason: 'empty' | 'malformed' }
 
-/** USDG: every pool of the reviewed selection trades against it, so the verification read is asked about it. */
+/**
+ * USDG: the verification read is asked about it when a link's entry names no other currency. Every pool of the reviewed
+ * selection trades against it but ETH/TORCH (since 2026-11-02), whose row names both its currencies.
+ */
 export const USDG = addressKey('0x5fc5360d0400a0fd4f2af552add042d716f1d168')
 
 /**
@@ -238,7 +242,7 @@ export function preselectFrom(param: string, listed: readonly PoolCatalogueEntry
 /**
  * The address the verification read names for a linked pool: one of the
  * currencies its list entry names (USDG where it holds it, featured pools v1
- * §11.6), else USDG, which every pool of the embedded list holds.
+ * §11.6), else USDG, which every embedded row that names no currencies holds.
  */
 export const verificationToken = (preselect: Extract<Preselect, { ok: true }>): AddressKey => {
   const token = preselect.catalogue ? entryToken(preselect.catalogue) : null
@@ -259,11 +263,13 @@ export type BudgetCheck = { ok: true; raw: string } | { ok: false; reason: strin
  * A decimal budget in the token's units to raw base units, with the decimals
  * the read returned. Exact BigInt arithmetic; unknown decimals block, never
  * guess. The result matches the preview contract's `amountRaw` pattern.
+ * `decimal`: the person's language's decimal separator (./typedFigure.ts), handed in by a test.
  */
-export function validateBudget(typed: string, decimals: number | null): BudgetCheck {
+export function validateBudget(typed: string, decimals: number | null, decimal?: Decimal): BudgetCheck {
   if (decimals === null) return { ok: false, reason: CREATE.amount.decimalsUnknown }
   // QA round 2, N99 (2026-10-30): spaces around it and a page-style "1,000.50" are read; a minus or a decimal comma has its own words.
-  const cleaned = typed.trim() === '' ? null : amountText(typed)
+  // Review M4 (2026-11-02): an ambiguous "1,250" is refused, saying both readings; "1,5" is 1.5 where the language writes a decimal comma.
+  const cleaned = typed.trim() === '' ? null : amountText(typed, decimal)
   if (cleaned === null) return { ok: false, reason: CREATE.amount.empty }
   if (!cleaned.ok) return cleaned
   const text = cleaned.text

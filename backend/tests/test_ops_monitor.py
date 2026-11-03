@@ -5,7 +5,9 @@ import datetime
 import json
 import os
 from pathlib import Path
+import re
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -22,6 +24,7 @@ OPERATOR = '0x64b72517d8b0d72be25f814b4e03985cf15e098a'
 TOKEN = '123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw'
 NOW = 1_791_200_000.0
 ETH = 10**18
+CAP = 25 * 10**14  # gas.dailyCapWei, 0.0025 ETH (the owner's, 5 Oct 2026)
 
 
 def document(**changes):
@@ -59,9 +62,33 @@ def journal(*entries):
                      for i, (at, message) in enumerate(entries, 1)) + '\n'
 
 
-def pass_line(**fields):
-    return json.dumps({'chain': 'base-8453', 'block': 100, 'timestamp': 1, 'reconciled': [], 'exits': [],
-                       'vaults': [], 'submitted': None, **fields})
+def pass_line(*, journal=True, **fields):
+    """A pass as v2_automation prints it; with `journal` false, as a release before `attention` and `gas` did."""
+    report = {'chain': 'base-8453', 'block': 100, 'timestamp': 1, 'reconciled': [], 'exits': [], 'vaults': [],
+              'submitted': None}
+    if journal:
+        report.update(attention=[], gas={'spentWei': '0', 'dailyCapWei': str(CAP)})
+    return json.dumps({**report, **fields})
+
+
+def spending(wei, **fields):
+    return pass_line(gas={'spentWei': str(wei), 'dailyCapWei': str(CAP)}, **fields)
+
+
+def featured_tick(*, publication=None, health=None, selection=None, mode='auto', phase='live'):
+    """A tick of `manage_featured.py serve` as it prints it (featured_live.Live.tick's report)."""
+    live = {'mode': mode, 'keptWarm': 0}
+    if publication is not None:
+        live['publication'] = publication
+    live['health'] = {'status': 'healthy'} if health is None else health
+    line = {'service': 'featured', 'phase': phase}
+    if selection is not None:
+        line['selection'] = selection
+    return json.dumps({**line, 'live': live})
+
+
+def served(revision=89):
+    return featured_tick(publication={'status': 'served', 'revision': revision, 'withheld': []})
 
 
 class Reader:
@@ -157,6 +184,42 @@ class SystemdTests(unittest.TestCase):
         monitor.check_units(cycle, cfg, state, states)
         self.assertEqual({c.key: c.level for c in cycle.checks}['unit:domino-read.service'], monitor.WARN)
 
+    UNIT = 'domino-execution-status.service'
+    UP = {'LoadState': 'loaded', 'ActiveState': 'active', 'SubState': 'running', 'NRestarts': '0', 'Result': 'success'}
+
+    def seen(self, state, now, **props):
+        """One cycle's unit check through the alert policy: the messages it sends."""
+        cycle = monitor.Cycle(now)
+        monitor.check_units(cycle, config(services=[self.UNIT], timers={}), state, {self.UNIT: {**self.UP, **props}})
+        return monitor.transitions(cycle, state)
+
+    def test_a_failed_unit_alerts_at_the_first_cycle_that_sees_it(self):
+        # 2 Nov 2026: domino-execution-status spent its start limit at 13:19:57 and was started again at 13:20:56;
+        # the cycles at 13:19:06, 13:20:06 and 13:21:06 saw it active, failed, active, and no one heard of it.
+        state = monitor.empty_state()
+        self.assertEqual(self.seen(state, NOW), [])
+        messages = self.seen(state, NOW + 60, ActiveState='failed', SubState='failed', NRestarts='2',
+                             Result='exit-code')
+        self.assertEqual(messages, [f'🔴 {self.UNIT}: falhou (exit-code)', f'🟡 {self.UNIT} reiniciou sozinha (2x)'])
+        # systemd flushes its restart counter at the next start; one good cycle is not a recovery yet.
+        self.assertEqual(self.seen(state, NOW + 120), [])
+        self.assertEqual(self.seen(state, NOW + 180), [f'🟢 normalizado: {self.UNIT}: ativa'])
+        # While it stays failed it is repeated like any critical level, every 3 hours, never each cycle.
+        failed = dict(ActiveState='failed', SubState='failed', Result='start-limit-hit')
+        self.assertEqual(self.seen(state, NOW + 240, **failed), [f'🔴 {self.UNIT}: falhou (start-limit-hit)'])
+        self.assertEqual(self.seen(state, NOW + 300, **failed), [])
+        self.assertEqual(self.seen(state, NOW + 240 + 3 * 3600, **failed),
+                         [f'🔴 ainda: {self.UNIT}: falhou (start-limit-hit)'])
+
+    def test_a_stopped_unit_is_critical_from_its_second_cycle(self):
+        # A deploy's restart passes through inactive in about a second: one cycle that sees it alerts no one.
+        state = monitor.empty_state()
+        self.assertEqual(self.seen(state, NOW, ActiveState='inactive', SubState='dead'), [])
+        self.assertEqual(self.seen(state, NOW + 60), [])
+        self.assertEqual(self.seen(state, NOW + 120, ActiveState='inactive', SubState='dead'), [])
+        self.assertEqual(self.seen(state, NOW + 180, ActiveState='inactive', SubState='dead'),
+                         [f'🔴 {self.UNIT}: inactive (dead)'])
+
 
 class AutomationTests(unittest.TestCase):
     UNIT = 'domino-v2-automation@base-8453.service'
@@ -222,6 +285,72 @@ class AutomationTests(unittest.TestCase):
         self.assertEqual(cycle.events, [])
         self.assertEqual(monitor.counted(state, NOW, 'automation-submitted:base-8453:submitted'), 2)
 
+    INTENT = '0x' + 'b' * 64
+
+    def test_an_intent_in_attention_is_critical_once_it_has_held_the_signer_15_minutes(self):
+        state = monitor.empty_state()
+        held = [{'intent': self.INTENT, 'reason': 'nonce_consumed_without_receipt', 'since': int(NOW)}]
+        _, levels = self.run_cycle(state, [(NOW, pass_line(attention=held))], NOW)
+        self.assertEqual(levels['automation:base-8453:attention'], monitor.OK)  # the reconciliation's event said it
+        _, levels = self.run_cycle(state, [(NOW + 899, pass_line(attention=held))], NOW + 899)
+        self.assertEqual(levels['automation:base-8453:attention'], monitor.OK)
+        cycle, levels = self.run_cycle(state, [(NOW + 900, pass_line(attention=held))], NOW + 900)
+        self.assertEqual(levels['automation:base-8453:attention'], monitor.CRIT)
+        self.assertIn(f'intent {self.INTENT[:12]}… em attention há 15 min (nonce_consumed_without_receipt)',
+                      {c.key: c.text for c in cycle.checks}['automation:base-8453:attention'])
+        # Its time is the journal's: a monitor that starts later still counts it from there.
+        _, levels = self.run_cycle(monitor.empty_state(), [(NOW + 900, pass_line(attention=held))], NOW + 900)
+        self.assertEqual(levels['automation:base-8453:attention'], monitor.CRIT)
+        # Acknowledged, the next pass reports none.
+        _, levels = self.run_cycle(state, [(NOW + 930, pass_line())], NOW + 930)
+        self.assertEqual(levels['automation:base-8453:attention'], monitor.OK)
+
+    def test_the_days_gas_spend_warns_from_80_percent_and_is_critical_at_the_cap(self):
+        for wei, expected in ((CAP * 80 // 100 - 1, monitor.OK), (CAP * 80 // 100, monitor.WARN),
+                              (CAP - 1, monitor.WARN), (CAP, monitor.CRIT), (CAP + 10**12, monitor.CRIT)):
+            with self.subTest(wei=wei):
+                cycle, levels = self.run_cycle(monitor.empty_state(), [(NOW, spending(wei))], NOW)
+                self.assertEqual(levels['automation:base-8453:gas'], expected)
+        self.assertIn('gás de 24 h 0.0025 de 0.0025 ETH (100% do teto diário)',
+                      {c.key: c.text for c in cycle.checks}['automation:base-8453:gas'])
+
+    def test_a_send_refused_at_the_cap_is_critical_once_never_an_event_each_pass(self):
+        state = monitor.empty_state()
+        refused = {'kind': 'compound', 'target': '0xv', 'state': 'refused', 'reason': 'v2_daily_gas_cap'}
+        # A claim reserves its gas first and is refused past the cap: the spend stops short of it.
+        cycle, levels = self.run_cycle(state, [(NOW, spending(CAP * 85 // 100, submitted=refused))] * 4, NOW)
+        self.assertEqual(levels['automation:base-8453:gas'], monitor.CRIT)
+        self.assertEqual(cycle.events, [])
+        self.assertEqual(monitor.counted(state, NOW, 'automation-submitted:base-8453:refused'), 4)
+        # Passes with nothing to send: the spend alone.
+        _, levels = self.run_cycle(state, [(NOW + 60, spending(CAP * 85 // 100))], NOW + 60)
+        self.assertEqual(levels['automation:base-8453:gas'], monitor.WARN)
+        # Any other refusal is still an event.
+        other = {**refused, 'reason': 'v2_gas_price_above_cap'}
+        cycle, levels = self.run_cycle(state, [(NOW + 120, spending(0, submitted=other))], NOW + 120)
+        self.assertEqual((cycle.events[0][0], levels['automation:base-8453:gas']), (monitor.WARN, monitor.OK))
+
+    def test_passes_that_do_not_report_the_journal_warn_and_an_old_report_is_never_current(self):
+        state = monitor.empty_state()
+        _, levels = self.run_cycle(state, [], NOW)
+        self.assertNotIn('automation:base-8453:attention', levels)  # no pass yet: the passes check says it
+        _, levels = self.run_cycle(state, [(NOW, pass_line(journal=False))], NOW)
+        self.assertEqual(levels['automation:base-8453:attention'], monitor.WARN)
+        self.assertNotIn('automation:base-8453:gas', levels)
+        _, levels = self.run_cycle(state, [(NOW + 30, spending(CAP))], NOW + 30)
+        self.assertEqual((levels['automation:base-8453:attention'], levels['automation:base-8453:gas']),
+                         (monitor.OK, monitor.CRIT))
+        # A pass after it without them (a release rolled back) or with them malformed: the last report is stale.
+        malformed = [pass_line(journal=False),
+                     pass_line(attention=[{'intent': self.INTENT, 'reason': 'x', 'since': '1791200000'}]),
+                     pass_line(gas={'spentWei': CAP, 'dailyCapWei': str(CAP)}),
+                     pass_line(gas={'spentWei': '1', 'dailyCapWei': '0'})]
+        for at, line in enumerate(malformed, 1):
+            with self.subTest(line=line):
+                _, levels = self.run_cycle(state, [(NOW + 30 + at, line)], NOW + 30 + at)
+                self.assertEqual(levels['automation:base-8453:attention'], monitor.WARN)
+                self.assertNotIn('automation:base-8453:gas', levels)
+
 
 class IndexerAndListenerTests(unittest.TestCase):
     def test_indexer_rounds_new_vaults_and_staleness(self):
@@ -259,6 +388,178 @@ class IndexerAndListenerTests(unittest.TestCase):
         cycle = monitor.Cycle(NOW + 901)
         monitor.check_v1(cycle, cfg, state, Reader())
         self.assertEqual(cycle.checks[0].level, monitor.WARN)
+
+
+class FeaturedTests(unittest.TestCase):
+    """The Top pools list (TOP_POOLS.md, item 1), from domino-featured's own lines."""
+
+    UNIT = 'domino-featured.service'
+    DAY = datetime.datetime(2026, 11, 2, tzinfo=datetime.timezone.utc).timestamp()  # 2 Nov 2026, 00:00 UTC
+    HOUR = 3600
+    NO_MATCH = subprocess.CalledProcessError(1, ['journalctl'], output='', stderr='')
+
+    def at(self, hours, minutes=0, seconds=0, *, day=0):
+        return self.DAY + day * 86400 + hours * 3600 + minutes * 60 + seconds
+
+    def run_cycle(self, state, entries, now, *, backfill=(), quiet=False, cfg=None):
+        """One cycle: `entries` the unit's new (at, line); `backfill` what the one-time search finds, or raises."""
+        cycle, searches = monitor.Cycle(now), []
+        if quiet:
+            cycle.quiet.add(self.UNIT)
+
+        def run(args):
+            searches.append(args)
+            if isinstance(backfill, Exception):
+                raise backfill
+            return journal(*backfill)
+        monitor.check_featured(cycle, cfg or config(), state, Reader({self.UNIT: list(entries)}), run)
+        return cycle, {c.key: c for c in cycle.checks}, searches
+
+    def published_state(self, at):
+        """A state whose last publication the backfill found at `at`."""
+        state = monitor.empty_state()
+        self.run_cycle(state, [(at, served())], at, backfill=[(at, served())])
+        return state
+
+    def test_a_silent_service_is_critical_after_10_minutes(self):
+        state = self.published_state(self.at(12, 0, 3, day=-1))
+        now = self.at(10)
+        _, checks, _ = self.run_cycle(state, [(now - 30, featured_tick())], now)
+        self.assertEqual(checks['featured:lines'].level, monitor.OK)
+        _, checks, _ = self.run_cycle(state, [], now - 30 + 599)
+        self.assertEqual(checks['featured:lines'].level, monitor.OK)
+        _, checks, _ = self.run_cycle(state, [], now - 30 + 600)
+        self.assertEqual((checks['featured:lines'].level, checks['featured:lines'].text),
+                         (monitor.CRIT, 'Top pools: o serviço não registra nada há 10 min'))
+        # In shadow the service's ticks are idle and print nothing.
+        _, checks, _ = self.run_cycle(state, [(now + 600, featured_tick(phase='shadow'))], now + 3600)
+        self.assertEqual(checks['featured:lines'].level, monitor.OK)
+        _, checks, _ = self.run_cycle(monitor.empty_state(), [], now, backfill=self.NO_MATCH)
+        self.assertEqual(checks['featured:lines'].level, monitor.CRIT)  # never seen
+
+    def test_a_day_not_published_by_12_31_warns_with_why_until_a_list_is(self):
+        state = self.published_state(self.at(12, 0, 3, day=-1))
+        # 2 Nov 2026 as the service logged it: a selection kept the old list, then the publication carried it.
+        day = [(self.at(11, 31, 25), featured_tick(selection={'outcome': 'carried_over', 'selectionDate': '2026-11-02',
+                                                              'candidates': 46, 'evaluated': 18, 'eligible': 1})),
+               (self.at(11, 31, 55), featured_tick(selection={'outcome': 'already_done'})),
+               (self.at(12, 0, 28), featured_tick(publication={'status': 'no_draft'})),
+               (self.at(12, 30, 3), featured_tick(publication={'status': 'carried_over', 'revision': 94})),
+               (self.at(12, 30, 33), featured_tick(publication={'status': 'published'}))]
+        _, checks, _ = self.run_cycle(state, day, self.at(12, 30, 59))
+        self.assertEqual(checks['featured:publication'].level, monitor.OK)  # yesterday's list, before 12:31
+        _, checks, _ = self.run_cycle(state, [(self.at(12, 31), featured_tick())], self.at(12, 31))
+        why = ('Top pools: a lista de 02/11 não foi publicada (publicação carried_over; seleção carried_over, '
+               '1 elegível(is) de 18 avaliado(s))')
+        self.assertEqual((checks['featured:publication'].level, checks['featured:publication'].text),
+                         (monitor.WARN, why))
+        # It holds overnight, with the day's reason, until a list is published.
+        _, checks, _ = self.run_cycle(state, [(self.at(9, day=1), featured_tick())], self.at(9, day=1))
+        self.assertEqual((checks['featured:publication'].level, checks['featured:publication'].text),
+                         (monitor.WARN, why))
+        _, checks, _ = self.run_cycle(state, [(self.at(12, 0, 3, day=1), served(95))], self.at(12, 1, day=1))
+        self.assertEqual(checks['featured:publication'].level, monitor.OK)
+
+    def test_newcomers_not_ready_by_12_25_are_named(self):
+        # 20 Oct 2026: the day's selection waited on a newcomer's decimals, then the list was carried.
+        state = self.published_state(self.at(12, 0, 3, day=-1))
+        pool = '0x462958d2' + 'ab' * 28
+        day = [(self.at(11, 35, 20), featured_tick(selection={'outcome': 'selected', 'candidates': 86,
+                                                              'evaluated': 34, 'eligible': 5})),
+               (self.at(12, 24, 31), featured_tick(publication={'status': 'warming',
+                                                                'unready': {pool: 'token_decimals_pending'}})),
+               (self.at(12, 25, 3), featured_tick(publication={'status': 'carried_over', 'revision': 61}))]
+        _, checks, _ = self.run_cycle(state, day, self.at(12, 32))
+        self.assertEqual(checks['featured:publication'].text,
+                         'Top pools: a lista de 02/11 não foi publicada (publicação carried_over; seleção selected, '
+                         '5 elegível(is) de 34 avaliado(s); novatos não prontos: 0x462958d2ab… token_decimals_pending)')
+
+    def test_a_list_two_days_old_is_critical_from_its_publication_not_its_repairs(self):
+        published = self.at(12, 0, 3, day=-3)  # 30 Oct 2026, 12:00:03: the list still served on 2 Nov
+        state = self.published_state(published)
+        repaired = featured_tick(health={'status': 'repaired', 'revision': 91, 'removed': {}, 'added': []})
+        _, checks, _ = self.run_cycle(state, [(published + 3 * self.HOUR, repaired)], published + 48 * self.HOUR - 1)
+        self.assertEqual(checks['featured:age'].level, monitor.OK)
+        _, checks, _ = self.run_cycle(state, [(published + 48 * self.HOUR, featured_tick())], published + 48 * self.HOUR)
+        self.assertEqual((checks['featured:age'].level, checks['featured:age'].text),
+                         (monitor.CRIT, 'Top pools: a lista no ar é de 30/10 12:00 UTC, há 48 h'))
+
+    def test_a_monitor_without_history_finds_the_last_publication_once(self):
+        now, published = self.at(14), self.at(12, 0, 3, day=-3)
+        state = monitor.empty_state()
+        _, checks, searches = self.run_cycle(state, [(now - 30, featured_tick())], now,
+                                             backfill=[(published, served())], quiet=True)
+        self.assertEqual(checks['featured:age'].level, monitor.CRIT)
+        self.assertIn('--since=-7d', searches[0])
+        self.assertIn(f'--grep={monitor.FEATURED_SERVED}', searches[0])
+        _, _, searches = self.run_cycle(state, [(now + 30, featured_tick())], now + 60)
+        self.assertEqual(searches, [])  # once
+        # Nothing published in the journal's 7 days: critical too.
+        state = monitor.empty_state()
+        _, checks, _ = self.run_cycle(state, [(now - 30, featured_tick())], now, backfill=self.NO_MATCH)
+        self.assertEqual((checks['featured:age'].level, state['featured']['backfilled']), (monitor.CRIT, True))
+        # A search that failed says so, and is made again the next cycle.
+        state = monitor.empty_state()
+        broken = subprocess.CalledProcessError(1, ['journalctl'], output='', stderr='Bad pattern')
+        _, checks, _ = self.run_cycle(state, [(now - 30, featured_tick())], now, backfill=broken)
+        self.assertEqual(checks['featured:age'].level, monitor.WARN)
+        _, checks, searches = self.run_cycle(state, [], now + 60, backfill=[(published, served())])
+        self.assertEqual((len(searches), checks['featured:age'].level), (1, monitor.CRIT))
+
+    def test_fewer_than_three_pools_is_critical(self):
+        state = self.published_state(self.at(12, 0, 3))
+        now = self.at(13)
+        for health, pools, level in (({'status': 'idle', 'vacant': 6}, 0, monitor.CRIT),
+                                     ({'status': 'idle'}, 0, monitor.CRIT),
+                                     ({'status': 'healthy'}, 6, monitor.OK),
+                                     ({'status': 'healthy', 'vacant': 4}, 2, monitor.CRIT),
+                                     ({'status': 'healthy', 'vacant': 3}, 3, monitor.OK)):
+            with self.subTest(health=health):
+                _, checks, _ = self.run_cycle(state, [(now, featured_tick(health=health))], now)
+                self.assertEqual((state['featured']['pools'], checks['featured:pools'].level), (pools, level))
+        # A repair's own line does not say how many are left: the next tick's does.
+        _, checks, _ = self.run_cycle(state, [(now, featured_tick(health={'status': 'repaired', 'removed': {}}))], now)
+        self.assertEqual(state['featured']['pools'], 3)
+
+    def test_each_withdrawal_is_an_event_with_the_pool_and_why(self):
+        state = self.published_state(self.at(12, 0, 3))
+        first, second = '0x387bf619' + '11' * 28, '0xea9f200e' + '22' * 28
+        repair = featured_tick(health={'status': 'repaired', 'revision': 90, 'added': ['0x24107d15' + '33' * 28],
+                                       'removed': {first: 'estimate_unavailable', second: 'volume_collapse'}})
+        cycle, _, _ = self.run_cycle(state, [(self.at(14, 30, 24), repair)], self.at(14, 31))
+        self.assertEqual(cycle.events, [(monitor.WARN, 'Top pools: pool 0x387bf61911… retirado (estimate_unavailable)'),
+                                        (monitor.WARN, 'Top pools: pool 0xea9f200e22… retirado (volume_collapse)')])
+        self.assertEqual(cycle.sections['featured']['withdrawn24h'], 2)
+        self.assertIn('Top pools: lista publicada em 02/11 12:00 UTC, 6 pool(s) no ar, 2 retirada(s) em 24 h',
+                      monitor.summary_text(cycle, state))
+        # The unit's first read is history: counted, never announced.
+        cycle, _, _ = self.run_cycle(monitor.empty_state(), [(self.at(14, 30, 24), repair)], self.at(14, 31),
+                                     backfill=[(self.at(12, 0, 3), served())], quiet=True)
+        self.assertEqual((cycle.events, cycle.sections['featured']['withdrawn24h']), ([], 2))
+
+    def test_the_owners_list_is_neither_published_nor_aged_and_null_turns_it_off(self):
+        state = self.published_state(self.at(12, 0, 3, day=-5))
+        _, checks, _ = self.run_cycle(state, [(self.at(13), featured_tick(mode='manual'))], self.at(13))
+        self.assertEqual(set(checks), {'featured:lines'})
+        cycle, checks, searches = self.run_cycle(monitor.empty_state(), [], self.at(13), cfg=config(featured=None))
+        self.assertEqual((checks, searches, cycle.sections), ({}, [], {}))
+        self.assertEqual(config().featured, 'domino-featured.service')  # absent: the production unit
+        with self.assertRaisesRegex(ValueError, '^monitor_config_featured$'):
+            config(featured='domino featured')
+
+    def test_the_numbers_are_the_services_own(self):
+        import featured_live
+        import featured_pools
+        policy = featured_pools.load_policy()
+        self.assertEqual(monitor.featured_policy(), (policy['size'], policy['selectionHourUtc']))
+        self.assertEqual(monitor.FEATURED_PUBLISH_MINUTES, featured_live.PUBLISH_BY_MINUTES + 1)
+        # The search matches a publication as the service prints it, and nothing else.
+        printed = json.dumps({'service': 'featured', 'phase': 'live',
+                              'live': {'mode': 'auto', 'keptWarm': 0,
+                                       'publication': {'status': 'served', 'revision': 89, 'withheld': []},
+                                       'health': {'status': 'healthy'}}})
+        self.assertTrue(re.search(monitor.FEATURED_SERVED, printed))
+        self.assertFalse(re.search(monitor.FEATURED_SERVED, printed.replace('"served"', '"carried_over"')))
 
 
 class FakeRpc:
@@ -384,6 +685,14 @@ class PolicyTests(unittest.TestCase):
                          ['🟢 normalizado: texto 0'])
         self.assertEqual(state['levels']['k'], monitor.OK)
 
+    def test_a_level_confirmed_at_once_alerts_at_its_first_cycle_and_recovers_like_any_other(self):
+        state = monitor.empty_state()
+        cycle = monitor.Cycle(NOW)
+        cycle.check('k', monitor.CRIT, 'falhou', confirm=1)
+        self.assertEqual(monitor.transitions(cycle, state), ['🔴 falhou'])
+        self.assertEqual(monitor.transitions(self.cycle(NOW + 60, monitor.OK), state), [])
+        self.assertEqual(monitor.transitions(self.cycle(NOW + 120, monitor.OK), state), ['🟢 normalizado: texto 0'])
+
     def test_a_warning_is_announced_once_and_a_check_that_disappears_is_forgotten(self):
         state = monitor.empty_state()
         monitor.transitions(self.cycle(NOW, monitor.WARN), state)
@@ -488,6 +797,9 @@ class ServiceTests(unittest.TestCase):
             if args[0].endswith('systemctl'):
                 return shows
             unit = args[args.index('-u') + 1]
+            if unit == 'domino-featured.service':
+                return journal((NOW - 23 * 3600, served()) if any(a.startswith('--grep=') for a in args)
+                               else (NOW - 5, featured_tick()))
             if unit.startswith('domino-v2-automation'):
                 return journal((NOW - 5, pass_line()))
             if unit.startswith('domino-v2-indexer'):

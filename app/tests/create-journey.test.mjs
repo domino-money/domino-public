@@ -207,11 +207,14 @@ test('a deposit budget is converted with the decimals the read returned, exactly
   assert.deepEqual(v('   ', 18), { ok: false, reason: CREATE.amount.empty });
   // Changed on purpose 2026-10-30 (QA round 2, N99, pass 3): an amount typed to pay with another token is read the same
   // way, separators and all (its funds offer reads grouped text too, src/v2in/funds/model.ts amountRawOf).
+  // Changed on purpose 2026-11-02 (review M4): a one-group "1,000" is 1 for someone who writes a decimal comma, so it is
+  // refused as ambiguous (tests/v2/typed-figure.test.mjs); a page-style "1,000.5" and "1,000,000" are still grouped.
   const { payFunding } = require('../.test-build/app/src/lib/create/payFunding.js');
   const ETH = { origin: 'read', chainId: 4663, address: '0x0000000000000000000000000000000000000000', symbol: 'ETH', decimals: 18, readStatus: 'available', artwork: null };
   const paidWith = (text) => payFunding({ token: ETH, text }, { token: ETH, raw: 2_000n * 10n ** 18n, nativeRaw: 2_000n * 10n ** 18n, usd: null });
-  assert.deepEqual([paidWith('1,000'), paidWith('1000')].map((funding) => funding.kind), ['ready', 'ready'], 'a typed "1,000" is the amount 1000');
-  assert.equal(paidWith('1,000').amount, 1_000n * 10n ** 18n);
+  assert.deepEqual([paidWith('1,000.5'), paidWith('1000.5')].map((funding) => funding.kind), ['ready', 'ready'], 'a typed "1,000.5" is the amount 1000.5');
+  assert.equal(paidWith('1,000.5').amount, 10_005n * 10n ** 17n);
+  assert.equal(paidWith('1,000').kind, 'wait', 'a typed "1,000" is not read as 1000');
   // QA round 2, N75 (2026-10-30): a field nobody is typing in shows its amount grouped, as text (the fraction exactly as
   // typed), and the grouped text reads back to the same amount; anything that is not a plain amount is left as it is.
   const { groupedAmount } = require('../.test-build/app/src/lib/create/amountText.js');
@@ -1030,7 +1033,11 @@ test('the range step says a refused price in plain words, and reads a grouped pr
   // Changed on purpose (2026-09-28, round 6 review): the refused price is kept with the tick it was typed for, and said
   // only while Custom is open (finance.browser drives it: it clears on Closer or Wider).
   assert.match(step, /setRefused\(\{ tick, text: CREATE\.amount\.priceErrors\[parsed\.message\] \?\? parsed\.message \}\)/);
-  assert.ok(step.includes(String.raw`/^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/`), 'only a grouped number loses its commas: "0,5" is still refused');
+  // Changed on purpose 2026-11-02 (review M4): a typed price is read by the rule every typed figure is read by
+  // (lib/create/typedPrice.ts typedPriceToTick: a page-style "1,747.65" loses its separators, an ambiguous
+  // "1,250" is refused; tests/v2/typed-figure.test.mjs), where the step stripped any one-group figure's comma itself.
+  assert.equal((step.match(/typedPriceToTick\(value, which, range, price\)/g) ?? []).length, 2, 'the typed price, applied and live, goes through the shared reading');
+  assert.doesNotMatch(step, /replace\(\/,\/g/, 'no comma is dropped here');
 });
 
 // Added 2026-09-28 (round 6 review): the amount step with no wallet said "Connect a wallet to see your balance." in both

@@ -7,7 +7,8 @@ import { IconButton } from '../../components/ui'
 import { CREATE } from '../../lib/create/copy'
 import { awayFrom, awayShort, plainFigure } from '../../lib/create/plain'
 import { RANGES, type RangeKey } from '../../lib/ranges'
-import { editablePrice, priceInputToTick } from '../../lib/read/screens/RangePriceInput'
+import { editablePrice } from '../../lib/read/screens/RangePriceInput'
+import { typedPriceToTick } from '../../lib/create/typedPrice'
 import { moveBound, presetFor, rangeMode, shownPosition, shownPrice, shownRange, sliderWindow, stepBound, usableTicks, type RangeMode } from '../../lib/read/screens/poolRange'
 import { JOURNEY } from './copy'
 import type { JourneyPrice, JourneyPriceState } from './model/price'
@@ -26,12 +27,6 @@ const widthName = (mode: Width) => (mode === 'custom' ? 'Custom' : RANGES[mode].
 const atLimit = (tick: number, which: 'lower' | 'upper', spacing: number) => {
   const { min, max } = usableTicks(spacing)
   return which === 'lower' ? tick <= min : tick >= max
-}
-
-/** A price typed the way the page writes one ("1,747.65", spaces around it) is read without its separators. */
-const typedPrice = (text: string) => {
-  const trimmed = text.trim()
-  return /^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(trimmed) ? trimmed.replace(/,/g, '') : trimmed
 }
 
 /** "1 ETH = 2,499.91 USDC": the price as the page writes it, the symbols as untrusted text. */
@@ -77,12 +72,12 @@ function Bound({ which, range, price, editing, onRange, onBlock }: { which: 'low
   }
   const apply = () => {
     if (value === displayed) return setRefused(null)
-    const parsed = priceInputToTick(typedPrice(value), which, range, price)
+    const parsed = typedPriceToTick(value, which, range, price)
     if (!parsed.ok) return setRefused({ tick, text: CREATE.amount.priceErrors[parsed.message] ?? parsed.message })
     change({ ...range, [which]: parsed.tick })
   }
   // What Continue must wait for: the error on screen, or the text in the field that applying would refuse.
-  const live = editing && value !== displayed ? priceInputToTick(typedPrice(value), which, range, price) : null
+  const live = editing && value !== displayed ? typedPriceToTick(value, which, range, price) : null
   const block = error ?? (live && !live.ok ? (CREATE.amount.priceErrors[live.message] ?? live.message) : null)
   // The field's name leads the reason, unless the reason already names the field ("The lowest price must stay below the
   // highest price.").

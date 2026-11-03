@@ -11,7 +11,7 @@ import { v2Chain } from '../../v2/chains'
 import { quoteDeadlineMono } from '../../v2/crosschain/client'
 import { naming, originGasDetail, presentQuote, shortAmountText } from '../../v2/crosschain/present'
 import type { CrosschainRequests, OriginsList } from '../../v2/crosschain/types'
-import { SEND_MARGIN_MS } from '../../v2/crosschain/steps'
+import { SEND_MARGIN_MS, type CrosschainJournalRecord } from '../../v2/crosschain/steps'
 import type { V2Gate } from '../../v2/gate'
 import { readChainBalances } from '../../v2/read/v6'
 import { routeServes } from '../../v2/routes'
@@ -28,7 +28,7 @@ import type { FundsServices } from './services'
 import { invalidateFundingBalances, readFundingBalanceGroup } from './balanceCache'
 import { fundingOrigins, fundingWait } from './originsCache'
 import { fundingQuote } from './quoteCache'
-import { canDiscardFunding, fundingDepositKey, fundingFinished, fundingNeverSent, fundingOwnsDeposit, fundingTerminal } from './fundingLifecycle'
+import { canDiscardFunding, fundingDepositKey, fundingFinished, fundingNeverSent, fundingOwnsDeposit, fundingTerminal, openHoldFor } from './fundingLifecycle'
 import type { TransferProgress } from './transferView'
 
 const ZERO = '0x0000000000000000000000000000000000000000'
@@ -189,7 +189,12 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
   const held = unsettled.list(wallet)
   const closedKey = held.map((entry) => entry.originChainId).join(',')
   const pending = batches.list(wallet).filter((entry) => entry.destinationChainId === chainId)
-  const activeDeposits = deposits.filter((deposit) => !fundingTerminal(deposit.record.lastState) && !settled.has(fundingDepositKey(deposit.record)))
+  // Changed on purpose 2026-11-02 (review A2): only a step still open in the wallet for this destination holds its
+  // arrival and its cleanup (./fundingLifecycle.ts openHoldFor).
+  const openHere = (entries: Parameters<typeof openHoldFor>[0]) => openHoldFor(entries, chainId)
+  // Changed on purpose 2026-11-02 (review M3): a deposit whose own transaction reverted on the origin is over (nothing left
+  // the wallet for the bridge): it no longer holds this destination.
+  const activeDeposits = deposits.filter((deposit) => !fundingTerminal(deposit.record.lastState) && !settled.has(fundingDepositKey(deposit.record)) && progress[fundingDepositKey(deposit.record)]?.stuck !== 'reverted')
   const activeDepositCount = activeDeposits.length
   const hasUnknown = intent?.legs.some((leg) => leg.state === 'unknown' || leg.state === 'sending') ?? false
   const foreignPending = held.some((entry) => entry.kind === 'deposit' && entry.destinationChainId === chainId) || pending.length > 0 || activeDeposits.length > 0
@@ -200,7 +205,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
   useEffect(() => { trackingChanged.current?.(currentTracking); return () => trackingChanged.current?.(false) }, [currentTracking])
   const allArrived = currentIntent !== null && currentIntent.legs.length > 0 && currentIntent.legs.every((leg) =>
     currentDeposits.some(({ record }) => record.originChainId === leg.originChainId && record.depositTxHash === leg.depositTxHash &&
-      progress[fundingDepositKey(record)]?.state === 'filled' && progress[fundingDepositKey(record)]?.balance === 'ready')) && !pending.length && !held.length
+      progress[fundingDepositKey(record)]?.state === 'filled' && progress[fundingDepositKey(record)]?.balance === 'ready')) && !pending.length && !openHere(held)
   const name = useMemo(() => naming(listing), [listing])
   useEffect(() => { mounted.current = true; generation.current++; return () => { mounted.current = false; preparation.current?.abort() } }, [])
   useEffect(() => {
@@ -233,7 +238,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
         if (stored?.id !== expectedId) return
         if (!canDiscardFunding(stored, scope, { running: running.current,
           deposits: Math.max(activeDepositCount, journal?.list(chainId, wallet).filter((record) => !fundingTerminal(record.lastState)).length ?? 0),
-          pending: batches.list(wallet).length, unsettled: unsettled.list(wallet).length })) return
+          pending: batches.list(wallet).filter((entry) => entry.destinationChainId === chainId).length, unsettled: openHere(unsettled.list(wallet)) ? 1 : 0 })) return
         save(null); setProposal(null); setNotice(null); setExpired(false); setScreen('checking')
         attempted.current = ''; setPrepareRevision((value) => value + 1)
       }, () => {
@@ -256,7 +261,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
       const stored = readIntent(true)
       const records = journal?.list(chainId, wallet) ?? []
       if (stored?.id !== intent.id || stored.scope === scope || !fundingFinished(stored, records) ||
-        unsettled.list(wallet).length || batches.list(wallet).length) return
+        openHoldFor(unsettled.list(wallet), chainId) || batches.list(wallet).some((entry) => entry.destinationChainId === chainId)) return
       save(null); setProposal(null); setNotice(null); setScreen('checking'); attempted.current = ''
     }, () => {}).catch(() => {
       if (mounted.current) setNotice({ copy: 'The previous transfer needs checking before new funds can be chosen.', code: 'funding_storage_unavailable' })
@@ -556,15 +561,83 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
         const before = readIntent(true)
         const heldLeg = before?.legs.find((leg) => leg.originChainId === origin)
         if (heldLeg && (heldLeg.state !== 'unknown' || heldLeg.depositTxHash !== null)) throw new FundingError('This transfer is already tracked. It will not be sent again.', 'funding_unknown')
-        if (latest.current.walletChainId !== origin && await switchToOrigin(origin) !== 'switched') return
+        // Its nonce is read on the origin only when something is held there (a step is held before the wallet is asked).
+        const recorded = unsettled.list(wallet).some((entry) => entry.originChainId === origin)
+        if (recorded && latest.current.walletChainId !== origin && await switchToOrigin(origin) !== 'switched') return
         const answer = await (await sender()).forgetUnsettled(origin)
-        if (answer !== 'forgotten') { setNotice({ copy: 'This transfer may still be pending. Check your wallet activity; it will not be sent again.', code: 'funding_unknown' }); return }
+        // Changed on purpose 2026-11-02 (review A2): only a transaction that may still be pending keeps the transfer unknown.
+        // A deposit the chain may have taken is said by its own card, with Remove (below). Otherwise nothing of this
+        // transfer's deposit can still be sent from the wallet: the person's word (`forgotten`), an approval the chain
+        // took (`settled`: its deposit never went), or nothing held there at all (`none`, a reload during the network
+        // switch, say). Each answered "may still be pending" for good, and the transfer could never be continued.
+        if (answer === 'pending') { setNotice({ copy: 'This transfer may still be pending. Check your wallet activity; it will not be sent again.', code: 'funding_unknown' }); return }
+        if (answer === 'passed') { setRevision((n) => n + 1); return }
         const current = readIntent(true)
         const recovered = current?.legs.find((leg) => leg.originChainId === origin && leg.state === 'unknown' && leg.depositTxHash === null)
         if (current && recovered) save({ ...current, legs: current.legs.map((leg) => leg.id === recovered.id ? { ...leg, state: 'stopped' } : leg) }, recovered.id)
         setRevision((n) => n + 1)
       }, () => { throw new Error('funding_other_tab') })
     } catch { setNotice({ copy: 'Could not confirm that the wallet request was cancelled. Nothing will be sent again.', code: 'funding_unknown' }) }
+  }
+  /**
+   * Added 2026-11-02 (review A2): Remove on a deposit the chain may have taken (its nonce was used, no hash came back):
+   * the person has checked the wallet's activity. The hold goes, so later transfers and arrivals are no longer held by
+   * it, and the transfer it belonged to ends here: that deposit is never sent again, and what arrived is read from the
+   * wallet's balances. Nothing is sent.
+   */
+  const removePassed = async (origin: number) => {
+    if (running.current) return
+    try {
+      await withFundingLock(wallet, async () => {
+        const offer = unsettled.list(wallet).find((entry) => entry.originChainId === origin && entry.state === 'passed')
+        if (!offer) return
+        unsettled.drop(wallet, origin)
+        invalidateFundingBalances(wallet)
+        const stored = readIntent(true)
+        if (stored && stored.destinationChainId === offer.destinationChainId && stored.legs.some((leg) => leg.originChainId === origin && (leg.state === 'unknown' || leg.state === 'sending') && leg.depositTxHash === null)) {
+          save(null); setProposal(null); setNotice(null); setExpired(false); attempted.current = ''
+        }
+        setRevision((n) => n + 1)
+      }, () => { throw new Error('funding_other_tab') })
+    } catch { setNotice({ copy: 'This transfer is being handled in another tab. Return there to continue.', code: 'funding_other_tab' }) }
+  }
+  /**
+   * Added 2026-11-02 (review M3): a deposit of this page's whose own transaction reverted on the origin. Nothing was
+   * bridged, so its leg may be sent again (its hash goes with it: that transaction can never deliver), its record leaves
+   * the journal (nothing is left to follow), and the offer says why.
+   */
+  const depositFailed = (record: CrosschainJournalRecord) => {
+    void withFundingLock(wallet, async () => {
+      journal?.drop(wallet, record)
+      const stored = readIntent(true)
+      const leg = stored?.legs.find((entry) => entry.originChainId === record.originChainId && entry.depositTxHash === record.depositTxHash.toLowerCase() && entry.state === 'sent')
+      if (stored && leg) {
+        save({ ...stored, legs: stored.legs.map((entry) => entry.id === leg.id ? { ...entry, state: 'stopped', depositTxHash: null } : entry) }, leg.id)
+        if (mounted.current) setNotice({ copy: FUNDS_TEXT.depositReverted(originName(record.originChainId)), code: 'deposit_reverted' })
+      }
+      setRevision((n) => n + 1)
+    }, () => { throw new Error('funding_other_tab') }).catch(() => {
+      if (mounted.current) setNotice({ copy: 'The transfer is still tracked, but its progress could not be saved in this browser.', code: 'funding_storage_unavailable' })
+    })
+  }
+  /**
+   * Remove on a deposit's card. Changed on purpose 2026-11-02 (review M3): offered too for one that will not complete as
+   * followed (DepositStatus, transferView.ts stuckDeposit), after the person has checked the wallet's activity. When it
+   * is one of this transfer's, the transfer ends here: that deposit is never sent again, and what arrived is read from the
+   * wallet's balances. It held its destination for good: no later transfer to it was offered.
+   */
+  const removeDeposit = (record: CrosschainJournalRecord) => {
+    journal?.drop(wallet, record)
+    setDeposits((previous) => previous.filter((entry) => fundingDepositKey(entry.record) !== fundingDepositKey(record)))
+    void withFundingLock(wallet, async () => {
+      const stored = readIntent(true)
+      if (!stored || stored.destinationChainId !== record.destinationChainId || !stored.legs.some((leg) => leg.originChainId === record.originChainId && leg.depositTxHash === record.depositTxHash.toLowerCase() && leg.state === 'sent')) return
+      invalidateFundingBalances(wallet)
+      save(null); setProposal(null); setNotice(null); setExpired(false); attempted.current = ''
+      setRevision((n) => n + 1)
+    }, () => { throw new Error('funding_other_tab') }).catch(() => {
+      if (mounted.current) setNotice({ copy: 'This transfer is being handled in another tab. Return there to continue.', code: 'funding_other_tab' })
+    })
   }
   const useArrivedFunds = async (): Promise<boolean> => {
     if (!services?.readBalances || running.current || !allArrived || !currentIntent) return false
@@ -573,7 +646,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
       return await withFundingLock(wallet, async () => {
         const accepted = readIntent(true)
         const current = () => mounted.current && latest.current.scope === scope && latest.current.ready
-        if (!current() || !accepted || accepted.id !== currentIntent.id || accepted.scope !== scope || !accepted.legs.every((leg) => leg.state === 'settled') || unsettled.list(wallet).length || batches.list(wallet).length) return false
+        if (!current() || !accepted || accepted.id !== currentIntent.id || accepted.scope !== scope || !accepted.legs.every((leg) => leg.state === 'settled') || openHere(unsettled.list(wallet)) || batches.list(wallet).some((entry) => entry.destinationChainId === chainId)) return false
         // A successful validated poll remains evidence if the browser cannot persist its latest journal state.
         const records = [...(journal?.list(chainId, wallet) ?? []), ...currentDeposits.filter(({ record }) => {
           const value = progress[fundingDepositKey(record)]
@@ -668,7 +741,13 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
       {live && !ready && !run && !allArrived && (lacks.length > 0 || gasOnly || budget !== null) && !hasUnknown && <Button variant="accent" data-funds-signin="" onClick={signInWithWallet}>Sign in to continue</Button>}
       {optional && remoteOpened && !intent && !foreignPending && !run && <Button variant="ghost" size="sm" data-funds-close="" onClick={() => { generation.current++; preparation.current?.abort(); setRemoteSelection(null); setProposal(null); setNotice(null); setExpired(false); attempted.current = ''; setScreen('checking') }}>Back to funding options</Button>}
       {!onContinuationChange && onRemoteUse && intent?.paymentRaw && continueReady && <Button variant="accent" data-funds-remote-use="" onClick={() => void useArrivedFunds()}>Use these funds for this position</Button>}
-      {live && !run && unknownOrigin !== undefined && <Button variant="outline" size="sm" data-funds-run-forget="" onClick={() => void resolveUnknown(unknownOrigin)}>I cancelled the request in my wallet</Button>}
+      {live && !run && unknownOrigin !== undefined && !held.some((entry) => entry.originChainId === unknownOrigin && entry.state === 'passed') && <Button variant="outline" size="sm" data-funds-run-forget="" onClick={() => void resolveUnknown(unknownOrigin)}>I cancelled the request in my wallet</Button>}
+      {/* Added 2026-11-02 (review A2): a deposit the chain may have taken with no hash this page could follow (V1's held
+          card before #393): said, and removed by the person, which ends the transfer it belonged to. */}
+      {!run && held.filter((entry) => entry.state === 'passed').map((entry) => <div key={`held-${entry.originChainId}`} className="dm-funding-held" data-funds-held={entry.originChainId} data-funds-held-state="passed">
+        <p role="status" className="dm-funding-notice" data-error-code="deposit_may_have_gone">{senderCopy('deposit_may_have_gone', { origin: originName(entry.originChainId), native: 'ETH' })}</p>
+        <Button variant="ghost" size="sm" data-funds-held-remove="" onClick={() => void removePassed(entry.originChainId)}>{FUNDS_TEXT.remove}</Button>
+      </div>)}
       {live && !run && ready && !intent && !foreignPending && !proposal && !needsReview && readDone && (screen === 'unavailable' || screen === 'paused' || notice?.code === 'funding_insufficient') && /* Changed on purpose 2026-10-30 (QA round 2, SWEEP): a transfer to check again only; a balance read that came back short is read again on its own (every 30 s and on focus), with no button. */ <Button variant="outline" size="sm" data-funds-renew="" onClick={() => { attempted.current = ''; automaticAttempts.current = 0; setNotice(null); setRevision((n) => n + 1); setPrepareRevision((n) => n + 1) }}>Check again</Button>}
       {live && !run && ready && !intent && needsReview && <Button variant="outline" size="sm" data-funding-review="" onClick={() => void prepare()}>Review transfer</Button>}
       {proposal && <details className="dm-details dm-funds-details" data-funds-details=""><summary>Transfer details</summary><div className="dm-funding-details">
@@ -698,14 +777,15 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
           }}
           onArrived={() => { invalidateFundingBalances(wallet); onArrived?.(); setRevision((n) => n + 1) }}
           onSettled={() => { setSettled((previous) => new Set(previous).add(fundingDepositKey(deposit.record))); const leg = intentRef.current?.legs.find((leg) => leg.originChainId === deposit.record.originChainId && leg.depositTxHash === deposit.record.depositTxHash); if (leg) observe(leg.id, 'settled', deposit.record.depositTxHash); setRevision((n) => n + 1) }}
-          onRemove={() => { journal?.drop(wallet, deposit.record); setDeposits((previous) => previous.filter((entry) => fundingDepositKey(entry.record) !== fundingDepositKey(deposit.record))) }} />)}
+          onFailed={() => depositFailed(deposit.record)}
+          onRemove={() => removeDeposit(deposit.record)} />)}
       </div>}
       {!onContinuationChange && allArrived && !changed && !run && !resume && !keep && !intent?.paymentRaw && continuation && <div className="dm-transfer-continue" data-funds-continuation="">{continuation}</div>}
       {intent && !run && !hasUnknown && (!gasReview || changed) && !activeDeposits.length && !pending.length && !held.length && (changed || needsReview || intent.legs.every((leg) => leg.state === 'settled') && (lacks.length > 0 || gasOnly || currentDeposits.some(({ record }) => record.lastState === 'refunded')) && !(allArrived && continuation)) && <Button variant="outline" size="sm" data-funding-review="" onClick={() => {
         if (previousUnsent) { void clearChangedUnsent(intent.id, true); return }
         void withFundingLock(wallet, async () => {
           const stored = readIntent(true)
-          if (running.current || latest.current.scope !== scope || stored?.id !== intent.id || stored.legs.some((leg) => !['ready', 'stopped', 'settled'].includes(leg.state)) || unsettled.list(wallet).length || batches.list(wallet).length || journal?.list(chainId, wallet).some((record) => !fundingTerminal(record.lastState) && !settled.has(fundingDepositKey(record)))) return
+          if (running.current || latest.current.scope !== scope || stored?.id !== intent.id || stored.legs.some((leg) => !['ready', 'stopped', 'settled'].includes(leg.state)) || openHere(unsettled.list(wallet)) || batches.list(wallet).some((entry) => entry.destinationChainId === chainId) || journal?.list(chainId, wallet).some((record) => !fundingTerminal(record.lastState) && !settled.has(fundingDepositKey(record)))) return
           save(null); setProposal(null); setNotice(null); attempted.current = ''; setRevision((n) => n + 1)
         }, () => { throw new Error('busy') }).catch(() => setNotice({ copy: 'This transfer is being handled in another tab. Return there to continue.', code: 'funding_other_tab' }))
       }}>{previousUnsent ? 'Check this position' : 'Review remaining amount'}</Button>}

@@ -126,7 +126,11 @@ export const CREATE = {
     tooSmall: 'Enter at least $1. Smaller amounts cost more in network fees than they earn.',
     /** The same for a pool with no USD price, when the amount rounds to nothing in one of its tokens. */
     tooSmallUnpriced: 'This amount is too small for this pool. Enter a larger one.',
-    /** Added 2026-10-30 (QA round 2, N99): a decimal comma, said plainly instead of the generic format line. */
+    /**
+     * Added 2026-10-30 (QA round 2, N99): a decimal comma, said plainly instead of the generic format line. Since
+     * 2026-11-02 (review M4): where the person's language writes decimals with a dot (./typedFigure.ts FIGURE_TEXT, the
+     * same words, says the other comma problems).
+     */
     decimalComma: 'Use a dot for decimals, like 0.5.',
     empty: 'Enter an amount to continue.',
     format: 'Enter a number, like 100 or 0.5.',

@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from position_plan_contract_fixtures import (CSRF, NITRO_ANSWERS, SESSION, FakeAuth, build_fixtures,  # noqa: E402
                                              build_variants, recordings, replay_service, replayed)
-from discovery import DataError  # noqa: E402
+from discovery import DataError, RpcIntrinsicGas  # noqa: E402
 from v2_position_plan import PlanError  # noqa: E402
 from v2_position_plan_models import CONTRACT_VERSION, PositionPlanError, validate_request, validate_response  # noqa: E402
 from v2_position_plan_service import PositionPlanService, plan_failure  # noqa: E402
@@ -166,6 +166,10 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(plan_failure(DataError('http_503')).code, 'upstream_unavailable')
         self.assertEqual(plan_failure(DataError('v2_rpc_endpoints_cooling')).code, 'upstream_unavailable')
         self.assertEqual(plan_failure(DataError('invalid_abi_response')).code, 'upstream_invalid_response')
+        # A call refused before it ran (an L1 price spike on Nitro) is a provider not answering now, as it was while
+        # it read as rpc_error; one that ran out of gas stays an invalid answer.
+        self.assertEqual(plan_failure(RpcIntrinsicGas('rpc_call_gas_limit')).code, 'upstream_unavailable')
+        self.assertEqual(plan_failure(DataError('rpc_call_gas_limit')).code, 'upstream_invalid_response')
         service = PositionPlanService(FakeAuth(OTHER), {}, clock=lambda: 1)
         with self.assertRaisesRegex(PositionPlanError, 'position_plan_chain_unavailable'):
             service.execute('plan', recordings()['scenarios']['create-permit2']['request'], client='192.0.2.1',

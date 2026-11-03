@@ -18,6 +18,8 @@ const TOKEN_LABELS: Readonly<Record<string, string>> = {
   '0x020bfc650a365f8bb26819deaabf3e21291018b4': 'CASHCAT',
   '0x812486eaea648819853f8e372dc9f1516c7868bd': 'UBIK',
   '0xc6911796042b15d7fa4f6cde69e245ddcd3d9c31': 'VIRTUAL',
+  '0x000050e18ffa3f8f7ad170eb9cef160eb3ed1111': 'TORCH',
+  '0xedbf91223639800bcd5756815caf908df3b890be': 'PRIORS',
 }
 
 export function catalogueTokenLabel(token: TokenDisplay): string | null {
@@ -27,9 +29,10 @@ export function catalogueTokenLabel(token: TokenDisplay): string | null {
 }
 
 /**
- * The one token every selected pool holds, lowercase. Verifying any of the
- * six on the pools route is a read about this token and that pool id; the
- * reply is bound to both, so a label never stands in for the check.
+ * USDG, lowercase: the token every selected pool holds but ETH/TORCH, whose row
+ * names both its currencies (since 2026-11-02). Verifying a row that names no
+ * addresses (ETH/USDG) on the pools route is a read about this token and that
+ * pool id; the reply is bound to both, so a label never stands in for the check.
  */
 export const SELECTED_POOLS_COMMON_TOKEN = USDG
 
@@ -65,17 +68,25 @@ export interface PoolCatalogueEntry {
 // whether the pool holds the native currency or wrapped ether, and only a
 // read of the pool does. Every other row's addresses are the ones its labels
 // are bound to above.
+// ETH/TORCH (2026-11-02) holds no USDG, so it names both currencies, or no link
+// to it could name a token its pool holds: native ETH by the zero address, as
+// its pool key does (Domino's reader verified the key at a block).
 //
 // Keyed by pool id (2026-09-26, featured pools v1 §11.4): a label can no longer land on another pool when the list's
 // order changes. A pool of selectedPools.ts without labels here is left out of the catalogue, never shown unlabelled.
 const LABELS: Readonly<Record<string, Omit<PoolCatalogueEntry, 'poolId' | 'sourceUrl'>>> = {
-  '0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e': { labels: ['ETH', 'USDG'], artwork: ['ETH', 'USDG'], fee: '0.01%' },
-  // Written as fee.ts writes a read fee (at least two decimals), so the label and the read agree.
+  // Every fee is written as fee.ts writes a read fee (at least two decimals), so the label and the read agree.
+  // 2026-11-02 (the owner's replacement of the embedded list): ETH/USDG 0.05%, ETH/TORCH and USDG/PRIORS, their keys as
+  // Domino's reader verified them at a block and their tokens as its token reads did (TORCH and PRIORS, 18 decimals each).
+  // No artwork is bundled for TORCH or PRIORS, so their key is null, as PONS's, CASHCAT's and VIRTUAL's are: a mark is
+  // then the provider's decorative image for that address when it has one, else the plain disc (components/TokenIcon.tsx).
+  '0x387bf619da4d3fb62bb276482693dba1b9b3520f573cabdfe033384a24125982': { labels: ['ETH', 'USDG'], artwork: ['ETH', 'USDG'], fee: '0.05%' },
   '0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a': { labels: ['PONS', 'USDG'], artwork: [null, 'USDG'], addresses: ['0x39dbed3a2bd333467115de45665cc57f813c4571', SELECTED_POOLS_COMMON_TOKEN], fee: '0.30%' },
-  // 2026-10-04 (the owner's replacement of the embedded list): pool keys read from the featured selection's verified entries.
-  '0xea9f200e13055b82f175f44f592c4c13dd8c9d9320a66487d3c5cd90d68550ef': { labels: ['USDG', 'ORBIO'], artwork: ['USDG', null], addresses: [SELECTED_POOLS_COMMON_TOKEN, '0xaa07a0e9209e16ac99708c3ec70159c6ef3128a3'], fee: '0.80%' },
+  '0x1649550af1e3363b4c25236434530af7e6886b183e1f574a98fdd1d04d287a2d': { labels: ['ETH', 'TORCH'], artwork: ['ETH', null], addresses: [NATIVE_ETH, '0x000050e18ffa3f8f7ad170eb9cef160eb3ed1111'], fee: '0.30%' },
+  // 2026-10-04 (the owner's earlier replacement): CASHCAT/USDG and USDG/VIRTUAL, keys read from the featured selection's
+  // verified entries.
   '0xa92a3df27a00a276183ff7265fd8affa11df1fe8bb23ddfaf13f6c879a3f818b': { labels: ['CASHCAT', 'USDG'], artwork: [null, 'USDG'], addresses: ['0x020bfc650a365f8bb26819deaabf3e21291018b4', SELECTED_POOLS_COMMON_TOKEN], fee: '0.269%' },
-  '0x6d56f66e52e63e8be558d708a987426314bb4de92bc9b43a44effee1f2abf317': { labels: ['USDG', 'UBIK'], artwork: ['USDG', null], addresses: [SELECTED_POOLS_COMMON_TOKEN, '0x812486eaea648819853f8e372dc9f1516c7868bd'], fee: '1.00%' },
+  '0x9be7ab27227e115085b0949a819a73f6963ddc6da0c6204d37757c24297706e8': { labels: ['USDG', 'PRIORS'], artwork: ['USDG', null], addresses: [SELECTED_POOLS_COMMON_TOKEN, '0xedbf91223639800bcd5756815caf908df3b890be'], fee: '1.00%' },
   '0xa95732060867f07aa9b8ae9a4b7b8d737bc3374f1dfbb952759c5ed676e8737c': { labels: ['USDG', 'VIRTUAL'], artwork: ['USDG', null], addresses: [SELECTED_POOLS_COMMON_TOKEN, '0xc6911796042b15d7fa4f6cde69e245ddcd3d9c31'], fee: '0.30%' },
 }
 
@@ -155,10 +166,12 @@ export function inPriceOrder(entry: PoolCatalogueEntry): PoolCatalogueEntry {
  * The tokens a wallet's list falls back to when its provider names none: the main tokens (config/mainTokens.ts,
  * native ETH aside, which has no contract to ask) and the embedded list's, by exact address, in that order. Never a
  * daily featured list's tokens (2026-09-26, featured pools v1 §11.4).
+ * Changed on purpose 2026-11-02 (the owner's new embedded list): ETH/TORCH names native ETH by the zero address, so the
+ * embedded list's tokens leave it aside too.
  */
-export const WALLET_FALLBACK_TOKENS: readonly string[] = Object.freeze([
-  ...new Set([...MAIN_TOKENS.filter((token) => token.address !== NATIVE_ETH).map((token) => token.address), ...catalogueTokens().map((token) => token.address)]),
-])
+export const WALLET_FALLBACK_TOKENS: readonly string[] = Object.freeze(
+  [...new Set([...MAIN_TOKENS.map((token) => token.address), ...catalogueTokens().map((token) => token.address)])].filter((address) => address !== NATIVE_ETH),
+)
 
 /**
  * The token a pool's link names (`#/pool/<id>/<token>`, components/explore/routes.ts), so the link opens the pool
@@ -170,7 +183,7 @@ export function referenceToken(addresses: readonly string[]): string | null {
   return [USDG, MAIN_WETH].find((main) => keys.includes(main)) ?? keys.find((key) => key !== NATIVE_ETH) ?? null
 }
 
-/** An entry's link token: its reference side, or USDG for an embedded row without addresses (every embedded pool holds it). */
+/** An entry's link token: its reference side, or USDG for an embedded row without addresses (ETH/USDG, which holds it). */
 export const entryToken = (entry: PoolCatalogueEntry): string | null =>
   entry.addresses ? referenceToken(entry.addresses) : SELECTED_POOLS_COMMON_TOKEN
 

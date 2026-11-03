@@ -4482,19 +4482,22 @@ test('New position names the provider’s most liquid pools in its one pools rea
 // The featured pools that hold the token are named first, then the provider's, each once.
 // Changed on purpose 2026-10-04 (the owner's new embedded list): the six featured pools are ETH/USDG, PONS/USDG,
 // USDG/ORBIO, CASHCAT/USDG, USDG/UBIK and USDG/VIRTUAL, in that order; ETH/USDG and PONS/USDG are now first and second.
+// Changed on purpose 2026-11-02 (the owner's new embedded list): ETH/USDG 0.05%, PONS/USDG, ETH/TORCH, CASHCAT/USDG,
+// USDG/PRIORS and USDG/VIRTUAL. ETH/TORCH holds no USDG, so the five others are the featured pools named for USDG.
 test('for USDG the pools read names the featured pools first, then the provider’s, each once', async () => {
   const USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168';
   const ZERO = `0x${'0'.repeat(40)}`;
   // Changed on purpose 2026-10-04 (the owner: the embedded list approved on 4 Oct, PR #322): the new six, in their order.
+  // Changed on purpose 2026-11-02 (the owner: the embedded list approved on 2 Nov): that day's six, in their order.
   const FEATURED = [
-    '0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e',
+    '0x387bf619da4d3fb62bb276482693dba1b9b3520f573cabdfe033384a24125982',
     '0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a',
-    '0xea9f200e13055b82f175f44f592c4c13dd8c9d9320a66487d3c5cd90d68550ef',
+    '0x1649550af1e3363b4c25236434530af7e6886b183e1f574a98fdd1d04d287a2d',
     '0xa92a3df27a00a276183ff7265fd8affa11df1fe8bb23ddfaf13f6c879a3f818b',
-    '0x6d56f66e52e63e8be558d708a987426314bb4de92bc9b43a44effee1f2abf317',
+    '0x9be7ab27227e115085b0949a819a73f6963ddc6da0c6204d37757c24297706e8',
     '0xa95732060867f07aa9b8ae9a4b7b8d737bc3374f1dfbb952759c5ed676e8737c',
   ];
-  const [ETH_USDG, PONS_USDG] = [FEATURED[0], FEATURED[1]];
+  const [ETH_USDG, PONS_USDG, ETH_TORCH] = FEATURED;
   const X = `0x${'a'.repeat(64)}`;
   // The provider's list: one pool of its own, and one featured pool it happens to hold.
   const v4 = (pairAddress, usd) => ({ chainId: 'robinhood', dexId: 'uniswap', labels: ['v4'], pairAddress, baseToken: { address: `0x${'3'.repeat(40)}` }, quoteToken: { address: USDG }, liquidity: { usd } });
@@ -4530,8 +4533,8 @@ test('for USDG the pools read names the featured pools first, then the provider�
     await picker.waitFor({ timeout: 30_000 });
     assert.deepEqual(
       read.requests.filter(r => r.path === '/api/read/v1/pools').map(r => JSON.parse(r.body)),
-      [{ token: USDG, maxPools: 7, poolIds: [...FEATURED, X] }],
-      'the six featured pools in catalogue order, then the provider’s own, PONS/USDG not twice',
+      [{ token: USDG, maxPools: 6, poolIds: [...FEATURED.filter((poolId) => poolId !== ETH_TORCH), X] }],
+      'the five featured pools that hold USDG, in catalogue order, then the provider’s own, PONS/USDG not twice',
     );
     assert.equal(await picker.locator('[data-pool-option]').count(), 1);
     // Changed on purpose (round 6, 2026-09-27): New position's rows no longer print their pool id; it is data-pool-key.
@@ -4775,8 +4778,9 @@ test('typing a name slowly asks the stored search once, and a catalogue token it
       ...base,
       selectedToken: USDG,
       tokens: base.tokens.map(token => (token.address === FIXTURE_TOKEN ? { ...token, address: USDG, symbol: 'USDG' } : token)),
-      // ETH/USDG, one of the featured pools the read names for USDG.
-      pools: [{ ...pool, poolId: '0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e', currencies: [ZERO, USDG], poolKey: { ...pool.poolKey, currency0: ZERO, currency1: USDG }, requestedById: true }],
+      // ETH/USDG, one of the featured pools the read names for USDG. Changed on purpose 2026-11-02 (the owner's new
+      // embedded list): the 0.05% pool, which replaced the 0.01% one in the list.
+      pools: [{ ...pool, poolId: '0x387bf619da4d3fb62bb276482693dba1b9b3520f573cabdfe033384a24125982', currencies: [ZERO, USDG], poolKey: { ...pool.poolKey, currency0: ZERO, currency1: USDG }, requestedById: true }],
     });
   };
   const read = createReadStub({ answer: usdg, stored });

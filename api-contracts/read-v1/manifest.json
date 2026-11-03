@@ -1132,7 +1132,7 @@
     },
     {
       "path": "backend/activity_store.py",
-      "sha256": "512b12a0f2d0112c3dbfb6458f17d8ab45df23b0d96c1631f808657b46b1a15e"
+      "sha256": "a1fbf42a95d346dd00f082ed4f012218bca25a76038f1a7e8035731b99207bdd"
     },
     {
       "path": "backend/position_store.py",
@@ -1160,7 +1160,7 @@
     },
     {
       "path": "backend/discovery.py",
-      "sha256": "11cd96f41cde4d83194c8674a7fa369156745af527551d66f4c8cd66b51dc8be"
+      "sha256": "a9b21e6df5f264aeb1bc2f0d3e4dee276e914f5e5268bcb0d4ff866c8247d473"
     },
     {
       "path": "backend/nft_ownership.py",

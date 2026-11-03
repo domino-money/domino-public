@@ -29,6 +29,7 @@ import { parseV2PositionParam, type V2PositionRef } from '../route'
 import { ApprovalFact, useZapApproval } from './Approval'
 import { cardOf, poolIdentity, walletPositionOf } from './card'
 import PositionAutomation from '../automate/PositionAutomation'
+import { ownVaultsOfPosition } from '../automate/portfolio'
 import { exitOrderKey } from '../autoexit/entry'
 import { HOOKED_COPY, NEW_POSITION_REREAD_MS, SUCCESSOR_BLOCKED_COPY } from './constants'
 import { COPY } from './copy'
@@ -72,11 +73,16 @@ function Waiting({ id }: { id: string }) {
   )
 }
 
-/** A page that has nothing to draw, in V1's empty-state frame. */
-function Empty({ title, body, reason, action }: { title: string; body?: ReactNode; reason: string; action?: ReactNode }) {
+/**
+ * A page that has nothing to draw, in V1's empty-state frame. `automation` (Added 2026-11-02, the money review, M2): the
+ * position's automation, drawn above it when the wallet still has a vault of it, as Robinhood Chain's own page draws it
+ * without a position (screens/PositionDetail.tsx).
+ */
+function Empty({ title, body, reason, action, automation }: { title: string; body?: ReactNode; reason: string; action?: ReactNode; automation?: ReactNode }) {
   return (
     <PageShell>
       <Back />
+      {automation}
       <EmptyState icon={<IconSearch />} title={title} body={body} action={action} plate className="dm-pos-empty" data-empty="position-v2" data-position-reason={reason} />
     </PageShell>
   )
@@ -197,13 +203,22 @@ function Opened({ target, gate, wallet, walletOnChain }: { target: V2PositionRef
   if (!status || status.status === 'unavailable') return <Empty title={`Position #${id}`} reason={status?.reason ?? 'chain_unavailable'} />
   if (!found || !isLive(found)) {
     if (awaited) return <Waiting id={id} />
+    // Added 2026-11-02 (the money review, M2): a position with no live read here (a root NFT burned by Change range or a
+    // close, which read-v6 no longer lists, or one listed with no live read) whose vault this wallet still owns keeps that
+    // vault's screen: Withdraw to wallet, Send to another address, the recoveries and Leave automation, as on Robinhood
+    // Chain's own page. On Base, Arbitrum One and Robinhood Chain's v3 the page drew only this sentence, and Positions'
+    // "Review in position" led nowhere else.
+    const automation = ownVaultsOfPosition(answer, wallet, target.chainId, id, target.dex).length > 0
+      ? <PositionAutomation tokenId={id} position={null} holder={null} chainId={target.chainId} dex={target.dex}
+          indexed={{ portfolio: answer, subscriber: null }} onChanged={() => OWN_PORTFOLIO.again(wallet)} />
+      : null
     if (!found) {
       return (
         <Empty title={`Position #${id}`} body={<Known line={knownLine(target, wallet)} sentence={COPY.page.notListed} />} reason="position_not_listed"
-          action={<Button type="button" variant="outline" onClick={openWalletDialog} data-position-connect="">Open wallet</Button>} />
+          action={<Button type="button" variant="outline" onClick={openWalletDialog} data-position-connect="">Open wallet</Button>} automation={automation} />
       )
     }
-    return <Empty title={`Position #${id}`} reason={found.status} />
+    return <Empty title={`Position #${id}`} reason={found.status} automation={automation} />
   }
   return (
     <PageShell>

@@ -399,6 +399,22 @@ class ReconciliationTests(ExecutorTestCase):
         second = self.submit(data=DATA + 'bb')
         self.assertEqual(self.executor.journal.intent(second.intent)['nonce'], 1)
 
+    def test_an_intent_in_attention_reports_since_when_it_has_held_the_signer(self):
+        # What the production monitor alerts on once it holds the signer too long (docs/OPS_MONITOR.md).
+        outcome = self.submit()
+        self.assertEqual(self.executor.journal.attention_since(), [])
+        self.fake.pool.clear()
+        self.fake.nonce = 1  # something else spent nonce 0 with this key
+        self.fake.advance(1, 30)
+        entered = self.fake.timestamp
+        self.assertEqual(self.executor.reconcile(outcome.intent).state, 'attention')
+        self.fake.advance(1, 600)  # later passes write nothing to it: its time stays the one it entered
+        self.executor.reconcile_all()
+        self.assertEqual(self.executor.journal.attention_since(),
+                         [{'intent': outcome.intent, 'reason': 'nonce_consumed_without_receipt', 'since': entered}])
+        self.executor.journal.acknowledge(outcome.intent)
+        self.assertEqual(self.executor.journal.attention_since(), [])
+
     def test_a_stuck_transaction_is_replaced_with_the_same_nonce_and_calldata_at_a_higher_fee(self):
         outcome = self.submit()
         first = self.executor.journal.intent(outcome.intent)['attempts'][0]

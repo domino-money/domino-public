@@ -58,6 +58,7 @@ const ROUTE_COPY = 'This plan would swap into something you didn’t ask for, so
 const EXPIRED_COPY = 'This review expired before it was confirmed. Review again for a fresh quote.'
 const UNSETTLED_COPY = (chain: string) => `An earlier action was already sent to your wallet and is not settled on ${chain} yet. Check your wallet’s activity: nothing new is sent from here until this is clear. If you rejected or closed it in your wallet, say so below.`
 export const REJECTED_IN_WALLET = 'I rejected it in my wallet'
+const CLOSE_UNSETTLED_COPY = (chain: string) => `Closing this position was already sent to your wallet and is not settled on ${chain} yet. Check your wallet’s activity. If you rejected or closed it in your wallet, say so in Close positions.`
 export const STILL_PENDING_COPY = 'A transaction from this wallet is still waiting. Let it finish, then try again.'
 export const SENT_CHECK_WALLET_COPY = 'Sent to your wallet. Check your wallet’s activity to see how it went: nothing more is sent from here.'
 
@@ -83,6 +84,9 @@ function clientCopy(code: string, chainId: V2ChainId): { copy: string; recovery:
     case 'automation_pause_unacknowledged': return { copy: COPY.wallet.tickFirst, recovery: 'none' }
     case 'plan_nonce_used': case 'nonce_unavailable': return { copy: 'This signature was already used or cancelled.', recovery: 'requote' }
     case 'review_already_sent': case 'batch_already_offered': case 'wallet_batch_already_offered': return { copy: 'This was already sent to your wallet. Check its activity before doing anything else.', recovery: 'none' }
+    // Added 2026-11-02 (review A1): a Close positions request with this position whose wallet answer never came. It is let
+    // go once the network says it can no longer run, or in Close positions on the person's word (finance/v2/direct.ts settleLost).
+    case 'close_request_unsettled': return { copy: CLOSE_UNSETTLED_COPY(chain), recovery: 'none' }
     case 'zap_action_unsettled': return { copy: UNSETTLED_COPY(chain), recovery: 'none' }
     case 'wallet_result_unknown': return { copy: COPY.wallet.sentUnknown, recovery: 'none' }
     case 'native_gas_reserve_insufficient': return { copy: 'Not enough ETH for the network fee.', recovery: 'none' }

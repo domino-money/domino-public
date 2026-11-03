@@ -594,13 +594,15 @@ const provider = (asked, answer) => async (context) => {
 // USDG, the main tokens, then the selected pools' other tokens in catalogueTokens() order.
 // Changed on purpose 2026-10-04 (the owner's new embedded list): seven, from six. MARLIN, cbBTC and U left with their
 // pools; WETH is still checked as a main token, though no selected pool holds it any more.
+// Changed on purpose 2026-11-02 (the owner's new embedded list): still seven. ORBIO and UBIK left with their pools;
+// TORCH and PRIORS came with theirs. ETH/TORCH also names native ETH, which is never checked by address (no contract).
 const SELECTED_TOKENS = [
   '0x0bd7d308f8e1639fab988df18a8011f41eacad73', // WETH
   '0x5fc5360d0400a0fd4f2af552add042d716f1d168', // USDG
   '0x39dbed3a2bd333467115de45665cc57f813c4571', // PONS
-  '0xaa07a0e9209e16ac99708c3ec70159c6ef3128a3', // ORBIO
+  '0x000050e18ffa3f8f7ad170eb9cef160eb3ed1111', // TORCH
   '0x020bfc650a365f8bb26819deaabf3e21291018b4', // CASHCAT
-  '0x812486eaea648819853f8e372dc9f1516c7868bd', // UBIK
+  '0xedbf91223639800bcd5756815caf908df3b890be', // PRIORS
   '0xc6911796042b15d7fa4f6cde69e245ddcd3d9c31', // VIRTUAL
 ];
 

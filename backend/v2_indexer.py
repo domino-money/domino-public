@@ -416,7 +416,7 @@ class V2Indexer:
                         raise DataError('v2_vault_state_mismatch')
                     status, reason = 'read', None
                 except DataError as error:
-                    if str(error) in v2_snapshots.TRANSIENT:
+                    if v2_snapshots.transient(error):
                         raise
                     state, status, reason = None, 'unavailable', str(error)[:80]
                 done['vaults'] += writer.save_vault_snapshot(pinned, row['vault'], status, state, reason, now)

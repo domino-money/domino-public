@@ -11,6 +11,7 @@
  */
 import type { ChainBalancesResponse } from 'api-contracts/read-v6/types'
 import { amountText } from '../../lib/create/amountText'
+import type { Decimal } from '../../lib/create/typedFigure'
 import type { DepositPlan } from '../../lib/create/depositPlan'
 import { CANDIDATE_ORIGINS, type Holding, type HoldingsReport, type OriginCandidate } from '../../finance/v2/holdings'
 import { capacityBusyWait, isCapacityBusy } from '../../finance/v2/requestCoordinator'
@@ -237,11 +238,15 @@ export function continueWith(balanceRaw: string | null, decimals: number | null,
  *
  * Changed on purpose 2026-10-30 (QA round 2, N99): read as New position's amount step reads a typed amount
  * (lib/create/amountText.ts): spaces around it dropped, and thousands separators too ("1,500.25"), any other comma or a
- * minus refused. A funding amount Domino writes itself is grouped (./fundingBudget.ts remotePayment, formatUnitsExact),
- * so from 1,000 up it was refused here, and the offer to fund it never came.
+ * minus refused. A funding amount Domino writes itself was grouped (./fundingBudget.ts remotePayment), so from 1,000 up it
+ * was refused here, and the offer to fund it never came.
+ *
+ * Changed on purpose 2026-11-02 (review of the money PRs, M4): by lib/create/typedFigure.ts's rule, an ambiguous "1,250"
+ * is refused (it was 1250, a thousand times the 1.25 a decimal comma means), and "1,5" is 1.5 where the person's language
+ * writes a decimal comma. remotePayment writes its amount with no separator now. `decimal`: handed in by a test.
  */
-export function amountRawOf(text: string, decimals: number | null): string | null {
-  const read = amountText(text)
+export function amountRawOf(text: string, decimals: number | null, decimal?: Decimal): string | null {
+  const read = amountText(text, decimal)
   if (!read.ok) return null
   const value = read.text
   let raw: bigint

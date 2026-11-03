@@ -1,7 +1,7 @@
 import { useMemo, useState, useSyncExternalStore } from 'react'
 import { Button } from '../../components/ui'
 import { SheetCard, SheetFact, SheetFacts, SheetStatus } from '../../components/positions/ActionSheet'
-import { readDirectCloseManyReceipt, type DirectCloseDescription, type DirectCloseMany } from '../../finance/v2/direct'
+import { readDirectCloseManyReceipt, type DirectCloseDescription, type DirectCloseMany, type LostClose } from '../../finance/v2/direct'
 import { beginClose, includedClose, includedCloses, pendingClose, rememberCloseHash, settleClose, type IncludedClose, type PendingClose } from '../../finance/v2/closeJournal'
 import { refused, type V2Receipt } from '../../finance/v2/transact'
 import { receiptPause, receiptSettled, receiptWalletAway } from '../receiptWait'
@@ -10,7 +10,7 @@ import { v2Gate } from '../../v2/gate'
 import type { Hex } from '../../v2/types'
 import { v2Chain } from '../../v2/chains'
 import { v2PageProbe } from '../transports'
-import { actionError, type ActionError } from '../position/errors'
+import { actionError, REJECTED_IN_WALLET, STILL_PENDING_COPY, type ActionError } from '../position/errors'
 import { ActionDialog, ErrorLine, Note, Tick } from '../position/ui'
 import { connectPosition, connectPositionReceipt, inTurn, onChain, type PositionConnection } from '../position/wallet'
 import { canCloseTogether, closeGroups } from './closeGroups'
@@ -32,6 +32,17 @@ interface RunState {
   completed: number
 }
 const INITIAL: RunState = { stage: 'selection', groups: [], index: 0, prepared: null, error: null, hash: null, completed: 0 }
+/**
+ * Added 2026-11-02 (review A1): what the chain, or the person, said of a close whose wallet answer never came
+ * (finance/v2/direct.ts settleLost). `settled` and `forgotten` let it go; the others keep it, and say why.
+ */
+const LOST_SAID: Record<LostClose, ActionError> = {
+  settled: { code: 'close_request_expired', copy: 'This request can no longer go through. Check your wallet’s activity, then review your positions again.', recovery: 'none' },
+  forgotten: { code: 'close_request_forgotten', copy: 'Nothing was sent. Review your positions again to continue.', recovery: 'none' },
+  open: { code: 'wallet_request_open', copy: 'Your wallet may still be showing this request. Approve or reject it there. If you already rejected or closed it, say so below.', recovery: 'none' },
+  pending: { code: 'pending_wallet_transaction', copy: STILL_PENDING_COPY, recovery: 'none' },
+  passed: { code: 'close_request_passed', copy: 'Your wallet has sent a transaction since this request, so it may have gone through. Enter its hash below to check, or check again in a few minutes.', recovery: 'none' },
+}
 
 function recoveryRows(pending: PendingClose): PositionRowView[] {
   return pending.tokenIds.map((tokenId) => ({ key: `${pending.chainId}:${pending.positionManager}:${tokenId}`, positionManager: pending.positionManager,
@@ -73,14 +84,23 @@ function createRun(owner: string) {
   const prepare = async (groups: readonly PositionRowView[][], index: number) => {
     if (['reading', 'wallet', 'sent', 'waiting', 'unknown'].includes(state.stage)) return
     update({ stage: 'reading', groups, index, prepared: null, error: null, hash: null })
+    const restore = (earlier: PendingClose, error: ActionError | null = null) => { pending = earlier; update({ groups: [recoveryRows(earlier)], index: 0, stage: earlier.hash ? 'waiting' : 'unknown', hash: earlier.hash, error }) }
     try {
-      const earlier = pendingClose(owner)
-      if (earlier) { pending = earlier; update({ groups: [recoveryRows(earlier)], index: 0, stage: earlier.hash ? 'waiting' : 'unknown', hash: earlier.hash }); return }
       const group = groups[index]
+      const earlier = pendingClose(owner)
+      // Changed on purpose 2026-11-02 (review A1): an earlier close whose wallet answer never came (no hash), on this
+      // group's network, is asked of the chain below and no longer stops the group once it can no longer run. Any other
+      // earlier close comes back to be checked, as before.
+      if (earlier && (earlier.hash !== null || earlier.chainId !== group[0].chainId)) { restore(earlier); return }
       const gate = await v2Gate('s1', group[0].chainId, undefined, v2PageProbe)
       if (gate.mode !== 'live') throw new Error('route_unavailable')
       connection = await connectPosition(gate)
+      recovery = null
       if (connection.wallet.owner.toLowerCase() !== owner.toLowerCase()) throw new Error('wallet_identity_changed')
+      if (earlier) {
+        const said = await inTurn(() => connection!.direct.settleLostClose(earlier))
+        if (said !== 'settled') { restore(earlier, LOST_SAID[said]); return }
+      }
       // Added 2026-10-14 (incident C3): an included close of this network left by an earlier page (a reload) is held
       // again until final, through this connection; one this run holds already is not asked again.
       const wallet = connection.wallet
@@ -184,6 +204,31 @@ function createRun(owner: string) {
     } catch (error) { update({ stage: state.hash ? 'waiting' : 'unknown', error: actionError(error, intent.chainId) }) }
     finally { polling = false }
   }
+  /**
+   * Added 2026-11-02 (review A1): the earlier close whose wallet answer never came (kept with no hash), asked of the chain
+   * through a client of its own network, or let go on the person's word (`rejected`). It held the group, and every
+   * direct exit of its positions, in this browser for good: only a pasted hash or clearing the site's data let it go.
+   * Let go (`settled`, `forgotten`), the dialog goes back to review; otherwise it stays, saying why. Nothing is sent.
+   */
+  const lost = async (rejected: boolean) => {
+    const intent = pending
+    if (state.stage !== 'unknown' || !intent || intent.hash !== null || polling) return
+    polling = true
+    update({ error: null })
+    try {
+      let client: Pick<PositionConnection['direct'], 'settleLostClose'>
+      if (connection && connection.chainId === intent.chainId) { await onChain(connection); client = connection.direct }
+      else {
+        const reader = await connectPositionReceipt(intent.chainId)
+        if (reader.wallet.owner.toLowerCase() !== owner) throw new Error('wallet_identity_changed')
+        client = reader
+      }
+      const said = await client.settleLostClose(intent, rejected)
+      if (said === 'settled' || said === 'forgotten') { pending = null; update({ stage: 'failed', prepared: null, hash: null, error: LOST_SAID[said] }); return }
+      update({ error: LOST_SAID[said] })
+    } catch (error) { update({ error: actionError(error, intent.chainId) }) }
+    finally { polling = false }
+  }
   return {
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener) } },
     snapshot: () => state,
@@ -194,17 +239,23 @@ function createRun(owner: string) {
     check: async (candidate?: string) => {
       if (!['waiting', 'unknown'].includes(state.stage) || !pending || polling) return
       const hash = /^0x[0-9a-fA-F]{64}$/.test(candidate ?? '') ? candidate!.toLowerCase() as Hex : state.hash
-      if (!hash) return
+      // Changed on purpose 2026-11-02 (review A1): with no hash, the chain is asked whether the request can still go through.
+      if (!hash) return lost(false)
       try {
         update({ error: null })
-        if (!connection) {
+        // Changed on purpose 2026-11-02 (review B2): a close on another network than this run's connection (another tab's,
+        // restored here) is read through that network's own reader; it was read through the connection's, and stayed
+        // "pending" until a reload.
+        if (!connection || connection.chainId !== pending.chainId) {
           recovery = await connectPositionReceipt(pending.chainId)
           if (recovery.wallet.owner.toLowerCase() !== owner) { recovery = null; throw new Error('wallet_identity_changed') }
         }
-        else await onChain(connection)
+        else { recovery = null; await onChain(connection) }
         void poll(hash)
       } catch (error) { update({ error: actionError(error, current()[0].chainId) }) }
     },
+    /** Review A1: "I rejected it in my wallet", for a close whose wallet answer never came. */
+    rejected: () => lost(true),
     send: async (pause: boolean) => {
       if (state.stage !== 'review' || !state.prepared || !connection) return
       const prepared = state.prepared
@@ -285,7 +336,8 @@ export function BulkClosePositions({ owner, rows }: { owner: string; rows: reado
   if (state.stage === 'selection') footer = <Button disabled={chosen.length < 2} onClick={() => run.start(chosen)}>Review {chosen.length || ''} positions</Button>
   else if (state.stage === 'review') footer = <Button disabled={!!prepared?.pausesAutomation.length && !pause} onClick={() => void run.send(pause)}>Close {current.length} {current.length === 1 ? 'position' : 'positions'}</Button>
   else if (state.stage === 'failed') footer = <Button onClick={() => { setPause(false); run.review() }}>Review again</Button>
-  else if (state.stage === 'waiting' || state.stage === 'unknown' && (state.hash || /^0x[0-9a-fA-F]{64}$/.test(recoveryHash))) footer = <Button onClick={() => void run.check(recoveryHash)}>Check status</Button>
+  // Changed on purpose 2026-11-02 (review A1): Check status with no hash entered asks the chain whether the request can still go through.
+  else if (state.stage === 'waiting' || state.stage === 'unknown' && current.length > 0) footer = <Button onClick={() => void run.check(recoveryHash)}>Check status</Button>
   else if (state.stage === 'done' && state.index + 1 < state.groups.length) footer = <Button onClick={() => { setPause(false); run.next() }}>Continue to next group</Button>
   else if (state.stage === 'done') footer = <Button onClick={() => { run.reset(); setSelected(new Set()); close() }}>Done</Button>
   else footer = <Button disabled={busy} onClick={close}>{state.stage === 'unknown' ? 'Close' : 'Confirming…'}</Button>
@@ -328,6 +380,8 @@ export function BulkClosePositions({ owner, rows }: { owner: string; rows: reado
         {!progress && state.stage !== 'reading' && stageLine}
         {['unknown', 'waiting'].includes(state.stage) && current.length > 0 && <details className="dm-bulk-details" open={recoveryHash.length > 0}><summary>{state.hash ? 'Updated transaction in your wallet?' : 'Find your transaction'}</summary><label htmlFor="close-recovery-hash">Transaction hash from your wallet</label><input id="close-recovery-hash" value={recoveryHash} onChange={(event) => setRecoveryHash(event.currentTarget.value.trim())} placeholder="0x…" autoComplete="off" /></details>}
         <ErrorLine error={state.error} />
+        {/* Added 2026-11-02 (review A1): V1's way out of a request whose wallet answer never came. */}
+        {state.stage === 'unknown' && !state.hash && current.length > 0 && <Button variant="outline" size="sm" className="justify-self-start" onClick={() => void run.rejected()} data-bulk-close-rejected="">{REJECTED_IN_WALLET}</Button>}
       </>}
     </ActionDialog>}
   </>

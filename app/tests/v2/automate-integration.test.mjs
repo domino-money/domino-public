@@ -61,6 +61,35 @@ test('a position\'s vaults come from the listing by owner: its root in any state
   assert.deepEqual(portfolio.vaultsOfPosition(body, 4663, '7', 3), []);
 });
 
+// Added 2026-11-02 (the money review, M2). A root NFT burned by Change range or a close leaves read-v6's positions while
+// its vault stays listed with its reserves. The position page (src/v2in/position/PositionPage.tsx) drew only "This position
+// isn't in your wallet's list." on Base, Arbitrum One and Robinhood Chain's v3, with no way to withdraw the reserves or leave
+// the automation. It now draws the automation without a position whenever the wallet owns one of the position's vaults.
+test('a position the page cannot draw keeps its wallet\'s own vaults, found without the position; never another owner\'s', () => {
+  const body = fixture('portfolio.json');
+  const own = (answer, wallet, chainId, id, dex) => portfolio.ownVaultsOfPosition(answer, wallet, chainId, id, dex).map((e) => [e.vault.address, e.role]);
+  // The root burned: read-v6 no longer lists it, and its vault is still the wallet's.
+  const burned = structuredClone(body);
+  burned.positions = burned.positions.filter((p) => p.tokenId !== '7');
+  assert.equal(burned.positions.some((p) => p.tokenId === '7'), false);
+  assert.deepEqual(own(burned, WALLET, 4663, '7', 4), [[VAULT, 'root']]);
+  assert.deepEqual(own(body, WALLET.toUpperCase().replace('0X', '0x'), 4663, '7', 4), [[VAULT, 'root']], 'the wallet in any case');
+  assert.deepEqual(own(body, WALLET, 4663, '8', 4), [[VAULT, 'successor']]);
+  assert.deepEqual(own(body, WALLET, 4663, '21', 4), [[EXITED, 'root']]);
+  // A withdrawn successor, another chain, another DEX: none.
+  assert.deepEqual(own(body, WALLET, 4663, '32', 4), []);
+  assert.deepEqual(own(body, WALLET, 8453, '7', 4), []);
+  assert.deepEqual(own(body, WALLET, 4663, '7', 3), []);
+  // An answer about another wallet, or a vault of another owner in it: nothing to act on.
+  assert.deepEqual(own(body, '0x' + 'c'.repeat(40), 4663, '7', 4), []);
+  const foreign = structuredClone(burned);
+  foreign.vaults.find((v) => v.address === VAULT).owner = '0x' + 'c'.repeat(40);
+  assert.deepEqual(own(foreign, WALLET, 4663, '7', 4), []);
+  assert.deepEqual(own(foreign, WALLET, 4663, '21', 4), [[EXITED, 'root']], 'the wallet\'s other vaults unchanged');
+  // That vault's owner asking with an answer that is about the first wallet: not this wallet's answer, so nothing.
+  assert.deepEqual(own(foreign, '0x' + 'c'.repeat(40), 4663, '7', 4), []);
+});
+
 test('reserves: known only from a read state, a dash with the reason otherwise; "held" when one is above zero', () => {
   const body = fixture('portfolio.json');
   const [armed, exited, moved] = [VAULT, EXITED, MOVED].map((address) => body.vaults.find((v) => v.address === address));

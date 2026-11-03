@@ -569,6 +569,42 @@ test('(c4) Add liquidity at 3% slippage: the review says so in view, in the spec
   } finally { await s.close(); }
 });
 
+// Added 2026-11-02 (review of the money PRs, M4: a typed "1,250" was 1250, a thousand times the 1.25 that someone who
+// writes a decimal comma meant; "0,125" was 125 here, through v2/plan/present.ts parseUnitsText). Add liquidity says what
+// the comma needs under the field and asks for nothing; "0,05" is 0.05 ETH in a browser set to Brazilian Portuguese, and
+// asks for a dot in one set to English (src/lib/create/typedFigure.ts).
+for (const locale of ['pt-BR', 'en-US']) test(`(c4b) Add liquidity in a ${locale} browser: a typed comma is never a thousand times the amount`, async () => {
+  const chain = chainOf();
+  const s = await openPositionPage(browser, chain, { hash: '#/positions/base-v4-5100005', read6: READ6, planner: plannerFor(), locale });
+  try {
+    const page = s.page;
+    const detail = page.locator('[data-position-detail][data-position-id="5100005"]');
+    await detail.waitFor({ timeout: 30_000 });
+    await pick(detail, 'increase');
+    const dialog = page.locator('[role="dialog"][data-position-dialog="v2-increase"]');
+    await dialog.getByRole('combobox', { name: 'Pay with' }).click();
+    await page.getByRole('option', { name: 'ETH', exact: true }).click();
+    const field = dialog.locator(`[data-position-amount="${ZERO}"] input`);
+    const hint = dialog.locator('[data-position-comma-hint]');
+    const go = dialog.locator('[data-position-continue="increase"]');
+    await field.fill('1,250');
+    assert.equal(await text(hint), '1,250 could mean 1.25 or 1250. Type 1.25 or 1250.');
+    assert.equal(await go.isDisabled(), true, 'never read as 1250');
+    await field.fill('0,05');
+    if (locale === 'pt-BR') {
+      assert.equal(await hint.count(), 0);
+      await go.click();
+      await dialog.locator('[data-position-review="increase"] [data-position-network-fee="about"]').waitFor({ timeout: 30_000 });
+      assert.deepEqual(s.planned[0].inputs.map((input) => [input.token, String(input.amountRaw)]), [[ZERO, '50000000000000000']], 'the plan was asked for 0.05 ETH');
+    } else {
+      assert.equal(await text(hint), 'Use a dot for decimals, like 0.5.');
+      assert.equal(await go.isDisabled(), true);
+      assert.equal(s.planned.length, 0, 'nothing asked for a refused amount');
+    }
+    assert.equal(chain.sends.length, 0);
+  } finally { await s.close(); }
+});
+
 // Added 2026-10-06 (the review of point 4, ux #1, as New position's Review): when Base's oracle did not answer, the plan's
 // L1 data fee is unavailable; the one network fee line says the rest in one plain clause, never "L1", a 0 or a bare dash in
 // view, and Details keeps the L1 data fee's own row.

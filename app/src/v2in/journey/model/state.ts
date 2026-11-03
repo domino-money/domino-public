@@ -8,6 +8,7 @@ import { ZERO_ADDRESS, type Address, type PoolRef, type V2ChainId } from '../../
 import { JOURNEY_DEFAULT_SLIPPAGE_BPS } from '../constants'
 import { JOURNEY } from '../copy'
 import { CREATE } from '../../../lib/create/copy'
+import { figureHint, type Decimal } from '../../../lib/create/typedFigure'
 import { offeredPool, type JourneyPool } from './pools'
 import { priceAt, type JourneyPriceState } from './price'
 
@@ -174,10 +175,14 @@ export function inputsOf(state: Pick<JourneyState, 'pool' | 'chainId' | 'amounts
   return out.length > 0 ? out : null
 }
 
-/** Why an amount field's text is refused, or null (empty is not an error: it is "none of this token"). */
-export function amountProblem(state: Pick<JourneyState, 'pool' | 'chainId'>, token: Address, text: string): string | null {
+/**
+ * Why an amount field's text is refused, or null (empty is not an error: it is "none of this token"). Changed on purpose
+ * 2026-11-02 (review M4): a comma the reading refuses (an ambiguous "1,250", or a decimal comma where the person's
+ * language writes a dot) says what it needs (lib/create/typedFigure.ts) instead of the one line. `decimal`: for a test.
+ */
+export function amountProblem(state: Pick<JourneyState, 'pool' | 'chainId'>, token: Address, text: string, decimal?: Decimal): string | null {
   if (text.trim() === '') return null
-  return parseUnitsText(text, decimalsIn(state, token)) === null ? JOURNEY.amount.invalid : null
+  return parseUnitsText(text, decimalsIn(state, token), decimal) === null ? figureHint(text, decimal) ?? JOURNEY.amount.invalid : null
 }
 
 /** Whether a range is usable on a spacing: whole ticks, multiples of it, inside the ticks it allows, lower below upper. */

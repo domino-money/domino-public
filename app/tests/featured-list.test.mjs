@@ -137,7 +137,10 @@ test('a token that reads as a main token on another contract drops its pool, and
   assert.equal(readsAsMainToken('ETH', WETH), false, 'ether either way');
   assert.equal(isLookAlike({ token: { address: addr('f6'), symbol: 'USDG' } }), true, 'the wallet card still refuses the fake');
   // The wallet lists fall back to the main tokens and the embedded list's, never a featured list's.
-  assert.deepEqual([...WALLET_FALLBACK_TOKENS], [WETH, USDG, ...catalogueTokens().map((t) => t.address).filter((a) => a !== WETH && a !== USDG)]);
+  // Changed on purpose 2026-11-02 (the owner's new embedded list): ETH/TORCH names native ETH by the zero address, which
+  // the wallet lists still leave aside (no contract to ask), as below.
+  assert.ok(catalogueTokens().some((t) => t.address === NATIVE_ETH), 'ETH/TORCH names native ETH');
+  assert.deepEqual([...WALLET_FALLBACK_TOKENS], [WETH, USDG, ...catalogueTokens().map((t) => t.address).filter((a) => a !== WETH && a !== USDG && a !== NATIVE_ETH)]);
   assert.ok(Object.isFrozen(WALLET_FALLBACK_TOKENS));
   assert.equal(WALLET_FALLBACK_TOKENS.includes(NATIVE_ETH), false);
 });
@@ -1051,7 +1054,12 @@ test('an entry names its symbols as untrusted labels, its fee as fee.ts writes i
   assert.equal(referenceToken([NATIVE_ETH, WETH]), WETH);
   const listings = poolListings([], [pinned, ranked]);
   assert.deepEqual(listings.map((l) => l.token), [USDG, USDG]);
-  assert.deepEqual(poolListings([], SELECTED_POOL_CATALOGUE).map((l) => l.token), SELECTED_POOLS.map(() => USDG), 'every embedded row links with USDG');
+  // Changed on purpose 2026-11-02 (the owner's new embedded list): ETH/TORCH, third, holds no USDG. Its row names both
+  // currencies, so its link names TORCH, never native ETH, and a link to it is verified with TORCH.
+  const TORCH = '0x000050e18ffa3f8f7ad170eb9cef160eb3ed1111';
+  assert.deepEqual(poolListings([], SELECTED_POOL_CATALOGUE).map((l) => l.token), SELECTED_POOLS.map((_, index) => (index === 2 ? TORCH : USDG)), 'every embedded row links with USDG but ETH/TORCH');
+  assert.equal(journey.verificationToken(journey.preselectFrom(SELECTED_POOLS[2])), TORCH);
+  assert.equal(journey.verificationToken(journey.preselectFrom(SELECTED_POOLS[0])), USDG, 'ETH/USDG, which names no addresses');
 });
 
 test('the embedded labels are keyed by pool id, so a new order cannot move a label onto another pool', () => {
@@ -1061,14 +1069,17 @@ test('the embedded labels are keyed by pool id, so a new order cannot move a lab
   const byId = Object.fromEntries(SELECTED_POOL_CATALOGUE.map((entry) => [entry.poolId, entry.labels.join('/')]));
   // Changed on purpose 2026-10-04 (the owner's new embedded list): WETH/USDG left the list, and ETH/USDG and PONS/USDG
   // moved up from fifth and sixth to first and second. Each pool id still carries its own labels, the four new ones too.
+  // Changed on purpose 2026-11-02 (the owner's new embedded list): ETH/USDG 0.05% in place of 0.01%, ETH/TORCH where
+  // USDG/ORBIO was and USDG/PRIORS where USDG/UBIK was; PONS/USDG, CASHCAT/USDG and USDG/VIRTUAL stay where they were.
   assert.deepEqual(byId, {
-    '0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e': 'ETH/USDG',
+    '0x387bf619da4d3fb62bb276482693dba1b9b3520f573cabdfe033384a24125982': 'ETH/USDG',
     '0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a': 'PONS/USDG',
-    '0xea9f200e13055b82f175f44f592c4c13dd8c9d9320a66487d3c5cd90d68550ef': 'USDG/ORBIO',
+    '0x1649550af1e3363b4c25236434530af7e6886b183e1f574a98fdd1d04d287a2d': 'ETH/TORCH',
     '0xa92a3df27a00a276183ff7265fd8affa11df1fe8bb23ddfaf13f6c879a3f818b': 'CASHCAT/USDG',
-    '0x6d56f66e52e63e8be558d708a987426314bb4de92bc9b43a44effee1f2abf317': 'USDG/UBIK',
+    '0x9be7ab27227e115085b0949a819a73f6963ddc6da0c6204d37757c24297706e8': 'USDG/PRIORS',
     '0xa95732060867f07aa9b8ae9a4b7b8d737bc3374f1dfbb952759c5ed676e8737c': 'USDG/VIRTUAL',
   });
+  assert.deepEqual(SELECTED_POOL_CATALOGUE.map((entry) => entry.fee), ['0.05%', '0.30%', '0.30%', '0.269%', '1.00%', '0.30%'], 'fees as fee.ts writes the keys’ fee_pips');
 });
 
 test('New position names a featured list’s pools by their validated keys; a link to one is verified with a currency its entry names', () => {

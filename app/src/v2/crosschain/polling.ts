@@ -15,6 +15,7 @@
  *     minutes. There is no Retry button: the page asks again by itself.
  *   - An unexpected answer (502 upstream_contract_mismatch / upstream_invalid_response, or one this page's checks
  *     refuse) gets one more attempt, then the polling stops.
+ *   - A deposit the bridge has not seen yet is asked about less often the longer it waits (`awaitingWaitMs`, 2026-11-02).
  */
 import type { CrosschainClient, CrosschainOutcome } from './client'
 import { FAILURE_COPY } from './copy'
@@ -39,6 +40,20 @@ export const MAX_WAIT_SECONDS = 300
 export const MIN_WAIT_SECONDS = 10
 /** How many more attempts an unexpected answer gets before the polling stops. */
 export const UNEXPECTED_RETRIES = 1
+/**
+ * Added 2026-11-02 (review M3): a deposit the bridge has not seen yet is asked about less often the longer it waits: once
+ * it has waited SLOW_AWAITING_AFTER_MS, at most once a minute; once QUIET_AWAITING_AFTER_MS, at most every
+ * MAX_WAIT_SECONDS. Across answered `awaiting_deposit` every ~10 s, for good, for a deposit that never reached it (one
+ * that reverted, was dropped, or was replaced in the wallet under another hash).
+ */
+export const SLOW_AWAITING_AFTER_MS = 10 * 60_000
+export const QUIET_AWAITING_AFTER_MS = 60 * 60_000
+
+/** The wait before the next ask, `ms` by the rules above, spaced out by how long the deposit has gone unseen (null: it has been seen). */
+export function awaitingWaitMs(ms: number, awaitingForMs: number | null): number {
+  if (awaitingForMs === null) return ms
+  return Math.max(ms, awaitingForMs >= QUIET_AWAITING_AFTER_MS ? MAX_WAIT_SECONDS * 1000 : awaitingForMs >= SLOW_AWAITING_AFTER_MS ? 60_000 : 0)
+}
 
 export type StopReason =
   /** filled or refunded. */
@@ -234,6 +249,8 @@ export function createStatusPoller({
   let ended = state.stopped !== null
   let cancelTimer: (() => void) | null = null
   let controller: AbortController | null = null
+  /** Since when the deposit has gone unseen by the bridge (no state yet, or `awaiting_deposit`), on the page's clock. */
+  let unseenSince: number | null = null
 
   async function ask(): Promise<void> {
     cancelTimer = null
@@ -245,8 +262,10 @@ export function createStatusPoller({
     controller = null
     const step = reduceStatus(state, outcome, runtime)
     state = step.state
+    const unseen = state.record.lastState === null || state.record.lastState === 'awaiting_deposit'
+    unseenSince = !unseen ? null : unseenSince ?? clock.monoMs()
     if (step.next.kind === 'stop') ended = true
-    else cancelTimer = clock.setTimer(() => void ask(), step.next.ms)
+    else cancelTimer = clock.setTimer(() => void ask(), awaitingWaitMs(step.next.ms, unseenSince === null ? null : clock.monoMs() - unseenSince))
     onUpdate(state)
   }
 

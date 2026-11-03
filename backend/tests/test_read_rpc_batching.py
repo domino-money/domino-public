@@ -12,8 +12,8 @@ from discovery import PUBLIC_RPC_URL
 from eth_abi import encode
 from eth_hash.auto import keccak
 from fastapi.testclient import TestClient
-from discovery import (CHAIN_ID, DEFAULT_READ_CALL_GAS, DataError, DiscoveryReader,
-                       POOL_MANAGER, POSITION_MANAGER, STATE_VIEW, ZERO, ReadRpc, discover, json_http)
+from discovery import (CHAIN_ID, DEFAULT_READ_CALL_GAS, TRUSTED_READ_CALL_GAS, TRUSTED_READ_TARGETS, DataError,
+                       DiscoveryReader, POOL_MANAGER, POSITION_MANAGER, STATE_VIEW, ZERO, ReadRpc, discover, json_http)
 from inventory import AlchemyInventory
 from read_api import ReadGate, create_app
 from read_deadline import read_deadline
@@ -75,7 +75,9 @@ class Provider:
             elif method=='eth_getBalance':result='0x1'
             elif method=='eth_call':
                 assert params[1]==BLOCK['number']
-                assert 21000<=int(params[0]['gas'],16)<=DEFAULT_READ_CALL_GAS
+                # Changed on purpose 2026-11-02: StateView and the PositionManager carry the trusted ceiling.
+                assert 21000<=int(params[0]['gas'],16)<=(TRUSTED_READ_CALL_GAS if params[0]['to'] in TRUSTED_READ_TARGETS
+                                                         else DEFAULT_READ_CALL_GAS)
                 selector=params[0]['data'][2:10]
                 if selector==keccak(b'poolManager()')[:4].hex():result='0x'+encode(['address'],[self.managers.get(params[0]['to'],POOL_MANAGER)]).hex()
                 elif selector==keccak(b'poolKeys(bytes25)')[:4].hex():
@@ -176,7 +178,9 @@ class ReadRpcBatchTests(unittest.TestCase):
         call=rpc.call_params(POSITION_MANAGER,'poolManager()',block=BLOCK['number'])
         for kind in ('over_gas','no_gas','latest','override','to','odd_data','extra_tx','full_block'):
             params=deepcopy(call);method='eth_call'
-            if kind=='over_gas':params[0]['gas']=hex(DEFAULT_READ_CALL_GAS+1)
+            # Changed on purpose 2026-11-02: the PositionManager's ceiling is the trusted one (an arbitrary
+            # contract's, DEFAULT_READ_CALL_GAS, is pinned in test_read_intrinsic_gas.py).
+            if kind=='over_gas':params[0]['gas']=hex(TRUSTED_READ_CALL_GAS+1)
             if kind=='no_gas':del params[0]['gas']
             if kind=='latest':params[1]='latest'
             if kind=='override':params.append({TOKEN:{'balance':'0x1'}})
@@ -187,7 +191,7 @@ class ReadRpcBatchTests(unittest.TestCase):
             with self.subTest(kind=kind),self.assertRaises(DataError):rpc.batch([(method,params)])
         self.assertEqual(provider.envelopes,[])
         rpc.batch([('eth_call',call)])
-        self.assertEqual(provider.envelopes[0][1][0]['params'][0]['gas'],hex(DEFAULT_READ_CALL_GAS))
+        self.assertEqual(provider.envelopes[0][1][0]['params'][0]['gas'],hex(TRUSTED_READ_CALL_GAS))
 
     def test_shared_deadline_checked_after_noncooperative_batch_transport(self):
         now=[0.];provider=Provider();provider.clock=now

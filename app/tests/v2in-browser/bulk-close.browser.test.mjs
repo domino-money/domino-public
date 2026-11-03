@@ -130,6 +130,64 @@ test('reload with no hash never reoffers: a wrong hash stays blocked, a matching
     assert.deepEqual(await s.page.evaluate(() => JSON.parse(localStorage.getItem('domino.pending-close.v1'))), []);
   } finally { await s.close(); }
 });
+// Added 2026-11-02 (review A1): a wallet answer that is lost without a refusal (here -32603 before anything is sent) kept
+// the group's intent with no hash, and with it Close positions and its positions' direct exits, for good in this browser:
+// only a pasted hash or clearing the site's data let it go. Check status now asks the chain, and "I rejected it in my
+// wallet" lets it go while the chain shows its nonce still free with nothing pending. Nothing is sent twice.
+const dropFirstSend = () => {
+  let dropped = false;
+  return (method) => {
+    if (method !== 'eth_sendTransaction' || dropped) return undefined;
+    dropped = true;
+    return { error: { code: -32603, message: 'Internal JSON-RPC error.' } };
+  };
+};
+test('a lost wallet answer never locks the group: “I rejected it in my wallet” lets it go while nothing is pending, and the group closes once', async () => {
+  const s = await scenario(undefined, undefined, dropFirstSend());
+  try {
+    await offerGroup(s.page);
+    const dialog = s.page.locator('[data-bulk-close="unknown"]'); await dialog.waitFor();
+    assert.equal(s.chain.sends.length, 0);
+    await dialog.getByRole('button', { name: 'Check status', exact: true }).click();
+    await dialog.getByText('Your wallet may still be showing this request.', { exact: false }).waitFor();
+    assert.equal(await s.page.evaluate(() => JSON.parse(localStorage.getItem('domino.pending-close.v1')).length), 1, 'before its deadline it may still go through: kept');
+    await dialog.getByRole('button', { name: 'I rejected it in my wallet', exact: true }).click();
+    const failed = s.page.locator('[data-bulk-close="failed"]'); await failed.waitFor();
+    assert.match(await failed.innerText(), /Nothing was sent\. Review your positions again to continue\./);
+    assert.deepEqual(await s.page.evaluate(() => JSON.parse(localStorage.getItem('domino.pending-close.v1'))), []);
+    await failed.getByRole('button', { name: 'Review again' }).click();
+    await s.page.locator('[data-bulk-close="review"]').waitFor();
+    await s.page.locator('[data-bulk-close]').getByRole('button', { name: 'Close 2 positions', exact: true }).click();
+    await s.page.locator('[data-bulk-close="done"]').waitFor();
+    assert.equal(s.chain.sends.length, 1, 'sent once');
+    for (const id of [501001n, 501002n]) assert.equal(s.chain.v4Position(id).liquidity, 0n);
+  } finally { await s.close(); }
+});
+test('after a reload a lost close comes back held, and is let go once the chain is past its deadline; the group then closes once', async () => {
+  const s = await scenario(undefined, undefined, dropFirstSend());
+  try {
+    await offerGroup(s.page);
+    await s.page.locator('[data-bulk-close="unknown"]').waitFor();
+    await reopen(s.page);
+    const dialog = s.page.locator('[data-bulk-close="unknown"]'); await dialog.waitFor();
+    assert.equal(await dialog.getByRole('button', { name: 'Close 2 positions', exact: true }).count(), 0, 'never offered again');
+    await dialog.getByRole('button', { name: 'Check status', exact: true }).click();
+    await dialog.getByText('Your wallet may still be showing this request.', { exact: false }).waitFor();
+    // STEP_DEADLINE_S (480 s) after its review the position manager refuses it: nothing of it can happen any more.
+    s.chain.warp(481);
+    await dialog.getByRole('button', { name: 'Check status', exact: true }).click();
+    const failed = s.page.locator('[data-bulk-close="failed"]'); await failed.waitFor();
+    assert.match(await failed.innerText(), /This request can no longer go through\./);
+    assert.deepEqual(await s.page.evaluate(() => JSON.parse(localStorage.getItem('domino.pending-close.v1'))), []);
+    await failed.getByRole('button', { name: 'Review again' }).click();
+    await s.page.locator('[data-bulk-close="review"]').waitFor();
+    await s.page.locator('[data-bulk-close]').getByRole('button', { name: 'Close 2 positions', exact: true }).click();
+    await s.page.locator('[data-bulk-close="done"]').waitFor();
+    assert.equal(s.chain.sends.length, 1, 'sent once');
+    for (const id of [501001n, 501002n]) assert.equal(s.chain.v4Position(id).liquidity, 0n);
+  } finally { await s.close(); }
+});
+
 // Rewritten on purpose 2026-10-14 (incident C3: screens finish at inclusion): it required the dialog to say "done" only
 // once the block was final (about 16 minutes per group on Robinhood Chain), which is the defect. A recovered close is done
 // at its block now; its intent is held among the included closes until the money client's own read says it is final, and

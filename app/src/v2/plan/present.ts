@@ -6,6 +6,7 @@
  *
  * Pure: no viem, no wallet.
  */
+import { readFigure, type Decimal } from '../../lib/create/typedFigure'
 import { ZERO_ADDRESS, type Address, type PoolRef, type SwapLeg, type TokenAmount } from '../types'
 
 const MIN_TICK = -887272
@@ -72,9 +73,6 @@ export function significantUnitsText(raw: bigint, decimals: number | null, round
   return formatUnitsText(raw, decimals, Math.min(keep, decimals), round)
 }
 
-/** A figure written with thousands separators, the way the page writes one: "1,000" or "2,500.25" (lib/create/amountText.ts). */
-const GROUPED = /^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/
-
 /**
  * What a person typed ("1,000.5", "0.25") as raw units; null when it is not a plain positive decimal with at most
  * `decimals` fraction digits. `decimals` null takes a raw integer only.
@@ -82,11 +80,16 @@ const GROUPED = /^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/
  * Changed on purpose 2026-10-30 (QA round 2, N99): spaces around it are dropped, and commas only where they group
  * thousands ("1,000.50"), the rule New position's own amount step reads by (lib/create/amountText.ts). Any other comma is
  * refused: "0,5" was read as 5, ten times the amount, on the zap path and in a position's Add dialogs.
+ *
+ * Changed on purpose 2026-11-02 (review of the money PRs, M4): commas by lib/create/typedFigure.ts's rule, the one New
+ * position reads by. "1,250" and "0,125" were read as 1250 and 125, a thousand times what a decimal comma means: the first
+ * is refused as ambiguous, and both are decimals where the person's language writes a decimal comma (`decimal`, handed in
+ * by a test). A page-style "1,000.5" or "1,250,000" still loses its separators.
  */
-export function parseUnitsText(text: string, decimals: number | null): bigint | null {
-  const trimmed = text.trim()
-  if (trimmed.includes(',') && !GROUPED.test(trimmed)) return null
-  const clean = trimmed.replace(/,/g, '')
+export function parseUnitsText(text: string, decimals: number | null, decimal?: Decimal): bigint | null {
+  const read = readFigure(text, decimal)
+  if (!read.ok) return null
+  const clean = read.text
   if (decimals === null) return /^[0-9]{1,78}$/.test(clean) && BigInt(clean) > 0n ? BigInt(clean) : null
   const match = /^([0-9]{0,60})(?:\.([0-9]*))?$/.exec(clean)
   if (!match || (match[1] === '' && (match[2] ?? '') === '')) return null
