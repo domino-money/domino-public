@@ -14,7 +14,7 @@ import { recordVaultEvents, rememberApproval } from './store'
 import { useStepsRun, WalletSteps, type StepOutcome, type WalletStep } from './steps'
 import { amountWords, shortAddress, type TokenView } from './tokens'
 import { Check, Details, ErrorLine, Fact, FlowDialog, LockedNote } from './ui'
-import { protectionVault, recoverPositionInput, recoverTokenInput, withdrawRecipientInput, type VaultActionKind, type VaultReserve, type VaultView } from './vaultView'
+import { protectionVault, restartsAfterLeave, recoverPositionInput, recoverTokenInput, withdrawRecipientInput, type VaultActionKind, type VaultReserve, type VaultView } from './vaultView'
 
 /**
  * A vault's owner actions as the position page's action dialogs (spec F7 rev3/rev4 §2.13, §5.3, §5.5, §5.6): "Withdraw
@@ -193,6 +193,7 @@ function previewSteps(kind: VaultDialogKind, view: VaultView, tokens: readonly [
       return [
         { key: 'approve-root', title: stepTitle('approve-root', protectionVault(view)), note: 'Only if your wallet no longer approves your automation.' },
         { key: 'rearm', title: stepTitle('rearm', protectionVault(view)) },
+        ...(restartsAfterLeave(view) ? [{ key: 'resume', title: STEP_TITLE.resume as string }] : []),
       ]
     case 'pause':
       return [{ key: 'pause', title: STEP_TITLE.pause as string }]
@@ -212,11 +213,11 @@ function previewSteps(kind: VaultDialogKind, view: VaultView, tokens: readonly [
 }
 
 /** The action a dialog reviews (rearm only once its consent is given; a typed recovery only once what is typed is whole). */
-function actionOf(kind: VaultDialogKind, consent: boolean, subject: VaultDialogSubject | null, typed: { token: `0x${string}` | null; amount: bigint | null; id: bigint | null }): VaultAction | null {
+function actionOf(kind: VaultDialogKind, consent: boolean, subject: VaultDialogSubject | null, typed: { token: `0x${string}` | null; amount: bigint | null; id: bigint | null }, restarts: boolean): VaultAction | null {
   switch (kind) {
     case 'return': return { kind: 'return-reserves' }
     case 'leave': return { kind: 'exit-all' }
-    case 'rearm': return consent ? { kind: 'rearm', consentToUncollectedFees: true } : null
+    case 'rearm': return consent ? { kind: 'rearm', consentToUncollectedFees: true, thenResume: restarts } : null
     case 'pause': return { kind: 'pause' }
     case 'resume': return { kind: 'resume' }
     case 'unsubscribe': return { kind: 'unsubscribe' }
@@ -320,9 +321,11 @@ export function VaultDialog({ kind, view, tokens: receivedTokens, gate, subject 
   const typedAddress = typedToken?.ok ? typedToken.token.address : null
   const typedAmount = typedToken?.ok ? typedToken.amount : null
   const subjectId = subject?.tokenId ?? null
+  // As the dialog opened: the root coming back mid-way changes the view, never what the person was asked to confirm.
+  const [restarts] = useState(() => kind === 'rearm' && restartsAfterLeave(view))
   const action = useMemo(
-    () => actionOf(kind, consent, subjectId === null ? null : { tokenId: subjectId }, { token: typedAddress, amount: typedAmount, id: typedId }),
-    [kind, consent, subjectId, typedAddress, typedAmount, typedId],
+    () => actionOf(kind, consent, subjectId === null ? null : { tokenId: subjectId }, { token: typedAddress, amount: typedAmount, id: typedId }, restarts),
+    [kind, consent, subjectId, typedAddress, typedAmount, typedId, restarts],
   )
   // `{token}` in a refusal names the typed token (InsufficientReserves: "That's more than your vault holds in {token}.").
   const named = typedToken?.token ?? null
@@ -557,7 +560,9 @@ export function VaultDialog({ kind, view, tokens: receivedTokens, gate, subject 
         ? PROTECTION_LEDE['turn-on']
         : exitRearm === 'approve'
           ? (nothingToDo ? PROTECTION_LEDE.kept : PROTECTION_LEDE.approve)
-          : 'Automation starts again for this position. Your wallet may first ask you to approve it again.'
+          : restarts
+            ? 'Automation starts again for this position, with the settings it had. Confirm each step in your wallet.'
+            : 'Automation starts again for this position. Your wallet may first ask you to approve it again.'
       break
     case 'pause':
       lede = VAULT_TEXT.vault_pause_keeps_auto_exit

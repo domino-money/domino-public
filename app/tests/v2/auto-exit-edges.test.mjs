@@ -504,8 +504,8 @@ test('Auto-exit\'s own automation never offers to cut its position from it while
   // Armed: never Pause or Resume (it stays paused: resuming would reinvest), Leave automation kept.
   assert.deepEqual(vaultView.vaultActions(view({ armed: true, disarm: null, status: 'protection' })), ['leave', ...ADVANCED]);
   assert.deepEqual(vaultView.vaultActions(view({ armed: true, disarm: null, status: 'paused', autoExitEnabled: false, exit: 'paused' })), ['leave', ...ADVANCED]);
-  // Any other vault keeps its own: Leave automation's reason 7 has no rearm there.
-  assert.deepEqual(vaultView.vaultActions(view({ exit: null, disarm: reason(7) })), ['unsubscribe', 'revoke', ...ADVANCED]);
+  // Any other vault too (changed on purpose 2026-11-02, the owner: who leaves automation can turn it back on).
+  assert.deepEqual(vaultView.vaultActions(view({ exit: null, disarm: reason(7) })), ['rearm', 'unsubscribe', 'revoke', ...ADVANCED]);
   // Auto-exit's own is the view's word, its module on or off.
   assert.equal(vaultView.protectionVault(view({ autoExitEnabled: false })), true);
   assert.equal(vaultView.protectionVault(view({ exit: null })), false);
@@ -555,6 +555,8 @@ test('the waiting lines an Auto-exit can show speak Auto-exit\'s words; the rest
   const waiting = (fields) => ({ since: NOW - 120, reason: 'blocked', error: null, ...fields });
   // Changed on purpose 2026-10-06 (the final check, F8): the pause by its cause, never "turned off" beside "Turn off".
   assert.equal(waitingWords(waiting({ error: 'ExitModuleNotEnabled' }), 4663, NOW, null, AUTO_EXIT_WAITING_TEXT).text, "Paused: your automation doesn't allow Auto-exit right now · since 2 min ago");
+  // Added 2026-11-02 (#437): an empty position says so, never the generic "Waiting".
+  assert.match(waitingWords(waiting({ reason: 'position_empty' }), 4663, NOW, null, AUTO_EXIT_WAITING_TEXT).text, /^Waiting: this position is empty · since /);
   assert.equal(waitingWords(waiting({ reason: 'trigger_not_reached' }), 4663, NOW, null, AUTO_EXIT_WAITING_TEXT).text, 'Waiting for the price to reach the end of your range · since 2 min ago');
   assert.equal(waitingWords(waiting({ error: 'TriggerNotReached' }), 4663, NOW, null, AUTO_EXIT_WAITING_TEXT).code, 'TriggerNotReached');
   assert.match(waitingWords(waiting({ error: 'ExitModuleNotEnabled' }), 4663, NOW).text, /^Paused: auto-exit is turned off for your automation/, 'elsewhere, the table\'s words');

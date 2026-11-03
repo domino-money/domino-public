@@ -140,6 +140,36 @@ test('rearm: rearm(true) 0xf6fa162e only with the consent, after the individual 
   assert.equal((await client.readVault(vault)).rootArmed, true);
 });
 
+// Added 2026-11-02 (the owner: who leaves automation can turn it back on).
+test('rearm after Leave automation: thenResume adds resume(), derived again before each step; without it the vault stays paused', async () => {
+  const { chain, client, vault } = await setup();
+  await act(client, vault, { kind: 'exit-all' });
+  const left = await client.readVault(vault);
+  assert.equal(left.rootArmed, false);
+  assert.equal(left.paused, true);
+  const plain = await client.reviewAction(vault, { kind: 'rearm', consentToUncollectedFees: true });
+  assert.deepEqual(plain.steps.map((s) => s.kind), ['rearm'], 'never a resume nobody asked for');
+  await assert.rejects(client.reviewAction(vault, { kind: 'rearm', consentToUncollectedFees: false, thenResume: true }), /^Error: vault_consent_required$/);
+  const policy = { ...chain.vault(vault).policy };
+  const review = await client.reviewAction(vault, { kind: 'rearm', consentToUncollectedFees: true, thenResume: true });
+  assert.deepEqual(review.steps.map((s) => s.kind), ['rearm', 'resume']);
+  assert.deepEqual(review.notes, ['vault_consent_uncollected_fees']);
+  await assert.rejects(client.prepareStep(review, 1, GAS), /vault_step_out_of_order/, 'the resume only once the root is back');
+  await client.send(await client.prepareStep(review, 0, GAS), true);
+  const back = await client.readVault(vault);
+  assert.equal(back.rootArmed, true);
+  assert.equal(back.paused, true);
+  // Stopped between the two: a new review asks only for what is left.
+  const rest = await client.reviewAction(vault, { kind: 'rearm', consentToUncollectedFees: true, thenResume: true });
+  assert.deepEqual(rest.steps.map((s) => s.kind), ['resume']);
+  await client.send(await client.prepareStep(review, 1, GAS), true);
+  const running = await client.readVault(vault);
+  assert.equal(running.rootArmed, true);
+  assert.equal(running.paused, false);
+  assert.deepEqual(chain.vault(vault).policy, policy, 'the settings it had');
+  await assert.rejects(client.reviewAction(vault, { kind: 'rearm', consentToUncollectedFees: true, thenResume: true }), /vault_step_not_needed/, 'nothing left to do');
+});
+
 test('an approval lost and given back before any execution recorded it: rootArmed is live, so the root is armed again and the rearm step is not needed', async () => {
   const { chain, client, vault } = await setup();
   chain.approveOther(4, ROOT, OTHER);

@@ -172,7 +172,7 @@ export const AUTO_EXIT: DocPage = {
     {
       id: 'cost',
       title: 'What it costs',
-      blocks: [p('0.2% of the position’s value when it closes, only if it does: the only fee. Nothing while it waits.')],
+      blocks: [p('0.2% of the position’s value when it closes, only if it does: the only fee. Nothing while it waits, even if the position is empty.')],
     },
     {
       id: 'warnings',
@@ -252,7 +252,8 @@ export const YOUR_AUTOMATION: DocPage = {
       title: 'Leave automation',
       blocks: [
         // 2026-10-04 (rugged97's delta of 4 Oct §2 item 3, #319): exitAll turns auto-exit off too.
-        p(b('Leave automation'), ' sends the positions Domino-compound opened, and everything your automation can pay, to your wallet in one action, and compounding ends. No fee. ', doc('Auto-exit', 'auto-exit'), ' pauses until you turn it back on.'),
+        // 2026-11-02 (the owner: who leaves automation can turn it back on); its consent is said under When it stops.
+        p(b('Leave automation'), ' sends the positions Domino-compound opened, and everything your automation can pay, to your wallet in one action. No fee. Compounding stops until you use ', b('Turn back on'), ', which starts it with the settings it had. ', doc('Auto-exit', 'auto-exit'), ' pauses until you turn it back on.'),
         p('Each next position can also be withdrawn alone. On a Uniswap v4 position, once nothing is left, ', b('Remove Domino from this position'), ' and ', b('Revoke approval'), ' end Domino’s access.'),
         // 2026-10-30 (QA2 N59).
         p('You can leave even ', doc('without this site', 'non-custodial', 'if-domino-is-down'), '.'),

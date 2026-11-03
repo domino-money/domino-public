@@ -298,6 +298,10 @@ export const VAULT_ADVANCED_ACTIONS: ReadonlySet<VaultActionKind> = new Set<Vaul
  * "Revoke approval" are never offered (revoking would stop the exit); Pause and Resume never apply (resuming would
  * reinvest). Its rearm stays offered after Leave automation too (reason 7; §5.4: rearm to start again), where it gives the
  * approval back to a paused Auto-exit or is the first part of turning Auto-exit on again.
+ *
+ * Changed on purpose 2026-11-02 (the owner: who leaves automation can turn it back on): any other vault has that rearm
+ * too, once the position is still the owner's. The contract never refused it; only the operator's rearm is refused after
+ * exitAll. It starts the vault again with the settings it had (restartsAfterLeave).
  */
 export function vaultActions(view: VaultView): VaultActionKind[] {
   if (!view.ownedByWallet) return []
@@ -308,7 +312,7 @@ export function vaultActions(view: VaultView): VaultActionKind[] {
   if (offer.withdraw) actions.push('withdraw')
   if (offer.returnable) actions.push('return')
   // The rearm (decision #5): the root not armed for a reason the owner can undo (not burned, not withdrawn by auto-exit).
-  const ended = (reason: number | 'unknown') => reason === 3 || reason === 6 || (reason === 7 && exit === null)
+  const ended = (reason: number | 'unknown') => reason === 3 || reason === 6 || (reason === 7 && exit === null && view.links.ownerHolds === false)
   if (exit !== 'on' && view.armed === false && view.rootClosed !== true && view.disarm && !ended(view.disarm.reason)) actions.push('rearm')
   if (exit === null && (view.rootClosed !== true || view.successors.length > 0) && view.armed !== false && view.status === 'on') actions.push('pause')
   if (exit === null && (view.rootClosed !== true || view.successors.length > 0) && view.status === 'paused') actions.push('resume')
@@ -393,6 +397,15 @@ export const sinceWords = (since: number | null, nowSeconds: number): string | n
  * paused with its module off stays Auto-exit's while Auto-exit is listed on its root (../autoexit/standing.ts exitVaultOf).
  */
 export const protectionVault = (view: Pick<VaultView, 'exit'>): boolean => view.exit !== null
+
+/**
+ * Whether "Turn back on" also resumes the vault: after Leave automation, which paused it. Read right after leaving, the
+ * reason is unknown until the listing catches up; a pause someone made on purpose then stays, as on any other rearm.
+ */
+export function restartsAfterLeave(view: Pick<VaultView, 'exit' | 'disarm' | 'pausedBy'>): boolean {
+  const reason = view.disarm?.reason
+  return !protectionVault(view) && (reason === 7 || (reason === 'unknown' && view.pausedBy !== 'you' && view.pausedBy !== 'Domino'))
+}
 
 /** NFT identity, independent of the number of vaults created for it. */
 export function automationPositionKey(view: Pick<VaultView, 'chainId' | 'dex' | 'rootTokenId'>): string {

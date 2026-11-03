@@ -857,6 +857,88 @@ test('live: "Leave automation" on a running vault\'s page sends exitAll() (the r
 });
 
 // Added 2026-10-04 (rugged97's delta of 4 Oct §2 item 3, #319): Leave automation turns auto-exit off; its orders pause.
+// Added 2026-11-02 (the owner: who leaves automation can turn it back on).
+test('live: after Leave automation made here, "Turn back on" sends rearm(true), then resume(): automation runs again with the settings it had', async () => {
+  const chain = createVaultChain({ chainId: 4663, positions: [{ dex: 4, tokenId: ROOT, pool: POOL, tickLower: -600, tickUpper: 600 }] });
+  const vault = await chain.seedVault({ dex: 4, tokenId: ROOT, startPaused: false });
+  const liquidity = chain.nft(4, ROOT).liquidity;
+  const portfolio = listing(chain, vault, { armed: true, reserves: [[ZERO, 0n], [USDG, 0n]], root: { owner: OWNER, liquidity } });
+  const policy = { ...chain.vault(vault).policy };
+  const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1: rootOnV1({ liquidity }) });
+  const { page } = s;
+  try {
+    const card = page.locator(`[data-automation-panel] section[data-vault-card="${vault}"]`);
+    await card.waitFor({ timeout: 30_000 });
+    await card.locator('[data-vault-open="leave"]').click();
+    const leave = page.locator('[role="dialog"][data-v2in-dialog="vault-leave"]');
+    await leave.waitFor();
+    await page.waitForFunction(() => document.querySelector('[data-v2in-send="leave"]')?.disabled === false, null, { timeout: 30_000 });
+    await leave.locator('[data-v2in-send="leave"]').click();
+    await leave.locator('[data-v2in-close]').waitFor({ timeout: 30_000 });
+    await leave.locator('[data-v2in-close]').click();
+    assert.equal(chain.vault(vault).disarmed, true);
+    assert.equal(chain.vault(vault).paused, true);
+
+    await expandAutomation(page);
+    const again = card.locator('[data-vault-open="rearm"]');
+    await again.waitFor({ timeout: 30_000 });
+    assert.equal(await again.innerText(), 'Turn back on');
+    await again.click();
+    const dialog = page.locator('[role="dialog"][data-v2in-dialog="vault-rearm"]');
+    await dialog.waitFor();
+    assert.equal(await dialog.locator('h2').innerText(), 'Turn back on');
+    assert.equal(await dialog.locator('[data-vault-lede]').innerText(), 'Automation starts again for this position, with the settings it had. Confirm each step in your wallet.');
+    await dialog.locator('[data-rearm-consent]').check();
+    await dialog.locator('[data-wallet-steps="vault-rearm"] li[data-wallet-step="resume"]').waitFor({ timeout: 30_000 });
+    assert.deepEqual(await dialog.locator('[data-wallet-steps="vault-rearm"] li').evaluateAll((items) => items.map((li) => li.getAttribute('data-wallet-step'))), ['rearm', 'resume']);
+    await page.waitForFunction(() => document.querySelector('[data-v2in-send="rearm"]')?.disabled === false, null, { timeout: 30_000 });
+    const before = chain.sends.length;
+    await dialog.locator('[data-v2in-send="rearm"]').click();
+    await dialog.locator('[data-v2in-close]').waitFor({ timeout: 60_000 });
+    assert.deepEqual(chain.sends.slice(before).map((tx) => [tx.to.toLowerCase(), selectorOf(tx.data)]), [[vault, toFunctionSelector('rearm(bool)')], [vault, toFunctionSelector('resume()')]]);
+    assert.equal(chain.vault(vault).disarmed, false);
+    assert.equal(chain.vault(vault).paused, false);
+    assert.deepEqual(chain.vault(vault).policy, policy, 'the settings it had');
+    await dialog.locator('[data-v2in-close]').click();
+    await page.locator(`section[data-vault-card="${vault}"][data-vault-status="on"]`).waitFor({ state: 'attached', timeout: 30_000 });
+    await expandAutomation(page);
+    assert.equal(await card.locator('[data-vault-pill]').innerText(), 'Automation on');
+    assert.equal(await card.locator('[data-vault-open="rearm"]').count(), 0);
+  } finally {
+    await s.close();
+  }
+});
+
+test('live: left automation on an earlier visit, its position approved elsewhere since: "Turn back on" asks the approval first, then rearm(true), then resume()', async () => {
+  const chain = createVaultChain({ chainId: 4663, positions: [{ dex: 4, tokenId: ROOT, pool: POOL, tickLower: -600, tickUpper: 600 }] });
+  const vault = await chain.seedVault({ dex: 4, tokenId: ROOT, startPaused: true });
+  chain.disarm(vault, 7);
+  const liquidity = chain.nft(4, ROOT).liquidity;
+  chain.approveOther(4, ROOT, '0x00000000000000000000000000000000000000AA');
+  const portfolio = listing(chain, vault, { armed: false, reason: 'exit_all', paused: true, pausedBy: 'unknown', reserves: [[ZERO, 0n], [USDG, 0n]], root: { owner: OWNER, liquidity } });
+  const s = await openLive(chain, { hash: `/positions/${ROOT}`, read6: { portfolio }, v1: rootOnV1({ liquidity }) });
+  const { page } = s;
+  try {
+    const card = page.locator(`[data-automation-panel] section[data-vault-card="${vault}"]`);
+    await card.waitFor({ timeout: 30_000 });
+    assert.match(await card.locator('[data-vault-state]').innerText(), /^You ended your automation\./);
+    await card.locator('[data-vault-open="rearm"]').click();
+    const dialog = page.locator('[role="dialog"][data-v2in-dialog="vault-rearm"]');
+    await dialog.waitFor();
+    await dialog.locator('[data-rearm-consent]').check();
+    await dialog.locator('[data-wallet-steps="vault-rearm"] li[data-wallet-step="resume"]').waitFor({ timeout: 30_000 });
+    assert.deepEqual(await dialog.locator('[data-wallet-steps="vault-rearm"] li').evaluateAll((items) => items.map((li) => li.getAttribute('data-wallet-step'))), ['approve-root', 'rearm', 'resume']);
+    await page.waitForFunction(() => document.querySelector('[data-v2in-send="rearm"]')?.disabled === false, null, { timeout: 30_000 });
+    await dialog.locator('[data-v2in-send="rearm"]').click();
+    await dialog.locator('[data-v2in-close]').waitFor({ timeout: 60_000 });
+    assert.deepEqual(chain.sends.map((tx) => selectorOf(tx.data)), [toFunctionSelector('approve(address,uint256)'), toFunctionSelector('rearm(bool)'), toFunctionSelector('resume()')]);
+    assert.equal(chain.vault(vault).disarmed, false);
+    assert.equal(chain.vault(vault).paused, false);
+  } finally {
+    await s.close();
+  }
+});
+
 test('live: an Auto-exit paused because auto-exit is off offers "Turn back on": one step, setExitModule(autoExit), as signed', async () => {
   const chain = createVaultChain({ chainId: 4663, positions: [{ dex: 4, tokenId: ROOT, pool: POOL, tickLower: -600, tickUpper: 600 }] });
   const vault = await chain.seedVault({ dex: 4, tokenId: ROOT, startPaused: true });

@@ -21,7 +21,7 @@ import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { closeBrowser } from './support/close-browser.mjs';
 import { TEXT_FILE, findForbidden } from '../scripts/deploy-markers.mjs';
-import { apiOf, close, dexOf, go, leaving, problemsOf, reload, shown, watch } from './page-watch.mjs';
+import { apiOf, close, dexOf, go, leaving, open as openPage, problemsOf, reload, shown, watch } from './page-watch.mjs';
 import { feesAnswer } from './support/fees/stub.mjs';
 
 const DIST = resolve(import.meta.dirname, '../dist');

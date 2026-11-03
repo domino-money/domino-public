@@ -596,8 +596,12 @@ export interface VaultCreateReview {
 export type VaultAction =
   | { kind: 'pause' }
   | { kind: 'resume' }
-  /** Takes custody of the root again; the consent is the same as creation's (rearm(false) is never sent). */
-  | { kind: 'rearm'; consentToUncollectedFees: boolean }
+  /**
+   * Takes custody of the root again; the consent is the same as creation's (rearm(false) is never sent). `thenResume`:
+   * after Leave automation, which paused the vault too, it runs again once the root is back. Never on Auto-exit's own
+   * vault: resuming that one would reinvest.
+   */
+  | { kind: 'rearm'; consentToUncollectedFees: boolean; thenResume?: boolean }
   | { kind: 'set-policy'; policy: VaultPolicy }
   | { kind: 'set-limits'; limits: VaultLimits }
   /**
@@ -1012,19 +1016,26 @@ export function createVaultClient(wallet: V2Wallet, chain: V2Chain, supplied: V2
       case 'rearm': {
         // rearm(false) reverts InvalidInit and is never built: the consent is the owner's, explicitly.
         if (action.consentToUncollectedFees !== true) return fail('vault_consent_required')
-        if (await view<boolean>(at, at0, VAULT_ABI, 'rootArmed')) return fail('vault_step_not_needed')
-        const holder = await holderOf(at, dex, root.tokenId)
-        if (holder !== owner) return fail('vault_root_not_owned')
-        if (dex === 4) {
-          const subscriber = await subscriberOf(at, root.tokenId)
-          if (subscriber !== ZERO_ADDRESS && subscriber !== at0) return fail('vault_foreign_subscriber')
+        // Added 2026-11-02 (the owner: who leaves automation can turn it back on): derived again before each step, so with
+        // the root back only the resume is left.
+        const resumes = action.thenResume === true && (await view<boolean>(at, at0, VAULT_ABI, 'paused'))
+        if (await view<boolean>(at, at0, VAULT_ABI, 'rootArmed')) {
+          if (!resumes) return fail('vault_step_not_needed')
+        } else {
+          const holder = await holderOf(at, dex, root.tokenId)
+          if (holder !== owner) return fail('vault_root_not_owned')
+          if (dex === 4) {
+            const subscriber = await subscriberOf(at, root.tokenId)
+            if (subscriber !== ZERO_ADDRESS && subscriber !== at0) return fail('vault_foreign_subscriber')
+          }
+          const mode = (await view<VaultPolicy>(at, at0, VAULT_ABI, 'policy')).mode
+          notes.push('vault_consent_uncollected_fees')
+          if ((await approvedOf(at, dex, root.tokenId)) !== at0) {
+            steps.push(step('approve-root', manager, managerAbi(dex), 'approve', [at0, root.tokenId], [`Approve position #${root.tokenId} to your vault ${at0}.`]))
+          }
+          steps.push(own('rearm', 'rearm', [true], [`Turn automation back on for position #${root.tokenId}.`, VAULT_TEXT.vault_consent_uncollected_fees.replace('{fee}', automationFeeText(mode === 2 ? 2 : 1))]))
         }
-        const mode = (await view<VaultPolicy>(at, at0, VAULT_ABI, 'policy')).mode
-        notes.push('vault_consent_uncollected_fees')
-        if ((await approvedOf(at, dex, root.tokenId)) !== at0) {
-          steps.push(step('approve-root', manager, managerAbi(dex), 'approve', [at0, root.tokenId], [`Approve position #${root.tokenId} to your vault ${at0}.`]))
-        }
-        steps.push(own('rearm', 'rearm', [true], [`Turn automation back on for position #${root.tokenId}.`, VAULT_TEXT.vault_consent_uncollected_fees.replace('{fee}', automationFeeText(mode === 2 ? 2 : 1))]))
+        if (resumes) steps.push(own('resume', 'resume', [], ['Resume automation for this vault.']))
         break
       }
       case 'set-policy': {

@@ -342,6 +342,9 @@ export const WAITING_REASON_TEXT: Readonly<Record<string, string>> = Object.free
   // twap_history_short is gone; the backend never writes it, and its words spoke of oracle slots Domino pays for, which
   // the decision of 5 Oct ruled out (a v3 pool without the history uses the signed price, as v4 does).
   v2_observation_unstable: 'Waiting for the price to settle',
+  // Added 2026-11-02 (#437, the owner's rule: no Auto-exit on an empty position): the order stays active and fires once the
+  // position holds something again.
+  position_empty: 'Waiting: this position is empty',
 })
 
 /** A share in basis points as a percent: 500 → "5", 250 → "2.5", 5000 → "50". */

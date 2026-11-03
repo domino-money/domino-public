@@ -128,9 +128,20 @@ test('rev3/rev4: "Withdraw to wallet" whenever a reserve is held, in every state
   assert.deepEqual(vaultView.reservesOffer(empty), { withdraw: false, returnable: false });
   // Unread reserves: nothing offered from the listing (the dialog reads the chain itself, under live).
   assert.deepEqual(vaultView.reservesOffer({ ...lone, reserves: { known: false, reason: 'not_read' } }), { withdraw: false, returnable: false });
-  // After exitAll on v4: remove Domino and revoke the approval, while they still link the root to the vault.
+  // After exitAll on v4: turn it back on (changed on purpose 2026-11-02, the owner), or remove Domino and revoke the
+  // approval, while they still link the root to the vault. A root no longer in the wallet: neither.
   const ended = { ...lost, disarm: { reason: 7, text: '', since: null }, reserves: { known: true, list: [], held: false }, links: { subscribed: true, approved: true, ownerHolds: true } };
-  assert.deepEqual(vaultView.vaultActions(ended), ['unsubscribe', 'revoke', ...ADVANCED]);
+  assert.deepEqual(vaultView.vaultActions(ended), ['rearm', 'unsubscribe', 'revoke', ...ADVANCED]);
+  assert.deepEqual(vaultView.vaultActions({ ...ended, links: { subscribed: true, approved: true, ownerHolds: false } }), ADVANCED);
+  // "Turn back on" also resumes only what Leave automation paused: a pause someone made on purpose stays, and Auto-exit's own vault never resumes.
+  const restarts = (reason, pausedBy = null, exit = null) => vaultView.restartsAfterLeave({ exit, pausedBy, disarm: { reason, text: '', since: null } });
+  assert.equal(restarts(7), true);
+  assert.equal(restarts(7, 'you'), true, 'left after pausing it');
+  assert.equal(restarts('unknown'), true, 'read right after leaving, before the listing caught up');
+  assert.equal(restarts('unknown', 'you'), false);
+  assert.equal(restarts('unknown', 'Domino'), false);
+  assert.equal(restarts(4), false);
+  assert.equal(restarts(7, null, 'off'), false);
   // Another wallet's vault: nothing, the recoveries included.
   assert.deepEqual(vaultView.vaultActions({ ...base, ownedByWallet: false }), []);
 });

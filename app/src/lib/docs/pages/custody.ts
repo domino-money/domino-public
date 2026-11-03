@@ -74,10 +74,10 @@ export const NON_CUSTODIAL: DocPage = {
           kind: 'facts',
           rows: [
             { label: 'Pause', value: 'You, or Domino', note: 'Stops automated runs; Auto-exit stays on. Only you can resume.' },
-            { label: 'Turn back on', value: 'You', note: 'Restarts automation after a change outside Domino stopped it.' },
+            { label: 'Turn back on', value: 'You', note: 'Restarts automation after you left it, or after a change outside Domino stopped it.' },
             { label: 'Withdraw to wallet', value: 'You', note: 'Sends the fees your automation holds to your wallet, in any state.' },
             { label: 'Withdraw a next position', value: 'You', note: 'Sends a position Domino-compound opened to your wallet, as a plain position.' },
-            { label: 'Leave automation', value: 'You', note: 'Everything your automation holds to your wallet, and automation ends; Auto-exit pauses.' },
+            { label: 'Leave automation', value: 'You', note: 'Everything your automation holds to your wallet, and automation stops; Auto-exit pauses.' },
             { label: 'Turn off Auto-exit', value: 'You', note: 'Ends it for good.' },
           ],
         },

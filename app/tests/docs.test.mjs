@@ -990,7 +990,9 @@ test('titles are short, a summary is one line ending in a period, and every page
     // Changed on purpose 2026-10-31 (QA round 2 follow-ups, free-amounts, and triage R9): 485 for New position, whose
     // amount step now says what the screen does (one amount filled in, or both typed, Fill in for me, a swap or another
     // token only when short of one); measured at 484 after its review (Fill in for me "works out the second amount again").
-    const budget = entry.slug === 'glossary' ? 720 : entry.slug === 'non-custodial' ? 580 : entry.slug === 'manage-position' ? 470 : entry.slug === 'your-automation' ? 475 : entry.slug === 'new-position' ? 485 : entry.slug === 'domino-compound' || entry.slug === 'positions' ? 480 : 450;
+    // Changed on purpose 2026-11-02 (the owner: who leaves automation can turn it back on): 490 for Your automation, whose
+    // Leave automation section now says how to start again; measured at 485.
+    const budget = entry.slug === 'glossary' ? 720 : entry.slug === 'non-custodial' ? 580 : entry.slug === 'manage-position' ? 470 : entry.slug === 'your-automation' ? 490 : entry.slug === 'new-position' ? 485 : entry.slug === 'domino-compound' || entry.slug === 'positions' ? 480 : 450;
     assert.ok(words <= budget, `${entry.slug} has ${words} words`);
   }
 });
@@ -1024,8 +1026,9 @@ test('the docs source stays inside its budget in the entry bundle', (t) => {
   // Changed on purpose 2026-10-31 (QA round 2 follow-ups: N26, N49, R48, and New position's amount step with both
   // amounts typed and Fill in for me, free-amounts and R9): 32,300 -> 32,500 for the corrected sentences and the comments
   // that date them; measured at 32,464 bytes.
-  t.diagnostic(`src/lib/docs: ${files.length} files, ${Buffer.byteLength(text)} bytes, ${size} bytes gzip (budget 32500)`);
-  assert.ok(size <= 32_500, `the docs source is ${size} bytes gzip, over the 32,500 byte budget`);
+  t.diagnostic(`src/lib/docs: ${files.length} files, ${Buffer.byteLength(text)} bytes, ${size} bytes gzip (budget 32600)`);
+  // Changed on purpose 2026-11-02: 32,600 with Turn back on after Leave automation; measured at 32,533.
+  assert.ok(size <= 32_600, `the docs source is ${size} bytes gzip, over the 32,600 byte budget`);
 });
 
 // ---------------------------------------------------------------------------
