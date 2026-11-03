@@ -45,9 +45,17 @@ Limits, enforced per endpoint by the chain's shared transport:
 - archive: whether the endpoint serves state at any block. A hosted full node
   keeps about RECENT_STATE_BLOCKS of recent state.
 A 429, a 5xx or a network failure cools the endpoint down for 1 s, doubling up
-to 60 s while it keeps failing. A call to a cooling endpoint, or one the pace
-would hold for more than MAX_PACE_WAIT_SECONDS, is refused locally as http_429:
-nothing is sent or billed, and the client fails over to the next endpoint.
+to 60 s while it keeps failing. A call it did not answer within its ceiling
+(discovery.RpcCallTimeout, 12 s by default) holds it for 15 s, doubling up to
+120 s while it keeps happening; an answer ends either. The own node is behind
+both of its Robinhood routes, so a timeout on one holds both, and a client moves
+past them at once; a slow log range on the own node is its range and holds
+nothing. The order is never changed: a held endpoint is passed over, not moved.
+A call to a cooling or held endpoint, or one the pace would hold for more than
+MAX_PACE_WAIT_SECONDS, is refused locally as http_429: nothing is sent or
+billed, and the client fails over to the next endpoint. A call that took 2 s
+or more (rpc_failover.SLOW_CALL_SECONDS), or ran out of time, leaves one line:
+endpoint name, methods, items, milliseconds and outcome.
 
 An endpoint whose latest head the chain's follower (v2_head) found outside its
 window, such as a node restarted far behind, is set aside: clients pass over it
@@ -84,13 +92,13 @@ from urllib.parse import urlsplit
 
 from eth_hash.auto import keccak
 
-from discovery import (CHAIN_ID, Block, DataError, ReadRpc, RpcStateUnavailable, parse_block,
+from discovery import (CHAIN_ID, Block, DataError, ReadRpc, RpcCallTimeout, RpcStateUnavailable, parse_block,
                        prefetched, quantity, rpc_http)
 from execution_status_runtime import private_file
 from local_config import CONFIG_PATH, checked_config, load_config
 from read_deadline import current_read_deadline, read_deadline
 from rpc_config import LOCAL_STATE_BLOCKS, MAX_RPC_ENDPOINTS, configured_rpc_urls, own_node, rpc_hosts
-from rpc_failover import RETRYABLE, FailoverReadRpc, HistoricalReadRpc
+from rpc_failover import RETRYABLE, FailoverReadRpc, HistoricalReadRpc, slow_call
 from v2_chains import BalanceChainProfile, ChainProfile, default_balance_registry, default_registry
 
 KIND = 'domino-v2-chain-rpc'
@@ -107,6 +115,10 @@ RECENT_STATE_BLOCKS = 128
 # to 100 reads to the same routes, and their log spans are bounded by indexer_io.
 ROBINHOOD_BATCH_ITEMS = 100
 COOLDOWN_SECONDS, MAX_COOLDOWN_SECONDS = 1, 60
+# A call timeout's hold: one Robinhood pass at first (rpc_failover.CALL_TIMEOUT_HOLD_SECONDS),
+# then longer while the endpoint keeps running out of time, so a hung one costs one
+# ceiling per hold, not one per call.
+TIMEOUT_HOLD_SECONDS, MAX_TIMEOUT_HOLD_SECONDS = 15, 120
 MAX_PACE_WAIT_SECONDS = 2
 MAX_LOG_WINDOWS = 1000
 CHECK_DEADLINE_SECONDS = 120
@@ -305,6 +317,7 @@ class CodeCache:
 class _EndpointState:
     endpoint: Endpoint
     failures: int = 0
+    timeouts: int = 0
     cooling_until: float = 0.0
     next_free: float = 0.0
     calls: int = 0
@@ -420,10 +433,20 @@ class ChainEndpoints:
         if wait > 0:
             self._sleep(wait)
 
-    def _sent(self, state, error=None):
+    def _sent(self, state, error=None, body=None):
         with self._lock:
             if error is None:
-                state.failures = 0
+                state.failures = state.timeouts = 0
+            elif isinstance(error, RpcCallTimeout):
+                node = own_node(state.endpoint.url)
+                if node and any(isinstance(item, dict) and item.get('method') == 'eth_getLogs'
+                                for item in (body if isinstance(body, list) else [body])):
+                    return  # a slow log range on the own node is its range, which the walk narrows, not the node
+                state.timeouts += 1
+                until = self._clock() + min(MAX_TIMEOUT_HOLD_SECONDS, TIMEOUT_HOLD_SECONDS * 2 ** (state.timeouts - 1))
+                # The own node is behind both of its routes: neither is asked until the hold ends.
+                for held in [s for s in self._states.values() if own_node(s.endpoint.url)] if node else [state]:
+                    held.cooling_until = max(held.cooling_until, until)
             elif str(error) in RETRYABLE:
                 state.failures += 1
                 pause = min(MAX_COOLDOWN_SECONDS, COOLDOWN_SECONDS * 2 ** (state.failures - 1))
@@ -431,13 +454,22 @@ class ChainEndpoints:
 
     def _post(self, state, url, body, count):
         self._admit(state, count)
+        started = self._clock()
         try:
             payload = self._send(url, body)
         except DataError as error:
-            self._sent(state, error)
+            self._sent(state, error, body)
+            self._slow(state, body, self._clock() - started, error)
             raise
         self._sent(state)
+        self._slow(state, body, self._clock() - started)
         return payload
+
+    def _slow(self, state, body, seconds, error=None):
+        line = slow_call(body, seconds, error)
+        if line is not None:
+            # Endpoint names only; never a URL.
+            _LOG.warning('v2_rpc_slow_call chain=%s endpoint=%s %s', self.chain.key, state.endpoint.name, line)
 
     def _windows(self, endpoint, item):
         """An eth_getLogs block range split to the endpoint's limit, or None."""
@@ -522,6 +554,7 @@ def configured_endpoints(chain, *, provider_config=None, chain_rpc_config=None, 
 class _ChainClient:
     """The chain id is the profile's and is never requested (a billed call)."""
     METHODS = ReadRpc.METHODS - {'eth_chainId'}
+    routes = None  # holds and slow calls are the chain's ChainEndpoints', per endpoint (not rpc_failover's)
 
     def _bind(self, endpoints, chosen):
         self.endpoints, self.chain, self.chain_id = endpoints, endpoints.chain, endpoints.chain.chainId
@@ -534,9 +567,16 @@ class _ChainClient:
         return specs
 
     def _switch(self, error):
+        timed_out = isinstance(error, RpcCallTimeout)
+        # A call the own node did not answer in time over one route, it would not answer over the other
+        # (ChainEndpoints holds both): the client moves past both at once.
+        skip = timed_out and own_node(self.url)
         self.index += 1
+        while skip and self.index + 1 < len(self.urls) and own_node(self.urls[self.index]):
+            self.index += 1
         self.url, self.verified = self.urls[self.index], False
-        reason = 'historical_state_unavailable' if isinstance(error, RpcStateUnavailable) else str(error)
+        reason = ('historical_state_unavailable' if isinstance(error, RpcStateUnavailable)
+                  else 'call_timeout' if timed_out else str(error))
         # Endpoint names only; never a URL.
         _LOG.warning('v2_rpc_failover chain=%s endpoint=%s reason=%s', self.chain.key, self.names[self.index], reason)
 
@@ -603,6 +643,10 @@ class ChainHistoryRpc(_ChainClient, HistoricalReadRpc):
     def _begin_operation(self, calls):
         if self._operation_depth == 0 and not self.failure:
             start = self._start(calls)
+            # An endpoint that started cooling or was held since this client was made (a call it did not answer
+            # in time) is passed over from there, as usable() passes over it for a new client.
+            ready = {endpoint.url for endpoint in self.endpoints.head_candidates()}
+            start = next((index for index in range(start, len(self.urls)) if self.urls[index] in ready), start)
             if self.index != start:
                 self.index = start
                 self.url, self.verified = self.urls[start], False

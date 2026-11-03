@@ -80,6 +80,13 @@ class RpcIntrinsicGas(DataError):
     a reader that keeps what it reads retries later instead of keeping it."""
 
 
+class RpcCallTimeout(DataError):
+    """Internal signal: one call outlived its own ceiling while its caller's
+    deadline still had time, so the route ran out of time, not the read. The
+    public code stays read_deadline_exceeded; a failover client asks the next
+    route instead (rpc_failover)."""
+
+
 def rpc_failure(method, error):
     code = rpc_error_code(method, error)
     # Geth/Nitro's missing-node shape, not arbitrary provider text. Reverts,
@@ -561,12 +568,20 @@ def snapshot_loopback_http(url, body=None, *, timeout=12, max_bytes=MAX_RESPONSE
 def rpc_http(url, body=None, *, timeout=12, opener=_JSON_OPENER, max_bytes=MAX_RESPONSE_BYTES,
              http_error=None):
     """One call to a configured RPC route. The node's VM-local proxy always takes
-    its fixed loopback hop, never `opener`; every other route is HTTPS through it."""
-    if url == SNAPSHOT_LOOPBACK_RPC:
-        return snapshot_loopback_http(url, body, timeout=timeout, max_bytes=max_bytes,
-                                      http_error=http_error)
-    return json_http(url, body, timeout=timeout, opener=opener, max_bytes=max_bytes,
-                     http_error=http_error)
+    its fixed loopback hop, never `opener`; every other route is HTTPS through it.
+    A call that outlives `timeout` while its caller's deadline has time left
+    raises RpcCallTimeout: that route was slow, and a failover client moves on."""
+    try:
+        if url == SNAPSHOT_LOOPBACK_RPC:
+            return snapshot_loopback_http(url, body, timeout=timeout, max_bytes=max_bytes,
+                                          http_error=http_error)
+        return json_http(url, body, timeout=timeout, opener=opener, max_bytes=max_bytes,
+                         http_error=http_error)
+    except DataError as error:
+        if str(error) != 'read_deadline_exceeded':
+            raise
+        check_read_deadline()  # the caller's own deadline ran out: that is the read's, not this call's
+        raise RpcCallTimeout('read_deadline_exceeded') from None
 
 
 class ReadRpc:
@@ -594,8 +609,7 @@ class ReadRpc:
         if self.count >= self.max_requests:
             raise DataError('request_budget_exhausted')
         self.count += 1
-        payload = self.transport(self.url, {'jsonrpc': '2.0', 'id': self.count,
-                                          'method': method, 'params': list(params)})
+        payload = self._send({'jsonrpc': '2.0', 'id': self.count, 'method': method, 'params': list(params)})
         check_read_deadline()
         if (not isinstance(payload, dict) or payload.get('jsonrpc') != '2.0'
                 or type(payload.get('id')) is not int or payload['id'] != self.count):
@@ -665,7 +679,7 @@ class ReadRpc:
         if len(json.dumps(bodies,allow_nan=False,separators=(',',':')).encode()) > self.MAX_BATCH_BYTES:
             raise DataError('invalid_rpc_batch')
         self.count += len(calls)
-        payload = self.transport(self.url,bodies)
+        payload = self._send(bodies)
         check_read_deadline()
         if not isinstance(payload,list) or len(payload)!=len(bodies):
             raise DataError('invalid_rpc_envelope')
@@ -691,6 +705,10 @@ class ReadRpc:
             else:
                 outcomes.append(item['result'])
         return outcomes
+
+    def _send(self, body):
+        """One envelope (a call or a batch) to this client's route."""
+        return self.transport(self.url, body)
 
     def call_gas(self, target):
         """The gas an eth_call to `target` (lower case) may carry: TRUSTED_READ_CALL_GAS for

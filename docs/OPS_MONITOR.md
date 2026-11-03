@@ -147,7 +147,7 @@ One private JSON file, `/etc/domino/monitor/config.json` (0600 in a 0700 directo
 - **Telegram:** on since 15:41 UTC. The owner sealed `telegram-bot-token` and sent `/start`; `discover` listed the owner's private chat, and its id went into `config.json`.
 - **V1 removed (owner, 15:37 UTC):** with V1 automation turned off, the configuration no longer names its unit, its gas peer and settlement timer, or the V1 operator's and publisher's balances (`v1Automation` null). 63 checks, none open.
 
-**The launch alerts (2 Nov 2026, not deployed yet).** They need two release moves from the same commit, the V2 automation's first:
+**The launch alerts (2 Nov 2026), live since 3 Nov 2026 at 13:18:11 UTC** from release `763e9859`, after the V2 automation's move at 13:15:52 UTC; the first cycles held 74 checks at level 0. A move like it needs two release moves from the same commit, the V2 automation's first:
 1. **V2 automation**, so that its passes report `attention` and `gas`. Use `install_v2_automation.py --inspect`, then `--apply`; `daemon-reload`; restart the three instances one at a time, each after the previous one's first pass. Their configurations stay untouched. No V2 module changed between `fe8c41c9` (running since 2 Nov) and this commit except the report itself.
 2. **Monitor.** Use `install_monitor.py --inspect`, then `--apply`; `daemon-reload`; then `systemctl restart domino-monitor.service`. `config.json` stays as it is: the one new key, `featured`, is optional and defaults to `domino-featured.service`.
    - The Top pools checks need nothing else: they read the lines the featured service already logs.

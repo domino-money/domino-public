@@ -262,7 +262,7 @@
     },
     {
       "path": "backend/discovery.py",
-      "sha256": "a9b21e6df5f264aeb1bc2f0d3e4dee276e914f5e5268bcb0d4ff866c8247d473"
+      "sha256": "d74060d7b144188706ed1eb31a3cef238dbf23ce2664c03817c0a4889de71f41"
     },
     {
       "path": "backend/read_service.py",
@@ -306,7 +306,7 @@
     },
     {
       "path": "backend/bridge_identity.py",
-      "sha256": "da32b8ea6377d5fcfe379cc4fc8b39e74f8b5110f63c6625ed2cba0dcb00b022"
+      "sha256": "72ea2b674838db93f2de7e45ab305b9e4d0afd09e2d8a1219572483bd8d5bcfb"
     },
     {
       "path": "backend/bridge_state.py",

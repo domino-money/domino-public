@@ -665,7 +665,10 @@ or batch operation. An explicit Nitro missing-trie-state refusal can recover
 from Alchemy after verifying chain 4663 and the highest observed block hash;
 the next log/header operation tries local again. A fallback cannot bypass a
 wrong chain, changed header, malformed batch, application revert or exhausted
-budget. An ambiguously failed batch is not replayed. All failed attempts,
+budget. An ambiguously failed batch is not replayed; one the route did not
+answer within its own ceiling is asked of the next route, since every batched
+method is a read, and a later operation passes over that route for 15 s
+(`rpc_failover.ProcessRoutes`). All failed attempts,
 identity/header checks and batches spend the same call budget and deadline.
 A bounded cache retains the highest continuity header and recent block pins,
 so indexers can read thousands of headers without retaining thousands of proofs.

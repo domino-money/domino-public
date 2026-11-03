@@ -336,6 +336,13 @@ Live since 6 Oct 2026, 15:59:48 UTC ([In production](#in-production-robinhood-fi
 7. **The Worker:** *Publish read path* `worker-v6` on the merge commit, once the reader answers. Until then the Worker's package refuses chains 1 and 10 (`invalid_request`).
 8. **The app:** its owner adds 1 and 10 to `SERVED_BALANCE_CHAINS` (`app/src/v2in/funds/model.ts`, or reads `CONSTANTS.balanceChainIds`) after the Worker.
 
+
+**Launch week (3 Nov 2026).** Each release is the one live plus the fixes named, cherry-picked, and nothing else:
+- read `ce77f967` at 13:14:58 UTC (branch `hotfix/read-launch-fixes`): newest chunks through the primary key (#440), a position's vault is the one that took it last (#441), StateView and PositionManager reads with 30M gas (#449);
+- public-data `f2d9a2aa` at 13:13:27 UTC (branch `hotfix/featured-launch-fixes`): #439's Top pools fixes, #440 and #449;
+- read `a0b245aa` and public-data `3f76dc6a` at 14:28:49–14:29:52 UTC (branches `hotfix/access-401-*`): Cloudflare Access's keys refreshed in the background (the gateway), and #401's stale-head set-aside in the reader and the three indexers;
+- rollback: `--rollback <commit>` of `install_read_release.py` or `install_public_data.py`, `daemon-reload`, and the restart the move made (`domino-continuous-reads.target` for read, after restoring its two saved 70 drop-ins; the indexers for public-data).
+
 ## What 3a, #301 and F7 must align with
 
 - **Automation (3a, PR #306, merged):** this slice uses its `v2_manifest` (the one loader of #301's manifest) and its `tests/v2_local_chain.py` (the one fixture deployer). The waiting file is read as #306 documents it, with `since` and `sinceBlock`, which this slice adds to the journal (`v2_executor.Journal.record_waiting`) and the file. The rules this slice's own loader had and `v2_manifest` lacked moved into it, with their tests and mutants: public test-mnemonic keys refused as production roles (PR #302's review, item 2), receipts after the genesis with non-zero hashes and one hash per block, the verification at or after every receipt and agreeing with one in its block, a check time with its zone, and the profile's CreateX. #306's docs propose decoding its log scans with `v2_events`, the strict catalog here.

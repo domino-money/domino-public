@@ -136,7 +136,11 @@ export const PRODUCER_PIN = {
       // PositionManager with a 30M gas ceiling and takes "err: intrinsic gas too low (supplied gas N)" as
       // rpc_call_gas_limit, an existing reason code (an L1 price spike failed every read on 29 Oct); no read-v1 route,
       // schema, reason code or version moved.
-      manifestSha256: '1f9169f5e0fdd327d137ee1530cda44c7a68e261e1046290ec975e3b1db8069e',
+      // Changed on purpose (data) 2026-11-03: discovery.py and rpc_failover.py, which the manifest hashes, move a read
+      // to its next route when a call outlives its own ceiling with the read's time left, and hold that route for
+      // 15 s; to every caller it is still read_deadline_exceeded, an existing reason code. No read-v1 route, schema,
+      // reason code or version moved.
+      manifestSha256: 'f268fdc8fa616bba556d7175a332bb9fd16291a9cb1d339212d273461dbe9c2d',
     },
     'session-v1': {
       version: '3.0.0-rc.4',
@@ -180,7 +184,11 @@ export const READ_V2_PIN = {
   // stored lanes for the public launch; no read-v2 route, schema or version moved.
   // Changed on purpose (data) 2026-11-02: discovery.py reads StateView and the PositionManager with a 30M gas
   // ceiling and takes an intrinsic gas refusal as rpc_call_gas_limit; no read-v2 route, schema or version moved.
-  manifestSha256: '01ae9e0936095b267c8c2c3a418096ec070070fed5ddbac86c49502d9136830d',
+  // Changed on purpose (data) 2026-11-03: bridge_identity.py, which the manifest hashes, refreshes Cloudflare
+  // Access's keys in the background; no read-v2 route, schema or version moved.
+  // Changed on purpose (data) 2026-11-03: discovery.py tells a call that outlived its own ceiling from a read that
+  // outlived its deadline, so a failover client asks the next route; no read-v2 route, schema or version moved.
+  manifestSha256: 'a053d0bb3c3f06ccf12d71b7e66571aeb64a32278318c47a11f3b7d8ac06a9c4',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */

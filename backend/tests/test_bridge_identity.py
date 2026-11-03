@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 import sys
+import threading
 import time
 import unittest
 
@@ -79,25 +80,90 @@ class AccessIdentityTests(IdentityFixtures, unittest.TestCase):
         self.assertEqual(len(calls), 3)
         self.assertTrue(verifier.verify(rotated))
 
-    def test_stale_key_refresh_failure_cooldown_and_recovery(self):
-        now = [0.]
-        calls = []
-        rows = [self.jwk]
+    def background(self, now, rows, calls, spawned):
         def load():
             calls.append(True)
-            if rows is None: raise OSError('PRIVATE PROVIDER DIAGNOSTIC')
-            return {'keys':rows}
+            if rows[0] is None: raise OSError('PRIVATE PROVIDER DIAGNOSTIC')
+            return {'keys':rows[0]}
+        return AccessVerifier(ISSUER,AUDIENCE,SERVICE,loader=load,clock=lambda:now[0],spawn=spawned.append)
+
+    def test_stale_keys_answer_at_once_while_one_background_refresh_runs(self):
+        now, rows, calls, spawned = [0.], [[self.jwk]], [], []
+        verifier = self.background(now, rows, calls, spawned)
+        self.assertTrue(verifier.verify(self.token()))
+        now[0] = 299
+        self.assertTrue(verifier.verify(self.token()))
+        self.assertEqual((len(calls), len(spawned)), (1, 0))
+        now[0] = 300
+        self.assertTrue(verifier.verify(self.token()))
+        self.assertTrue(verifier.verify(self.token()))
+        self.assertEqual((len(calls), len(spawned)), (1, 1))
+        now[0] = 310
+        spawned[0]()
+        self.assertEqual(len(calls), 2)
+        now[0] = 609
+        self.assertTrue(verifier.verify(self.token()))
+        self.assertEqual(len(spawned), 1)
+        now[0] = 610
+        self.assertTrue(verifier.verify(self.token()))
+        self.assertEqual((len(calls), len(spawned)), (2, 2))
+
+    def test_failed_refresh_keeps_known_keys_until_stale_then_cooldown_and_recovery(self):
+        now, rows, calls, spawned = [0.], [[self.jwk]], [], []
+        verifier = self.background(now, rows, calls, spawned)
+        self.assertTrue(verifier.verify(self.token()))
+        now[0] = 300
+        self.assertTrue(verifier.verify(self.token()))
+        rows[0] = None
+        now[0] = 301
+        spawned[0]()
+        now[0] = 315
+        self.assertTrue(verifier.verify(self.token()))
+        self.assertEqual((len(calls), len(spawned)), (2, 1))
+        now[0] = 316
+        self.assertTrue(verifier.verify(self.token()))
+        self.assertEqual(len(spawned), 2)
+        spawned[1]()
+        now[0] = AccessVerifier.STALE_SECONDS - 1
+        self.assertTrue(verifier.verify(self.token()))
+        self.assertEqual(len(calls), 3)
+        now[0] = AccessVerifier.STALE_SECONDS
+        with self.assertRaisesRegex(DataError, '^service_identity_unavailable$'): verifier.verify(self.token())
+        self.assertEqual(len(calls), 4)
+        now[0] = AccessVerifier.STALE_SECONDS + 14
+        with self.assertRaisesRegex(DataError, '^service_identity_unavailable$'): verifier.verify(self.token())
+        self.assertEqual(len(calls), 4)
+        rows[0] = [self.jwk]
+        now[0] = AccessVerifier.STALE_SECONDS + 15
+        self.assertTrue(verifier.verify(self.token()))
+        self.assertEqual(len(calls), 5)
+
+    def test_a_refresh_that_cannot_start_never_refuses_a_request(self):
+        now, rows, calls, attempts = [0.], [[self.jwk]], [], []
+        def spawn(work):
+            attempts.append(work)
+            raise RuntimeError('cannot start new thread')
+        verifier = self.background(now, rows, calls, [])
+        verifier.spawn = spawn
+        self.assertTrue(verifier.verify(self.token()))
+        now[0] = 300
+        self.assertTrue(verifier.verify(self.token()))
+        self.assertTrue(verifier.verify(self.token()))
+        self.assertEqual((len(calls), len(attempts)), (1, 2))
+
+    def test_the_default_refresh_runs_on_its_own_thread(self):
+        now, threads, done = [0.], [], threading.Event()
+        def load():
+            threads.append(threading.current_thread())
+            if len(threads) == 2: done.set()
+            return {'keys':[self.jwk]}
         verifier = AccessVerifier(ISSUER,AUDIENCE,SERVICE,loader=load,clock=lambda:now[0])
         self.assertTrue(verifier.verify(self.token()))
-        now[0] = 301
-        rows = None
-        with self.assertRaisesRegex(DataError, '^service_identity_unavailable$'): verifier.verify(self.token())
-        with self.assertRaises(DataError): verifier.verify(self.token())
-        self.assertEqual(len(calls),2)
-        now[0] = 317
-        rows = [self.jwk]
+        now[0] = 300
         self.assertTrue(verifier.verify(self.token()))
-        self.assertEqual(len(calls),3)
+        self.assertTrue(done.wait(5))
+        self.assertIs(threads[0], threading.current_thread())
+        self.assertEqual((threads[1].name, threads[1].daemon), ('access-keys', True))
 
 
 if __name__ == '__main__': unittest.main()

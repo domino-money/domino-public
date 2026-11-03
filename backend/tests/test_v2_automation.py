@@ -19,6 +19,7 @@ from eth_abi import encode
 from eth_hash.auto import keccak
 
 from discovery import DataError, parse_block
+from read_deadline import current_read_deadline
 from v2_abi import function
 from v2_autoexit import MandateWatcher
 import v2_automation as automation
@@ -863,6 +864,157 @@ class EmptyPositionExitTests(unittest.TestCase):
             entry, _ = self.exits(chain, service, publisher, self.COST[3] - 1)
         self.assertEqual((entry['anchorSource'], entry['act'], entry['reason']), ('twap', True, 'triggered'))
         self.assertEqual((publisher.calls, len(service.executor.calls)), ([], 1))
+
+
+
+class PassBudgetTests(unittest.TestCase):
+    """A pass's reads share one budget, twice its passSeconds, and a plan is sent only while its deadline is one
+    passSeconds away (item 4.5, 3 Nov 2026: a pass slow on every call planned on a head growing old). Reconciling and
+    sending are outside the budget. The pass's parts are stubs that record the budget they ran under."""
+
+    BLOCK = parse_block(HEAD)
+    VAULT = '0x' + 'a1' * 20
+
+    def setUp(self):
+        self.monotonic, self.wall, self.seen, self.sent = Clock(), self.BLOCK.timestamp + 2, [], []
+
+    def note(self, label, seconds=1):
+        deadline = current_read_deadline()
+        self.seen.append((label, None if deadline is None else round(deadline.remaining(), 6)))
+        self.monotonic.now += seconds
+
+    def service(self, *, pass_seconds=15, exits=(), vaults=(), vault_seconds=1, exit_seconds=1):
+        test = self
+        head = type('Head', (), {'block': self.BLOCK, 'base_fee_per_gas': 10**8})()
+
+        class Follower:
+            def head(self):
+                test.note('head')
+                return head
+
+        class Executor:
+            journal = type('Journal', (), {'unresolved': lambda self: [], 'attention': lambda self: []})()
+
+            def reconcile_all(self):
+                test.note('reconcile')
+                return []
+
+            def check_signer(self, block):
+                test.note('signer')
+
+            def submit(self, **arguments):
+                test.note('send')
+                test.sent.append((arguments['subject'], arguments['deadline']))
+                return type('Outcome', (), {'intent': '0x' + '77' * 32, 'state': 'submitted', 'reason': None})()
+
+        base = profile('base-8453')
+        service = ChainAutomation(chain=base, deployment=checked_deployment(manifest_document(), base), endpoints=None,
+                                  follower=Follower(), planner=PlannerConfig(), observations=PublisherPolicy(),
+                                  price_references=(), earnings_window_seconds=600, twap_seconds=600,
+                                  exit_twap_seconds=600, deadline_seconds=120, executor=Executor(),
+                                  pass_seconds=pass_seconds, clock=lambda: self.wall, monotonic=self.monotonic)
+
+        def clients(automation_service, pinned):
+            automation_service.index = None
+            return None, None, None, None
+
+        def planned_exits(*_):
+            test.note('exits', exit_seconds)
+            return [dict(entry) for entry in exits]
+
+        def scan(*_):
+            test.note('scan')
+            return [VaultRecord(vault, PassChain.OWNER, 1, 4, 1) for vault in vaults]
+
+        def compound(record, *_):
+            test.note('vault', vault_seconds)
+            return {'act': True, 'reason': 'compound', 'netOwnerWei': 1, 'subject': record.vault,
+                    'plan': {'calldata': '0x01', 'deadline': self.BLOCK.timestamp + 120, 'gas': 1}}
+
+        for target, name, replacement in (
+                (ChainAutomation, '_clients', clients), (type(service.deployment), 'verify_code',
+                                                         lambda *args, **kwargs: test.note('code')),
+                (service, '_exits', planned_exits), (service.discovery, 'scan', scan),
+                (service, '_compound', compound), (service, '_record_waiting', lambda *args: None),
+                (service, '_journal_state', lambda: {})):
+            patcher = patch.object(target, name, replacement)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        return service
+
+    def exit_entry(self, deadline):
+        return {'mandate': '0x' + 'e1' * 32, 'act': True, 'reason': 'triggered', 'subject': '0x' + 'e1' * 32,
+                'plan': {'calldata': '0x02', 'deadline': deadline, 'gas': 1}}
+
+    def test_every_read_of_a_pass_shares_one_budget_and_reconciling_and_sending_none(self):
+        service = self.service(exits=[self.exit_entry(self.BLOCK.timestamp + 120)], vaults=[self.VAULT])
+        report = service.run_once()
+        self.assertEqual(self.seen, [('head', 30), ('code', 29), ('reconcile', None), ('signer', 27), ('exits', 26),
+                                     ('send', None), ('scan', 24), ('vault', 23)])
+        self.assertEqual(report['submitted']['kind'], 'exit')  # one transaction a pass: the exit first
+
+    def test_a_read_past_the_budget_fails_where_it_is_made_and_the_pass_still_reports(self):
+        # 30 s from the pass's start: the head, the code, the signer, the exits and the scan take 6 s.
+        service = self.service(vaults=['0x' + 'a1' * 20, '0x' + 'a2' * 20, '0x' + 'a3' * 20], vault_seconds=11)
+        report = service.run_once()
+        self.assertEqual([(entry['vault'][:6], entry['reason']) for entry in report['vaults']],
+                         [('0xa1a1', 'compound'), ('0xa2a2', 'compound'), ('0xa3a3', 'read_deadline_exceeded')])
+        self.assertEqual([label for label, _ in self.seen].count('vault'), 3)
+        # A vault that would start past it is refused before it reads anything.
+        service = self.service(vaults=['0x' + 'a1' * 20, '0x' + 'a2' * 20, '0x' + 'a3' * 20], vault_seconds=13)
+        self.seen.clear()
+        report = service.run_once()
+        self.assertEqual([entry['reason'] for entry in report['vaults']],
+                         ['compound', 'read_deadline_exceeded', 'read_deadline_exceeded'])
+        self.assertEqual([label for label, _ in self.seen].count('vault'), 2)
+        self.assertEqual(report['submitted'], {'kind': 'compound', 'target': '0x' + 'a1' * 20, 'intent': '0x' + '77' * 32,
+                                               'state': 'submitted', 'reason': None})
+
+    def test_exits_read_as_the_budget_ran_out_stand_and_a_read_after_it_ends_the_pass(self):
+        service = self.service(exits=[self.exit_entry(self.BLOCK.timestamp + 120)], vaults=[self.VAULT],
+                               exit_seconds=40)
+        with self.assertRaisesRegex(DataError, '^read_deadline_exceeded$'):
+            service.run_once()
+        self.assertEqual(self.sent, [('0x' + 'e1' * 32, self.BLOCK.timestamp + 120)])  # what it planned in time went out
+        self.assertNotIn('scan', [label for label, _ in self.seen])  # the scan was refused before reading
+
+    def test_a_plan_is_sent_only_while_its_deadline_is_one_pass_away(self):
+        head = type('Head', (), {'block': self.BLOCK, 'base_fee_per_gas': 10**8})()
+        for pass_seconds, deadline, state in ((15, self.wall + 15, 'submitted'), (15, self.wall + 14, 'refused'),
+                                              (30, self.wall + 30, 'submitted'), (30, self.wall + 29, 'refused'),
+                                              (None, self.wall, 'submitted'), (None, self.wall - 1, 'refused')):
+            with self.subTest(pass_seconds=pass_seconds, deadline=deadline - self.wall):
+                self.sent.clear()
+                outcome = self.service(pass_seconds=pass_seconds)._submit('exit', '0x' + 'ee' * 20,
+                                                                          self.exit_entry(deadline), head)
+                self.assertEqual(outcome['state'], state)
+                if state == 'refused':
+                    self.assertEqual((outcome['reason'], self.sent), ('v2_plan_deadline_near', []))
+
+    def test_without_a_cadence_a_pass_reads_unbounded(self):
+        self.service(pass_seconds=None, vaults=[self.VAULT]).run_once()
+        self.assertEqual({remaining for _, remaining in self.seen}, {None})
+
+    def test_the_service_takes_its_cadence_from_the_configuration(self):
+        directory = Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, directory)
+        os.chmod(directory, 0o700)
+        (directory / 'deployment.json').write_text(json.dumps(manifest_document()))
+        config = checked_config(document(**{'deploymentFile': str(directory / 'deployment.json'),
+                                            'rpc': {'chainRpcFile': str(directory / 'rpc.json')},
+                                            'journalFile': str(directory / 'journal.sqlite')}))
+        with patch.object(automation, 'load_chain_rpc_config', return_value={}), \
+                patch.object(automation, 'configured_endpoints', return_value=None), \
+                patch.object(automation, 'HeadFollower', return_value=None):
+            self.assertEqual(build(config, keys=False).pass_seconds, 10)
+
+
+class Clock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
 
 
 if __name__ == '__main__':

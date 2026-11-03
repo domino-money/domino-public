@@ -17,8 +17,9 @@ missing on the next: a read pinned slightly below the latest finds it on every
 node. That costs a second call per poll.
 
 An endpoint is judged by its own head. The endpoints are asked in order, as a
-client fails over (v2_rpc: a transport failure cools one down), and the first
-current head is served. One whose head is outside the window, behind or ahead
+client fails over (v2_rpc: a transport failure cools one down, a call it did
+not answer in time holds it, and the own node's other route with it), and the
+first current head is served. One whose head is outside the window, behind or ahead
 of this clock, is set aside: the chain's clients pass over it, so a pass reads,
 presimulates and sends where its head came from. On 9 Oct 2026 Domino's node
 came back from a hard power-off about 520,000 blocks behind, answering every
@@ -47,7 +48,7 @@ import tempfile
 import threading
 import time
 
-from discovery import Block, DataError, bytes32, parse_block, quantity
+from discovery import Block, DataError, RpcCallTimeout, bytes32, parse_block, quantity
 from rpc_failover import RETRYABLE
 from v2_rpc import ChainEndpoints
 
@@ -114,18 +115,22 @@ class HeadFollower:
         candidates = self.endpoints.head_candidates()
         if not candidates:
             raise DataError('v2_rpc_endpoints_cooling')
-        outside, ages, failure = [], {}, None
-        for position, endpoint in enumerate(candidates):
+        outside, ages, failure, moving = [], {}, None, None
+        for endpoint in candidates:
+            if moving is not None:
+                if endpoint not in self.endpoints.head_candidates():
+                    continue  # held since this poll began: the own node's other route, after a call timeout
+                _LOG.warning('v2_rpc_failover chain=%s endpoint=%s reason=%s', self.endpoints.chain.key,
+                             endpoint.name, moving)
+                moving = None
             try:
                 raw = self._latest(endpoint)
             except DataError as error:
-                if str(error) not in RETRYABLE:
+                if str(error) not in RETRYABLE and not isinstance(error, RpcCallTimeout):
                     raise
-                # The transport cooled it down: the next one is asked, as a client fails over.
-                failure = error
-                if position + 1 < len(candidates):
-                    _LOG.warning('v2_rpc_failover chain=%s endpoint=%s reason=%s', self.endpoints.chain.key,
-                                 candidates[position + 1].name, error)
+                # The transport cooled it down, or held it after a call it did not answer in time: the next
+                # one is asked, as a client fails over.
+                failure, moving = error, 'call_timeout' if isinstance(error, RpcCallTimeout) else str(error)
                 continue
             block = parse_block(raw)
             now = self.clock()

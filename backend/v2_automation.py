@@ -31,7 +31,12 @@ pattern, never a plain key on the VM). Each pass:
    A vault the last full read found paused can do nothing but a return: while
    it stays paused at that state nonce it costs its pause check alone, and the
    root's closure only while it holds something a return would pay (_held).
-One transaction at most per pass, in that order.
+One transaction at most per pass, in that order. A pass's reads share one
+budget, twice its passSeconds: a read past it fails where it is made, as any
+read failure does, and that vault or mandate waits for the next pass.
+Reconciling and sending are outside it, and a plan is sent only while its
+deadline is at least one passSeconds away (a later send could be mined past
+it, revert and spend its gas).
 Output is one JSON object per command, with decisions and fixed codes; no
 key, password, keyed URL or raw provider message ever reaches it.
 
@@ -39,6 +44,7 @@ The configuration is a private file (0600 in a 0700 directory outside any
 checkout), every value validated; see docs/v2/V2_AUTOMATION_BACKEND.md.
 """
 import argparse
+from contextlib import nullcontext
 from dataclasses import dataclass, replace
 import json
 import os
@@ -51,6 +57,7 @@ import time
 from discovery import DataError, address
 from execution_cli import private_file
 from local_config import load_config
+from read_deadline import ReadDeadline, use_read_deadline
 from v2_autoexit import (MandateWatcher, eligible, module_parameters, nothing_to_exit, plan_exit, position_ref,
                          read_mandates, twap_exit_evidence, vault_facts)
 from v2_chains import DEX_V4, default_registry
@@ -78,6 +85,17 @@ CONFIG_KEYS = {'schemaVersion', 'kind', 'chain', 'deploymentFile', 'rpc', 'headF
                'twapSeconds', 'exitTwapSeconds', 'deadlineSeconds', 'passSeconds', 'headMaxAgeSeconds', 'autoExit',
                'vaultDefaults', 'vaultGasCeilingWei', 'vaultGasCeilingsWei', 'waitingFile'}
 U256 = 2**256 - 1
+# A pass's reads (its head, the deployment's code, the signer, the exits, the vaults and their presimulations) share
+# one budget: PASS_READ_CADENCES times passSeconds from the pass's start, 30 s on Robinhood (passSeconds 15) and 60 s
+# on Base and Arbitrum (30). From 21 Oct to 3 Nov 2026 passes took 0.4 s, 5.5 s and 2.8 s at the median; the slowest,
+# 30.6 s on Robinhood and 27.8 s on Base, waited out 12 s call ceilings, which now move to the next endpoint
+# (v2_rpc). Unbounded, a pass slow on every call could plan for minutes on a head growing old.
+PASS_READ_CADENCES = 2
+# A plan is sent only while its deadline (the head's timestamp plus deadlineSeconds, or the signed observation's
+# validity) is SUBMIT_MARGIN_CADENCES times passSeconds away or more: inclusion takes seconds on these chains, and a
+# send later than that could be mined past the deadline, revert and spend its gas. With deadlineSeconds 120 and the
+# longest read phase, the pass's head may then be up to 75 s old on Robinhood and 30 s on Base and Arbitrum.
+SUBMIT_MARGIN_CADENCES = 1
 
 
 @dataclass(frozen=True)
@@ -258,12 +276,16 @@ class ChainAutomation:
     def __init__(self, *, chain, deployment, endpoints, follower, planner, observations, price_references,
                  earnings_window_seconds, twap_seconds, exit_twap_seconds, deadline_seconds, executor=None,
                  publisher_signer=None, auto_exit=True, vault_gas_ceiling_wei=None, vault_gas_ceilings_wei=None,
-                 quoter_factory=None, waiting_file=None, scan_state_file=None, clock=time.time):
+                 quoter_factory=None, waiting_file=None, scan_state_file=None, pass_seconds=None, clock=time.time,
+                 monotonic=time.monotonic):
         self.chain, self.deployment, self.endpoints, self.follower = chain, deployment, endpoints, follower
         self.planner, self.observations, self.references = planner, observations, price_references
         self.window, self.twap_seconds, self.exit_twap_seconds = earnings_window_seconds, twap_seconds, exit_twap_seconds
         self.deadline_seconds, self.executor, self.publisher_signer = deadline_seconds, executor, publisher_signer
-        self.auto_exit, self.clock = auto_exit, clock
+        self.auto_exit, self.clock, self.monotonic = auto_exit, clock, monotonic
+        # The cadence (passSeconds) a pass's read budget and send margin follow; None (a service made by hand, as in
+        # the tests): no read budget, and only a plan already past its deadline is refused.
+        self.pass_seconds = pass_seconds
         # The per-vault gas ceiling (native wei per execution) the vaults no longer
         # hold on-chain (A15): a default and per-vault overrides, owner decisions.
         self.gas_ceiling, self.gas_ceilings = vault_gas_ceiling_wei, dict(vault_gas_ceilings_wei or {})
@@ -304,37 +326,43 @@ class ChainAutomation:
 
     # -------------------------------------------------------------- pass
     def run_once(self, *, act=True):
-        """One pass; with act=False nothing is signed or sent (a dry run)."""
-        head = self.follower.head()
-        block = head.block
-        report = {'chain': self.chain.key, 'block': block.number, 'timestamp': block.timestamp, 'reconciled': [],
-                  'exits': [], 'vaults': [], 'submitted': None}
-        rpc, uniswap, history, history_uniswap = self._clients(head)
-        # Reads shared by every vault of this pass: billed calls, made once.
-        self._pass = {'references': None, 'growth': {}, 'min_twap': None, 'oracles': {}, 'halted': None}
-        self.deployment.verify_code(rpc, block)
+        """One pass; with act=False nothing is signed or sent (a dry run). Its reads share one budget
+        (PASS_READ_CADENCES); reconciling and sending are outside it (_submit)."""
+        budget = None if self.pass_seconds is None else ReadDeadline(PASS_READ_CADENCES * self.pass_seconds,
+                                                                     clock=self.monotonic)
+        with self._reading(budget):
+            head = self.follower.head()
+            block = head.block
+            report = {'chain': self.chain.key, 'block': block.number, 'timestamp': block.timestamp, 'reconciled': [],
+                      'exits': [], 'vaults': [], 'submitted': None}
+            rpc, uniswap, history, history_uniswap = self._clients(head)
+            # Reads shared by every vault of this pass: billed calls, made once.
+            self._pass = {'references': None, 'growth': {}, 'min_twap': None, 'oracles': {}, 'halted': None}
+            self.deployment.verify_code(rpc, block)
         busy = False
         if act and self.executor is not None:
             report['reconciled'] = [vars(o) for o in self.executor.reconcile_all()]
             busy = bool(self.executor.journal.unresolved() or self.executor.journal.attention())
             try:
-                self.executor.check_signer(block)
+                with self._reading(budget):
+                    self.executor.check_signer(block)
             except DataError as error:
                 # Plan and report, send nothing: the signer is not one to use now.
                 report['signer'], busy = str(error), True
         publisher = self._publisher(uniswap, history_uniswap)
         if self.auto_exit:
-            for entry in self._exits(head, rpc, uniswap, publisher):
+            for entry in self._within(budget, lambda: self._exits(head, rpc, uniswap, publisher)):
                 report['exits'].append(entry)
                 if act and not busy and entry.get('plan') is not None:
                     report['submitted'] = self._submit('exit', self.deployment.auto_exit, entry, head)
                     busy = True
                 entry.pop('plan', None)
         candidates, returns = [], []
-        for record in self.discovery.scan(self.index, block):
+        for record in self._within(budget, lambda: self.discovery.scan(self.index, block)):
             entry = {'vault': record.vault, 'dex': record.dex}
             try:
-                entry.update(self._compound(record, head, rpc, uniswap, history, publisher))
+                with self._reading(budget):
+                    entry.update(self._compound(record, head, rpc, uniswap, history, publisher))
             except CallReverted as error:
                 entry.update(act=False, reason=str(error), simulation='reverted')
             except DataError as error:
@@ -355,6 +383,23 @@ class ChainAutomation:
             self._record_waiting(report, block)
             report.update(self._journal_state())
         return report
+
+    @staticmethod
+    def _reading(budget):
+        """The pass's reads, inside its budget (none without a cadence)."""
+        return nullcontext() if budget is None else use_read_deadline(budget)
+
+    def _within(self, budget, read):
+        """read() inside the pass's budget. What it returned stands even if the budget ran out as it finished: a
+        vault or mandate read past it holds that as its own reason. What it raised is raised, as before."""
+        done = False
+        try:
+            with self._reading(budget):
+                result, done = read(), True
+        except DataError:
+            if not done:
+                raise
+        return result
 
     def _journal_state(self):
         """What the production monitor watches in the journal (docs/OPS_MONITOR.md), after this pass's own claim:
@@ -392,6 +437,11 @@ class ChainAutomation:
 
     def _submit(self, kind, target, entry, head):
         plan = entry['plan']
+        # Refused when the pass's head is older than the plan's deadline less SUBMIT_MARGIN_CADENCES of the cadence
+        # (now past deadline - margin): mined later than that, the call could revert past its deadline and spend gas.
+        margin = 0 if self.pass_seconds is None else SUBMIT_MARGIN_CADENCES * self.pass_seconds
+        if self.clock() > plan['deadline'] - margin:
+            return {'kind': kind, 'target': target, 'state': 'refused', 'reason': 'v2_plan_deadline_near'}
         try:
             outcome = self.executor.submit(kind=kind, target=target, subject=entry['subject'], data=plan['calldata'],
                                            deadline=plan['deadline'], head=head.block, base_fee=head.base_fee_per_gas,
@@ -724,7 +774,8 @@ def build(config, *, keys=True, endpoint_options=None):
                            executor=executor, publisher_signer=publisher, auto_exit=config.auto_exit,
                            vault_gas_ceiling_wei=config.vault_gas_ceiling_wei,
                            vault_gas_ceilings_wei=config.vault_gas_ceilings_wei, waiting_file=config.waiting_file,
-                           scan_state_file=Path(config.journal_file).parent / f'v2-scans-{chain.key}.json')
+                           scan_state_file=Path(config.journal_file).parent / f'v2-scans-{chain.key}.json',
+                           pass_seconds=config.pass_seconds)
 
 
 def main(argv=None):

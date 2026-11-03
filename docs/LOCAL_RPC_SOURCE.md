@@ -110,6 +110,16 @@ fallback. A disconnected tunnel may return
 Authentication failures, reverts, invalid ABI, changed chain/hash and exhausted
 budgets do not become retries.
 
+A call a route did not answer within its own ceiling (8 s on the reader's
+transport, 12 s by default) while the read still has time advances too
+(`discovery.RpcCallTimeout`, still `read_deadline_exceeded` to every caller):
+past the own node's other route, which is the same node, to the next provider.
+The process's next reads pass over the routes it moved past for 15 s; the order
+is kept. A slow `eth_getLogs` on the own node stays where it is: its range is
+narrowed instead. A slow call that answers is kept. Each call that took 2 s or
+more, or ran out of time, leaves one `rpc_slow_call` line: the provider ordinal,
+methods, items, milliseconds and outcome, never a URL (item 4.5, 3 Nov 2026).
+
 For current read/session clients, the specific [Geth missing-trie-node error](https://github.com/ethereum/go-ethereum/blob/master/trie/errors.go)
 can recover a scalar state read or state-only batch at an already observed
 numeric block. The fallback must prove the same chain and every anchored block.
