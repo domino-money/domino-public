@@ -46,6 +46,20 @@ auth listener and private storage; it does not add session routes to the reader.
 See the [session contract](../api-contracts/session-v1/README.md) and
 [session runbook](../docs/WALLET_SESSIONS.md).
 
+Since 4 Nov 2026 (launch round P3, item 7: testing without real money), the
+session Worker and that transport (with crosschain's and position-plan's
+capabilities GETs) also admit the exact Pages preview origins `PREVIEW_ORIGINS`
+lists, comma-separated: at most four `https` origins of a lower-case DNS name,
+compared as whole strings, none twice, none `APP_ORIGIN` or the gateway. A
+request's URL origin must be one of them and its `Origin` must name the same one;
+`X-Domino-Browser-Origin` tells the listener which. A list breaking a rule
+turns preview admission off and only that (review L3, same day): `APP_ORIGIN`
+keeps serving, every preview request is refused, and each request logs
+`preview_origins_invalid`. Every `wrangler.<family>.toml` commits it empty, and
+the offline check admits `""` or the forwarder's one alias,
+`https://preview.domino-app-e65.pages.dev`. Boundary and enabling steps:
+[PREVIEW_PUBLIC_READS.md](../docs/PREVIEW_PUBLIC_READS.md).
+
 Since 3 Nov 2026 (launch round P2), a 429 from the session Worker, or from the
 transport onboarding, deposit, performance, execution, position-plan and
 crosschain share (`src/authenticated-worker.mjs`), carries the listener's own

@@ -144,7 +144,10 @@ export const PRODUCER_PIN = {
       // market_cache.py: a stored read waits about a second for a lane, one visitor holds at most half of a lane, a
       // full visitor table makes room, and a market-cache hit never waits for a provider call; no route, schema,
       // reason code or version moved.
-      manifestSha256: 'a41ebc3ffa0109d1c36f8e5c5f262a1a7dfcf01e20791b0eaeb747e6da3356a9',
+      // Changed on purpose (data) 2026-11-04 (launch round P3): read_api.py, read_gateway.py, bridge_http.py and
+      // hop_log.py serve read-v6's position-fees behind its version window, closed at the gateway by default; no
+      // read-v1 route, schema, reason code or version moved.
+      manifestSha256: '887a9707adbbe98ea2637f2e901e7863042711382203fedddd3a5cc8b5fc985a',
     },
     'session-v1': {
       version: '3.0.0-rc.4',
@@ -153,7 +156,11 @@ export const PRODUCER_PIN = {
       // Changed on purpose (data) 2026-11-03 (launch round P2): session_store.py and session_api.py charge nothing
       // for a refused attempt, name a 429's Retry-After by cause and wait up to 2.5 s for a free worker; no route,
       // schema, reason code or version moved.
-      manifestSha256: '0b869804283530c432281301e5d1847f0935d7190eadffa1000dc8e7b4cf48db',
+      // Changed on purpose (data) 2026-11-04 (launch round P3): session_store.py, session_api.py, session_service.py,
+      // session_siwe.py, hop_log.py and migration 057: a session belongs to the origin it signed in on, and a listed
+      // preview origin rides its own Access identity; a listed preview origin signs in with its own SIWE message; no
+      // route or version moved.
+      manifestSha256: '7c17858d123dc3c6923538127381d4e0bc1c24370b21d4ee6f9481559a09f1f2',
     },
     'onboarding-v1': {
       version: '1.1.0',
@@ -166,7 +173,12 @@ export const PRODUCER_PIN = {
       // session_store.py charge nothing for a refused attempt, name a 429's Retry-After by cause, wait up to 2.5 s
       // for a free worker and give each kind of signed-in work its own preview budget; no route, schema, reason code
       // or version moved.
-      manifestSha256: 'a70eedcab027abcb3f7554446ea1e7b31dc9adebb73adbbb2cc996596d5902fe',
+      // Changed on purpose (data) 2026-11-04 (launch round P3): authenticated_api.py, onboarding_auth.py,
+      // onboarding_api.py, session_store.py and hop_log.py: a session belongs to the origin it signed in on, and a
+      // listed preview origin rides its own Access identity, with preview budgets of its own; a read-only route may
+      // take an account check up to a minute old, for the delegate the session was admitted with; no route, schema,
+      // reason code or version moved.
+      manifestSha256: '7044d28f69468d94534c70abf338bde844d5a0d6ac0e07b0eee2e25f2c47b920',
     },
     'deposit-v1': {
       version: '1.1.0-rc.4',
@@ -176,7 +188,10 @@ export const PRODUCER_PIN = {
       // Changed on purpose (data) 2026-11-03 (launch round P2): authenticated_api.py names a 429's Retry-After by
       // cause, waits up to 2.5 s for a free worker and gives each kind of signed-in work its own preview budget; no
       // route, schema, reason code or version moved.
-      manifestSha256: '77814f30bfa6c9888fb8e8e9ae884827b88ef8ec54efe171b929f7d5156a4a83',
+      // Changed on purpose (data) 2026-11-04 (launch round P3): authenticated_api.py, deposit_api.py and hop_log.py:
+      // a session belongs to the origin it signed in on, and a listed preview origin rides its own Access identity,
+      // and the request record names the admitted origin; no route, schema, reason code or version moved.
+      manifestSha256: 'ab27bb832eeb2b440331be8bad65b50f371e4c98bb2339b024b477b57f37d954',
     },
   },
 } as const
@@ -206,7 +221,10 @@ export const READ_V2_PIN = {
   // market_cache.py: a stored read waits about a second for a lane, one visitor holds at most half of a lane, a full
   // visitor table makes room, and a market-cache hit never waits for a provider call; no route, schema, reason code
   // or version moved.
-  manifestSha256: 'ad03cc4cc6cfa8e6d3936a554a536f8e7399c087ff8888d2e2a7f44347ab570e',
+  // Changed on purpose (data) 2026-11-04 (launch round P3): read_api.py, read_gateway.py, bridge_http.py,
+  // bridge_identity.py, hop_log.py and bridge/src/worker.mjs: listed preview origins in the Worker and the listeners,
+  // and read-v6's position-fees window; no read-v2 route, schema, reason code or version moved.
+  manifestSha256: '739db3dff7d5cf8804e1f9d594c7057bf3d49f3083c3ca3b0d47fc7f0fdb8fe7',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */
@@ -254,7 +272,9 @@ export const BACKEND_OPENAPI_PIN = {
   // Changed on purpose (data) 2026-10-05: read-v6 1.1.0-rc.1's qualified USD (prices, depth, values and totals).
   // Changed on purpose (data) 2026-10-06: read-v6 chain-balances' BalanceTokenRef and ChainBalances also take Ethereum
   // (1) and OP Mainnet (10); no other route, schema or version moved.
-  sha256: '2e048dfcbebfc4ea40f7324fb4f5bfffafa3d891f829168bf87d2b123eca654e',
+  // Changed on purpose (data) 2026-11-04: read-v6 1.2.0-rc.1's position-fees path (Base's and Arbitrum's Fees earned),
+  // served only to a request that names that version; every other path is as before.
+  sha256: '3abf4f1aba15b6e608846915fb498c24f3e73e1d1594d8f839a4630c77e2866f',
 } as const
 
 export type ReadContractPin = (typeof PRODUCER_PIN)['packages']['read-v1']['version']
@@ -280,7 +300,11 @@ export const PERFORMANCE_V2_PIN = {
   // Changed on purpose (data) 2026-11-03 (launch round P2): authenticated_api.py and onboarding_auth.py name a 429's
   // Retry-After by cause, wait up to 2.5 s for a free worker and give each kind of signed-in work its own preview
   // budget; no route, schema, reason code or version moved.
-  manifestSha256: 'ab4f5781240fda5d9d134e09339cc6d829848a09305be93d04f7ad4077a49a22',
+  // Changed on purpose (data) 2026-11-04 (launch round P3): authenticated_api.py, onboarding_auth.py,
+  // performance_v2_api.py and hop_log.py: a session belongs to the origin it signed in on, and a listed preview
+  // origin rides its own Access identity; a read-only route may take an account check up to a minute old, for the
+  // delegate the session was admitted with; no route, schema, reason code or version moved.
+  manifestSha256: '0b6075ec13d74065c248cacd3677d2101386e9b9e6e8858c95c4dfce9c8ccc54',
 } as const
 
 /** Sanitized private execution status, finalized receipts and short-lived service availability. */
@@ -292,5 +316,9 @@ export const EXECUTION_V1_PIN = {
   // Changed on purpose (data) 2026-11-03 (launch round P2): authenticated_api.py and onboarding_auth.py name a 429's
   // Retry-After by cause, wait up to 2.5 s for a free worker and give each kind of signed-in work its own preview
   // budget; no route, schema, reason code or version moved.
-  manifestSha256: 'a0fb2f38fa3fb6e8b446f441701e98af23e1d3237f89fadf040ea550becba6d3',
+  // Changed on purpose (data) 2026-11-04 (launch round P3): authenticated_api.py, onboarding_auth.py,
+  // execution_status_runtime.py and hop_log.py: a session belongs to the origin it signed in on, and a listed preview
+  // origin rides its own Access identity; a read-only route may take an account check up to a minute old, for the
+  // delegate the session was admitted with; no route, schema, reason code or version moved.
+  manifestSha256: 'ded25cb8dfd6e3e7d4d33423d8100d60abcc8f049efb903168e7bb8e3ed0fd91',
 } as const

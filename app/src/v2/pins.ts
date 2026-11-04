@@ -39,7 +39,10 @@ export const READ_V6_PIN = {
   // Changed on purpose (data) 2026-11-03 (launch round P2): read_api.py and read_gateway.py: a stored read waits
   // about a second for a lane, and one visitor holds at most half of a lane; no route, schema, reason code or version
   // moved.
-  manifestSha256: 'd5f460736392feae5f2f1123289f76fa0b3b98eb8f1011f8289dffb145eb59ab',
+  // Changed on purpose (data) 2026-11-04 (launch round P3): 1.2.0-rc.1 adds position-fees (Base's and Arbitrum's Fees
+  // earned, migration 054) in a version window answered only to a request that names it; the package's own version,
+  // routes and fixtures stay 1.1.0-rc.1.
+  manifestSha256: 'a79c38aa80f9ec4909ee8c9435b1cc3ca1b7a0b085912355047ecc83f269569b',
 } as const
 
 export const POSITION_PLAN_V1_PIN = {
@@ -57,5 +60,8 @@ export const POSITION_PLAN_V1_PIN = {
   // again for an answer in hand (the same plans), and authenticated_api.py and onboarding_auth.py name a 429's Retry-
   // After by cause, wait up to 2.5 s for a free worker and give each kind of signed-in work its own preview budget;
   // no route, schema, reason code or version moved.
-  manifestSha256: '15c61e0cad88b476eb06531247c3dc0ec5af4d7d9d94d563317131959771a2ca',
+  // Changed on purpose (data) 2026-11-04 (launch round P3): authenticated_api.py, onboarding_auth.py and
+  // v2_position_plan_api.py: a session belongs to the origin it signed in on, and a listed preview origin rides its
+  // own Access identity; no route, schema, reason code or version moved.
+  manifestSha256: '0567c8cde23f095fa71b8df30c3d7f7976c47ef439af11e203a69dc5761be838',
 } as const

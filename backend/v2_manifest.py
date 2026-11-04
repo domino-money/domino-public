@@ -45,7 +45,7 @@ candidates, provisional verification and stale/changed on-chain state"):
 `production` admits only a verified public-chain manifest built from committed
 sources (`workingTreeSourceChanges` false), verified at the `finalized` tag,
 whose roles are no key of the public test mnemonic (PUBLIC_TEST_ACCOUNTS,
-PR #302's review, item 2).
+PR #302's review, item 2; its first 100 accounts since 4 Nov 2026).
 `fork-rehearsal` and `local-test` exist for rehearsals and tests and are never
 reachable from the service's configuration. The on-chain half is
 `Deployment.verify_code`, run before a pass acts: the recorded runtime code
@@ -100,14 +100,31 @@ TOP_LEVEL = ('schemaVersion', 'kind', 'status', 'environment', 'chain', 'sourceC
              'build', 'deploymentReceipts', 'verification')
 RECEIPT_KEYS = ('transactionHash', 'blockNumber', 'blockHash', 'gasUsed', 'effectiveGasPrice')
 VERIFICATION_KEYS = ('blockNumber', 'blockHash', 'blockTag', 'codeHashes', 'wiring', 'checkedAt')
-# The first ten accounts of the public test mnemonic ("test test ... junk"),
-# whose keys every Anvil and Hardhat user holds: never a production role.
-PUBLIC_TEST_ACCOUNTS = frozenset({
-    '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266', '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
-    '0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc', '0x90f79bf6eb2c4f870365e785982e1f101e93b906',
-    '0x15d34aaf54267db7d7c367839aaf71a00a2c6a65', '0x9965507d1a55bcc2695c58ba16fb37d819b0a4dc',
-    '0x976ea74026e726554db657fa54763abd0c3a0aa9', '0x14dc79964da2c08b23698b3d3cc7ca32193d9955',
-    '0x23618e81e3f5cdf7f54c3d65f7fbc0abf5b21e8f', '0xa0ee7a142d267c1f36714e4a8f75612f20a79720'})
+PUBLIC_TEST_ACCOUNTS_FILE = Path(__file__).resolve().parents[1] / 'api-contracts/v2/public-test-accounts.json'
+PUBLIC_TEST_ACCOUNT_COUNT = 100
+
+
+def _public_test_accounts(path=PUBLIC_TEST_ACCOUNTS_FILE):
+    """The public test mnemonic's first PUBLIC_TEST_ACCOUNT_COUNT accounts, from the file, whole or not at all."""
+    document = json.loads(Path(path).read_text())
+    if (type(document) is not dict
+            or set(document) != {'schemaVersion', 'kind', 'mnemonic', 'accountPath', 'note', 'addresses'}
+            or document['kind'] != 'domino-public-test-accounts'):
+        raise ValueError('public_test_accounts_invalid')
+    addresses = document['addresses']
+    if (type(addresses) is not list or len(addresses) != PUBLIC_TEST_ACCOUNT_COUNT
+            or not all(type(a) is str and re.fullmatch(r'0x[0-9a-f]{40}', a) for a in addresses)
+            or len(set(addresses)) != len(addresses)):
+        raise ValueError('public_test_accounts_invalid')
+    return frozenset(addresses)
+
+
+# The public test mnemonic's accounts ("test test ... junk", m/44'/60'/0'/0/i), whose keys every Anvil and Hardhat
+# user holds: never a production role. Since 4 Nov 2026 (launch round P3, item 7) the first 100, not 10, so a test
+# may use up to 100 such wallets (tests/public_test_accounts.py) and production still refuses every one of them;
+# tests/test_v2_manifest.py derives the file again. scripts/v2/deploy.mjs, frozen with the V2 release, refuses the
+# first ten, which open the same file.
+PUBLIC_TEST_ACCOUNTS = _public_test_accounts()
 _ADDRESS = re.compile(r'0x[0-9a-f]{40}')
 _HASH = re.compile(r'0x[0-9a-f]{64}')
 _HEX64 = re.compile(r'[0-9a-f]{64}')

@@ -89,8 +89,11 @@ carries `delegate`, that address in lowercase. Its key still signs, so the SIWE
 signature proves control either way. The session keeps the delegate it was
 admitted with: when a fresh check (refresh or a protected endpoint) observes a
 delegate added, changed or cleared, the server revokes the session and answers
-`session_required`, and the browser signs in again. Any other code is
-`account_unsupported`, as before.
+`session_required`, and the browser signs in again. A protected read-only
+status or listing may answer from a positive check up to about 60 s old, only
+for the delegate the session was admitted with, so it sees such a change up to
+that much later and never revokes by itself; refresh and every write read the
+chain. Any other code is `account_unsupported`, as before.
 Cookie/session tokens never appear in public response bodies.
 
 This rc.4 candidate admits EIP-7702 accounts: `validation` becomes one of two

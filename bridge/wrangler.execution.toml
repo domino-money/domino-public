@@ -12,4 +12,7 @@ enabled = false
 EXECUTION_BRIDGE_ENABLED = "false"
 APP_ORIGIN = "https://domino.money"
 EXECUTION_GATEWAY_ORIGIN = "https://vm-execution.domino.money"
+# Exact Pages preview origins this Worker also admits, comma-separated (4 Nov 2026, launch round P3): none.
+# Listing one also needs the listener profile's session.previewOrigins; docs/PREVIEW_PUBLIC_READS.md.
+PREVIEW_ORIGINS = ""
 # Distinct Access service identity; map the tunnel to loopback port 8901.

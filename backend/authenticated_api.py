@@ -16,6 +16,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
+from bridge_identity import identity_carries
 from bridge_state import strict_json
 from discovery import DataError
 import hop_log
@@ -58,14 +59,20 @@ def retry_after(code, wait=None):
 
 
 class AuthenticatedGateway:
-    def __init__(self, *, contract, service=None, verifier=None, origin=None, enabled=False,
+    def __init__(self, *, contract, service=None, verifier=None, origin=None, preview_origins=None, enabled=False,
                  clock=time.monotonic, total_seconds=TOTAL_SECONDS, upload_seconds=UPLOAD_SECONDS):
         self.contract = contract
         if type(enabled) is not bool or enabled and (service is None or verifier is None):
             raise ValueError('invalid_onboarding_gateway_config')
+        # The browser origins this listener admits (X-Domino-Browser-Origin): the session's canonical one, then since
+        # 4 Nov 2026 (launch round P3) the exact previews listed (DOMINO_SESSION_PREVIEW_ORIGINS; the execution status
+        # profile's session.previewOrigins), none by default. A session is whichever the browser holds: a preview's
+        # host-only cookie never reaches production's host, nor production's the preview's.
+        self.origins = ()
         if enabled:
-            from session_siwe import SiwePolicy
+            from session_siwe import SiwePolicy, preview_origins as listed
             SiwePolicy(origin)
+            self.origins = (origin, *listed(preview_origins, origin))
         if any(type(value) not in (int, float) or not math.isfinite(value) or not 0 < value <= maximum
                for value, maximum in ((total_seconds, TOTAL_SECONDS), (upload_seconds, UPLOAD_SECONDS))):
             raise ValueError('invalid_onboarding_gateway_budget')
@@ -103,12 +110,19 @@ class AuthenticatedGateway:
             remaining = deadline - self.clock()
             if remaining <= 0:
                 raise OnboardingError('request_timeout')
-            # The family ('/internal/<family>/v1/') and route choose the session's preview budget.
-            with read_deadline(remaining, clock=self.clock), serving(self.contract.PREFIX.split('/')[2], route):
+            # The family ('/internal/<family>/v1/') and route choose the session's preview budget; the admitted
+            # origin, as the session store keeps it (None: the canonical one), holds every session check to the
+            # origin the session signed in on (4 Nov 2026, launch round P3, review M1).
+            canonical = self.origins[0]
+            bound = None if headers['origin'] == canonical else headers['origin']
+            with read_deadline(remaining, clock=self.clock), serving(self.contract.PREFIX.split('/')[2], route, bound):
                 try:
-                    self.verifier.verify(headers['assertion'])
+                    identity = self.verifier.verify(headers['assertion'])
                 except Exception:
                     raise OnboardingError('upstream_unavailable') from None
+                # Review L1: a preview-only Access identity carries a listed preview, never the canonical origin.
+                if not identity_carries(self.verifier, identity, headers['origin'], canonical):
+                    raise OnboardingError('origin_not_allowed')
                 response = self.service.execute(route, body, client=headers['client'],
                                                 session=headers['session'], csrf=headers['csrf'], **window)
                 response = validate_response(route, response, **window)
@@ -170,17 +184,17 @@ def create_authenticated_app(gateway):
             named = next((value for name, value in request.scope['headers'] if name.lower() == HEADER.lower().encode()), None)
             version = named.decode('ascii') if named in ACCEPTED else CONTRACT_VERSION
             notes = hop_log.open_notes()
-            recorded = []
+            recorded, admitted = [], []
 
             def record(status, reason=None):
-                # The raw path never reaches the record: only a declared route name.
+                # The raw path never reaches the record: only a declared route name, and only an origin it admitted.
                 if recorded:
                     return
                 recorded.append(status)
                 hop_log.emit(service=SERVICE_NAME, requestId=request_id, route=logged_route,
                              contractVersion=version, method=request.method, status=status,
                              reason=reason, durationMs=int((gateway.clock() - opened) * 1000),
-                             **hop_log.close_notes(notes))
+                             origin=admitted[0] if admitted else None, **hop_log.close_notes(notes))
 
             def result(status, body, wait=None):
                 reason = body.get('error') if isinstance(body, dict) else None
@@ -218,8 +232,10 @@ def create_authenticated_app(gateway):
                 if name in headers or total > 16384:
                     return error('invalid_request')
                 headers[name] = value
-            if headers.get(b'x-domino-browser-origin') != gateway.origin.encode('ascii'):
+            browser = headers.get(b'x-domino-browser-origin')
+            if browser not in {value.encode('ascii') for value in gateway.origins}:
                 return error('origin_not_allowed')
+            admitted.append(browser.decode('ascii'))
             if headers.get(HEADER.lower().encode()) not in ACCEPTED:
                 return error('upstream_contract_mismatch')
             if (not re.fullmatch(rb'application/json(?:;\s*charset=utf-8)?', headers.get(b'content-type', b''), re.I)
@@ -271,7 +287,7 @@ def create_authenticated_app(gateway):
                 return error(getattr(contract, 'CAPACITY_CODE', 'onboarding_capacity_busy'))
             try:
                 future = asyncio.get_running_loop().run_in_executor(executor, gateway.execute, match[1], body,
-                    {'assertion': assertion, 'client': client, **credentials}, deadline,
+                    {'assertion': assertion, 'client': client, 'origin': admitted[0], **credentials}, deadline,
                     None if WINDOW is None else version)
             except Exception:
                 gateway.slot.release()

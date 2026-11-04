@@ -530,8 +530,8 @@ class SessionStoreTests(unittest.TestCase):
         p,b=self.pending()
         clock=[0.0]
         original=self.store.reserve_verify
-        def reserve(*args):
-            result=original(*args);clock[0]=2;return result
+        def reserve(*args,**kwargs):  # Changed on purpose 2026-11-04: the service names the origin (review M1).
+            result=original(*args,**kwargs);clock[0]=2;return result
         from discovery import DataError
         with patch.object(self.store,'reserve_verify',reserve),self.assertRaises(DataError):
             with read_deadline(1,clock=lambda:clock[0]):

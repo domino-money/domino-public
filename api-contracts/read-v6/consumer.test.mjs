@@ -136,3 +136,47 @@ test('errors are read-v1\'s', () => {
   }
   assert(!runtime.validateError(503, { error: 'v2_receipt_unanchored' }));
 });
+
+// 1.2.0-rc.1's window (launch round P3, 4 Nov 2026): position-fees beside 1.1.0-rc.1's routes, which keep their
+// version, their ROUTES and their fixtures; every one of them may also answer in 1.2.0-rc.1.
+const NEXT = `./fixtures/${runtime.NEXT_VERSION}/`;
+const nextRoute = (name) => [...runtime.ROUTES, ...runtime.NEXT_ROUTES].sort((a, b) => b.length - a.length)
+  .find((r) => name.startsWith(r) && '.-'.includes(name[r.length]));
+
+test('1.2.0-rc.1 adds position-fees and moves nothing else', () => {
+  assert.deepEqual([...runtime.NEXT_ROUTES], ['position-fees']);
+  assert.deepEqual([...runtime.CONTRACT_VERSIONS], [runtime.CONTRACT_VERSION, runtime.NEXT_VERSION]);
+  assert.equal(runtime.NEXT_VERSION, '1.2.0-rc.1');
+  assert.deepEqual(read('./manifest.json').contractVersions, [...runtime.CONTRACT_VERSIONS]);
+  const names = list(`${NEXT}valid/`);
+  assert(names.length >= 6);
+  for (const name of names) assert(runtime.validateResponse(nextRoute(name), read(`${NEXT}valid/${name}`)), name);
+  const defects = list(`${NEXT}invalid/`);
+  assert(defects.length >= 30);
+  for (const name of defects) assert(!runtime.validateResponse(nextRoute(name), read(`${NEXT}invalid/${name}`)), name);
+  // A 1.1.0-rc.1 route answers in either version; position-fees in 1.2.0-rc.1 alone.
+  const portfolio = read('./fixtures/valid/portfolio.json');
+  assert(runtime.validateResponse('portfolio', { ...portfolio, contractVersion: runtime.NEXT_VERSION }));
+  assert(!runtime.validateResponse('portfolio', { ...portfolio, contractVersion: '1.3.0-rc.1' }));
+});
+
+test('position-fees asks for 1 to 8 positions of one chain, each once, and answers them in that order', () => {
+  const request = read(`${NEXT}requests/position-fees.json`);
+  assert(runtime.validateRequest('position-fees', request));
+  const body = read(`${NEXT}valid/position-fees.json`);
+  assert(runtime.validateExchange('position-fees', request, body));
+  assert(!runtime.validateExchange('position-fees', { ...request, positions: [...request.positions].reverse() }, body));
+  assert(!runtime.validateExchange('position-fees', { ...request, chainId: 42161 }, body));
+  const ref = (tokenId) => ({ dex: 4, tokenId });
+  assert(!runtime.validateRequest('position-fees', { chainId: 8453, positions: [] }));
+  assert(!runtime.validateRequest('position-fees', { chainId: 8453, positions: Array.from({ length: 9 }, (_, i) => ref(String(i + 1))) }));
+  assert(!runtime.validateRequest('position-fees', { chainId: 8453, positions: [ref('7'), ref('7')] }), 'once each');
+  assert(runtime.validateRequest('position-fees', { chainId: 8453, positions: [ref('7'), { dex: 3, tokenId: '7' }] }));
+  assert(!runtime.validateRequest('position-fees', { chainId: 8453, positions: [ref('0')] }));
+  assert(!runtime.validateRequest('position-fees', { chainId: 8453, positions: [ref('07')] }));
+  assert(!runtime.validateRequest('position-fees', { chainId: 1, positions: [ref('7')] }), 'a chain V2 does not serve');
+  // Raw amounts only: no USD, no APR.
+  const priced = clone(body);
+  priced.positions[0].now.earnedUsd = '1.00';
+  assert(!runtime.validateResponse('position-fees', priced));
+});

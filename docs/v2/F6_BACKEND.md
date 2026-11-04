@@ -249,6 +249,8 @@ reader.assert_canonical(head.block)  # before acting on what was read
 - For the fee proof on the destination chain, F5 reads through `configured_endpoints(...)` and a `ChainIndexRpc`. That puts it behind the same endpoints, limits and billing counters as every other V2 service.
 - F5 also takes secrets from systemd credentials. Moving to one secret convention for both fronts is a small follow-up.
 
+**The fee follower** (launch round P3, [V2_FEES.md](V2_FEES.md)) reads the positions' state through Multicall3 at each block it needs, and about 5 calls a minute a chain once caught up.
+
 **Billing (next lever):** Multicall3 aggregation. Every profile lists Multicall3, and the registry verifies its code hash. Aggregating a position read through it would take a v4 read from 9 calls to 2, and a v3 read from 8 to 2.
 
 **Head sharing topology:** which service user owns `/run/domino-v2/`, and its group permissions. The file holds public chain data only.

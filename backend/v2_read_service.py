@@ -6,14 +6,16 @@ v2_read_contract before it leaves. The exporter builds the shared fixtures
 with the same functions over synthetic rows, so a fixture is always something
 this producer serves.
 """
+import json
 import time
 
 from discovery import DataError
 from v2_chains import DEX_V3, default_registry
-from v2_read_contract import (BLOCKERS, CHAIN_IDS, CONTRACT_VERSION, DISARM_REASONS, HEAD_MAX_AGE_SECONDS,
-                              LIMITATIONS, MAX_CREDITS, MAX_ITEMS, MAX_MANDATES, MAX_POSITIONS, MAX_TOKENS,
-                              MAX_VAULTS, MAX_LAG_SECONDS, STALE_SECONDS, WAITING_STALE_SECONDS, ZERO, cursor_key,
-                              error_of, make_cursor, validate_v6_response)
+from v2_read_contract import (BLOCKERS, CHAIN_IDS, CONTRACT_VERSION, DISARM_REASONS, FEE_FRESH_SECONDS,
+                              FEE_LIMITATIONS, HEAD_MAX_AGE_SECONDS, LIMITATIONS, MAX_CREDITS, MAX_FEE_EVENTS,
+                              MAX_FEE_POINTS, MAX_FEE_TRANSFERS, MAX_ITEMS, MAX_MANDATES, MAX_POSITIONS, MAX_TOKENS,
+                              MAX_VAULTS, MAX_LAG_SECONDS, NEXT_VERSION, STALE_SECONDS, WAITING_STALE_SECONDS, ZERO,
+                              cursor_key, error_of, make_cursor, validate_v6_response)
 
 ACTIONS = {1: 'create', 2: 'increase', 3: 'change_range', 4: 'exit'}
 PLAN_ACTIONS = {1: 'compound', 2: 'mint'}
@@ -649,6 +651,125 @@ def build_activity(wallet, now, limit, *, deployments, rows, logs, transactions,
     return validate_v6_response('activity', body)
 
 
+# ------------------------------------------------------------ position fees
+# What a position-fees answer may weigh: under the gateway's and the read Worker's 1 MiB with room. Its counts are
+# bounded by the contract; its amounts' digits are not, so the oldest events and points go first beyond this.
+FEE_ANSWER_BYTES = 900_000
+
+
+def _pair(row, a, b):
+    return None if row[a] is None else [str(int(row[a])), str(int(row[b]))]
+
+
+def fee_follower(cursor, latest):
+    """The chain's fee follower against the index's newest checkpoint (read-v6 FeeFollower)."""
+    indexed = None if latest is None else _snapshot(latest['end_block'], latest['end_hash'], latest['end_timestamp'])
+    if cursor is None:
+        return {'status': 'unavailable', 'reason': 'fees_not_followed', 'through': None, 'indexedThrough': indexed,
+                'lagSeconds': None, 'lastError': None}
+    through = _snapshot(cursor['block_number'], cursor['block_hash'], cursor['block_timestamp'])
+    lag = None if indexed is None else max(0, indexed['timestamp'] - through['timestamp'])
+    out = {'through': through, 'indexedThrough': indexed, 'lagSeconds': lag,
+           'lastError': None if cursor['last_error'] is None else {'code': cursor['last_error'],
+                                                                   'at': int(cursor['last_error_at'])}}
+    if not cursor['caught_up']:
+        return {**out, 'status': 'stale', 'reason': 'reading_back'}
+    if lag is not None and lag > MAX_LAG_SECONDS:
+        return {**out, 'status': 'stale', 'reason': 'behind_index'}
+    return {**out, 'status': 'current', 'reason': None}
+
+
+def _settlement(row):
+    return {'kind': row['kind'], 'block': _snapshot(row['block_number'], row['block_hash'], row['block_timestamp']),
+            'logIndex': int(row['log_index']), 'logIndexes': [int(i) for i in row['log_indexes']],
+            'tx': row['tx_hash'], 'liquidityDelta': str(int(row['liquidity_delta'])),
+            'liquidity': str(int(row['liquidity'])), 'fees': _pair(row, 'fees0', 'fees1'),
+            'settled': _pair(row, 'settled0', 'settled1'), 'why': row['why'], 'auto': bool(row['auto']),
+            'serviceFee': _pair(row, 'service_fee0', 'service_fee1')}
+
+
+def _transfer(row):
+    return {'block': _snapshot(row['block_number'], row['block_hash'], row['block_timestamp']),
+            'logIndex': int(row['log_index']), 'tx': row['tx_hash'], 'fromAddress': row['from_address'],
+            'toAddress': row['to_address']}
+
+
+def _point(row):
+    return {'block': int(row['block_number']), 'timestamp': int(row['block_timestamp']), 'hour': int(row['hour']),
+            'kind': row['kind'], 'earned': _pair(row, 'earned0', 'earned1'),
+            'settled': _pair(row, 'settled0', 'settled1')}
+
+
+def _fee_now(row, position):
+    s, pool = row['state'], position['pool']
+    v4 = int(pool['dex']) == 4
+    return {'snapshot': _snapshot(row['block_number'], row['block_hash'], row['block_timestamp']), 'owner': s['owner'],
+            'pool': _pool(pool), 'poolId': position['pool_key'] if v4 else None,
+            'poolAddress': None if v4 else position['pool_key'], 'tickLower': int(position['tick_lower']),
+            'tickUpper': int(position['tick_upper']), 'liquidity': s['liquidity'], 'sqrtPriceX96': s['sqrtPriceX96'],
+            'tick': int(s['tick']), 'inRange': int(position['tick_lower']) <= int(s['tick']) < int(position['tick_upper']),
+            'protocolFee': int(s['protocolFee']), 'feeGrowthInsideX128': s['feeGrowthInsideX128'],
+            'feeGrowthInsideLastX128': s['feeGrowthInsideLastX128'], 'tokensOwed': s['tokensOwed'],
+            'collectable': s['collectable'], 'unsettled': s['unsettled'], 'earned': s['earned'],
+            'settled': s['settled'], 'principalAtSpot': s['principalAtSpot']}
+
+
+def position_fees_entry(chain_id, dex, token_id, found, follower, now):
+    """One position of a position-fees answer from what fee_position read."""
+    base = {'dex': dex, 'tokenId': str(token_id), 'positionManager': _manager(chain_id, dex), 'since': None,
+            'through': None, 'freshness': None, 'exact': False, 'why': None, 'now': None, 'events': [],
+            'transfers': [], 'points': [], 'truncated': False}
+    row = found['row']
+    if follower['status'] == 'unavailable' or (row is None and not found['known']):
+        return {**base, 'status': 'not_followed'}
+    if row is None:
+        return {**base, 'status': 'reading', 'why': 'reading'}
+    through = _snapshot(row['through_block'], row['through_hash'], row['through_timestamp'])
+    age = max(0, now - through['timestamp'])
+    since = None if row['since_kind'] is None else {
+        'kind': row['since_kind'], 'block': _snapshot(row['since_block'], row['since_hash'], row['since_timestamp'])}
+    out = {**base, 'since': since, 'through': through,
+           'freshness': {'ageSeconds': age, 'status': 'fresh' if age <= FEE_FRESH_SECONDS else 'stale'},
+           'events': [_settlement(r) for r in found['events']], 'transfers': [_transfer(r) for r in found['transfers']],
+           'points': [_point(r) for r in found['points']], 'truncated': found['truncated']}
+    state = found['now']
+    if row['status'] == 'burned':
+        status = 'burned'
+    elif (row['status'] == 'following' and follower['status'] != 'unavailable' and state is not None
+          and int(state['block_number']) == through['number'] and since is not None):
+        status = 'following'
+        out['now'] = _fee_now(state, row)
+    else:
+        status = 'reading'
+    if status == 'reading':
+        return {**out, 'status': status, 'why': 'reading'}
+    if found['why'] is not None:
+        return {**out, 'status': status, 'why': found['why']}
+    return {**out, 'status': status, 'exact': True, 'why': 'before_floor' if since['kind'] == 'floor' else None}
+
+
+def build_position_fees(chain_id, positions, now, *, follower, read):
+    """position-fees: each position asked, in order, read by `read(dex, token id, events=, points=, transfers=)`
+    with its share of the answer's events and points."""
+    events, points = MAX_FEE_EVENTS // len(positions), MAX_FEE_POINTS // len(positions)
+    body = {'schemaVersion': 1, 'contractVersion': NEXT_VERSION, 'mode': 'stored_v2_position_fees',
+            'chainId': chain_id, 'servedAt': now, 'follower': follower,
+            'positions': [position_fees_entry(chain_id, dex, token_id, read(dex, token_id, events=events, points=points,
+                                                                            transfers=MAX_FEE_TRANSFERS),
+                                              follower, now) for dex, token_id in positions],
+            'limitations': list(FEE_LIMITATIONS), 'executionAvailable': False}
+    while len(json.dumps(body, separators=(',', ':')).encode()) > FEE_ANSWER_BYTES:
+        cut = False
+        for entry in body['positions']:
+            for name in ('events', 'points'):
+                if len(entry[name]) > 1:
+                    entry[name] = entry[name][len(entry[name]) // 2:]
+                    entry['truncated'] = cut = True
+        if not cut:
+            break
+    return validate_v6_response('position-fees', body)
+
+
 class V2ReadService:
     """The two read-v6 routes over the V2 index, through the catalogue reader:
     one read-only snapshot per answer, the automation's waiting reasons included
@@ -667,6 +788,15 @@ class V2ReadService:
                                    credits=reader.credits(wallet), tokens=reader.tokens,
                                    waiting_reports=reader.waiting_reports(),
                                    waiting=reader.waiting(waiting_keys(vaults, mandates)), prices=self.prices)
+
+    def position_fees(self, chain_id, positions):
+        """read-v6 1.2.0-rc.1: what the chain's fee follower stored for each (dex, token id), one snapshot."""
+        with self.store.reader() as reader:
+            now = int(self.clock())
+            follower = fee_follower(*reader.fee_follower(chain_id))
+            return build_position_fees(chain_id, positions, now, follower=follower,
+                                       read=lambda dex, token, **limits: reader.fee_position(chain_id, dex, token,
+                                                                                             **limits))
 
     def activity(self, wallet, limit=20, cursor=None):
         if type(limit) is not int or not 1 <= limit <= MAX_ITEMS:

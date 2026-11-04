@@ -29,7 +29,7 @@ class PublicInstallTests(unittest.TestCase):
         self.systemd.mkdir()
         self.files={'backend/requirements-api.lock':(b'unchanged',False)}
         for name in ('manage_public_data.py','public_history.py','public_observations.py','manage_activity.py',
-                     'manage_featured.py'):
+                     'manage_featured.py','manage_featured_chain.py','v2_fees.py'):
             self.files['backend/'+name]=(b'pass\n',False)
         for name in installer.UNITS:self.files['ops/systemd/'+name]=((REPO/'ops/systemd'/name).read_bytes(),False)
         for item in (patch.object(installer,'BASE',self.base),patch.object(installer,'QUEUE',self.queue),
@@ -51,7 +51,7 @@ class PublicInstallTests(unittest.TestCase):
         planned=self.plan()
         self.assertEqual(planned['runtime'],str(self.queue/'release/backend/runtime'))
         self.assertEqual(planned['previousCurrent'],None)
-        self.assertEqual(len(planned['units']),12)
+        self.assertEqual(len(planned['units']),15)
         for name,value in planned['units'].items():
             self.assertNotIn('@PUBLIC_ROOT@',value)
             self.assertNotIn('@QUEUE_ROOT@',value)
@@ -98,6 +98,49 @@ class PublicInstallTests(unittest.TestCase):
         self.assertNotIn('@QUEUE_ROOT@',unit)
         target=self.plan()['units']['domino-public-data.target']
         self.assertNotIn('domino-v2-indexer',target)
+
+    def test_each_chain_s_featured_shadow_is_installed_per_chain_but_never_enabled(self):
+        # Launch round P3 (4 Nov 2026): Base and Arbitrum One select in shadow, each from its own timer.
+        units=self.plan()['units']
+        service=units['domino-featured-chain@.service']
+        for field in ('Type=oneshot','User=domino-write','SupplementaryGroups=domino-db','ProtectSystem=strict',
+                      'BindsTo=domino-continuous-egress.service','PartOf=domino-public-data.target',
+                      f'WorkingDirectory={self.base}/current/backend\n',
+                      f'ExecStart={self.queue}/venv/bin/python -B manage_featured_chain.py --chain %i '
+                      f'--chain-rpc-file {self.queue}/release/backend/runtime/chain-rpc.json tick\n',
+                      'ImportCredential=v2-rpc-*\n','DeviceAllow=char-tpm rw\n','TimeoutStartSec=900\n'):
+            self.assertIn(field,service)
+        # The timer starts it; the service itself is never wanted by anything.
+        self.assertNotIn('[Install]',service)
+        timer=units['domino-featured-chain@.timer']
+        self.assertEqual([line for line in timer.splitlines() if line.startswith(('On','Unit='))],
+                         ['OnCalendar=minutely'])
+        for field in ('PartOf=domino-public-data.target','WantedBy=domino-public-data.target'):
+            self.assertIn(field,timer)
+        target=units['domino-public-data.target']
+        self.assertNotIn('domino-featured-chain',target)
+        # A release without the script the units run is refused before anything is written.
+        del self.files['backend/manage_featured_chain.py']
+        with self.assertRaisesRegex(ValueError,'public_source_missing'):self.plan()
+
+    def test_the_v2_fees_are_installed_per_chain_but_never_enabled(self):
+        # Launch round P3 (4 Nov 2026): Base's and Arbitrum's Fees earned and Your APR, behind each chain's indexer.
+        unit=self.plan()['units']['domino-v2-fees@.service']
+        for field in ('User=domino-write','SupplementaryGroups=domino-db','ProtectSystem=strict',
+                      'BindsTo=domino-continuous-egress.service','PartOf=domino-public-data.target',
+                      f'v2_fees.py follow --chain %i --chain-rpc-file {self.queue}/release/backend/runtime/chain-rpc.json '
+                      '--poll 60\n','ImportCredential=v2-rpc-*\n','DeviceAllow=char-tpm rw\n','Restart=always\n',
+                      'BindReadOnlyPaths=/etc/domino/continuous-reads/write.hosts:/etc/hosts\n',
+                      f'WorkingDirectory={self.base}/current/backend\n','WantedBy=domino-public-data.target'):
+            self.assertIn(field,unit)
+        self.assertNotIn('@PUBLIC_ROOT@',unit)
+        self.assertNotIn('@QUEUE_ROOT@',unit)
+        target=self.plan()['units']['domino-public-data.target']
+        self.assertNotIn('domino-v2-fees',target)
+
+    def test_a_release_without_the_fee_follower_is_refused(self):
+        del self.files['backend/v2_fees.py']
+        with self.assertRaisesRegex(ValueError,'public_source_missing'):self.plan()
 
     def test_the_domino_pool_follower_runs_every_minute_under_the_public_data_target(self):
         units=self.plan()['units']
@@ -172,7 +215,7 @@ class PublicInstallTests(unittest.TestCase):
         bind=f'BindReadOnlyPaths={egress.ROOT}/write.hosts:/etc/hosts\n'
         units=self.plan()['units']
         services=[name for name in units if name.endswith(('.service','.service.d/90-public-data.conf'))]
-        self.assertEqual(len(services),8)
+        self.assertEqual(len(services),10)
         for name in services:
             with self.subTest(unit=name):
                 self.assertEqual(units[name].count(bind),1)

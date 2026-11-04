@@ -37,6 +37,7 @@ Left for the next slices (see [What remains](#what-remains)): the bridge Worker 
 | `backend/v2_read_contract.py`, `backend/v2_read_service.py` | read-v6's models and builders. |
 | `backend/migrations/052_v2_index.sql` | The schema. In production `scripts/staging/apply_migrations.py` applies it as postgres, the owner of `domino_v2` as of `domino_public` (registered in `dev_postgres.py` and the staging helpers; `upgrade_financial` does not apply it). |
 | `scripts/export-read-v6-contract.py`, `api-contracts/read-v6/` | The contract package. |
+| `backend/v2_fees.py`, `backend/migrations/054_v2_fees.sql` | Launch round P3 (item 3.1, path B): the fee follower per chain behind this index's checkpoints, its own tables in `domino_v2`, and read-v6 `1.2.0-rc.1`'s `position-fees` ([V2_FEES.md](V2_FEES.md)). The indexer does not change. |
 
 ## The deployment manifest (#301)
 
@@ -95,8 +96,9 @@ The automation (3a, docs/v2/V2_AUTOMATION_BACKEND.md, "Why a vault or a mandate 
 | `POST /v6/read/chain-pools` `{chainId, token, pairedToken?}` | The token's standard hookless pools on a chain, read at its head (≤ 32) |
 | `POST /v6/read/chain-balances` `{wallet, tokens?}` | A wallet's balances per chain, each Domino chain's base currencies by default; Ethereum and OP Mainnet when asked |
 | `POST /v6/read/chain-tokens` `{chainId, query, limit?}` | Known tokens on Base or Arbitrum One that match (≤ 24) |
+| `POST /v6/read/position-fees` `{chainId, positions}` (`1.2.0-rc.1`) | Each position's fee history as the chain's fee follower stored it: settlements, transfers, points, its state now ([V2_FEES.md](V2_FEES.md)). Closed at the gateway until `DOMINO_BRIDGE_V6_READS` names it |
 
-Served by the local reader (`read_api.py`, stored lane, header `X-Domino-Read-Contract: 1.1.0-rc.1`) when `DOMINO_V2_READ=1`, and through the gateway (`read_gateway.py`, `--enable-v6`, `DOMINO_BRIDGE_V6_READS=portfolio,activity`; it re-validates every answer and that it is about the wallet asked); `bridge_http.py`'s client knows the routes. Field by field, the package's [README](../../api-contracts/read-v6/README.md) is the reference; the generated schemas and `types.ts` are the contract.
+Served by the local reader (`read_api.py`, stored lane, header `X-Domino-Read-Contract: 1.1.0-rc.1`; since `1.2.0-rc.1`'s window each answer in the version its request names, [V2_FEES.md](V2_FEES.md#the-read-read-v6-120-rc1)) when `DOMINO_V2_READ=1`, and through the gateway (`read_gateway.py`, `--enable-v6`, `DOMINO_BRIDGE_V6_READS=portfolio,activity`; it re-validates every answer and that it is about the wallet asked); `bridge_http.py`'s client knows the routes. Field by field, the package's [README](../../api-contracts/read-v6/README.md) is the reference; the generated schemas and `types.ts` are the contract.
 
 ### The chain reads (0xdecimal's items 1-4, 5 Oct 2026)
 
@@ -342,6 +344,7 @@ Live since 6 Oct 2026, 15:59:48 UTC ([In production](#in-production-robinhood-fi
 - public-data `f2d9a2aa` at 13:13:27 UTC (branch `hotfix/featured-launch-fixes`): #439's Top pools fixes, #440 and #449;
 - read `a0b245aa` and public-data `3f76dc6a` at 14:28:49–14:29:52 UTC (branches `hotfix/access-401-*`): Cloudflare Access's keys refreshed in the background (the gateway), and #401's stale-head set-aside in the reader and the three indexers;
 - read `b5bb5a63` and public-data `ccacac9e` at 16:44:23–16:46:04 UTC (branches `hotfix/p1-45-*`): item 4.5's call-timeout failover (#454) in the reader and the gateway, the three lanes, the three indexers and featured. read also carries the regenerated read-v1, read-v2 and performance-v1 manifests. position-plan `99641321` and crosschain `9813c37c` moved with the read target;
+- read `b3e4b29a` and public-data `acc65f74` on 4 Nov 2026 at 13:00:26–13:01:15 UTC (branches `hotfix/p2-*`, #455): a stored read waits about a second for a lane, a visitor holds at most half of a lane (F-02), a full visitor table makes room, a market-cache hit never waits for a provider call, a NUL in a search is `invalid_request` (F-18); the activity follower and the queue worker never walk one pool at once. auth `9a1c4898`, position-plan `f00782bd`, crosschain `82442b6d` and execution-status `f53eb35c` moved with the read target (#455's session limits, `Retry-After` by cause, the plan's kept connections, the bridge's status budget). The record is on #455;
 - rollback: `--rollback <commit>` of `install_read_release.py` or `install_public_data.py`, `daemon-reload`, and the restart the move made (`domino-continuous-reads.target` for read, after restoring its two saved 70 drop-ins; the indexers for public-data).
 
 ## What 3a, #301 and F7 must align with

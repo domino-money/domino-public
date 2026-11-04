@@ -10,6 +10,7 @@ Sources: https://github.com/spruceid/siwe-py and https://eips.ethereum.org/EIPS/
 from datetime import datetime, timedelta, timezone
 import hmac
 import re
+import sys
 from urllib.parse import urlsplit
 
 from eth_account import Account
@@ -25,6 +26,9 @@ from session_models import SessionError
 MAX_MESSAGE_BYTES = 2048
 MAX_CHALLENGE_SECONDS = 300
 STATEMENT = 'Sign in to Domino. This request does not authorize transactions or automation.'
+# Launch round P3 (4 Nov 2026), item 7, testing without real money: a listener may also admit a few exact Pages
+# preview origins besides its canonical one (preview_origins below).
+MAX_PREVIEW_ORIGINS = 4
 
 
 def _utc_now():
@@ -126,3 +130,48 @@ class SiwePolicy:
             raise SessionError('invalid_signature')
         # Expiry remains absolute even when parsing/recovery spent the last moment.
         self._check_time(issued_at, expires_at)
+
+
+def preview_origins(listed, origin, *, comma=True):
+    """The exact Pages preview origins a listener admits besides its canonical `origin`, as a tuple.
+
+    Launch round P3 (4 Nov 2026), item 7: the session and authenticated listeners take them from
+    DOMINO_SESSION_PREVIEW_ORIGINS (comma-separated), the execution status listener from its profile's
+    session.previewOrigins (a list). None, '' or [] lists none, every listener's behaviour before. Otherwise at most
+    MAX_PREVIEW_ORIGINS, each a canonical origin SiwePolicy takes (https and a lower-case DNS name, nothing else: no
+    wildcard, port, path or upper case), none twice and none `origin`; anything else is ValueError, so the listener
+    refuses to start. Each is compared as a whole string with the origin its bridge Worker admitted
+    (X-Domino-Browser-Origin), and the session listener writes each one's own SIWE message (siwe_policies).
+    """
+    if listed is None or listed == '':
+        return ()
+    if type(listed) is str and comma:
+        listed = listed.split(',')
+    if type(listed) not in (list, tuple) or len(listed) > MAX_PREVIEW_ORIGINS:
+        raise ValueError('invalid_session_preview_origins')
+    if any(type(value) is not str or value == origin for value in listed) or len(set(listed)) != len(listed):
+        raise ValueError('invalid_session_preview_origins')
+    for value in listed:
+        SiwePolicy(value)
+    return tuple(listed)
+
+
+def siwe_policies(origin, listed=None):
+    """The session listener's SIWE policies: the canonical origin's first, then each listed preview's own."""
+    return tuple(SiwePolicy(value) for value in (origin, *preview_origins(listed, origin)))
+
+
+def configured_preview_origins(listed, origin, name, *, comma=True, stream=None):
+    """The preview origins a listener's configuration lists, or none when the list is malformed.
+
+    Review L3 (4 Nov 2026): a malformed list turns preview admission off, and only that. The canonical origin keeps
+    serving, every preview origin is refused as unlisted, and the journal gets an error-priority line (the `<3>`
+    prefix) naming the setting, never its value. It used to stop the listener, so one typo stopped all seven at their
+    next restart. `comma`: whether a string is a comma-separated list (the environment) or malformed (a JSON profile).
+    """
+    try:
+        return preview_origins(listed, origin, comma=comma)
+    except ValueError:
+        print(f'<3>{name} is malformed: preview origins are off, the canonical origin serves.',
+              file=stream or sys.stderr, flush=True)
+        return ()

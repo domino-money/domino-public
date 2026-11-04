@@ -229,10 +229,11 @@ class RuntimeTests(unittest.TestCase):
 class MigrationTests(unittest.TestCase):
     def test_each_migration_runs_as_the_identity_the_first_vm_used(self):
         admin = {name for name, who in apply_migrations.HAND_APPLIED.items() if who == apply_migrations.ADMIN}
-        # 053 is no first-VM migration: the catalogue owner owns domino_activity.events, which it indexes.
+        # 053 and 056 are no first-VM migrations: the catalogue owner owns domino_activity, events included,
+        # which 053 indexes and to which 056 adds the activity follower's mint-scan checkpoint.
         self.assertEqual(admin, {'020_pool_requests', '021_reference_price_sources',
                                  '022_event_timestamp_source', '023_pool_request_scheduling',
-                                 '053_activity_chunk_index'})
+                                 '053_activity_chunk_index', '056_position_mint_scan'})
         self.assertTrue(all(who == apply_migrations.POSTGRES for name, who in apply_migrations.HAND_APPLIED.items()
                             if name not in admin))
         for name in apply_migrations.HAND_APPLIED:

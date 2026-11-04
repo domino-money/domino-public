@@ -19,7 +19,7 @@ from discovery import DataError, _DeadlineHTTPResponse
 
 from read_contract import ENABLED_READS
 from public_data_contract import ENABLED_READS as V3_ENABLED_READS
-from v2_read_contract import ROUTES as V6_ROUTES
+from v2_read_contract import ALL_ROUTES as V6_ROUTES, CONTRACT_VERSIONS as V6_CONTRACT_VERSIONS
 
 READ_ROUTES = frozenset(ENABLED_READS)
 MAX_RESPONSE = 1024 * 1024
@@ -102,8 +102,11 @@ class LocalReaderHTTP:
             self.client.close()
 
     @staticmethod
-    def _request_headers(method, budget, request_id=None):
+    def _request_headers(method, budget, request_id=None, contract=None):
         headers = {'Accept': 'application/json', 'Accept-Encoding': 'identity', 'Connection': 'close'}
+        if contract is not None:
+            # read-v6's window (1.2.0-rc.1): the version the reader answers in, as the gateway's caller named it.
+            headers['X-Domino-Read-Contract'] = contract
         if request_id is not None:
             # Correlation only: the hop that mints it decides its shape, and the
             # reader re-checks it before recording. Never an identity or a grant.
@@ -131,11 +134,11 @@ class LocalReaderHTTP:
             raw.extend(chunk)
         return raw
 
-    def _network(self, method, path, payload, budget, request_id=None):
+    def _network(self, method, path, payload, budget, request_id=None, contract=None):
         connection = _LoopbackConnection(self.port, budget)
         try:
             connection.connect()
-            headers = self._request_headers(method, budget, request_id)
+            headers = self._request_headers(method, budget, request_id, contract)
             connection.request(method, path, body=payload, headers=headers)
             with connection.getresponse() as response:
                 budget.remaining()
@@ -156,21 +159,23 @@ class LocalReaderHTTP:
         finally:
             connection.close()
 
-    def _injected(self, method, path, payload, budget, request_id=None):
+    def _injected(self, method, path, payload, budget, request_id=None, contract=None):
         remaining = budget.remaining()
         with self.client.stream(method, self.origin + path, content=payload,
-                                headers=self._request_headers(method, budget, request_id), follow_redirects=False,
+                                headers=self._request_headers(method, budget, request_id, contract),
+                                follow_redirects=False,
                                 timeout=httpx.Timeout(remaining, connect=min(2, remaining))) as response:
             budget.remaining()
             received = _response_headers(response.headers.multi_items(), response.status_code)
             chunks = (response.content,) if response.is_stream_consumed else response.iter_raw()
             return response.status_code, self._collect(chunks, budget), received
 
-    def request(self, route, body=None, *, deadline, request_id=None, version='v1'):
+    def request(self, route, body=None, *, deadline, request_id=None, version='v1', contract=None):
         routes = {'v1': READ_ROUTES, 'v3': V3_ENABLED_READS, 'v4': ('sequence-snapshot',),
                   'v5': ('featured-pools',), 'v6': V6_ROUTES}.get(version, ())
         if (version not in ('v1', 'v3', 'v4', 'v5', 'v6') or not isinstance(route, str)
-                or (route != 'health' and route not in routes) or route == 'health' and version != 'v1'):
+                or (route != 'health' and route not in routes) or route == 'health' and version != 'v1'
+                or contract is not None and (version != 'v6' or contract not in V6_CONTRACT_VERSIONS)):
             raise DataError('route_not_available')
         budget = _Budget(deadline, self.clock)
         budget.remaining()
@@ -181,7 +186,7 @@ class LocalReaderHTTP:
             if payload is not None and len(payload) > MAX_BODY:
                 raise DataError('invalid_request')
             operation = self._network if self.client is None else self._injected
-            status, raw, headers = operation(method, path, payload, budget, request_id)
+            status, raw, headers = operation(method, path, payload, budget, request_id, contract)
             budget.remaining()
             try:
                 data = strict_json(raw)

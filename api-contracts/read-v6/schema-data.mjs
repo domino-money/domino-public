@@ -2628,7 +2628,10 @@ export const SCHEMAS = {
           "type": "array"
         },
         "contractVersion": {
-          "const": "1.1.0-rc.1",
+          "enum": [
+            "1.1.0-rc.1",
+            "1.2.0-rc.1"
+          ],
           "title": "Contractversion",
           "type": "string"
         },
@@ -3268,7 +3271,10 @@ export const SCHEMAS = {
           "type": "array"
         },
         "contractVersion": {
-          "const": "1.1.0-rc.1",
+          "enum": [
+            "1.1.0-rc.1",
+            "1.2.0-rc.1"
+          ],
           "title": "Contractversion",
           "type": "string"
         },
@@ -3915,7 +3921,10 @@ export const SCHEMAS = {
           "type": "integer"
         },
         "contractVersion": {
-          "const": "1.1.0-rc.1",
+          "enum": [
+            "1.1.0-rc.1",
+            "1.2.0-rc.1"
+          ],
           "title": "Contractversion",
           "type": "string"
         },
@@ -4174,7 +4183,10 @@ export const SCHEMAS = {
           "type": "integer"
         },
         "contractVersion": {
-          "const": "1.1.0-rc.1",
+          "enum": [
+            "1.1.0-rc.1",
+            "1.2.0-rc.1"
+          ],
           "title": "Contractversion",
           "type": "string"
         },
@@ -6576,7 +6588,10 @@ export const SCHEMAS = {
           "type": "array"
         },
         "contractVersion": {
-          "const": "1.1.0-rc.1",
+          "enum": [
+            "1.1.0-rc.1",
+            "1.2.0-rc.1"
+          ],
           "title": "Contractversion",
           "type": "string"
         },
@@ -6703,6 +6718,1051 @@ export const SCHEMAS = {
       "type": "object",
       "x-contract-version": "1.1.0-rc.1"
     }
+  },
+  "position-fees": {
+    "request": {
+      "$defs": {
+        "FeePositionRef": {
+          "additionalProperties": false,
+          "properties": {
+            "dex": {
+              "enum": [
+                3,
+                4
+              ],
+              "title": "Dex",
+              "type": "integer"
+            },
+            "tokenId": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "title": "Tokenid",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            }
+          },
+          "required": [
+            "dex",
+            "tokenId"
+          ],
+          "title": "FeePositionRef",
+          "type": "object"
+        }
+      },
+      "$id": "https://domino.invalid/contracts/read-v6/position-fees.request.schema.json",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "1.2.0-rc.1: up to MAX_FEE_POSITIONS positions of one chain, each once.",
+      "properties": {
+        "chainId": {
+          "enum": [
+            4663,
+            8453,
+            42161
+          ],
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "positions": {
+          "items": {
+            "$ref": "#/$defs/FeePositionRef"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "title": "Positions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "chainId",
+        "positions"
+      ],
+      "title": "PositionFeesRequest",
+      "type": "object",
+      "x-contract-version": "1.2.0-rc.1"
+    },
+    "response": {
+      "$defs": {
+        "BlockRef": {
+          "additionalProperties": false,
+          "description": "A block, shaped as read-v1's snapshot: what a read or an event is true at.",
+          "properties": {
+            "hash": {
+              "maxLength": 66,
+              "minLength": 66,
+              "pattern": "^0x[0-9a-f]{64}$",
+              "title": "Hash",
+              "type": "string"
+            },
+            "number": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "title": "Number",
+              "type": "integer"
+            },
+            "timestamp": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "title": "Timestamp",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "number",
+            "hash",
+            "timestamp"
+          ],
+          "title": "BlockRef",
+          "type": "object"
+        },
+        "FeeFollower": {
+          "additionalProperties": false,
+          "description": "The chain's fee follower: how far it read (`through`, always one of the index's checkpoints) against the\nindex's newest checkpoint. `reading_back`: it has not reached the index yet since it started.",
+          "properties": {
+            "indexedThrough": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/BlockRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "lagSeconds": {
+              "anyOf": [
+                {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lagseconds"
+            },
+            "lastError": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/IndexFailure"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "reason": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "fees_not_followed",
+                    "reading_back",
+                    "behind_index"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reason"
+            },
+            "status": {
+              "enum": [
+                "current",
+                "stale",
+                "unavailable"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "through": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/BlockRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "status",
+            "reason",
+            "through",
+            "indexedThrough",
+            "lagSeconds",
+            "lastError"
+          ],
+          "title": "FeeFollower",
+          "type": "object"
+        },
+        "FeeNow": {
+          "additionalProperties": false,
+          "description": "The position at the follower's cursor, read with the same pass's events: its pool (v4 by id, v3 by\naddress), range, liquidity and price; the fee growth inside now and at its own checkpoint; v3's tokensOwed;\nwhat a collect would pay now (`collectable`: on v3 tokensOwed included, which may hold principal a decrease\nleft); what accrued since its last settlement (`unsettled`, counted from `since`); Fees earned and settled;\nthe principal at the spot.",
+          "properties": {
+            "collectable": {
+              "items": {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "title": "Collectable",
+              "type": "array"
+            },
+            "earned": {
+              "anyOf": [
+                {
+                  "items": {
+                    "maxLength": 78,
+                    "pattern": "^(0|[1-9][0-9]{0,77})$",
+                    "type": "string",
+                    "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Earned"
+            },
+            "feeGrowthInsideLastX128": {
+              "items": {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "title": "Feegrowthinsidelastx128",
+              "type": "array"
+            },
+            "feeGrowthInsideX128": {
+              "items": {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "title": "Feegrowthinsidex128",
+              "type": "array"
+            },
+            "inRange": {
+              "title": "Inrange",
+              "type": "boolean"
+            },
+            "liquidity": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "title": "Liquidity",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            "owner": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Owner",
+              "type": "string"
+            },
+            "pool": {
+              "$ref": "#/$defs/PoolRef"
+            },
+            "poolAddress": {
+              "anyOf": [
+                {
+                  "maxLength": 42,
+                  "minLength": 42,
+                  "pattern": "^0x[0-9a-f]{40}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pooladdress"
+            },
+            "poolId": {
+              "anyOf": [
+                {
+                  "maxLength": 66,
+                  "minLength": 66,
+                  "pattern": "^0x[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Poolid"
+            },
+            "principalAtSpot": {
+              "items": {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "title": "Principalatspot",
+              "type": "array"
+            },
+            "protocolFee": {
+              "maximum": 16777215,
+              "minimum": 0,
+              "title": "Protocolfee",
+              "type": "integer"
+            },
+            "settled": {
+              "anyOf": [
+                {
+                  "items": {
+                    "maxLength": 78,
+                    "pattern": "^(0|[1-9][0-9]{0,77})$",
+                    "type": "string",
+                    "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Settled"
+            },
+            "snapshot": {
+              "$ref": "#/$defs/BlockRef"
+            },
+            "sqrtPriceX96": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "title": "Sqrtpricex96",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            "tick": {
+              "maximum": 887272,
+              "minimum": -887272,
+              "title": "Tick",
+              "type": "integer"
+            },
+            "tickLower": {
+              "maximum": 887272,
+              "minimum": -887272,
+              "title": "Ticklower",
+              "type": "integer"
+            },
+            "tickUpper": {
+              "maximum": 887272,
+              "minimum": -887272,
+              "title": "Tickupper",
+              "type": "integer"
+            },
+            "tokensOwed": {
+              "anyOf": [
+                {
+                  "items": {
+                    "maxLength": 78,
+                    "pattern": "^(0|[1-9][0-9]{0,77})$",
+                    "type": "string",
+                    "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tokensowed"
+            },
+            "unsettled": {
+              "anyOf": [
+                {
+                  "items": {
+                    "maxLength": 78,
+                    "pattern": "^(0|[1-9][0-9]{0,77})$",
+                    "type": "string",
+                    "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Unsettled"
+            }
+          },
+          "required": [
+            "snapshot",
+            "owner",
+            "pool",
+            "poolId",
+            "poolAddress",
+            "tickLower",
+            "tickUpper",
+            "liquidity",
+            "sqrtPriceX96",
+            "tick",
+            "inRange",
+            "protocolFee",
+            "feeGrowthInsideX128",
+            "feeGrowthInsideLastX128",
+            "tokensOwed",
+            "collectable",
+            "unsettled",
+            "earned",
+            "settled",
+            "principalAtSpot"
+          ],
+          "title": "FeeNow",
+          "type": "object"
+        },
+        "FeePoint": {
+          "additionalProperties": false,
+          "description": "Measured Fees earned (settled plus what accrued since the last settlement) and settled, cumulative since\n`since`, at a block standing for an hour (the day's first after HOURLY_DAYS days, `day`).",
+          "properties": {
+            "block": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "title": "Block",
+              "type": "integer"
+            },
+            "earned": {
+              "anyOf": [
+                {
+                  "items": {
+                    "maxLength": 78,
+                    "pattern": "^(0|[1-9][0-9]{0,77})$",
+                    "type": "string",
+                    "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Earned"
+            },
+            "hour": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "title": "Hour",
+              "type": "integer"
+            },
+            "kind": {
+              "enum": [
+                "hour",
+                "day"
+              ],
+              "title": "Kind",
+              "type": "string"
+            },
+            "settled": {
+              "anyOf": [
+                {
+                  "items": {
+                    "maxLength": 78,
+                    "pattern": "^(0|[1-9][0-9]{0,77})$",
+                    "type": "string",
+                    "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Settled"
+            },
+            "timestamp": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "title": "Timestamp",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "block",
+            "timestamp",
+            "hour",
+            "kind",
+            "earned",
+            "settled"
+          ],
+          "title": "FeePoint",
+          "type": "object"
+        },
+        "FeeSettlement": {
+          "additionalProperties": false,
+          "description": "Every one of the position's settlements in one block (logIndexes; logIndex is the last): an increase, a\ndecrease (liquidity 0 after it: a close) or a collect, the liquidity after it, the fees it paid (v4) or credited\nto tokensOwed (v3), and the fees settled since `since`. `fees` is null, with `why`, when it cannot be known.",
+          "properties": {
+            "auto": {
+              "title": "Auto",
+              "type": "boolean"
+            },
+            "block": {
+              "$ref": "#/$defs/BlockRef"
+            },
+            "fees": {
+              "anyOf": [
+                {
+                  "items": {
+                    "maxLength": 78,
+                    "pattern": "^(0|[1-9][0-9]{0,77})$",
+                    "type": "string",
+                    "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fees"
+            },
+            "kind": {
+              "enum": [
+                "increase",
+                "decrease",
+                "collect"
+              ],
+              "title": "Kind",
+              "type": "string"
+            },
+            "liquidity": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "title": "Liquidity",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            "liquidityDelta": {
+              "maxLength": 78,
+              "pattern": "^(0|-?[1-9][0-9]{0,76})$",
+              "title": "Liquiditydelta",
+              "type": "string"
+            },
+            "logIndex": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "title": "Logindex",
+              "type": "integer"
+            },
+            "logIndexes": {
+              "items": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "maxItems": 256,
+              "minItems": 1,
+              "title": "Logindexes",
+              "type": "array"
+            },
+            "serviceFee": {
+              "anyOf": [
+                {
+                  "items": {
+                    "maxLength": 78,
+                    "pattern": "^(0|[1-9][0-9]{0,77})$",
+                    "type": "string",
+                    "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Servicefee"
+            },
+            "settled": {
+              "anyOf": [
+                {
+                  "items": {
+                    "maxLength": 78,
+                    "pattern": "^(0|[1-9][0-9]{0,77})$",
+                    "type": "string",
+                    "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Settled"
+            },
+            "tx": {
+              "maxLength": 66,
+              "minLength": 66,
+              "pattern": "^0x[0-9a-f]{64}$",
+              "title": "Tx",
+              "type": "string"
+            },
+            "why": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "same_block",
+                    "liquidity"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Why"
+            }
+          },
+          "required": [
+            "kind",
+            "block",
+            "logIndex",
+            "logIndexes",
+            "tx",
+            "liquidityDelta",
+            "liquidity",
+            "fees",
+            "settled",
+            "why",
+            "auto",
+            "serviceFee"
+          ],
+          "title": "FeeSettlement",
+          "type": "object"
+        },
+        "FeeSince": {
+          "additionalProperties": false,
+          "description": "Where a history starts: the position's mint, or Domino's first block on the chain for a position minted\nbefore it, whose fees owed then are not counted.",
+          "properties": {
+            "block": {
+              "$ref": "#/$defs/BlockRef"
+            },
+            "kind": {
+              "enum": [
+                "mint",
+                "floor"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "block"
+          ],
+          "title": "FeeSince",
+          "type": "object"
+        },
+        "FeeTransfer": {
+          "additionalProperties": false,
+          "description": "The NFT's own Transfer: its mint (from zero), every change of hands (into and out of a vault included) and\nits burn (to zero).",
+          "properties": {
+            "block": {
+              "$ref": "#/$defs/BlockRef"
+            },
+            "fromAddress": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Fromaddress",
+              "type": "string"
+            },
+            "logIndex": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "title": "Logindex",
+              "type": "integer"
+            },
+            "toAddress": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Toaddress",
+              "type": "string"
+            },
+            "tx": {
+              "maxLength": 66,
+              "minLength": 66,
+              "pattern": "^0x[0-9a-f]{64}$",
+              "title": "Tx",
+              "type": "string"
+            }
+          },
+          "required": [
+            "block",
+            "logIndex",
+            "tx",
+            "fromAddress",
+            "toAddress"
+          ],
+          "title": "FeeTransfer",
+          "type": "object"
+        },
+        "Freshness": {
+          "additionalProperties": false,
+          "properties": {
+            "ageSeconds": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "title": "Ageseconds",
+              "type": "integer"
+            },
+            "status": {
+              "enum": [
+                "fresh",
+                "stale"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "ageSeconds",
+            "status"
+          ],
+          "title": "Freshness",
+          "type": "object"
+        },
+        "IndexFailure": {
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "title": "At",
+              "type": "integer"
+            },
+            "code": {
+              "pattern": "^[a-z0-9_]{1,80}$",
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "at"
+          ],
+          "title": "IndexFailure",
+          "type": "object"
+        },
+        "PoolRef": {
+          "additionalProperties": false,
+          "properties": {
+            "currency0": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Currency0",
+              "type": "string"
+            },
+            "currency1": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Currency1",
+              "type": "string"
+            },
+            "dex": {
+              "enum": [
+                3,
+                4
+              ],
+              "title": "Dex",
+              "type": "integer"
+            },
+            "fee": {
+              "maximum": 8388608,
+              "minimum": 0,
+              "title": "Fee",
+              "type": "integer"
+            },
+            "hooks": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Hooks",
+              "type": "string"
+            },
+            "tickSpacing": {
+              "maximum": 32767,
+              "minimum": 1,
+              "title": "Tickspacing",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "dex",
+            "currency0",
+            "currency1",
+            "fee",
+            "tickSpacing",
+            "hooks"
+          ],
+          "title": "PoolRef",
+          "type": "object"
+        },
+        "PositionFees": {
+          "additionalProperties": false,
+          "description": "One position's history. `following`: read with the follower, its state now included; `reading`: its\nhistory (or the follower's) is still being read back; `burned`: its NFT burned at the last transfer;\n`not_followed`: no position the index knows on this chain. `exact`: every settlement's fees since `since` are\nknown; `why` says what limits it (`reading`, `same_block`, `liquidity`) or, exact, that its history starts at\nDomino's first block (`before_floor`).",
+          "properties": {
+            "dex": {
+              "enum": [
+                3,
+                4
+              ],
+              "title": "Dex",
+              "type": "integer"
+            },
+            "events": {
+              "items": {
+                "$ref": "#/$defs/FeeSettlement"
+              },
+              "maxItems": 1000,
+              "title": "Events",
+              "type": "array"
+            },
+            "exact": {
+              "title": "Exact",
+              "type": "boolean"
+            },
+            "freshness": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Freshness"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "now": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/FeeNow"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "points": {
+              "items": {
+                "$ref": "#/$defs/FeePoint"
+              },
+              "maxItems": 1800,
+              "title": "Points",
+              "type": "array"
+            },
+            "positionManager": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Positionmanager",
+              "type": "string"
+            },
+            "since": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/FeeSince"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "following",
+                "reading",
+                "burned",
+                "not_followed"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "through": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/BlockRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "tokenId": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "title": "Tokenid",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            "transfers": {
+              "items": {
+                "$ref": "#/$defs/FeeTransfer"
+              },
+              "maxItems": 16,
+              "title": "Transfers",
+              "type": "array"
+            },
+            "truncated": {
+              "title": "Truncated",
+              "type": "boolean"
+            },
+            "why": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "reading",
+                    "same_block",
+                    "liquidity",
+                    "before_floor"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Why"
+            }
+          },
+          "required": [
+            "dex",
+            "tokenId",
+            "positionManager",
+            "status",
+            "since",
+            "through",
+            "freshness",
+            "exact",
+            "why",
+            "now",
+            "events",
+            "transfers",
+            "points",
+            "truncated"
+          ],
+          "title": "PositionFees",
+          "type": "object"
+        }
+      },
+      "$id": "https://domino.invalid/contracts/read-v6/position-fees.response.schema.json",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "position-fees: each position asked, in the order asked, as the chain's fee follower stored it.",
+      "properties": {
+        "chainId": {
+          "enum": [
+            4663,
+            8453,
+            42161
+          ],
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "contractVersion": {
+          "const": "1.2.0-rc.1",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "executionAvailable": {
+          "const": false,
+          "title": "Executionavailable",
+          "type": "boolean"
+        },
+        "follower": {
+          "$ref": "#/$defs/FeeFollower"
+        },
+        "limitations": {
+          "items": {
+            "enum": [
+              "positions_known_to_domino_only",
+              "raw_amounts_without_usd",
+              "state_as_of_last_read",
+              "no_execution_or_signing"
+            ],
+            "type": "string"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "title": "Limitations",
+          "type": "array"
+        },
+        "mode": {
+          "const": "stored_v2_position_fees",
+          "title": "Mode",
+          "type": "string"
+        },
+        "positions": {
+          "items": {
+            "$ref": "#/$defs/PositionFees"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "title": "Positions",
+          "type": "array"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "title": "Schemaversion",
+          "type": "integer"
+        },
+        "servedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Servedat",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "contractVersion",
+        "mode",
+        "chainId",
+        "servedAt",
+        "follower",
+        "positions",
+        "limitations",
+        "executionAvailable"
+      ],
+      "title": "PositionFeesResponse",
+      "type": "object",
+      "x-contract-version": "1.2.0-rc.1"
+    }
   }
 };
 export const ERRORS = {
@@ -6794,6 +7854,10 @@ export const CONSTANTS = {
     "head_not_observed_recently",
     "indexer_behind_head"
   ],
+  "contractVersions": [
+    "1.1.0-rc.1",
+    "1.2.0-rc.1"
+  ],
   "disarmReasons": [
     "unsubscribed_or_transferred",
     "changed_outside_domino",
@@ -6802,6 +7866,13 @@ export const CONSTANTS = {
     "v3_checkpoint_mismatch",
     "auto_exit",
     "exit_all"
+  ],
+  "feeFreshSeconds": 120,
+  "feeLimitations": [
+    "positions_known_to_domino_only",
+    "raw_amounts_without_usd",
+    "state_as_of_last_read",
+    "no_execution_or_signing"
   ],
   "headMaxAgeSeconds": 180,
   "limitations": [
@@ -6818,7 +7889,13 @@ export const CONSTANTS = {
     "state_as_of_last_read",
     "no_execution_or_signing"
   ],
+  "maxFeeEvents": 1000,
+  "maxFeePoints": 1800,
   "maxLagSeconds": 120,
+  "nextRoutes": [
+    "position-fees"
+  ],
+  "nextVersion": "1.2.0-rc.1",
   "priceFloorUsd": "10000.000000",
   "priceProfiles": {
     "1": {

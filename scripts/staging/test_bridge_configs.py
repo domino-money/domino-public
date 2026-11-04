@@ -8,7 +8,8 @@ import tomllib
 import unittest
 from unittest.mock import patch
 import check_bridge_configs
-from check_bridge_configs import ROOT, SERVICES, KNOWN_CONFIGS, GATE_CONFIG, flag_prefix, inventory_errors, validate, validate_gate
+from check_bridge_configs import (ROOT, SERVICES, KNOWN_CONFIGS, GATE_CONFIG, PREVIEW_ALIAS, PREVIEW_SERVICES,
+                                  flag_prefix, inventory_errors, validate, validate_gate)
 
 
 class DisabledBridgeConfigs(unittest.TestCase):
@@ -151,8 +152,10 @@ class DisabledBridgeConfigs(unittest.TestCase):
         self.assertEqual(flag_prefix("position-plan"), "POSITION_PLAN")
         self.assertEqual(config["name"], "domino-position-plan-bridge")
         self.assertEqual(config["main"], "src/position-plan-worker.mjs")
+        # Changed on purpose 2026-11-04 (launch round P3): PREVIEW_ORIGINS, committed empty, as every private family's.
         self.assertEqual(config["vars"], {"POSITION_PLAN_BRIDGE_ENABLED": "false", "APP_ORIGIN": "https://domino.money",
-                                          "POSITION_PLAN_GATEWAY_ORIGIN": "https://vm-position-plan.domino.money"})
+                                          "POSITION_PLAN_GATEWAY_ORIGIN": "https://vm-position-plan.domino.money",
+                                          "PREVIEW_ORIGINS": ""})
         self.assertEqual(config["observability"], {"enabled": False})
         for update in ({"POSITION_PLAN_GATEWAY_ORIGIN": "https://vm-onboarding.domino.money"},
                        {"ONBOARDING_BRIDGE_ENABLED": "false"}, {"POSITION-PLAN_BRIDGE_ENABLED": "false"}):
@@ -160,6 +163,45 @@ class DisabledBridgeConfigs(unittest.TestCase):
                 changed = copy.deepcopy(config)
                 changed["vars"].update(update)
                 self.assertTrue(validate("position-plan", changed))
+
+    def test_private_families_carry_preview_origins_committed_empty_and_only_the_alias_passes(self):
+        """2026-11-04 (launch round P3, item 7): PREVIEW_ORIGINS on every private family's Worker, never on the read
+        Worker or the setup release; "" as committed. Changed on purpose the same day (review L2): a reviewed value is
+        "" or the forwarder's one preview alias; any other origin, however well formed, fails."""
+        self.assertEqual(PREVIEW_SERVICES, set(SERVICES) - {"read", "setup"})
+        # The alias is the one the Pages forwarder routes, letter for letter.
+        forwarder = (ROOT / "app/functions/_lib/bridge.ts").read_text()
+        self.assertIn(f"export const PREVIEW_ORIGIN = '{PREVIEW_ALIAS}'\n", forwarder)
+        for service in SERVICES:
+            with self.subTest(service=service):
+                self.assertEqual(self.configs[service]["vars"].get("PREVIEW_ORIGINS"),
+                                 "" if service in PREVIEW_SERVICES else None)
+        for service in PREVIEW_SERVICES:
+            for value in ("", PREVIEW_ALIAS):
+                with self.subTest(service=service, admitted=value):
+                    config = copy.deepcopy(self.configs[service])
+                    config["vars"]["PREVIEW_ORIGINS"] = value
+                    self.assertEqual(validate(service, config), [])
+            refused = ["https://domino-app.pages.dev", "https://attacker.example.com",
+                       "https://p3-testing.domino-app-e65.pages.dev", "https://domino-app-e65.pages.dev",
+                       PREVIEW_ALIAS + ",https://p3-testing.domino-app-e65.pages.dev", PREVIEW_ALIAS + "," + PREVIEW_ALIAS,
+                       "https://*.domino-app-e65.pages.dev", "*.pages.dev", "http://preview.domino-app-e65.pages.dev",
+                       PREVIEW_ALIAS + "/", PREVIEW_ALIAS + ":443", "https://Preview.domino-app-e65.pages.dev",
+                       " " + PREVIEW_ALIAS, PREVIEW_ALIAS + " ", "https://domino.money", f"https://vm-{service}.domino.money", " "]
+            for value in (*refused, None, 1, [PREVIEW_ALIAS]):
+                with self.subTest(service=service, refused=value):
+                    config = copy.deepcopy(self.configs[service])
+                    config["vars"]["PREVIEW_ORIGINS"] = value
+                    self.assertTrue(validate(service, config))
+            with self.subTest(service=service, missing="PREVIEW_ORIGINS"):
+                config = copy.deepcopy(self.configs[service])
+                del config["vars"]["PREVIEW_ORIGINS"]
+                self.assertTrue(validate(service, config))
+        for service in set(SERVICES) - PREVIEW_SERVICES:
+            with self.subTest(service=service, unexpected="PREVIEW_ORIGINS"):
+                config = copy.deepcopy(self.configs[service])
+                config["vars"]["PREVIEW_ORIGINS"] = ""
+                self.assertTrue(validate(service, config))
 
     def test_requires_explicit_disabled_public_entry_points(self):
         for service, original in self.configs.items():

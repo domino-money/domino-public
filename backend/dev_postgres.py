@@ -253,6 +253,15 @@ def create_database(name):
         conn.execute((ROOT/'migrations/052_v2_index.sql').read_text())
         # 053 only adds the ledgers' per-chunk index if absent, so it applies again safely.
         conn.execute((ROOT/'migrations/053_activity_chunk_index.sql').read_text())
+        # 054 creates the V2 fee follower's tables if absent and re-grants, so it applies again safely.
+        conn.execute((ROOT/'migrations/054_v2_fees.sql').read_text())
+        # 055 adds the featured tables' chain if absent and rebuilds their keys under 043's and
+        # 045's names, which those then leave be, so it applies again safely.
+        conn.execute((ROOT/'migrations/055_featured_chains.sql').read_text())
+        # 056 creates the mint scan's checkpoint tables if absent and re-grants, so it applies again safely.
+        conn.execute((ROOT/'migrations/056_position_mint_scan.sql').read_text())
+        # 057 only adds the sessions' nullable origin and its check if absent, so it applies again safely.
+        conn.execute((ROOT/'migrations/057_session_origin.sql').read_text())
         # Development mirrors the production split: callable NOLOGIN privilege
         # roles, each inherited by exactly one unprivileged LOGIN bridge.
         for login, privilege in (

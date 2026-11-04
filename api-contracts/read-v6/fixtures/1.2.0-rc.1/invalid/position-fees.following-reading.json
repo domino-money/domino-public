@@ -1,0 +1,389 @@
+{
+  "chainId": 8453,
+  "contractVersion": "1.2.0-rc.1",
+  "executionAvailable": false,
+  "follower": {
+    "indexedThrough": {
+      "hash": "0x2639b2dda1a145c9b0db70005922a7fbc790b807179133b30cfb969908610eed",
+      "number": 52500000,
+      "timestamp": 1790431204
+    },
+    "lagSeconds": 0,
+    "lastError": null,
+    "reason": null,
+    "status": "current",
+    "through": {
+      "hash": "0x2639b2dda1a145c9b0db70005922a7fbc790b807179133b30cfb969908610eed",
+      "number": 52500000,
+      "timestamp": 1790431204
+    }
+  },
+  "limitations": [
+    "positions_known_to_domino_only",
+    "raw_amounts_without_usd",
+    "state_as_of_last_read",
+    "no_execution_or_signing"
+  ],
+  "mode": "stored_v2_position_fees",
+  "positions": [
+    {
+      "dex": 4,
+      "events": [
+        {
+          "auto": false,
+          "block": {
+            "hash": "0x57cac95d04fccb468178a4b5101c6bd2ac4729275894349c1985ff60de2c8cfb",
+            "number": 52196808,
+            "timestamp": 1789824820
+          },
+          "fees": [
+            "0",
+            "0"
+          ],
+          "kind": "increase",
+          "liquidity": "4000000000000",
+          "liquidityDelta": "4000000000000",
+          "logIndex": 0,
+          "logIndexes": [
+            0
+          ],
+          "serviceFee": null,
+          "settled": [
+            "0",
+            "0"
+          ],
+          "tx": "0xb02928dc601d435bdf70d6525005a79f6340208739dbe79b44b47aac7f316471",
+          "why": null
+        },
+        {
+          "auto": false,
+          "block": {
+            "hash": "0xdbe6c97c3c7247262c48341935aa9d4e98b688b0ab5b74182bc08c19cf2eae21",
+            "number": 52206808,
+            "timestamp": 1789844820
+          },
+          "fees": [
+            "812000000000000",
+            "1930000"
+          ],
+          "kind": "collect",
+          "liquidity": "4000000000000",
+          "liquidityDelta": "0",
+          "logIndex": 0,
+          "logIndexes": [
+            0
+          ],
+          "serviceFee": null,
+          "settled": [
+            "812000000000000",
+            "1930000"
+          ],
+          "tx": "0x5bd81ee7038b51e1b732384e355fcf33043fe0cdc7c82601b3bbf269d8e64781",
+          "why": null
+        },
+        {
+          "auto": true,
+          "block": {
+            "hash": "0xf9562e7849b4e1041b97bd9a0e72387413a7531846f8a9602f4b6be9f112f1ca",
+            "number": 52212808,
+            "timestamp": 1789856820
+          },
+          "fees": [
+            "350000000000000",
+            "840000"
+          ],
+          "kind": "increase",
+          "liquidity": "4100000000000",
+          "liquidityDelta": "100000000000",
+          "logIndex": 5,
+          "logIndexes": [
+            3,
+            5
+          ],
+          "serviceFee": [
+            "14000000000000",
+            "33600"
+          ],
+          "settled": [
+            "1162000000000000",
+            "2770000"
+          ],
+          "tx": "0xb6c68e62946b9a9eb644aedd3dba58cf12d98c7d61ef698bb8236847cb78e658",
+          "why": null
+        }
+      ],
+      "exact": true,
+      "freshness": {
+        "ageSeconds": 30,
+        "status": "fresh"
+      },
+      "now": {
+        "collectable": [
+          "31000000000000",
+          "71000"
+        ],
+        "earned": [
+          "1193000000000000",
+          "2841000"
+        ],
+        "feeGrowthInsideLastX128": [
+          "90000000000000000000000000000000000000000000000",
+          "40"
+        ],
+        "feeGrowthInsideX128": [
+          "91343852333181432387730302044767688728495783936",
+          "50"
+        ],
+        "inRange": true,
+        "liquidity": "4100000000000",
+        "owner": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+        "pool": {
+          "currency0": "0x4200000000000000000000000000000000000006",
+          "currency1": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+          "dex": 4,
+          "fee": 500,
+          "hooks": "0x0000000000000000000000000000000000000000",
+          "tickSpacing": 10
+        },
+        "poolAddress": null,
+        "poolId": "0x90333bb05c258fe0dddb2840ef66f1a05165aa7dac6815d24e807cc6ebd943a0",
+        "principalAtSpot": [
+          "1250000000000000000",
+          "2970000000"
+        ],
+        "protocolFee": 0,
+        "settled": [
+          "1162000000000000",
+          "2770000"
+        ],
+        "snapshot": {
+          "hash": "0x2639b2dda1a145c9b0db70005922a7fbc790b807179133b30cfb969908610eed",
+          "number": 52500000,
+          "timestamp": 1790431204
+        },
+        "sqrtPriceX96": "3961408125713216879677197516800",
+        "tick": -196000,
+        "tickLower": -196200,
+        "tickUpper": -195600,
+        "tokensOwed": null,
+        "unsettled": [
+          "31000000000000",
+          "71000"
+        ]
+      },
+      "points": [
+        {
+          "block": 52388398,
+          "earned": [
+            "1100000000000000",
+            "2600000"
+          ],
+          "hour": 1790208000,
+          "kind": "day",
+          "settled": [
+            "812000000000000",
+            "1930000"
+          ],
+          "timestamp": 1790208000
+        },
+        {
+          "block": 52496398,
+          "earned": [
+            "1172000000000000",
+            "2790000"
+          ],
+          "hour": 1790424000,
+          "kind": "hour",
+          "settled": [
+            "1162000000000000",
+            "2770000"
+          ],
+          "timestamp": 1790424000
+        },
+        {
+          "block": 52498198,
+          "earned": [
+            "1181000000000000",
+            "2810000"
+          ],
+          "hour": 1790427600,
+          "kind": "hour",
+          "settled": [
+            "1162000000000000",
+            "2770000"
+          ],
+          "timestamp": 1790427600
+        }
+      ],
+      "positionManager": "0x7c5f5a4bbd8fd63184577525326123b519429bdc",
+      "since": {
+        "block": {
+          "hash": "0x57cac95d04fccb468178a4b5101c6bd2ac4729275894349c1985ff60de2c8cfb",
+          "number": 52196808,
+          "timestamp": 1789824820
+        },
+        "kind": "mint"
+      },
+      "status": "following",
+      "through": {
+        "hash": "0x2639b2dda1a145c9b0db70005922a7fbc790b807179133b30cfb969908610eed",
+        "number": 52500000,
+        "timestamp": 1790431204
+      },
+      "tokenId": "41",
+      "transfers": [
+        {
+          "block": {
+            "hash": "0x57cac95d04fccb468178a4b5101c6bd2ac4729275894349c1985ff60de2c8cfb",
+            "number": 52196808,
+            "timestamp": 1789824820
+          },
+          "fromAddress": "0x0000000000000000000000000000000000000000",
+          "logIndex": 1,
+          "toAddress": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "tx": "0xe223f170fecc961abf977ba61095fe677fb343f89e91e4d4b9349abfbf4fe627"
+        },
+        {
+          "block": {
+            "hash": "0x98c71f04d5849064cd19f5d216a7647dad56b404ce0d6adb0af00b013a2f699a",
+            "number": 52196848,
+            "timestamp": 1789824900
+          },
+          "fromAddress": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "logIndex": 1,
+          "toAddress": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+          "tx": "0xbda33bb6f277390373b1ca991777b0bd59caee7958b8b4cd1702c778cd9d70ef"
+        }
+      ],
+      "truncated": false,
+      "why": "reading"
+    },
+    {
+      "dex": 3,
+      "events": [
+        {
+          "auto": false,
+          "block": {
+            "hash": "0xad4fcecf5e6cf7ec37606f7bb6b6b6554fe2b5b1a1f4b924ae53689937990104",
+            "number": 52201808,
+            "timestamp": 1789834820
+          },
+          "fees": [
+            "5000000000",
+            "12"
+          ],
+          "kind": "collect",
+          "liquidity": "9000000",
+          "liquidityDelta": "0",
+          "logIndex": 0,
+          "logIndexes": [
+            0
+          ],
+          "serviceFee": null,
+          "settled": [
+            "5000000000",
+            "12"
+          ],
+          "tx": "0xcef9333368e647181a3399d4c977432057db34f8013973fdbde702a2a6088731",
+          "why": null
+        }
+      ],
+      "exact": true,
+      "freshness": {
+        "ageSeconds": 30,
+        "status": "fresh"
+      },
+      "now": {
+        "collectable": [
+          "700000005",
+          "3"
+        ],
+        "earned": [
+          "5700000000",
+          "15"
+        ],
+        "feeGrowthInsideLastX128": [
+          "90000000000000000000000000000000000000000000000",
+          "40"
+        ],
+        "feeGrowthInsideX128": [
+          "91343852333181432387730302044767688728495783936",
+          "50"
+        ],
+        "inRange": true,
+        "liquidity": "9000000",
+        "owner": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+        "pool": {
+          "currency0": "0x4200000000000000000000000000000000000006",
+          "currency1": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+          "dex": 3,
+          "fee": 3000,
+          "hooks": "0x0000000000000000000000000000000000000000",
+          "tickSpacing": 60
+        },
+        "poolAddress": "0x6c561b446416e1a00e8e93e221854d6ea4171372",
+        "poolId": null,
+        "principalAtSpot": [
+          "1250000000000000000",
+          "2970000000"
+        ],
+        "protocolFee": 0,
+        "settled": [
+          "5000000000",
+          "12"
+        ],
+        "snapshot": {
+          "hash": "0x2639b2dda1a145c9b0db70005922a7fbc790b807179133b30cfb969908610eed",
+          "number": 52500000,
+          "timestamp": 1790431204
+        },
+        "sqrtPriceX96": "3961408125713216879677197516800",
+        "tick": -196000,
+        "tickLower": -196200,
+        "tickUpper": -195600,
+        "tokensOwed": [
+          "5",
+          "0"
+        ],
+        "unsettled": [
+          "700000000",
+          "3"
+        ]
+      },
+      "points": [],
+      "positionManager": "0x03a520b32c04bf3beef7beb72e919cf822ed34f1",
+      "since": {
+        "block": {
+          "hash": "0xa88d47e46df090a508642a0ad8912f230d83535b648ba049e45270b1cb38e1a1",
+          "number": 52176808,
+          "timestamp": 1789784820
+        },
+        "kind": "floor"
+      },
+      "status": "following",
+      "through": {
+        "hash": "0x2639b2dda1a145c9b0db70005922a7fbc790b807179133b30cfb969908610eed",
+        "number": 52500000,
+        "timestamp": 1790431204
+      },
+      "tokenId": "31",
+      "transfers": [
+        {
+          "block": {
+            "hash": "0x86b60356edea5e0658d2b0df507956016941a4eb4078b71c5ef9add1af2c7414",
+            "number": 52177808,
+            "timestamp": 1789786820
+          },
+          "fromAddress": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "logIndex": 1,
+          "toAddress": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+          "tx": "0x97fdf3e99d6b5bd67d15750cee09edae9f7b71f3113697fb9e2add62953415d9"
+        }
+      ],
+      "truncated": false,
+      "why": "before_floor"
+    }
+  ],
+  "schemaVersion": 1,
+  "servedAt": 1790431234
+}

@@ -1,5 +1,6 @@
 """Cloudflare Access service assertions. No wallet authentication or signing."""
 import re
+import sys
 from threading import Lock, Thread
 import time
 
@@ -7,6 +8,9 @@ import jwt
 
 from discovery import DataError, json_http
 from bridge_state import strict_json
+
+# What verify() answers: which of the listener's service identities sent the request (launch round P3, review L1).
+PRODUCTION, PREVIEW = 'production', 'preview'
 
 
 class AccessVerifier:
@@ -19,12 +23,20 @@ class AccessVerifier:
     # the first request read them before answering, at most once per RETRY_SECONDS.
     REFRESH_SECONDS, STALE_SECONDS, RETRY_SECONDS = 300, 14_400, 15
 
-    def __init__(self, issuer, audience, service_id, *, loader=None, clock=time.monotonic, spawn=None):
+    def __init__(self, issuer, audience, service_id, *, preview_service_id=None, loader=None, clock=time.monotonic,
+                 spawn=None):
         if (not isinstance(issuer, str) or not re.fullmatch(r'https://[a-z0-9-]+\.cloudflareaccess\.com', issuer) or
                 not isinstance(audience, str) or not re.fullmatch(r'[a-f0-9]{64}', audience) or
                 not isinstance(service_id, str) or not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}', service_id)):
             raise DataError('invalid_gateway_identity_config')
+        # Launch round P3 (4 Nov 2026), review L1: optionally a second identity of the same Access application, the
+        # separate preview Workers' own service token. It may carry a listed preview origin only, and with it set the
+        # production identity carries the canonical origin only (identity_carries). None: one identity, as before.
+        if preview_service_id is not None and (not isinstance(preview_service_id, str) or preview_service_id == service_id
+                                               or not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}', preview_service_id)):
+            raise DataError('invalid_gateway_identity_config')
         self.issuer, self.audience, self.service_id = issuer, audience, service_id
+        self.preview_service_id = preview_service_id
         self.loader = loader or (lambda: json_http(issuer + '/cdn-cgi/access/certs', timeout=3))
         self.spawn = spawn or (lambda work: Thread(target=work, name='access-keys', daemon=True).start())
         self.clock, self.lock, self.keys = clock, Lock(), {}
@@ -113,13 +125,43 @@ class AccessVerifier:
             claims = jwt.decode(token, self._key(kid), algorithms=['RS256'],
                                 issuer=self.issuer, audience=self.audience,
                                 options={'require': ['iss','aud','iat','exp','type','sub','common_name']})
-            if (claims['type'] != 'app' or claims['sub'] != '' or
-                    claims['common_name'] != self.service_id or
+            identity = (PRODUCTION if claims['common_name'] == self.service_id else
+                        PREVIEW if self.preview_service_id is not None and claims['common_name'] == self.preview_service_id
+                        else None)
+            if (claims['type'] != 'app' or claims['sub'] != '' or identity is None or
                     type(claims['iat']) is not int or type(claims['exp']) is not int or
                     claims['exp'] <= claims['iat']):
                 raise ValueError()
-            return True
+            return identity
         except DataError:
             raise
         except Exception:
             raise DataError('service_identity_invalid') from None
+
+
+def identity_carries(verifier, identity, origin, canonical):
+    """Whether the service identity Access verified may carry the admitted browser origin `origin`.
+
+    Launch round P3 (4 Nov 2026), review L1: the preview identity carries a listed preview origin only, never the
+    canonical one. With a preview identity configured (separate preview Workers, docs/PREVIEW_PUBLIC_READS.md option
+    a), the production identity carries the canonical origin only, so each origin is tied to its caller. Without one
+    (option b, production's Workers listing the preview), the production identity carries every admitted origin.
+    """
+    if identity == PREVIEW:
+        return origin != canonical
+    return getattr(verifier, 'preview_service_id', None) is None or origin == canonical
+
+
+def configured_preview_identity(value, service_id, name, *, stream=None):
+    """The preview-only Access service id a listener's configuration names (review L1), or None.
+
+    Unset or empty: none, one identity as before. Malformed, or the production id again: none, with an error-priority
+    journal line naming the setting (review L3): production keeps serving and the preview's caller is refused.
+    """
+    if value is None or value == '':
+        return None
+    if isinstance(value, str) and value != service_id and re.fullmatch(r'[A-Za-z0-9_.-]{1,128}', value):
+        return value
+    print(f'<3>{name} is malformed: the preview Access identity is off, production serves.',
+          file=stream or sys.stderr, flush=True)
+    return None

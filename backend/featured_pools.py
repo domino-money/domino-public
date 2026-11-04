@@ -13,6 +13,13 @@ incumbents meet the volume, liquidity and depth floors at a discount.
 v2 (featured_policy.json `rankBy`, `persistence`, `fill`): a market rule whose
 threshold is null is off, today's APR alone may rank, and a short list may be
 completed from the embedded list only.
+
+Per chain (launch round P3, 4 Nov 2026): a policy with a `chain` block selects
+on that chain (featured_policies/, Base and Arbitrum One), with its own stable,
+its provider DEX labels for Uniswap v3 and v4, and ETH priced by the chain
+profile's Chainlink feed. Robinhood's policy has no block and keeps its facts:
+USDG is its dollar side, `uniswap-v4-robinhood` its only DEX label, and its file,
+hence its policy version, does not change.
 """
 from decimal import Decimal, InvalidOperation
 from fractions import Fraction
@@ -31,6 +38,17 @@ POLICY_PATH = Path(__file__).resolve().parent/'featured_policy.json'
 ZERO = '0x' + '0' * 40
 DYNAMIC_FEE = 0x800000
 HOURS = 3600
+# Uniswap versions, as v2_chains.DEX_V3 and DEX_V4 number them. A pool read without one is v4:
+# Robinhood's pool_market reads v4 pools only.
+DEX_V3, DEX_V4 = 3, 4
+# Robinhood's policy names no chain: its one provider DEX label, and its dollar side by symbol.
+ROBINHOOD_DEX_LABELS = {'uniswap-v4-robinhood': DEX_V4}
+ROBINHOOD_STABLE_SYMBOL = 'USDG'
+# A v3 pool's protocol fee is 1/N of its swap fee per input token, N in 4..10 or 0 for none
+# (UniswapV3Pool.setFeeProtocol), token0's in the low four bits of slot0.feeProtocol.
+V3_PROTOCOL_DENOMINATORS = (0, 4, 5, 6, 7, 8, 9, 10)
+GECKO_NETWORK = re.compile(r'[a-z][a-z0-9-]{0,31}')
+GECKO_DEX = re.compile(r'[a-z0-9][a-z0-9_-]{0,63}')
 
 # Reason codes in rule order. S: safety, never relaxed. M: market, calibrated.
 SAFETY = (
@@ -133,7 +151,7 @@ def check_policy(policy):
                  and all(address(token) == token for token in policy['referenceTokens'])
                  and all(type(entry['decimals']) is int and 0 <= entry['decimals'] <= 36
                          for entry in policy['referenceTokens'].values())
-                 and bytes32(policy['ethUsdPricePool']) == policy['ethUsdPricePool']
+                 and _chain_valid(policy)
                  and all(address(token) == token for token in policy['reviewedTokens'])
                  and 0 < Fraction(policy['referenceDepth']['bandPercent']) < 100
                  and 1 <= policy['referenceDepth']['maxSteps'] <= 2048
@@ -166,6 +184,57 @@ def check_policy(policy):
 
 def _decimal_string(value):
     return type(value) is str and len(value) <= 224 and DECIMAL_STRING.fullmatch(value) is not None
+
+
+def _chain_valid(policy):
+    """Robinhood's policy prices ETH from its ETH/USDG pool and names no chain. A chain's names its id, its profile,
+    its stable among the reference tokens and its GeckoTerminal network with one label per Uniswap version, and
+    prices ETH from the profile's Chainlink feed, so it names no pool. featured_chains checks it against the
+    profile."""
+    chain = policy.get('chain')
+    if chain is None:
+        return bytes32(policy['ethUsdPricePool']) == policy['ethUsdPricePool']
+    gecko = chain['geckoTerminal']
+    versions = list(gecko['dexes'].values())
+    return (set(chain) == {'chainId', 'profile', 'stable', 'geckoTerminal'} and policy['ethUsdPricePool'] is None
+            and type(chain['chainId']) is int and 0 < chain['chainId'] < 2**63
+            and re.fullmatch(r'[a-z][a-z0-9]{0,31}-' + str(chain['chainId']), chain['profile']) is not None
+            and address(chain['stable']) == chain['stable'] and chain['stable'] in policy['referenceTokens']
+            and set(gecko) == {'network', 'dexes'} and GECKO_NETWORK.fullmatch(gecko['network']) is not None
+            and type(gecko['dexes']) is dict and 1 <= len(versions) <= 2 and len(set(versions)) == len(versions)
+            and all(type(version) is int and version in (DEX_V3, DEX_V4) for version in versions)
+            and all(GECKO_DEX.fullmatch(label) is not None for label in gecko['dexes']))
+
+
+def stable_of(policy):
+    """The reference token a depth or a major pair counts in dollars: the chain's stable, or Robinhood's USDG."""
+    chain = policy.get('chain')
+    if chain is not None:
+        return chain['stable']
+    return next((token for token, entry in policy['referenceTokens'].items()
+                 if entry['symbol'] == ROBINHOOD_STABLE_SYMBOL), None)
+
+
+def dex_labels(policy):
+    """{the provider's DEX label: the Uniswap version it lists} for the policy's chain."""
+    chain = policy.get('chain')
+    return dict(chain['geckoTerminal']['dexes']) if chain is not None else dict(ROBINHOOD_DEX_LABELS)
+
+
+def protocol_fee_reason(pool):
+    """Why a pool's protocol fee keeps it out, or None. v4 takes up to 1000 pips per direction before the LP fee;
+    v3 takes 1/N of the swap fee per input token. A fee that differs by direction has no well-defined share of a
+    volume reported for both directions (pool_apr)."""
+    protocol = pool['protocolFeeRaw']
+    if pool.get('dex', DEX_V4) == DEX_V3:
+        sides = (protocol & 0xf, protocol >> 4)
+        # The high side keeps every bit above the low four: a value past a byte is no denominator.
+        if any(side not in V3_PROTOCOL_DENOMINATORS for side in sides):
+            return 'invalid_protocol_fee'
+        return 'protocol_fee_directional_unsupported' if sides[0] != sides[1] else None
+    if (protocol & 0xfff) > 1000 or (protocol >> 12) > 1000:
+        return 'invalid_protocol_fee'
+    return 'protocol_fee_directional_unsupported' if (protocol & 0xfff) != (protocol >> 12) else None
 
 
 def policy_version(policy, overrides):
@@ -230,7 +299,7 @@ def eth_usd(sqrt_price, eth_decimals=18, usdg_decimals=6):
 
 def depth_usd(raw_amount, reference, policy, eth_price):
     decimals = policy['referenceTokens'][reference]['decimals']
-    price = Fraction(1) if policy['referenceTokens'][reference]['symbol'] == 'USDG' else eth_price
+    price = Fraction(1) if reference == stable_of(policy) else eth_price
     if price is None:
         return None
     return Fraction(raw_amount, 10 ** decimals) * price
@@ -315,8 +384,8 @@ def reference_side(currencies, policy):
         return None, 'same_asset_pair'
     if c0 in references and c1 in references:
         # Both sides are reference assets: the depth that matters is the dollar side.
-        usdg = [token for token in (c0, c1) if references[token]['symbol'] == 'USDG']
-        reference = usdg[0] if usdg else c1
+        dollar = [token for token in (c0, c1) if token == stable_of(policy)]
+        reference = dollar[0] if dollar else c1
         return (reference, c0 if reference == c1 else c1, True), None
     if c1 in references:
         return (c1, c0, False), None
@@ -394,7 +463,8 @@ def evaluate(candidate, policy, *, now, previous, relaxed=False, excluded_pools=
         if market is not None and (market['currencies'] != pool['currencies'] or
                                    sorted((market['baseToken'], market['quoteToken'])) != pool['currencies']):
             reasons.append('provider_currency_or_pool_mismatch')
-        if market is not None and market.get('dexLabel') != 'uniswap-v4-robinhood':
+        # The provider's label must list the pool's own Uniswap version on this chain.
+        if market is not None and dex_labels(policy).get(market.get('dexLabel')) != pool.get('dex', DEX_V4):
             reasons.append('provider_dex_unconfirmed')
         if key['hooks'] != ZERO:
             reasons.append('hooked_pool_unsupported')
@@ -406,11 +476,9 @@ def evaluate(candidate, policy, *, now, previous, relaxed=False, excluded_pools=
         # zero-fee pools ranked on wash volume from 16 to 25 Oct 2026.
         elif not 0 < key['fee_pips'] < 1_000_000:
             reasons.append('fee_out_of_range')
-        protocol = pool['protocolFeeRaw']
-        if (protocol & 0xfff) > 1000 or (protocol >> 12) > 1000:
-            reasons.append('invalid_protocol_fee')
-        elif (protocol & 0xfff) != (protocol >> 12):
-            reasons.append('protocol_fee_directional_unsupported')
+        protocol = protocol_fee_reason(pool)
+        if protocol:
+            reasons.append(protocol)
         side, problem = reference_side(pool['currencies'], policy)
         if problem:
             reasons.append(problem)

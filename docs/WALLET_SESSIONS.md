@@ -104,10 +104,20 @@ session (`account_unsupported`), and so does an account whose delegate differs
 from the one it was admitted with: a delegate added, changed or cleared answers
 `session_required` after the revocation commits. The protected preview,
 deposit, performance and execution-status endpoints apply the same rule through
-the shared store. An unavailable check denies the request without converting it
-into an unsupported-wallet claim or silently deleting a still-valid session. The
-policy is `eoa_or_7702_v1`; a future policy change requires a migration and
-reauthentication.
+the shared store. Since 4 Nov 2026 (launch round P3) a signed-in listener keeps
+a positive check about 60 seconds for its read-only routes only
+(`onboarding_auth.READ_ONLY_ROUTES`: execution status, list and availability,
+performance cards and epochs, crosschain origins and status), and answers one
+with it only when the delegate it names is the one the session was admitted
+with. A cached answer therefore never revokes, and a wallet upgraded to
+EIP-7702 mid-session signs in once, not in a loop: the answer cached before the
+upgrade names no delegate, so the new session's calls read the chain. Verify,
+refresh, plans, quotes, enrollments and every deposit and onboarding route read
+the chain each time, and only a fresh check revokes; a read-only route sees a
+changed account at most that minute later. An unavailable check denies the
+request without converting it into an unsupported-wallet claim or silently
+deleting a still-valid session. The policy is `eoa_or_7702_v1`; a future policy
+change requires a migration and reauthentication.
 
 Sign-in admits any delegate, but a delegate's code runs on everything the
 account holds, so the app separates the delegates it recognizes from the rest
@@ -225,6 +235,14 @@ psql -f backend/migrations/041_session_delegated_accounts.sql
 
 Sessions created under `plain_eoa_v1` stay stored but stop being live, since the
 store compares the policy, so each browser signs in once more after the deploy.
+
+Migration 057 (4 Nov 2026, launch round P3, review M1) adds the nullable
+`sessions.origin`: the origin a session signed in on, NULL for the canonical
+one. Apply it before the listeners that read it, as 041 above
+(`apply_migrations.py … --migrations 057_session_origin --apply`, as postgres);
+the earlier listeners leave it NULL, so it runs with ingress open, nobody signs
+in again, and their rollback needs no schema change. Every session check then
+compares it with the origin the listener admitted.
 `backend/dev_postgres.py` applies 041 on every run; the staging installers
 package it as source (`PACKAGED_ONLY_MIGRATIONS`) and an operator applies it as
 above. A rollback to an rc.3 producer needs no schema change: it never reads
@@ -335,6 +353,8 @@ descriptor with the fixed `domino_session_auth` role.
 | Auth process configuration | Meaning |
 | --- | --- |
 | `DOMINO_SESSION_ORIGIN` | Exact canonical HTTPS application origin |
+| `DOMINO_SESSION_PREVIEW_ORIGINS` | Optional (4 Nov 2026, launch round P3): exact Pages preview origins also admitted, comma-separated, at most four, each in the canonical form above and none the canonical origin; unset or empty admits none. Each signs in with a message naming its own host, and its sessions work through it alone (migration 057). Malformed: previews off, an error-priority journal line, the canonical origin keeps serving. The authenticated listeners read the same variable; the execution status profile takes `session.previewOrigins`. See [the preview's boundary](PREVIEW_PUBLIC_READS.md#preview-origins-the-boundary) |
+| `DOMINO_SESSION_ACCESS_PREVIEW_SERVICE_ID` | Optional (review L1): a second service identity of the same Access application, the separate preview Workers'. It may carry a listed preview origin only, and with it set the production identity carries the canonical origin only. Each authenticated listener reads its own `DOMINO_<FAMILY>_ACCESS_PREVIEW_SERVICE_ID`; the execution status profile `access.previewServiceId`. Malformed or equal to the production id: off, with an error-priority journal line |
 | `DOMINO_SESSION_ABUSE_SECRET` | Separate persistent random 32-byte secret, encoded as 64 lowercase hex; stable across replicas/restarts |
 | `DOMINO_SESSION_ACCESS_ISSUER` | Reviewed Cloudflare Access team issuer |
 | `DOMINO_SESSION_ACCESS_AUDIENCE` | Separate auth Access application audience |
@@ -359,7 +379,10 @@ record the results alongside or after delivery:
    actual adapter tests, including multiple wallets/tabs and account/chain changes.
 2. Separate auth Access application/service identity, exact origin/path mapping,
    Tunnel-only loopback ingress and authoritative client-IP/framing tests. No
-   preview/alternate hostname or reader identity may reach authenticated state.
+   preview/alternate hostname or reader identity may reach authenticated state,
+   except a preview origin listed exactly on both its Worker and the listeners
+   (since 4 Nov 2026, launch round P3; empty as committed; the owner lists one
+   after the launch, [PREVIEW_PUBLIC_READS.md](PREVIEW_PUBLIC_READS.md)).
 3. Least-privilege production migration/role credentials, time synchronization,
    bounded storage/cleanup monitoring and a restore procedure that invalidates
    sessions/challenges rather than resurrecting previously revoked credentials.

@@ -513,7 +513,10 @@
       "type": "integer"
     },
     "contractVersion": {
-      "const": "1.1.0-rc.1",
+      "enum": [
+        "1.1.0-rc.1",
+        "1.2.0-rc.1"
+      ],
       "title": "Contractversion",
       "type": "string"
     },

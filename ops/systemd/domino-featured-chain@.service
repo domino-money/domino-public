@@ -1,0 +1,54 @@
+[Unit]
+Description=Domino featured pools for %i (shadow: daily selection and list health; serves nothing)
+After=postgresql@16-domino.service domino-continuous-egress.service
+BindsTo=domino-continuous-egress.service
+PartOf=domino-public-data.target
+StartLimitIntervalSec=300
+StartLimitBurst=30
+
+[Service]
+Type=oneshot
+User=domino-write
+Group=domino-write
+SupplementaryGroups=domino-db
+WorkingDirectory=@PUBLIC_ROOT@/current/backend
+# The writer reads only the names continuous_egress_policy.py pinned with its
+# egress set, never a DNS answer outside that set (#315): GeckoTerminal and the
+# V2 chains' hosted RPC are both in it.
+BindReadOnlyPaths=/etc/domino/continuous-reads/write.hosts:/etc/hosts
+# The instance is the chain profile (base-8453, arbitrum-42161); Robinhood's
+# selection is domino-featured.service. The chain is read through the writer's
+# private V2 chain RPC file, Chainstack first and Alchemy as fallback
+# (backend/v2_rpc.py), whose URLs carry their keys, sealed on the host as
+# v2-rpc-<chain>-<name>. Its loader checks every chain it names, so every one of
+# them is imported, as for domino-v2-indexer@.
+ImportCredential=v2-rpc-*
+# systemd 255 opens the TPM to the device policy for LoadCredentialEncrypted= but
+# not for ImportCredential=; under PrivateDevices=yes the decryption then fails
+# with EPERM on /dev/tpmrm0 (the plan listener, 4 Oct).
+DeviceAllow=char-tpm rw
+ExecStart=@QUEUE_ROOT@/venv/bin/python -B manage_featured_chain.py --chain %i --chain-rpc-file @QUEUE_ROOT@/release/backend/runtime/chain-rpc.json tick
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+# A selection's listing has 600 s, its chain read 120 s; a stop mid-run records
+# nothing, and the next minute's attempt inside the window runs it again.
+TimeoutStartSec=900
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+TasksMax=16
+MemoryMax=512M
+CPUQuota=50%

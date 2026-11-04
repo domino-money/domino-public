@@ -120,7 +120,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "9f010416459dfa37da6e5b7796ff867c75356af4b31558ae8ddc46a6ff97485e"
+      "sha256": "114820d69b55b6b26c199e27bb7cfb5d390b687f5eb03d302be07cb56ecee7bf"
     }
   ],
   "generator": "scripts/export-session-contract.py",
@@ -131,7 +131,7 @@
     },
     {
       "path": "backend/session_api.py",
-      "sha256": "71c685cd5613373c8cfda31fe62fd75d0c16b537b954ff0174cf7e2d9a7dc3db"
+      "sha256": "43dd43e4b5738a8cbfe9f0dabf164aaa4746b956a6dc4749e0d55a3ae2c5db3e"
     },
     {
       "path": "backend/access_transport.py",
@@ -139,19 +139,19 @@
     },
     {
       "path": "backend/session_siwe.py",
-      "sha256": "eefd4a2c18703708050642190738d188407691645dae627841fcc971dc4aff37"
+      "sha256": "b9252ff0db1ae1847ea1195083d209b7121abf7e431db6718912e8ad00194298"
     },
     {
       "path": "backend/session_service.py",
-      "sha256": "a526da6ec648e3dd5b4f7b703f3a339e025bf5821b2cc9a35fa5b7692b32c506"
+      "sha256": "2d5e0373239fc57218da406be30d77a7df8bbf7d38bc7ff6ea5a153dc2dafd50"
     },
     {
       "path": "backend/session_store.py",
-      "sha256": "80e483fd5d8a29cccdf4516af2a7b88382e8c197c387a134447be91d99732937"
+      "sha256": "621c332aa47a0e954973395b3a44a96c36532c47eb2ad06b20b8da92682eb901"
     },
     {
       "path": "backend/hop_log.py",
-      "sha256": "cecd1132e819d745d59649c5e4e3c379a8262973a89fad0864b4d568100274c7"
+      "sha256": "d438d94750902364eaf16cc58ba3712d182178f3ffb810204f6357a868cd4639"
     },
     {
       "path": "backend/migrations/027_remove_wallet_access_gate.sql",
@@ -162,12 +162,16 @@
       "sha256": "e9c6d01f242779dd5dccdca8380e64c85a05d9806fc4eafbfb46d1855d17bc45"
     },
     {
+      "path": "backend/migrations/057_session_origin.sql",
+      "sha256": "7f43fbeed3de2d45266a58e2b6fb2450301730c801e54ff423fbe858c9539800"
+    },
+    {
       "path": "backend/tests/session_contract_fixtures.py",
       "sha256": "8c516a05c867788819b5ac04239a0b42026bf17e2ebea073f3b6a9ccdc4a4817"
     },
     {
       "path": "scripts/export-session-contract.py",
-      "sha256": "127d2898fdbe24e1d4a6f76ffce26c002c554d484ce8b934cb388d64b499cf06"
+      "sha256": "5e83613cc532f69fb6aad5a0dbc2451d09063d5b94eab94fc97f19da25dd28af"
     }
   ],
   "status": "candidate_disabled_pending_consumer_acknowledgement"

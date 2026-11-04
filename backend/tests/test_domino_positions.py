@@ -1,4 +1,6 @@
-"""Pools holding a Domino position: the Setup contract's mints, each mapped to its pool."""
+"""Pools holding a Domino position: the Setup contract's mints, each mapped to its pool.
+
+The checkpointed scan itself runs against PostgreSQL in test_domino_position_scan.py."""
 import json
 from pathlib import Path
 import re
@@ -10,7 +12,8 @@ from eth_abi import encode
 from eth_hash.auto import keccak
 
 from discovery import KEY_TYPES, POSITION_MANAGER, ZERO, Block, DataError
-from domino_positions import MAX_POSITIONS, SETUP_CONTRACT, SETUP_DEPLOY_BLOCK, SETUP_MINTED_TOPIC, position_pools
+from domino_positions import (MAX_POSITIONS, MINT_SCAN_LOCK, MINT_SCAN_SPAN, SETUP_CONTRACT, SETUP_DEPLOY_BLOCK,
+                              SETUP_MINTED_TOPIC, position_pools, read_mints, scan_mints)
 from manage_activity import domino_position_targets
 
 REPO = Path(__file__).resolve().parents[2]
@@ -37,9 +40,13 @@ def info_of(pool_key, lower=-600, upper=600):
     return (int(pool_of(pool_key), 16) >> 56) << 56 | (upper & 0xffffff) << 32 | (lower & 0xffffff) << 8
 
 
-def mint(token_id, *, address=SETUP_CONTRACT, topic=SETUP_MINTED_TOPIC, topics=None):
-    return {'address': address, 'topics': topics or [topic, '0x' + '01' * 32, '0x' + '00' * 12 + '11' * 20,
-                                                     '0x%064x' % token_id]}
+def mint(token_id, *, address=SETUP_CONTRACT, topic=SETUP_MINTED_TOPIC, topics=None, block=HEAD.number - 10,
+         index=0, **fields):
+    """A SetupMinted log as eth_getLogs answers it."""
+    return {'address': address, 'removed': False, 'blockNumber': hex(block), 'logIndex': hex(index),
+            'blockHash': '0x%064x' % block, 'transactionHash': '0x%064x' % (block * 1000 + index),
+            'topics': topics or [topic, '0x' + '01' * 32, '0x' + '00' * 12 + '11' * 20, '0x%064x' % token_id],
+            **fields}
 
 
 class Rpc:
@@ -61,7 +68,14 @@ class Rpc:
         return pool_key, self.infos.get(values[0], 0 if pool_key == EMPTY else info_of(pool_key))
 
 
-class PositionPoolTests(unittest.TestCase):
+START, END = HEAD.number - 100, HEAD.number
+
+
+def token_ids(logs):
+    return [item['tokenId'] for item in read_mints(Rpc(logs, {}), START, END)]
+
+
+class MintLogTests(unittest.TestCase):
     def test_the_setup_contract_and_its_deployment_block_are_the_release_s(self):
         manifest = json.loads((REPO / 'docs/deployments/v1-robinhood-mainnet-2026-09-21/deployment.json').read_text())
         self.assertEqual(manifest['contracts']['setup'], SETUP_CONTRACT)
@@ -73,25 +87,92 @@ class PositionPoolTests(unittest.TestCase):
             self.assertEqual(re.search(rf"export const {name} = '([^']+)'", owned).group(1), value)
         self.assertIn(f'SETUP_DEPLOY_BLOCK = {SETUP_DEPLOY_BLOCK:_}', owned)
 
+    def test_the_scans_advisory_key_is_its_own(self):
+        """No other writer in the backend takes the scan's advisory key, written as a number: sharing it would make
+        the two refuse each other as catalogue_writer_busy."""
+        keys = []
+        for path in [*(REPO / 'backend').glob('*.py'), *(REPO / 'backend/migrations').glob('*.sql')]:
+            text = path.read_text()
+            keys += re.findall(r'pg_(?:try_)?advisory(?:_xact)?_lock\((\d+)\)', text)
+            keys += re.findall(r'^[A-Z_]*LOCK[A-Z_]*\s*=\s*(\d+)\s*$', text, re.M)
+        self.assertIn('46630001', keys)
+        self.assertEqual(keys.count(str(MINT_SCAN_LOCK)), 1)
+
+    def test_one_read_of_the_range_each_mint_once_in_chain_order(self):
+        rpc = Rpc([mint(7, block=START + 5, index=2), mint(3, block=START + 5), mint(9, block=START + 1),
+                   mint(7, block=START + 5, index=2)], {})
+        found = read_mints(rpc, START, END)
+        self.assertEqual(rpc.calls, [('eth_getLogs', {'address': SETUP_CONTRACT, 'topics': [SETUP_MINTED_TOPIC],
+                                                      'fromBlock': hex(START), 'toBlock': hex(END)})])
+        # The repeated log is one mint; the order is the chain's, not the token ids'.
+        self.assertEqual([(item['blockNumber'], item['logIndex'], item['tokenId']) for item in found],
+                         [(START + 1, 0, 9), (START + 5, 0, 3), (START + 5, 2, 7)])
+        self.assertEqual(found[0], {'tokenId': 9, 'blockNumber': START + 1, 'logIndex': 0,
+                                    'blockHash': '0x%064x' % (START + 1),
+                                    'transactionHash': '0x%064x' % ((START + 1) * 1000)})
+        self.assertEqual(token_ids([]), [])
+
+    def test_a_foreign_removed_or_malformed_log_is_refused(self):
+        cases = [mint(1, address='0x' + '22' * 20), mint(1, topic='0x' + '33' * 32),
+                 mint(1, topics=[SETUP_MINTED_TOPIC, '0x' + '01' * 32, '0x' + '02' * 32]),
+                 mint(1, topics=[SETUP_MINTED_TOPIC, '0x' + '01' * 32, '0x' + '02' * 32, '0x12']),
+                 mint(1, removed=True), mint(1, removed=None), mint(1, blockNumber=None), mint(1, blockHash='0x12'),
+                 mint(1, logIndex='first'), mint(1, transactionHash=None), 'log', None]
+        for log in cases:
+            with self.subTest(log=log), self.assertRaises(DataError):
+                token_ids([log])
+        for answer in ({'logs': []}, None):
+            with self.subTest(answer=type(answer).__name__), self.assertRaisesRegex(DataError, '^invalid_logs_response$'):
+                token_ids(answer)
+        # A checksummed topic is the same event.
+        self.assertEqual(token_ids([mint(1, topic=SETUP_MINTED_TOPIC.upper().replace('0X', '0x'))]), [1])
+
+    def test_a_log_outside_the_range_or_a_conflicting_repeat_is_refused(self):
+        for block in (START - 1, END + 1):
+            with self.subTest(block=block), self.assertRaisesRegex(DataError, '^mint_outside_scan$'):
+                token_ids([mint(1, block=block)])
+        self.assertEqual(token_ids([mint(1, block=START), mint(2, block=END)]), [1, 2])
+        # Two different events can never share a block and log index.
+        with self.assertRaisesRegex(DataError, '^conflicting_setup_log$'):
+            token_ids([mint(1, block=START), mint(2, block=START)])
+
+    def test_a_range_wider_than_one_span_or_out_of_order_is_never_asked(self):
+        rpc = Rpc([], {})
+        for start, end in ((START, START + MINT_SCAN_SPAN), (END, START), (0, 10), (START, float(END)), (None, END)):
+            with self.subTest(start=start, end=end), self.assertRaisesRegex(DataError, '^invalid_mint_scan_range$'):
+                read_mints(rpc, start, end)
+        self.assertEqual(rpc.calls, [])
+        self.assertEqual(read_mints(rpc, START, START + MINT_SCAN_SPAN - 1), [])
+
+    def test_a_scan_target_is_a_block_number(self):
+        for through in ('70000000', 7e7, None, True):
+            with self.subTest(through=through), self.assertRaisesRegex(DataError, '^invalid_mint_scan_target$'):
+                scan_mints(None, None, through=through)
+
+    def test_more_mints_than_the_bound_are_refused(self):
+        with self.assertRaisesRegex(DataError, '^domino_positions_over_bound$'):
+            token_ids([mint(n, block=START + n % 100, index=n) for n in range(MAX_POSITIONS + 1)])
+        self.assertEqual(len(token_ids([mint(n, block=START + n % 100, index=n) for n in range(MAX_POSITIONS)])),
+                         MAX_POSITIONS)
+
+
+class PositionPoolTests(unittest.TestCase):
     def test_every_minted_position_maps_to_its_pool_once(self):
-        rpc = Rpc([mint(7), mint(3), mint(9), mint(7)], {3: key(TOKEN_A), 7: key(TOKEN_A), 9: key(TOKEN_B, 500, 10)})
-        self.assertEqual(position_pools(rpc, HEAD), {pool_of(key(TOKEN_A)): [3, 7],
-                                                     pool_of(key(TOKEN_B, 500, 10)): [9]})
-        self.assertEqual(rpc.calls[0], ('eth_getLogs', {'address': SETUP_CONTRACT, 'topics': [SETUP_MINTED_TOPIC],
-                                                        'fromBlock': hex(SETUP_DEPLOY_BLOCK),
-                                                        'toBlock': hex(HEAD.number)}))
-        # One key read per position, the duplicate mint included only once, in order.
-        self.assertEqual([value for method, value in rpc.calls if method == 'eth_call'], [3, 7, 9])
+        rpc = Rpc([], {3: key(TOKEN_A), 7: key(TOKEN_A), 9: key(TOKEN_B, 500, 10)})
+        self.assertEqual(position_pools(rpc, HEAD, [7, 3, 9, 7]), {pool_of(key(TOKEN_A)): [3, 7],
+                                                                    pool_of(key(TOKEN_B, 500, 10)): [9]})
+        # One key read per position at the head, the repeated id included only once, in order.
+        self.assertEqual(rpc.calls, [('eth_call', 3), ('eth_call', 7), ('eth_call', 9)])
 
     def test_a_checksummed_key_names_the_same_pool(self):
         upper = tuple(value.upper().replace('0X', '0x') if isinstance(value, str) else value
                       for value in key(TOKEN_A))
-        self.assertEqual(position_pools(Rpc([mint(1)], {1: upper}), HEAD), {pool_of(key(TOKEN_A)): [1]})
+        self.assertEqual(position_pools(Rpc([], {1: upper}), HEAD, [1]), {pool_of(key(TOKEN_A)): [1]})
 
     def test_a_burned_position_has_no_pool(self):
-        self.assertEqual(position_pools(Rpc([mint(1), mint(2)], {1: EMPTY, 2: key(TOKEN_A)}), HEAD),
+        self.assertEqual(position_pools(Rpc([], {1: EMPTY, 2: key(TOKEN_A)}), HEAD, [1, 2]),
                          {pool_of(key(TOKEN_A)): [2]})
-        self.assertEqual(position_pools(Rpc([], {}), HEAD), {})
+        self.assertEqual(position_pools(Rpc([], {}), HEAD, []), {})
 
     def test_an_answer_that_names_no_valid_pool_is_refused(self):
         reversed_key = (key(TOKEN_A)[1], key(TOKEN_A)[0], *key(TOKEN_A)[2:])
@@ -104,25 +185,19 @@ class PositionPoolTests(unittest.TestCase):
                  ({1: key(TOKEN_A)}, {1: info_of(key(TOKEN_A)) ^ 1 << 56}, 'nft_pool_mismatch')]
         for keys, infos, reason in cases:
             with self.subTest(reason=reason, infos=infos), self.assertRaisesRegex(DataError, f'^{reason}$'):
-                position_pools(Rpc([mint(1)], keys, infos), HEAD)
+                position_pools(Rpc([], keys, infos), HEAD, [1])
         # The largest positionInfo is a valid answer.
         largest = info_of(key(TOKEN_A)) | (1 << 56) - 1
-        self.assertEqual(position_pools(Rpc([mint(1)], {1: key(TOKEN_A)}, {1: largest}), HEAD),
+        self.assertEqual(position_pools(Rpc([], {1: key(TOKEN_A)}, {1: largest}), HEAD, [1]),
                          {pool_of(key(TOKEN_A)): [1]})
 
-    def test_a_foreign_or_malformed_log_is_refused(self):
-        cases = [mint(1, address='0x' + '22' * 20), mint(1, topic='0x' + '33' * 32),
-                 mint(1, topics=[SETUP_MINTED_TOPIC, '0x' + '01' * 32, '0x' + '02' * 32]),
-                 mint(1, topics=[SETUP_MINTED_TOPIC, '0x' + '01' * 32, '0x' + '02' * 32, '0x12']), 'log', None]
-        for log in cases:
-            with self.subTest(log=log), self.assertRaises(DataError):
-                position_pools(Rpc([log], {1: key(TOKEN_A)}), HEAD)
-        for answer in ({'logs': []}, None):
-            with self.subTest(answer=type(answer).__name__), self.assertRaisesRegex(DataError, '^invalid_logs_response$'):
-                position_pools(Rpc(answer, {}), HEAD)
+    def test_more_positions_than_the_bound_are_refused_before_any_read(self):
+        rpc = Rpc([], {})
         with self.assertRaisesRegex(DataError, '^domino_positions_over_bound$'):
-            position_pools(Rpc([mint(n) for n in range(MAX_POSITIONS + 1)], {}), HEAD)
-        self.assertEqual(len(position_pools(Rpc([mint(1)] * MAX_POSITIONS, {1: key(TOKEN_A)}), HEAD)), 1)
+            position_pools(rpc, HEAD, range(MAX_POSITIONS + 1))
+        self.assertEqual(rpc.calls, [])
+        many = Rpc([], {n: EMPTY for n in range(MAX_POSITIONS)})
+        self.assertEqual(position_pools(many, HEAD, range(MAX_POSITIONS)), {})
 
 
 class Store:

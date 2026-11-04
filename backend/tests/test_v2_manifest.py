@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -17,8 +18,9 @@ from eth_utils import to_checksum_address
 from discovery import Block, DataError
 from v2_chains import chain
 from v2_manifest import (BUILD, COMPONENTS, CONTRACT_NAMES, CREATE_X, CREATE_X_CODE_HASH, DEPLOY_ORDER,
-                         MAX_MANIFEST_BYTES, POLICIES, PUBLIC_TEST_ACCOUNTS, canonical, checked_deployment,
-                         checked_manifest, component_salt, create3_address, create_address, load_deployment,
+                         MAX_MANIFEST_BYTES, POLICIES, PUBLIC_TEST_ACCOUNTS, PUBLIC_TEST_ACCOUNTS_FILE, canonical,
+                         checked_deployment, checked_manifest, component_salt, create3_address, create_address,
+                         load_deployment,
                          parse_manifest, predict, profile_dependencies)
 from v2_rpc import CodeCache
 
@@ -364,12 +366,16 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(checked_deployment(local, other_code, admission='local-test').chain, other_code)
 
     def test_production_refuses_a_role_held_by_a_public_test_key(self):
+        # Changed on purpose 2026-11-04 (launch round P3, item 7): the mnemonic's first 100 accounts, not its first
+        # ten, derived again here; the file lists them in index order, the ten Anvil funds by default first.
         from eth_account import Account
-        Account.enable_unaudited_hdwallet_features()
-        mnemonic = 'test test test test test test test test test test test junk'
-        self.assertEqual(PUBLIC_TEST_ACCOUNTS, {
-            Account.from_mnemonic(mnemonic, account_path=f"m/44'/60'/0'/0/{i}").address.lower() for i in range(10)})
-        keys = sorted(PUBLIC_TEST_ACCOUNTS)
+        from eth_account.hdaccount import key_from_seed, seed_from_mnemonic
+        seed = seed_from_mnemonic('test test test test test test test test test test test junk', '')
+        derived = [Account.from_key(key_from_seed(seed, f"m/44'/60'/0'/0/{i}")).address.lower() for i in range(100)]
+        self.assertEqual(PUBLIC_TEST_ACCOUNTS, set(derived))
+        self.assertEqual(json.loads(PUBLIC_TEST_ACCOUNTS_FILE.read_text())['addresses'], derived)
+        # Two of the ten, and three past them that production used to admit.
+        keys = [derived[index] for index in (0, 9, 10, 50, 99)]
         for index, name in enumerate(('governance', 'guardian', 'feeRecipient', 'operator', 'publisher')):
             document = mutated(lambda d: d['roles'].update({name: keys[index]}))
             with self.subTest(name), self.assertRaisesRegex(DataError, '^v2_deployment_not_admitted$'):
@@ -545,6 +551,64 @@ class CodeProofTests(unittest.TestCase):
         with self.assertRaisesRegex(DataError, '^v2_deployment_code_mismatch$'):
             checked_deployment(self.document, BASE).verify_code(self.Rpc(self.codes, self.ANCHOR), block,
                                                                 components=('autoExit',), cache=CodeCache())
+
+
+class PublicTestAccountTests(unittest.TestCase):
+    """Launch round P3 (4 Nov 2026), item 7: the list production refuses, and the wallets tests may use from it."""
+
+    def test_the_list_is_read_whole_or_refused(self):
+        from v2_manifest import PUBLIC_TEST_ACCOUNT_COUNT, _public_test_accounts
+        document = json.loads(PUBLIC_TEST_ACCOUNTS_FILE.read_text())
+        self.assertEqual(PUBLIC_TEST_ACCOUNT_COUNT, 100)
+        addresses = document['addresses']
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'accounts.json'
+            path.write_text(json.dumps(document))
+            self.assertEqual(_public_test_accounts(path), PUBLIC_TEST_ACCOUNTS)
+            for label, broken in {
+                'one short': {**document, 'addresses': addresses[:-1]},
+                'one more': {**document, 'addresses': [*addresses, '0x' + 'ab' * 20]},
+                'a duplicate': {**document, 'addresses': [*addresses[:-1], addresses[0]]},
+                'upper case': {**document, 'addresses': [addresses[0].upper().replace('0X', '0x'), *addresses[1:]]},
+                'not an address': {**document, 'addresses': [addresses[0][:-1], *addresses[1:]]},
+                'not a string': {**document, 'addresses': [1, *addresses[1:]]},
+                'not a list': {**document, 'addresses': ','.join(addresses)},
+                'another kind': {**document, 'kind': 'domino-test-accounts'},
+                'an extra field': {**document, 'keys': []},
+                'a field missing': {key: value for key, value in document.items() if key != 'note'},
+                'an object of addresses': {**document, 'addresses': {address: True for address in addresses}},
+                'not an object': addresses,
+                'a number': 5,
+            }.items():
+                with self.subTest(label):
+                    path.write_text(json.dumps(broken))
+                    with self.assertRaisesRegex(ValueError, '^public_test_accounts_invalid$'):
+                        _public_test_accounts(path)
+
+    def test_tests_may_use_any_of_the_hundred_and_only_those(self):
+        from public_test_accounts import public_test_account, public_test_accounts
+        from eth_account.messages import encode_defunct
+        from eth_account import Account
+        accounts = public_test_accounts(100)
+        self.assertEqual([account.address.lower() for account in accounts],
+                         json.loads(PUBLIC_TEST_ACCOUNTS_FILE.read_text())['addresses'])
+        # Anvil's first default key, as every Anvil user holds it.
+        self.assertEqual(accounts[0].key.hex().removeprefix('0x'),
+                         'ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80')
+        signed = accounts[99].sign_message(encode_defunct(text='domino'))
+        self.assertEqual(Account.recover_message(encode_defunct(text='domino'), signature=signed.signature),
+                         accounts[99].address)
+        for index in (-1, 100, 1000, '1', 1.0, True, None):
+            with self.subTest(index=index), self.assertRaisesRegex(ValueError, '^public_test_account_index$'):
+                public_test_account(index)
+        # An account the production list did not refuse is never handed out, whatever the file says.
+        public_test_account.cache_clear()
+        try:
+            with patch('public_test_accounts.PUBLIC_TEST_ACCOUNTS', PUBLIC_TEST_ACCOUNTS - {accounts[7].address.lower()}), \
+                 self.assertRaisesRegex(ValueError, '^public_test_account_not_refused_by_production$'):
+                public_test_account(7)
+        finally:
+            public_test_account.cache_clear()
 
 
 if __name__ == '__main__':

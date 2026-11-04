@@ -70,6 +70,14 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/052_v2_index.sql',
     # The ledgers' per-chunk index: apply_migrations.py applies it, never this upgrade.
     'backend/migrations/053_activity_chunk_index.sql',
+    # The V2 fee follower's tables: apply_migrations.py applies it, never this upgrade.
+    'backend/migrations/054_v2_fees.sql',
+    # The featured-pools tables per chain: apply_migrations.py applies it, never this upgrade.
+    'backend/migrations/055_featured_chains.sql',
+    # The activity follower's mint-scan checkpoint: apply_migrations.py applies it, never this upgrade.
+    'backend/migrations/056_position_mint_scan.sql',
+    # The session's origin, the session schema's like 041: apply_migrations.py applies it, never this upgrade.
+    'backend/migrations/057_session_origin.sql',
 )
 NEW_ROLES = ('domino_performance_collector', 'domino_performance_reader',
              'domino_execution_worker', 'domino_execution_ledger',

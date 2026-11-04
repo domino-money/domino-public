@@ -182,6 +182,18 @@ PACKAGED_ONLY_MIGRATIONS = (
     # The ledgers' per-chunk index on domino_activity.events: apply_migrations.py applies it
     # as the catalogue owner, never this tool.
     'backend/migrations/053_activity_chunk_index.sql',
+    # The V2 fee follower's tables (read-v6 position-fees): apply_migrations.py applies it as
+    # postgres, as 052, never this tool.
+    'backend/migrations/054_v2_fees.sql',
+    # The featured-pools tables per chain (Base and Arbitrum in shadow): apply_migrations.py
+    # applies it as postgres, with domino-featured stopped, never this tool.
+    'backend/migrations/055_featured_chains.sql',
+    # The activity follower's mint-scan checkpoint: apply_migrations.py applies it as the
+    # catalogue owner, never this tool.
+    'backend/migrations/056_position_mint_scan.sql',
+    # The session's origin (launch round P3, review M1). Like 041, applied separately to an
+    # installed foundation, by apply_migrations.py as postgres.
+    'backend/migrations/057_session_origin.sql',
 )
 MAPPINGS = (
     ('domino', 'domino-admin', ADMIN),

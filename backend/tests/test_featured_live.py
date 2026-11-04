@@ -126,7 +126,8 @@ class LiveTests(unittest.TestCase):
         with psycopg.connect(**cls.settings,user=ADMIN) as conn:
             for name in ('001_catalogue','002_activity','020_pool_requests','023_pool_request_scheduling',
                          '024_public_observations','025_public_history','026_public_demand','042_provider_priority',
-                         '043_featured_pools','044_demand_horizon','045_featured_live','047_provider_ceiling'):
+                         '043_featured_pools','044_demand_horizon','045_featured_live','047_provider_ceiling',
+                         '055_featured_chains'):
                 conn.execute((migrations/(name+'.sql')).read_text())
 
     def setUp(self):

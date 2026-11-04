@@ -123,7 +123,8 @@ class FeaturedTests(unittest.TestCase):
         with psycopg.connect(**cls.settings,user=ADMIN) as conn:
             for name in ('001_catalogue','002_activity','020_pool_requests','023_pool_request_scheduling',
                          '024_public_observations','025_public_history','026_public_demand',
-                         '042_provider_priority','043_featured_pools','044_demand_horizon','045_featured_live','047_provider_ceiling'):
+                         '042_provider_priority','043_featured_pools','044_demand_horizon','045_featured_live','047_provider_ceiling',
+                         '055_featured_chains'):
                 conn.execute((migrations/(name+'.sql')).read_text())
 
     def setUp(self):
@@ -442,6 +443,12 @@ class FeaturedTests(unittest.TestCase):
             coverage=conn.execute('SELECT evaluation->%s AS c FROM domino_public.featured_runs WHERE id=%s',
                                   ('coverage',truncated['runId'])).fetchone()[0]
         self.assertEqual((coverage['pages'],coverage['truncated']),(1,True))
+
+    def test_a_usdg_depth_needs_no_eth_price_and_an_eth_one_does(self):
+        selector=self.selector()
+        self.assertEqual(selector._depth(25*10**6,USDG,None,None,{}),{'status':'measured','raw':'25000000','usd':'25'})
+        self.assertEqual(selector._depth(10**18,ZERO,None,None,{'ethPrice':None}),
+                         {'status':'unmeasurable','reason':'eth_price_unavailable','raw':str(10**18)})
 
     def test_the_service_window(self):
         first,last,at=window(self.policy,NOW)

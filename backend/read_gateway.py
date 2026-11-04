@@ -41,7 +41,8 @@ from sequence_snapshot import (CONTRACT_VERSION as V4_CONTRACT_VERSION,
 from featured_contract import (CONTRACT_VERSION as V5_CONTRACT_VERSION, FeaturedPoolsRequest,
                                validate_featured_response)
 from v2_read_contract import (CONTRACT_VERSION as V6_CONTRACT_VERSION, REQUEST_MODELS as V6_REQUEST_MODELS,
-                              validate_v6_request_response, validate_v6_response)
+                              answered_version as v6_answered_version, validate_v6_request_response,
+                              validate_v6_response)
 
 REQUEST_MODELS = {'token': TokenRequest, 'pools': PoolsRequest, 'pool-market': PoolMarketRequest,
                   'wallet-assets': AssetsRequest, 'nft-positions': NftPositionsRequest,
@@ -146,14 +147,18 @@ class Gateway:
             if waiting:
                 self.gate.unqueue(kind)
 
-    def execute(self, route, body, assertion, client, deadline, *, version='v1', request_id=None):
+    def execute(self, route, body, assertion, client, deadline, *, version='v1', request_id=None, contract=None):
         status, data, _ = self.execute_with_hints(route, body, assertion, client, deadline,
-                                                  version=version, request_id=request_id)
+                                                  version=version, request_id=request_id, contract=contract)
         return status, data
 
     def execute_with_hints(self, route, body, assertion, client, deadline, *, version='v1', request_id=None,
-                           acquired_kind=None):
-        """Like execute, plus hints the boundary needs for headers: a 429's honest Retry-After."""
+                           acquired_kind=None, contract=None):
+        """Like execute, plus hints the boundary needs for headers: a 429's honest Retry-After. `contract`: the
+        read-v6 version asked (its window, 1.2.0-rc.1), which the reader must answer in; read-v6's first version
+        when not given."""
+        if version == 'v6' and contract is None:
+            contract = v6_answered_version(route, None)
         # Admission was acquired before thread dispatch, on the route's own slot;
         # kind routes the release below to the same slot.
         reader_kind = self.gate.kind_of(route, body)
@@ -208,12 +213,14 @@ class Gateway:
             if route == 'wallet-assets' and sent.get('cursor') is not None:
                 sent['cursor'] = self.cursors.unwrap(sent['cursor'], body)
             protocol = {'version': version} if version in ('v3', 'v4', 'v5', 'v6') else {}
+            if version == 'v6':
+                protocol['contract'] = contract
             status, data, metadata = self.upstream.request(route, sent, deadline=deadline, request_id=request_id, **protocol)
             if metadata.get('generation') != generation:
                 if metadata.get('generation'):
                     self.cursors.observe_generation(metadata['generation'])
                 raise DataError('upstream_unavailable')
-            producer_contract = {'v6': V6_CONTRACT_VERSION, 'v5': V5_CONTRACT_VERSION, 'v4': V4_CONTRACT_VERSION,
+            producer_contract = {'v6': contract, 'v5': V5_CONTRACT_VERSION, 'v4': V4_CONTRACT_VERSION,
                                  'v3': V3_CONTRACT_VERSION}.get(version, CONTRACT_VERSION)
             validator = {'v6': validate_v6_response, 'v5': validate_featured_response,
                          'v4': validate_snapshot_response, 'v3': validate_v3_response}.get(version, validate_response)
@@ -234,7 +241,7 @@ class Gateway:
                 if version == 'v3':
                     validate_v3_request_response(route, body, data)
                 if version == 'v6':
-                    validate_v6_request_response(route, body, data)
+                    validate_v6_request_response(route, body, data, contract)
                 if version == 'v4' and (data['owner'] != body['owner'] or data['tokenId'] != body['tokenId']):
                     raise ValueError('snapshot request mismatch')
             except (ValidationError, ValueError, TypeError):
@@ -340,6 +347,16 @@ def create_gateway(gateway=None):
                 headers[name] = value
             if any(name in headers for name in (b'origin', b'authorization')):
                 return result(403, {'error': 'origin_not_allowed'})
+            v6_contract = None
+            if version == 'v6':
+                # read-v6's window (1.2.0-rc.1): the version the Worker names is the one answered and relayed.
+                try:
+                    named = headers.get(b'x-domino-read-contract')
+                    contract_version = v6_contract = v6_answered_version(
+                        match[1], None if named is None else named.decode('ascii'))
+                except (ValueError, UnicodeError) as error:
+                    code = str(error) if str(error) in ERROR_STATUS_BY_CODE else 'invalid_request'
+                    return result(ERROR_STATUS_BY_CODE[code], {'error': code})
             cookie = headers.get(b'cookie')
             assertion_header = headers.get(b'cf-access-jwt-assertion', b'')
             # Access can duplicate its service assertion in CF_Authorization. It is
@@ -391,6 +408,9 @@ def create_gateway(gateway=None):
             started = Event()
             def execute():
                 started.set()
+                if version == 'v6':
+                    return gateway.execute_with_hints(match[1], body, assertion, client, deadline,
+                                                      version=version, request_id=request_id, contract=v6_contract)
                 if version != 'v1':
                     return gateway.execute_with_hints(match[1], body, assertion, client, deadline,
                                                       version=version, request_id=request_id)

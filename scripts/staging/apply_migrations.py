@@ -12,7 +12,14 @@ owner, and the domino_public schema (024-026, 042-045, 047) to postgres; 027 and
 domino_public, and it is applied here before the V2 indexer is registered
 (docs/v2/V2_INDEXER_READ_API.md). 053 indexes domino_activity.events for the
 ledgers' per-chunk read; it is a domino_activity change like 020-023, so it runs
-as the catalogue owner, who owns the table (docs/HISTORICAL_CAPACITY.md).
+as the catalogue owner, who owns the table (docs/HISTORICAL_CAPACITY.md). 054,
+the V2 fee follower's tables in domino_v2 (docs/v2/V2_FEES.md), runs as 052
+does, as postgres, before the follower's first start. 055 gives the
+featured-pools tables (043, 045) a chain, for Base's and Arbitrum's shadow
+selections; postgres owns them, as it owns domino_public
+(docs/FEATURED_POOLS.md). 056 adds the activity follower's mint-scan
+checkpoint, two domino_activity tables, so it runs as the catalogue owner too
+(backend/README.md, "Core pool activity").
 
 Each migration is read from a verified release archive and applied in one
 transaction with ON_ERROR_STOP, in the order given, after its predecessors. A
@@ -52,6 +59,11 @@ HAND_APPLIED = {
     '047_provider_ceiling': POSTGRES,
     '052_v2_index': POSTGRES,
     '053_activity_chunk_index': ADMIN,
+    '054_v2_fees': POSTGRES,
+    '055_featured_chains': POSTGRES,
+    '056_position_mint_scan': ADMIN,
+    # The session's origin (4 Nov 2026, launch round P3, review M1): the session schema's, as 041.
+    '057_session_origin': POSTGRES,
 }
 
 

@@ -1,0 +1,418 @@
+{
+  "chainId": 8453,
+  "contractVersion": "1.2.0-rc.1",
+  "executionAvailable": false,
+  "follower": {
+    "indexedThrough": {
+      "hash": "0x2639b2dda1a145c9b0db70005922a7fbc790b807179133b30cfb969908610eed",
+      "number": 52500000,
+      "timestamp": 1790431204
+    },
+    "lagSeconds": 0,
+    "lastError": null,
+    "reason": null,
+    "status": "current",
+    "through": {
+      "hash": "0x2639b2dda1a145c9b0db70005922a7fbc790b807179133b30cfb969908610eed",
+      "number": 52500000,
+      "timestamp": 1790431204
+    }
+  },
+  "limitations": [
+    "positions_known_to_domino_only",
+    "raw_amounts_without_usd",
+    "state_as_of_last_read",
+    "no_execution_or_signing"
+  ],
+  "mode": "stored_v2_position_fees",
+  "positions": [
+    {
+      "dex": 4,
+      "events": [
+        {
+          "auto": false,
+          "block": {
+            "hash": "0x57cac95d04fccb468178a4b5101c6bd2ac4729275894349c1985ff60de2c8cfb",
+            "number": 52196808,
+            "timestamp": 1789824820
+          },
+          "fees": [
+            "0",
+            "0"
+          ],
+          "kind": "increase",
+          "liquidity": "4000000000000",
+          "liquidityDelta": "4000000000000",
+          "logIndex": 0,
+          "logIndexes": [
+            0
+          ],
+          "serviceFee": null,
+          "settled": [
+            "0",
+            "0"
+          ],
+          "tx": "0xb02928dc601d435bdf70d6525005a79f6340208739dbe79b44b47aac7f316471",
+          "why": null
+        },
+        {
+          "auto": false,
+          "block": {
+            "hash": "0xdbe6c97c3c7247262c48341935aa9d4e98b688b0ab5b74182bc08c19cf2eae21",
+            "number": 52206808,
+            "timestamp": 1789844820
+          },
+          "fees": [
+            "812000000000000",
+            "1930000"
+          ],
+          "kind": "collect",
+          "liquidity": "4000000000000",
+          "liquidityDelta": "0",
+          "logIndex": 0,
+          "logIndexes": [
+            0
+          ],
+          "serviceFee": null,
+          "settled": [
+            "812000000000000",
+            "1930000"
+          ],
+          "tx": "0x5bd81ee7038b51e1b732384e355fcf33043fe0cdc7c82601b3bbf269d8e64781",
+          "why": null
+        },
+        {
+          "auto": true,
+          "block": {
+            "hash": "0xf9562e7849b4e1041b97bd9a0e72387413a7531846f8a9602f4b6be9f112f1ca",
+            "number": 52212808,
+            "timestamp": 1789856820
+          },
+          "fees": [
+            "350000000000000",
+            "840000"
+          ],
+          "kind": "increase",
+          "liquidity": "4100000000000",
+          "liquidityDelta": "100000000000",
+          "logIndex": 5,
+          "logIndexes": [
+            3,
+            5
+          ],
+          "serviceFee": [
+            "14000000000000",
+            "33600"
+          ],
+          "settled": [
+            "1162000000000000",
+            "2770000"
+          ],
+          "tx": "0xb6c68e62946b9a9eb644aedd3dba58cf12d98c7d61ef698bb8236847cb78e658",
+          "why": null
+        }
+      ],
+      "exact": true,
+      "freshness": {
+        "ageSeconds": 30,
+        "status": "fresh"
+      },
+      "now": {
+        "collectable": [
+          "31000000000000",
+          "71000"
+        ],
+        "earned": [
+          "1193000000000000",
+          "2841000"
+        ],
+        "feeGrowthInsideLastX128": [
+          "90000000000000000000000000000000000000000000000",
+          "40"
+        ],
+        "feeGrowthInsideX128": [
+          "91343852333181432387730302044767688728495783936",
+          "50"
+        ],
+        "inRange": true,
+        "liquidity": "4100000000000",
+        "owner": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+        "pool": {
+          "currency0": "0x4200000000000000000000000000000000000006",
+          "currency1": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+          "dex": 4,
+          "fee": 500,
+          "hooks": "0x0000000000000000000000000000000000000000",
+          "tickSpacing": 10
+        },
+        "poolAddress": null,
+        "poolId": "0x90333bb05c258fe0dddb2840ef66f1a05165aa7dac6815d24e807cc6ebd943a0",
+        "principalAtSpot": [
+          "1250000000000000000",
+          "2970000000"
+        ],
+        "protocolFee": 0,
+        "settled": [
+          "1162000000000000",
+          "2770000"
+        ],
+        "snapshot": {
+          "hash": "0x2639b2dda1a145c9b0db70005922a7fbc790b807179133b30cfb969908610eed",
+          "number": 52500000,
+          "timestamp": 1790431204
+        },
+        "sqrtPriceX96": "3961408125713216879677197516800",
+        "tick": -196000,
+        "tickLower": -196200,
+        "tickUpper": -195600,
+        "tokensOwed": null,
+        "unsettled": [
+          "31000000000000",
+          "71000"
+        ]
+      },
+      "points": [
+        {
+          "block": 52388398,
+          "earned": [
+            "1100000000000000",
+            "2600000"
+          ],
+          "hour": 1790208000,
+          "kind": "day",
+          "settled": [
+            "812000000000000",
+            "1930000"
+          ],
+          "timestamp": 1790208000
+        },
+        {
+          "block": 52496398,
+          "earned": [
+            "1172000000000000",
+            "2790000"
+          ],
+          "hour": 1790424000,
+          "kind": "hour",
+          "settled": [
+            "1162000000000000",
+            "2770000"
+          ],
+          "timestamp": 1790424000
+        },
+        {
+          "block": 52498198,
+          "earned": [
+            "1181000000000000",
+            "2810000"
+          ],
+          "hour": 1790427600,
+          "kind": "hour",
+          "settled": [
+            "1162000000000000",
+            "2770000"
+          ],
+          "timestamp": 1790427600
+        }
+      ],
+      "positionManager": "0x7c5f5a4bbd8fd63184577525326123b519429bdc",
+      "since": {
+        "block": {
+          "hash": "0x57cac95d04fccb468178a4b5101c6bd2ac4729275894349c1985ff60de2c8cfb",
+          "number": 52196808,
+          "timestamp": 1789824820
+        },
+        "kind": "mint"
+      },
+      "status": "following",
+      "through": {
+        "hash": "0x2639b2dda1a145c9b0db70005922a7fbc790b807179133b30cfb969908610eed",
+        "number": 52500000,
+        "timestamp": 1790431204
+      },
+      "tokenId": "41",
+      "transfers": [
+        {
+          "block": {
+            "hash": "0x59f26b7fbd256dabe6560888268e5c0f0457c1b24cedf62b5f7b8bfd4e2e53b3",
+            "number": 52196809,
+            "timestamp": 1789824822
+          },
+          "fromAddress": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "logIndex": 1,
+          "toAddress": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+          "tx": "0x7e4b7f64b375dd5221d8f032fb0c46190cc8968206960989b0bc84cf8a0b888a"
+        },
+        {
+          "block": {
+            "hash": "0x027f0f4ed1a1953ae89e750293dba41267b256b7808ecfde8139b27e61dfb244",
+            "number": 52196810,
+            "timestamp": 1789824824
+          },
+          "fromAddress": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+          "logIndex": 1,
+          "toAddress": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "tx": "0x37bcdcbb3c3159ba5fe32cc08441814b09e13ed99d3f5d3f6735d81b3406d2f4"
+        },
+        {
+          "block": {
+            "hash": "0x6b79cb80204ed3f00bd5389159d2b8c993f65ca8158a87f4dd88a4badf08aea9",
+            "number": 52196811,
+            "timestamp": 1789824826
+          },
+          "fromAddress": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "logIndex": 1,
+          "toAddress": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+          "tx": "0xc2760a2f1f3071b67d6587d0cca5f7eaa0f97c28e24d1cb0763cd76e78499921"
+        },
+        {
+          "block": {
+            "hash": "0x60b1908f380ced0f84a991309fcd5fdaf86a8953691a2f0dcee8172b14d7533d",
+            "number": 52196812,
+            "timestamp": 1789824828
+          },
+          "fromAddress": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+          "logIndex": 1,
+          "toAddress": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "tx": "0xd2cd68189f54deb89d06e0effb845c1dbeea0d9118e397296a4b63a5e3c5cf13"
+        },
+        {
+          "block": {
+            "hash": "0x1ba53ed516b66bce2ee6dd7e80d0e242b48e75afeeea43817522ecca7e39e232",
+            "number": 52196813,
+            "timestamp": 1789824830
+          },
+          "fromAddress": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "logIndex": 1,
+          "toAddress": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+          "tx": "0x3c1c694c3c6106c24e705ada5c9241cb467b94551cc690407f01ea5e45a13400"
+        },
+        {
+          "block": {
+            "hash": "0x56ef676fd5d9805ea8074548c7add6adc4e3a2c590e2df64aa04c9edcd5076e4",
+            "number": 52196814,
+            "timestamp": 1789824832
+          },
+          "fromAddress": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+          "logIndex": 1,
+          "toAddress": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "tx": "0x53ffbde26c0111f1d210328a3216993236d32eaa5cf29893875cdafc0dc62532"
+        },
+        {
+          "block": {
+            "hash": "0xafcf5c36d304903e6d87520b7d7b9768a736d1c0122202a3419d10a41fd02711",
+            "number": 52196815,
+            "timestamp": 1789824834
+          },
+          "fromAddress": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "logIndex": 1,
+          "toAddress": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+          "tx": "0x6b39ba4a2fa3db4b6bfb6e39adf7593a3d0bfa33a20d4875af88878a95af89f3"
+        },
+        {
+          "block": {
+            "hash": "0x112a490a9543fd18aafd6173c15711b0ce99f35464adf99924d2bb94fe9b5084",
+            "number": 52196816,
+            "timestamp": 1789824836
+          },
+          "fromAddress": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+          "logIndex": 1,
+          "toAddress": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "tx": "0x45abbac017b9e0779cecea6c187f88862bc6a568faedf1f3971a61607c3d5165"
+        },
+        {
+          "block": {
+            "hash": "0xc8e5f4b72b92f76196ada805b3ec935702e11e600462d01624c3310a4190e25b",
+            "number": 52196817,
+            "timestamp": 1789824838
+          },
+          "fromAddress": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "logIndex": 1,
+          "toAddress": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+          "tx": "0xc7e85fe570733bf957f60f495d921cfcaaf265b2ac070f156d2bc96972fa1755"
+        },
+        {
+          "block": {
+            "hash": "0x3d569088c26a847fa65979f1d5780b2119808cf779ca4b14a72704d421bd519e",
+            "number": 52196818,
+            "timestamp": 1789824840
+          },
+          "fromAddress": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+          "logIndex": 1,
+          "toAddress": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "tx": "0xa9665efb66b80ab243c0a9476b5a7248417fbc5bcf529398bf73a79adf129da1"
+        },
+        {
+          "block": {
+            "hash": "0x2cf5fba52231eb77de4a5fa9a88008032469d62b9ce74a84c3436c7fde94ed9e",
+            "number": 52196819,
+            "timestamp": 1789824842
+          },
+          "fromAddress": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "logIndex": 1,
+          "toAddress": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+          "tx": "0xac7dcf2902696b0de0402738661722477be122a32c6dcd5736366a5a85e55def"
+        },
+        {
+          "block": {
+            "hash": "0x15644105a9b28b086ef112636a6121ed04d595545881ccd1efad35269344348d",
+            "number": 52196820,
+            "timestamp": 1789824844
+          },
+          "fromAddress": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+          "logIndex": 1,
+          "toAddress": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "tx": "0xd9ae461aca99eef6247cc0df1d72990398b79cd0c3e5cbe0db58ac7707456643"
+        },
+        {
+          "block": {
+            "hash": "0x25bf882628d5c4e90dd58fdf8c3004bb401cd8f0ee710bf4e147351b60d1c34e",
+            "number": 52196821,
+            "timestamp": 1789824846
+          },
+          "fromAddress": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "logIndex": 1,
+          "toAddress": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+          "tx": "0x792958df72c4c0926ca022b798ed3cc46720fc24cb66757213ae154422448532"
+        },
+        {
+          "block": {
+            "hash": "0xdad16cb5ee51f409327e9804cffc010e23a7a64825edadf7ad76d589d44f4859",
+            "number": 52196822,
+            "timestamp": 1789824848
+          },
+          "fromAddress": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+          "logIndex": 1,
+          "toAddress": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "tx": "0xb36c849815797ec810d802b49c7a924bda1e9c1e132c948d70d5045553596331"
+        },
+        {
+          "block": {
+            "hash": "0x932ab5f532836c32641fff8178e6746706050b14120da9f15e75cc6692b25d3b",
+            "number": 52196823,
+            "timestamp": 1789824850
+          },
+          "fromAddress": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "logIndex": 1,
+          "toAddress": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+          "tx": "0xbfbe9e472692cf65ab1acfaa33c62b1f4750f683f1c481aa6fcb248e006f4a38"
+        },
+        {
+          "block": {
+            "hash": "0x0c1b57906877cc4a4ac2d45e9d27a21d0a1328948553570d146d6840d19ca2f4",
+            "number": 52196824,
+            "timestamp": 1789824852
+          },
+          "fromAddress": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+          "logIndex": 1,
+          "toAddress": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "tx": "0xfe87aea790be1a26cfaaf4ad69fb047a2c314168964f40d9be945c9fc39c8dbf"
+        }
+      ],
+      "truncated": true,
+      "why": null
+    }
+  ],
+  "schemaVersion": 1,
+  "servedAt": 1790431234
+}

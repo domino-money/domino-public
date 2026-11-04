@@ -28,7 +28,8 @@ def main():
     import argparse
     from pathlib import Path
     import uvicorn
-    from bridge_identity import AccessVerifier
+    from bridge_identity import AccessVerifier, configured_preview_identity
+    from session_siwe import configured_preview_origins
     from catalogue import database_settings
     from onboarding_auth import OnboardingAuth
     from onboarding_service import OnboardingService
@@ -70,10 +71,14 @@ def main():
             route = SwapRoute(UniswapRoute(api_key), lambda: RouteRpc(primary, max_requests=16))
             service = OnboardingService(OnboardingAuth(store, checker), UniswapQuote(api_key),
                                         UniswapPosition(api_key), route=route, private_values=(api_key,))
+            # Review L1 (4 Nov 2026): the separate preview Workers' own Access identity, optional.
             verifier = AccessVerifier(os.environ.get('DOMINO_ONBOARDING_ACCESS_ISSUER'),
-                os.environ.get('DOMINO_ONBOARDING_ACCESS_AUDIENCE'), os.environ.get('DOMINO_ONBOARDING_ACCESS_SERVICE_ID'))
-            gateway = OnboardingGateway(service=service, verifier=verifier,
-                origin=os.environ.get('DOMINO_SESSION_ORIGIN'), enabled=True)
+                os.environ.get('DOMINO_ONBOARDING_ACCESS_AUDIENCE'), os.environ.get('DOMINO_ONBOARDING_ACCESS_SERVICE_ID'),
+                preview_service_id=configured_preview_identity(os.environ.get('DOMINO_ONBOARDING_ACCESS_PREVIEW_SERVICE_ID'),
+                    os.environ.get('DOMINO_ONBOARDING_ACCESS_SERVICE_ID'), 'DOMINO_ONBOARDING_ACCESS_PREVIEW_SERVICE_ID'))
+            gateway = OnboardingGateway(service=service, verifier=verifier, origin=os.environ.get('DOMINO_SESSION_ORIGIN'),
+                preview_origins=configured_preview_origins(os.environ.get('DOMINO_SESSION_PREVIEW_ORIGINS'),
+                    os.environ.get('DOMINO_SESSION_ORIGIN'), 'DOMINO_SESSION_PREVIEW_ORIGINS'), enabled=True)
     except (ValueError, DataError, OSError):
         if lock is not None:
             os.close(lock)

@@ -27,8 +27,9 @@ from discovery import DataError  # noqa: E402
 from read_api import ReadGate, create_app  # noqa: E402
 from read_gateway import Gateway, create_gateway  # noqa: E402
 from v2_chains import default_registry  # noqa: E402
-from v2_read_contract import (BALANCE_CHAIN_IDS, CHAIN_IDS, CONTRACT_VERSION, REQUEST_MODELS, ROUTES,  # noqa: E402
-                              STORED_ROUTES, V2_ERRORS, cursor_key, error_of, validate_v6_request_response,
+from v2_read_contract import (BALANCE_CHAIN_IDS, CHAIN_IDS, CONTRACT_VERSION, CONTRACT_VERSIONS,  # noqa: E402
+                              MAX_FEE_POSITIONS, NEXT_ROUTES, NEXT_VERSION, REQUEST_MODELS, ROUTES, STORED_ROUTES,
+                              V2_ERRORS, answered_version, cursor_key, error_of, validate_v6_request_response,
                               validate_v6_response)
 import read_v6_contract_fixtures as fixtures  # noqa: E402
 
@@ -60,6 +61,13 @@ class Reader:
     def activity(self, wallet, limit, cursor):
         self.calls.append(('activity', wallet, limit, cursor))
         return self._answer('activity-page' if limit == 3 else 'activity', wallet)
+
+    def position_fees(self, chain_id, positions):
+        self.calls.append(('position-fees', chain_id, positions))
+        if self.fail:
+            raise DataError(self.fail)
+        body = copy.deepcopy(fixtures.next_valid()['position-fees'])
+        return self.change(body) if self.change else body
 
 
 def reader_client(v2_reader, chain_reads=None):
@@ -469,6 +477,177 @@ class RouteTests(unittest.TestCase):
             with self.subTest(route=route, version=version), self.assertRaises(DataError):
                 http.request(route, {}, deadline=time.monotonic() + 10, version=version)
 
+
+class WindowTests(unittest.TestCase):
+    """read-v6 1.2.0-rc.1's window: each answer in the version its request names, position-fees in 1.2.0-rc.1
+    alone, through the reader and the gateway (launch round P3, 4 Nov 2026)."""
+    FEES = fixtures.NEXT_REQUESTS['position-fees']
+
+    def test_a_request_is_answered_in_the_version_it_names_else_its_route_s_first(self):
+        self.assertEqual(CONTRACT_VERSIONS, ('1.1.0-rc.1', '1.2.0-rc.1'))
+        self.assertEqual((NEXT_ROUTES, set(NEXT_ROUTES) & set(ROUTES)), (('position-fees',), set()))
+        self.assertIn('position-fees', STORED_ROUTES)
+        self.assertEqual(answered_version('portfolio', None), CONTRACT_VERSION)
+        self.assertEqual(answered_version('portfolio', NEXT_VERSION), NEXT_VERSION)
+        self.assertEqual(answered_version('position-fees', None), NEXT_VERSION)
+        for route, named, code in (('portfolio', '1.0.0-rc.1', 'invalid_request'),
+                                   ('position-fees', CONTRACT_VERSION, 'route_not_available'),
+                                   ('position-fees', '1.3.0-rc.1', 'invalid_request')):
+            with self.subTest(route=route, named=named), self.assertRaisesRegex(ValueError, code):
+                answered_version(route, named)
+
+    def test_the_reader_answers_each_version_asked(self):
+        reader = Reader()
+        client = reader_client(reader)
+        for named, answered in ((None, CONTRACT_VERSION), (CONTRACT_VERSION, CONTRACT_VERSION),
+                                (NEXT_VERSION, NEXT_VERSION)):
+            headers = {} if named is None else {'X-Domino-Read-Contract': named}
+            response = client.post('/v6/read/portfolio', json={'wallet': WALLET}, headers=headers)
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual((response.headers['x-domino-read-contract'], response.json()['contractVersion']),
+                             (answered, answered))
+            self.assertEqual({**response.json(), 'contractVersion': CONTRACT_VERSION}, fixtures.valid()['portfolio'])
+        refused = client.post('/v6/read/portfolio', json={'wallet': WALLET},
+                              headers={'X-Domino-Read-Contract': '1.0.0-rc.1'})
+        self.assertEqual((refused.status_code, refused.json()), (422, {'error': 'invalid_request'}))
+        twice = client.post('/v6/read/portfolio', json={'wallet': WALLET},
+                            headers=[('X-Domino-Read-Contract', CONTRACT_VERSION), ('X-Domino-Read-Contract', NEXT_VERSION)])
+        self.assertEqual(twice.status_code, 422)
+
+    def test_the_reader_serves_position_fees_in_1_2_0_rc_1_alone(self):
+        reader = Reader()
+        client = reader_client(reader)
+        response = client.post('/v6/read/position-fees', json=self.FEES)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual((response.headers['x-domino-read-contract'], response.json()),
+                         (NEXT_VERSION, fixtures.next_valid()['position-fees']))
+        self.assertEqual(reader.calls[-1], ('position-fees', 8453, [(4, 41), (3, 31)]))
+        old = client.post('/v6/read/position-fees', json=self.FEES, headers={'X-Domino-Read-Contract': CONTRACT_VERSION})
+        self.assertEqual((old.status_code, old.json(), old.headers['x-domino-read-contract']),
+                         (404, {'error': 'route_not_available'}, CONTRACT_VERSION))
+        self.assertEqual(len(reader.calls), 1)
+        for body in ({**self.FEES, 'positions': []}, {**self.FEES, 'positions': self.FEES['positions'] * 2},
+                     {**self.FEES, 'positions': [{'dex': 4, 'tokenId': str(i + 1)} for i in range(MAX_FEE_POSITIONS + 1)]},
+                     {**self.FEES, 'chainId': 1}):
+            self.assertEqual(client.post('/v6/read/position-fees', json=body).status_code, 422)
+        # An answer about other positions, or in their wrong order, never leaves the reader.
+        swapped = reader_client(Reader(change=lambda b: {**b, 'positions': b['positions'][::-1]}))
+        self.assertEqual(swapped.post('/v6/read/position-fees', json=self.FEES).status_code, 502)
+        down = reader_client(Reader(fail='catalogue_database_unavailable'))
+        self.assertEqual(down.post('/v6/read/position-fees', json=self.FEES).status_code, 503)
+
+    def test_the_gateway_relays_the_version_asked_and_holds_the_answer_to_it(self):
+        reader = reader_client(Reader())
+        client = gateway_client(reader, enabled_v6=True, enabled_v6_reads=('portfolio', 'position-fees'))
+        for named, answered in ((None, CONTRACT_VERSION), (CONTRACT_VERSION, CONTRACT_VERSION),
+                                (NEXT_VERSION, NEXT_VERSION)):
+            headers = HEADER if named is None else {**HEADER, 'X-Domino-Read-Contract': named}
+            response = client.post('/internal/read/v6/portfolio', json={'wallet': WALLET}, headers=headers)
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual((response.headers['x-domino-read-contract'], response.json()['contractVersion']),
+                             (answered, answered))
+        fees = client.post('/internal/read/v6/position-fees', json=self.FEES,
+                           headers={**HEADER, 'X-Domino-Read-Contract': NEXT_VERSION})
+        self.assertEqual((fees.status_code, fees.headers['x-domino-read-contract']), (200, NEXT_VERSION), fees.text)
+        self.assertEqual(fees.json(), fixtures.next_valid()['position-fees'])
+        # Today's read Worker names 1.1.0-rc.1: position-fees is not one of its routes.
+        old = client.post('/internal/read/v6/position-fees', json=self.FEES,
+                          headers={**HEADER, 'X-Domino-Read-Contract': CONTRACT_VERSION})
+        self.assertEqual((old.status_code, old.json()), (404, {'error': 'route_not_available'}))
+        self.assertEqual(client.post('/internal/read/v6/portfolio', json={'wallet': WALLET},
+                                     headers={**HEADER, 'X-Domino-Read-Contract': 'one'}).status_code, 422)
+
+    def test_the_gateway_refuses_a_reader_that_answers_another_version(self):
+        # A reader from before the window never hears the version asked: it answers 1.1.0-rc.1.
+        upstream = LocalReaderHTTP(client=reader_client(Reader()))
+        upstream._request_headers = staticmethod(lambda method, budget, request_id=None, contract=None:
+                                                 LocalReaderHTTP._request_headers(method, budget, request_id))
+        client = TestClient(create_gateway(Gateway(verifier=Mock(), upstream=upstream, gate=ReadGate(interval=0),
+                                                   enabled_v6=True, enabled_v6_reads=('portfolio',))),
+                            base_url='http://127.0.0.1:8878', client=('127.0.0.1', 40000))
+        response = client.post('/internal/read/v6/portfolio', json={'wallet': WALLET},
+                               headers={**HEADER, 'X-Domino-Read-Contract': NEXT_VERSION})
+        self.assertEqual((response.status_code, response.json()), (502, {'error': 'upstream_contract_mismatch'}))
+        same = client.post('/internal/read/v6/portfolio', json={'wallet': WALLET},
+                           headers={**HEADER, 'X-Domino-Read-Contract': CONTRACT_VERSION})
+        self.assertEqual(same.status_code, 200, same.text)
+
+    def test_the_gateway_refuses_an_answer_whose_body_is_another_version_than_its_header(self):
+        class Upstream:
+            """A reader whose header names the version asked and whose body does not."""
+            def request(self, route, body=None, *, deadline, request_id=None, version='v1', contract=None):
+                if route == 'health':
+                    return 200, {'status': 'ok', 'mode': 'local_read_only', 'readBudgetSeconds': 15, 'busy': False,
+                                 'storedBusy': False, 'generation': 'a' * 32}, {}
+                answer = {**fixtures.valid()['portfolio'], 'contractVersion': CONTRACT_VERSION}
+                return 200, answer, {'generation': 'a' * 32, 'contract': contract}
+        client = TestClient(create_gateway(Gateway(verifier=Mock(), upstream=Upstream(), gate=ReadGate(interval=0),
+                                                   enabled_v6=True, enabled_v6_reads=('portfolio',))),
+                            base_url='http://127.0.0.1:8878', client=('127.0.0.1', 40000))
+        response = client.post('/internal/read/v6/portfolio', json={'wallet': WALLET},
+                               headers={**HEADER, 'X-Domino-Read-Contract': NEXT_VERSION})
+        self.assertEqual((response.status_code, response.json()), (502, {'error': 'upstream_contract_mismatch'}))
+        same = client.post('/internal/read/v6/portfolio', json={'wallet': WALLET},
+                           headers={**HEADER, 'X-Domino-Read-Contract': CONTRACT_VERSION})
+        self.assertEqual(same.status_code, 200, same.text)
+
+    def test_a_position_is_a_positive_token_id(self):
+        client = reader_client(Reader())
+        for token in ('0', '07', '-1', 7):
+            body = {**self.FEES, 'positions': [{'dex': 4, 'tokenId': token}]}
+            self.assertEqual(client.post('/v6/read/position-fees', json=body).status_code, 422, token)
+
+    def test_an_answer_splits_its_events_and_points_between_its_positions(self):
+        many = [fixtures.fee_settlement(fixtures.FEE_FLOOR + 20_000 + i, 'collect', 0, 1, (1, 0), (i + 1, 0),
+                                        label=f'many{i}') for i in range(600)]
+        found = {(4, token): fixtures.fee_found(fixtures.fee_row(fixtures.FEE_V4_POOL), many, [], [], None)
+                 for token in (41, 42)}
+        body = fixtures.position_fees(found, [(4, 41), (4, 42)])
+        self.assertEqual([len(p['events']) for p in body['positions']], [500, 500])
+        self.assertTrue(all(p['truncated'] for p in body['positions']))
+
+    def test_position_fees_stays_closed_at_the_gateway_until_named(self):
+        client = gateway_client(reader_client(Reader()), enabled_v6=True, enabled_v6_reads=ROUTES)
+        response = client.post('/internal/read/v6/position-fees', json=self.FEES,
+                               headers={**HEADER, 'X-Domino-Read-Contract': NEXT_VERSION})
+        self.assertEqual((response.status_code, response.json()), (404, {'error': 'route_not_available'}))
+
+    def test_the_bridge_client_names_the_version_only_on_v6(self):
+        http = LocalReaderHTTP(client=reader_client(Reader()))
+        status, data, metadata = http.request('position-fees', self.FEES, deadline=time.monotonic() + 10, version='v6',
+                                              contract=NEXT_VERSION)
+        self.assertEqual((status, metadata['contract'], data['contractVersion']), (200, NEXT_VERSION, NEXT_VERSION))
+        for route, version, contract in (('portfolio', 'v5', NEXT_VERSION), ('portfolio', 'v6', '1.0.0-rc.1')):
+            with self.subTest(contract=contract), self.assertRaises(DataError):
+                http.request(route, {'wallet': WALLET}, deadline=time.monotonic() + 10, version=version,
+                             contract=contract)
+
+    def test_the_largest_answer_fits_the_read_worker(self):
+        from read_gateway import MAX_RESPONSE
+        from v2_read_service import FEE_ANSWER_BYTES
+        big = 2**256 - 1
+        settlement = fixtures.fee_settlement(fixtures.FEE_FLOOR + 30_000, 'decrease', -(2**255 - 1), big, (big, big),
+                                             (big, big), indexes=(1, 2, 3, 4), auto=(big, big))
+        point = fixtures.fee_point(fixtures.FEE_FLOOR + 30_000, 1_790_380_800, (big, big), (big, big))
+        found, keys = {}, []
+        for index in range(MAX_FEE_POSITIONS):
+            key = (4, 10**30 + index)
+            events = [{**settlement, 'block_number': settlement['block_number'] + i} for i in range(200)]
+            points = [{**point, 'block_number': point['block_number'] + i, 'hour': point['hour'] + 3600 * i,
+                       'kind': 'day' if (point['hour'] + 3600 * i) % 86400 == 0 else 'hour'} for i in range(1, 300)]
+            found[key] = fixtures.fee_found(fixtures.fee_row(fixtures.FEE_V4_POOL), events,
+                                            [fixtures.fee_transfer(fixtures.FEE_FLOOR + 20_000 + i, fixtures.WALLET,
+                                                                   fixtures.VAULT, i) for i in range(16)], points,
+                                            fixtures.fee_v4_history()[3])
+            keys.append(key)
+        body = fixtures.position_fees(found, keys)
+        size = len(json.dumps(body, separators=(',', ':')).encode())
+        self.assertLessEqual(size, FEE_ANSWER_BYTES)
+        self.assertLess(FEE_ANSWER_BYTES, MAX_RESPONSE)
+        self.assertTrue(all(p['truncated'] for p in body['positions']))
+        # The newest stay: a chart loses its oldest points, never its last.
+        self.assertEqual(body['positions'][0]['points'][-1]['block'], point['block_number'] + 299)
+        self.assertEqual(body['positions'][0]['events'][-1]['block']['number'], settlement['block_number'] + 199)
 
 if __name__ == '__main__':
     unittest.main()

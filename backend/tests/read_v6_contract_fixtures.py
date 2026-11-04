@@ -16,8 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from v2_activity import Context, derive_transaction  # noqa: E402
 from v2_events import catalog, decode_log, event_keys, json_args  # noqa: E402
 from v2_index_fixtures import block_hash, encode_log, tx_hash  # noqa: E402
-from v2_read_contract import CONTRACT_VERSION, ROUTES, validate_v6_response  # noqa: E402
-from v2_read_service import build_activity, build_portfolio  # noqa: E402
+from v2_read_contract import CONTRACT_VERSION, NEXT_VERSION, ROUTES, ALL_ROUTES, validate_v6_response  # noqa: E402
+from v2_read_service import build_activity, build_portfolio, build_position_fees, fee_follower  # noqa: E402
 
 NOW = 1_790_431_234
 WALLET = '0x' + 'b1' * 20
@@ -631,7 +631,7 @@ def refee(item, **fields):
 
 def route_of(name):
     """The route a fixture answers: the longest route its file name starts with, then `.` or `-`."""
-    return max((route for route in ROUTES if name == route or name[len(route):len(route) + 1] in ('.', '-')
+    return max((route for route in ALL_ROUTES if name == route or name[len(route):len(route) + 1] in ('.', '-')
                 and name.startswith(route)), key=len)
 
 
@@ -1009,6 +1009,273 @@ def invalid():
     }
 
 
+# ------------------------------------------------- position-fees (1.2.0-rc.1)
+FEE_CHAIN = 8453
+FEE_WETH, FEE_USDC = '0x4200000000000000000000000000000000000006', '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
+FEE_HEAD = (52_500_000, block_hash(52_500_000), NOW - 30)
+FEE_FLOOR = 52_176_808
+FEE_V4_POOL = {'dex': 4, 'currency0': FEE_WETH, 'currency1': FEE_USDC, 'fee': 500, 'tickSpacing': 10, 'hooks': ZERO}
+FEE_V3_POOL = {'dex': 3, 'currency0': FEE_WETH, 'currency1': FEE_USDC, 'fee': 3000, 'tickSpacing': 60, 'hooks': ZERO}
+
+
+def _fee_pool_key(pool):
+    from v2_chains import default_registry
+    from v2_uniswap import PoolRef, v3_pool_address
+    ref = PoolRef(pool['dex'], pool['currency0'], pool['currency1'], pool['fee'], pool['tickSpacing'], pool['hooks'])
+    return ref.pool_id if pool['dex'] == 4 else v3_pool_address(default_registry().chain(FEE_CHAIN), ref.currency0,
+                                                                   ref.currency1, ref.fee)
+
+
+def fee_cursor(*, caught_up=True, block=FEE_HEAD, error=None):
+    number, digest, timestamp = block
+    return {'chain_id': FEE_CHAIN, 'floor_block': FEE_FLOOR, 'block_number': number, 'block_hash': digest,
+            'block_timestamp': timestamp, 'caught_up': caught_up, 'last_error': error,
+            'last_error_at': None if error is None else NOW - 60, 'updated_at': NOW - 25}
+
+
+def fee_latest(block=FEE_HEAD):
+    number, digest, timestamp = block
+    return {'end_block': number, 'end_hash': digest, 'end_timestamp': timestamp}
+
+
+def fee_settlement(number, kind, delta, liquidity, fees, settled, *, indexes=(0,), auto=None, why=None, label='s'):
+    return {'block_number': number, 'log_index': indexes[-1], 'block_hash': block_hash(number),
+            'block_timestamp': FEE_HEAD[2] - (FEE_HEAD[0] - number) * 2, 'tx_hash': tx_hash(f'{label}:{number}'),
+            'kind': kind, 'log_indexes': list(indexes), 'liquidity_delta': delta, 'liquidity': liquidity,
+            'fees0': None if fees is None else fees[0], 'fees1': None if fees is None else fees[1],
+            'settled0': None if settled is None else settled[0], 'settled1': None if settled is None else settled[1],
+            'why': why, 'auto': auto is not None, 'service_fee0': None if auto is None else auto[0],
+            'service_fee1': None if auto is None else auto[1]}
+
+
+def fee_transfer(number, sender, recipient, index=1):
+    return {'block_number': number, 'log_index': index, 'block_hash': block_hash(number),
+            'block_timestamp': FEE_HEAD[2] - (FEE_HEAD[0] - number) * 2, 'tx_hash': tx_hash(f't:{number}'),
+            'from_address': sender, 'to_address': recipient}
+
+
+def fee_point(number, hour, earned, settled):
+    return {'block_number': number, 'block_timestamp': FEE_HEAD[2] - (FEE_HEAD[0] - number) * 2, 'hour': hour,
+            'kind': 'day' if hour % 86400 == 0 else 'hour', 'earned0': None if earned is None else earned[0],
+            'earned1': None if earned is None else earned[1], 'settled0': None if settled is None else settled[0],
+            'settled1': None if settled is None else settled[1]}
+
+
+def fee_now(pool, settled, unsettled, *, liquidity='4100000000000', owed=None, block=FEE_HEAD):
+    number, digest, timestamp = block
+    earned = None if settled is None else [str(int(a) + int(b)) for a, b in zip(settled, unsettled)]
+    return {'block_number': number, 'block_hash': digest, 'block_timestamp': timestamp, 'state': {
+        'owner': VAULT, 'liquidity': liquidity, 'sqrtPriceX96': '3961408125713216879677197516800', 'tick': -196_000,
+        'protocolFee': 0, 'feeGrowthInsideX128': ['91343852333181432387730302044767688728495783936', '50'],
+        'feeGrowthInsideLastX128': ['90000000000000000000000000000000000000000000000', '40'],
+        'tokensOwed': None if pool['dex'] == 4 else (owed or ['0', '0']),
+        'collectable': [str(int(unsettled[0]) + int((owed or ['0', '0'])[0])),
+                        str(int(unsettled[1]) + int((owed or ['0', '0'])[1]))],
+        'unsettled': unsettled, 'earned': earned, 'settled': None if settled is None else list(settled),
+        'principalAtSpot': ['1250000000000000000', '2970000000']}}
+
+
+def fee_row(pool, *, status='following', since=('mint', FEE_FLOOR + 20_000), through=FEE_HEAD, burned=None):
+    number, digest, timestamp = through
+    return {'chain_id': FEE_CHAIN, 'dex': pool['dex'], 'status': status, 'pool': dict(pool),
+            'pool_key': _fee_pool_key(pool), 'tick_lower': -196_200, 'tick_upper': -195_600,
+            'since_kind': None if since is None else since[0], 'since_block': None if since is None else since[1],
+            'since_hash': None if since is None else block_hash(since[1]),
+            'since_timestamp': None if since is None else FEE_HEAD[2] - (FEE_HEAD[0] - since[1]) * 2,
+            'through_block': number, 'through_hash': digest, 'through_timestamp': timestamp, 'burned_block': burned}
+
+
+def fee_found(row, events=(), transfers=(), points=(), now=None, why=None, known=True):
+    if row is None:
+        return {'row': None, 'known': known}
+    return {'row': row, 'known': True, 'events': list(events), 'transfers': list(transfers), 'points': list(points),
+            'why': why, 'now': now}
+
+
+def fee_v4_history():
+    """A v4 position Domino's S1 minted, then put in a vault: a collect by hand, an automatic compound (a collect and
+    an increase in one transaction), and its points."""
+    mint, collect, compound = FEE_FLOOR + 20_000, FEE_FLOOR + 30_000, FEE_FLOOR + 36_000
+    events = [fee_settlement(mint, 'increase', 4_000_000_000_000, 4_000_000_000_000, (0, 0), (0, 0), label='mint'),
+              fee_settlement(collect, 'collect', 0, 4_000_000_000_000, (812_000_000_000_000, 1_930_000),
+                             (812_000_000_000_000, 1_930_000), label='collect'),
+              fee_settlement(compound, 'increase', 100_000_000_000, 4_100_000_000_000,
+                             (350_000_000_000_000, 840_000), (1_162_000_000_000_000, 2_770_000), indexes=(3, 5),
+                             auto=(14_000_000_000_000, 33_600), label='compound')]
+    transfers = [fee_transfer(mint, ZERO, WALLET), fee_transfer(mint + 40, WALLET, VAULT)]
+    day = (FEE_HEAD[2] - 2 * 86400) // 86400 * 86400
+    points = [fee_point(FEE_HEAD[0] - (FEE_HEAD[2] - day) // 2, day, (1_100_000_000_000_000, 2_600_000),
+                        (812_000_000_000_000, 1_930_000))]
+    for offset in (2, 1):
+        hour = (FEE_HEAD[2] - offset * 3600) // 3600 * 3600
+        points.append(fee_point(FEE_HEAD[0] - (FEE_HEAD[2] - hour) // 2, hour,
+                                (1_190_000_000_000_000 - offset * 9_000_000_000_000, 2_830_000 - offset * 20_000),
+                                (1_162_000_000_000_000, 2_770_000)))
+    now = fee_now(FEE_V4_POOL, ['1162000000000000000', '2770000'], ['31000000000000', '71000'])
+    now['state']['settled'] = [str(v) for v in (1_162_000_000_000_000, 2_770_000)]
+    now['state']['earned'] = [str(1_162_000_000_000_000 + 31_000_000_000_000), str(2_770_000 + 71_000)]
+    return events, transfers, points, now
+
+
+def fee_v3_history():
+    """A v3 root minted before Domino's first block: its history starts there, without what it owed then."""
+    collect = FEE_FLOOR + 25_000
+    events = [fee_settlement(collect, 'collect', 0, 9_000_000, (5_000_000_000, 12), (5_000_000_000, 12), label='v3')]
+    transfers = [fee_transfer(FEE_FLOOR + 1_000, WALLET, VAULT)]
+    now = fee_now(FEE_V3_POOL, ['5000000000', '12'], ['700000000', '3'], liquidity='9000000', owed=['5', '0'])
+    return events, transfers, [], now
+
+
+def position_fees(found, keys, *, cursor=None, latest='default'):
+    cursor = fee_cursor() if cursor is None else cursor
+    latest = fee_latest() if latest == 'default' else latest
+    follower = fee_follower(cursor if cursor != 'none' else None, latest)
+
+    def read(dex, token, *, events, points, transfers):
+        entry = copy.deepcopy(found[(dex, token)])
+        if entry['row'] is None:
+            return entry
+        cut = len(entry['events']) > events or len(entry['points']) > points or len(entry['transfers']) > transfers
+        entry.update(events=entry['events'][-events:], points=entry['points'][-points:] if points else [],
+                     transfers=entry['transfers'][-transfers:], truncated=cut)
+        return entry
+    return build_position_fees(FEE_CHAIN, keys, NOW, follower=follower, read=read)
+
+
+def position_fees_valid():
+    v4_events, v4_transfers, v4_points, v4_now = fee_v4_history()
+    v3_events, v3_transfers, _, v3_now = fee_v3_history()
+    following = {(4, 41): fee_found(fee_row(FEE_V4_POOL), v4_events, v4_transfers, v4_points, v4_now),
+                 (3, 31): fee_found(fee_row(FEE_V3_POOL, since=('floor', FEE_FLOOR)), v3_events, v3_transfers, [],
+                                    v3_now)}
+    behind = (FEE_HEAD[0] - 9_000, block_hash(FEE_HEAD[0] - 9_000), FEE_HEAD[2] - 18_000)
+    reading = {(4, 41): fee_found(fee_row(FEE_V4_POOL, through=behind), v4_events[:2], v4_transfers, v4_points[:1]),
+               (3, 77): fee_found(None)}
+    same_block = copy.deepcopy(v4_events)
+    same_block[2].update(fees0=None, fees1=None, settled0=None, settled1=None, why='same_block')
+    inexact_now = copy.deepcopy(v4_now)
+    inexact_now['state'].update(earned=None, settled=None)
+    inexact_points = [dict(p, earned0=None, earned1=None, settled0=None, settled1=None) for p in v4_points]
+    burn = FEE_FLOOR + 37_000
+    burned_events = v4_events + [fee_settlement(burn, 'decrease', -4_100_000_000_000, 0, (2_000_000_000_000, 5_000),
+                                                (1_164_000_000_000_000, 2_775_000), label='exit')]
+    # An NFT that changed hands 17 times: the answer keeps its newest 16 transfers and says it cut one.
+    passed = [fee_transfer(FEE_FLOOR + 20_000, ZERO, WALLET)] + [
+        fee_transfer(FEE_FLOOR + 20_001 + i, *((WALLET, VAULT) if i % 2 == 0 else (VAULT, WALLET))) for i in range(16)]
+    return {
+        'position-fees': position_fees(following, [(4, 41), (3, 31)]),
+        # The follower started an hour ago and is still reading back; a position it has not joined yet.
+        'position-fees-reading': position_fees(reading, [(4, 41), (3, 77)], cursor=fee_cursor(
+            caught_up=False, block=behind)),
+        'position-fees-inexact': position_fees({(4, 41): fee_found(fee_row(FEE_V4_POOL), same_block, v4_transfers,
+                                                                    inexact_points, inexact_now, why='same_block')},
+                                               [(4, 41)]),
+        'position-fees-burned': position_fees({(4, 41): fee_found(
+            fee_row(FEE_V4_POOL, status='burned', burned=burn), burned_events,
+            v4_transfers + [fee_transfer(burn, VAULT, ZERO, index=7)], v4_points)}, [(4, 41)]),
+        # Robinhood has no fee follower: nothing is followed there.
+        'position-fees-not-followed': position_fees({(4, 41): fee_found(None, known=False)}, [(4, 41)],
+                                                    cursor='none', latest=None),
+        'position-fees-truncated': position_fees({(4, 41): fee_found(fee_row(FEE_V4_POOL), v4_events, passed,
+                                                                     v4_points, v4_now)}, [(4, 41)]),
+    }
+
+
+def position_fees_invalid():
+    """The base position-fees answer with one defect each, named by the file."""
+    base = position_fees_valid()['position-fees']
+
+    def defect(change, name='position-fees'):
+        body = copy.deepcopy(position_fees_valid()[name] if name != 'position-fees' else base)
+        change(body)
+        return 'position-fees', body
+    v4 = lambda b: b['positions'][0]  # noqa: E731
+    v3 = lambda b: b['positions'][1]  # noqa: E731
+    now = lambda b: b['positions'][0]['now']  # noqa: E731
+    event = lambda b, i=1: b['positions'][0]['events'][i]  # noqa: E731
+    point = lambda b, i=1: b['positions'][0]['points'][i]  # noqa: E731
+
+    def crowded(b):
+        b['positions'].extend(copy.deepcopy(v3(b)) | {'tokenId': str(32 + i)} for i in range(6))
+        first, template = v4(b), event(b)
+        first['events'] = [first['events'][0]] + [
+            copy.deepcopy(template) | {'block': template['block'] | {'number': template['block']['number'] + i},
+                                       'logIndex': 0, 'logIndexes': [0]} for i in range(125)] + [first['events'][2]]
+    return {
+        'position-fees.previous-version': defect(lambda b: b.update(contractVersion=CONTRACT_VERSION)),
+        'position-fees.extra-key': defect(lambda b: b.update(usd='1')),
+        'position-fees.unknown-limitation': defect(lambda b: b['limitations'].append('audited')),
+        'position-fees.duplicate-position': defect(lambda b: b['positions'].append(copy.deepcopy(v4(b)))),
+        'position-fees.follower-current-with-a-reason': defect(lambda b: b['follower'].update(reason='behind_index')),
+        'position-fees.follower-ahead-of-the-index': defect(lambda b: b['follower']['through'].update(
+            number=FEE_HEAD[0] + 1)),
+        'position-fees.follower-lag-without-the-index': defect(lambda b: b['follower'].update(indexedThrough=None)),
+        'position-fees.position-beyond-the-follower': defect(lambda b: (v4(b)['through'].update(number=FEE_HEAD[0] + 1),
+                                                                        now(b)['snapshot'].update(number=FEE_HEAD[0] + 1))),
+        'position-fees.stale-freshness-called-fresh': defect(lambda b: v4(b)['freshness'].update(ageSeconds=500)),
+        'position-fees.following-without-now': defect(lambda b: v4(b).update(now=None)),
+        'position-fees.now-of-another-block': defect(lambda b: now(b)['snapshot'].update(number=FEE_HEAD[0] - 1)),
+        'position-fees.v4-now-by-address': defect(lambda b: now(b).update(poolId=None, poolAddress=FEE_WETH)),
+        'position-fees.v3-now-without-tokens-owed': defect(lambda b: v3(b)['now'].update(tokensOwed=None)),
+        'position-fees.earned-not-settled-plus-unsettled': defect(lambda b: now(b)['earned'].__setitem__(0, '1')),
+        'position-fees.now-out-of-range-in-range': defect(lambda b: now(b).update(tick=-195_600)),
+        'position-fees.settlement-unknown-without-a-reason': defect(lambda b: event(b).update(fees=None)),
+        'position-fees.settlement-reason-with-fees': defect(lambda b: event(b).update(why='liquidity')),
+        'position-fees.settled-without-fees': defect(lambda b: event(b).update(fees=None, why='liquidity')),
+        'position-fees.auto-without-a-service-fee': defect(lambda b: event(b).update(auto=True)),
+        'position-fees.collect-that-moved-liquidity': defect(lambda b: event(b).update(liquidityDelta='5')),
+        'position-fees.log-indexes-not-ending-at-the-log': defect(lambda b: event(b, 2).update(logIndexes=[5, 3])),
+        'position-fees.settlements-out-of-order': defect(lambda b: v4(b)['events'].reverse()),
+        'position-fees.exact-with-an-unknown-settlement': defect(lambda b: event(b).update(
+            fees=None, settled=None, why='same_block')),
+        'position-fees.inexact-without-a-reason': defect(lambda b: v4(b).update(why=None, exact=False),
+                                                         'position-fees-inexact'),
+        'position-fees.floor-history-without-before-floor': defect(lambda b: v3(b).update(why=None)),
+        'position-fees.before-floor-from-a-mint': defect(lambda b: v4(b).update(why='before_floor')),
+        'position-fees.reading-with-now': defect(lambda b: b['positions'][0].update(
+            now=copy.deepcopy(base['positions'][0]['now'])), 'position-fees-reading'),
+        'position-fees.reading-exact': defect(lambda b: b['positions'][0].update(exact=True), 'position-fees-reading'),
+        'position-fees.not-followed-with-events': defect(lambda b: b['positions'][0]['events'].append(
+            copy.deepcopy(base['positions'][0]['events'][0])), 'position-fees-not-followed'),
+        'position-fees.followed-without-a-follower': defect(lambda b: b['positions'][0].update(
+            status='reading', why='reading'), 'position-fees-not-followed'),
+        'position-fees.burned-without-its-burn': defect(lambda b: b['positions'][0]['transfers'].pop(),
+                                                        'position-fees-burned'),
+        'position-fees.point-off-the-hour': defect(lambda b: point(b).update(hour=point(b)['hour'] + 60)),
+        'position-fees.hour-called-day': defect(lambda b: point(b).update(kind='day')),
+        'position-fees.earned-below-settled': defect(lambda b: point(b).update(earned=['1', '1'])),
+        'position-fees.transfer-to-itself': defect(lambda b: v4(b)['transfers'][1].update(toAddress=WALLET)),
+        # Eight positions share 1,000 events, 125 each: one carries 127.
+        'position-fees.more-events-than-a-share': defect(crowded),
+        'position-fees.follower-unavailable-with-a-cursor': defect(lambda b: b['follower'].update(
+            through=copy.deepcopy(base['follower']['through'])), 'position-fees-not-followed'),
+        'position-fees.point-earned-without-settled': defect(lambda b: point(b).update(earned=None)),
+        'position-fees.now-settled-without-earned': defect(lambda b: now(b).update(earned=None)),
+        'position-fees.through-without-freshness': defect(lambda b: v4(b).update(freshness=None)),
+        'position-fees.following-reading': defect(lambda b: v4(b).update(why='reading')),
+        'position-fees.following-without-since': defect(lambda b: v4(b).update(since=None)),
+        'position-fees.transfers-out-of-order': defect(lambda b: v4(b)['transfers'].reverse()),
+        'position-fees.settlement-after-through': defect(lambda b: event(b, 2)['block'].update(
+            number=v4(b)['through']['number'] + 1)),
+        'position-fees.point-before-since': defect(lambda b: point(b, 0).update(
+            block=v4(b)['since']['block']['number'] - 1)),
+        'position-fees.limitations-reordered': defect(lambda b: b['limitations'].reverse()),
+    }
+
+
+def next_valid():
+    """1.2.0-rc.1's answers: position-fees, and a 1.1.0-rc.1 route answered in 1.2.0-rc.1 (only its version moved)."""
+    return {**position_fees_valid(), 'portfolio': {**portfolio(), 'contractVersion': NEXT_VERSION}}
+
+
+def next_invalid():
+    return position_fees_invalid()
+
+
+NEXT_REQUESTS = {'position-fees': {'chainId': FEE_CHAIN, 'positions': [{'dex': 4, 'tokenId': '41'},
+                                                                       {'dex': 3, 'tokenId': '31'}]}}
+
+
 def errors():
     from read_contract import ERROR_STATUS_BY_CODE
     return {code: {'status': status, 'body': {'error': code}} for code, status in sorted(ERROR_STATUS_BY_CODE.items())
@@ -1017,9 +1284,9 @@ def errors():
 
 
 def check():
-    for name, body in valid().items():
+    for name, body in [*valid().items(), *next_valid().items()]:
         validate_v6_response(route_of(name), body)
-    for name, (route, body) in invalid().items():
+    for name, (route, body) in [*invalid().items(), *next_invalid().items()]:
         try:
             validate_v6_response(route, body)
         except ValueError:
@@ -1027,4 +1294,5 @@ def check():
         raise AssertionError(f'invalid fixture {name} is accepted by the producer')
 
 
-__all__ = ['valid', 'invalid', 'errors', 'REQUESTS', 'CONTRACT_VERSION', 'check', 'route_of']
+__all__ = ['valid', 'invalid', 'errors', 'REQUESTS', 'CONTRACT_VERSION', 'check', 'route_of', 'next_valid',
+           'next_invalid', 'NEXT_REQUESTS', 'NEXT_VERSION']

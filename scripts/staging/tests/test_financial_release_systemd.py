@@ -249,6 +249,81 @@ class RealSystemdTests(unittest.TestCase):
         # [Install] section, so it is never static either.
         self.assertIn(shown['UnitFileState'], ('disabled', 'indirect'))
 
+    def test_the_featured_chain_templates_run_their_instance_chain_from_a_minute_timer(self):
+        # Launch round P3 (4 Nov 2026): Base's and Arbitrum's shadow selections, one instance per chain, each
+        # started by its own timer instance; the instance name is the only place the chain comes from.
+        ops = Path(__file__).resolve().parents[3] / 'ops/systemd'
+        service = RUNTIME_UNITS / 'domino-featured-chain-under-test@.service'
+        timer = RUNTIME_UNITS / 'domino-featured-chain-under-test@.timer'
+        for path in (service, timer):
+            self.assertFalse(os.path.lexists(path), path)
+            self.written.append(path)
+        service.write_text((ops / 'domino-featured-chain@.service').read_text()
+                           .replace('@PUBLIC_ROOT@', '/opt/domino/public-data')
+                           .replace('@QUEUE_ROOT@', '/opt/domino/queue-worker'))
+        timer.write_text((ops / 'domino-featured-chain@.timer').read_text())
+        subprocess.run(['systemctl', 'daemon-reload'], check=True)
+
+        def show(name, properties):
+            raw = subprocess.run(['systemctl', 'show', '--all', name, '--property=' + properties],
+                                 check=True, capture_output=True, text=True).stdout
+            return raw, dict(line.split('=', 1) for line in raw.splitlines() if '=' in line)
+        raw, shown = show('domino-featured-chain-under-test@base-8453.service',
+                          'LoadState,Type,ExecStart,User,SupplementaryGroups,WorkingDirectory,PartOf,BindsTo,'
+                          'BindReadOnlyPaths,ProtectSystem,ImportCredential,DeviceAllow')
+        self.assertEqual((shown['LoadState'], shown['Type']), ('loaded', 'oneshot'))
+        self.assertIn('argv[]=/opt/domino/queue-worker/venv/bin/python -B manage_featured_chain.py '
+                      '--chain base-8453 --chain-rpc-file '
+                      '/opt/domino/queue-worker/release/backend/runtime/chain-rpc.json tick ;',
+                      shown['ExecStart'])
+        self.assertEqual(shlex.split(shown['ImportCredential']), ['v2-rpc-*'])
+        self.assertIn('DeviceAllow=char-tpm rw', raw.splitlines())
+        self.assertEqual((shown['User'], shown['SupplementaryGroups']), ('domino-write', 'domino-db'))
+        self.assertEqual(shown['WorkingDirectory'], '/opt/domino/public-data/current/backend')
+        self.assertEqual((shown['PartOf'], shown['BindsTo']),
+                         ('domino-public-data.target', 'domino-continuous-egress.service'))
+        self.assertEqual(shown['BindReadOnlyPaths'], '/etc/domino/continuous-reads/write.hosts:/etc/hosts:rbind')
+        self.assertEqual(shown['ProtectSystem'], 'strict')
+        _, timed = show('domino-featured-chain-under-test@base-8453.timer',
+                        'LoadState,TimersMonotonic,TimersCalendar,Triggers,UnitFileState')
+        self.assertEqual(timed['LoadState'], 'loaded')
+        self.assertEqual(timed.get('TimersMonotonic', ''), '')
+        self.assertIn('OnCalendar=*-*-* *:*:00', timed.get('TimersCalendar', ''))
+        self.assertEqual(timed['Triggers'], 'domino-featured-chain-under-test@base-8453.service')
+        # Installed is not enabled: no chain's shadow runs until an operator enables its timer.
+        self.assertIn(timed['UnitFileState'], ('disabled', 'indirect'))
+
+    def test_the_v2_fees_template_runs_its_instance_chain_and_always_comes_back(self):
+        # Launch round P3 (4 Nov 2026): the indexer's user, sandbox, hosts and credentials; its chain is the instance.
+        ops = Path(__file__).resolve().parents[3] / 'ops/systemd'
+        template = RUNTIME_UNITS / 'domino-v2-fees-under-test@.service'
+        self.assertFalse(os.path.lexists(template), template)
+        self.written.append(template)
+        template.write_text((ops / 'domino-v2-fees@.service').read_text()
+                            .replace('@PUBLIC_ROOT@', '/opt/domino/public-data')
+                            .replace('@QUEUE_ROOT@', '/opt/domino/queue-worker'))
+        subprocess.run(['systemctl', 'daemon-reload'], check=True)
+        raw = subprocess.run(['systemctl', 'show', '--all', 'domino-v2-fees-under-test@base-8453.service',
+                              '--property=LoadState,ExecStart,Restart,User,SupplementaryGroups,WorkingDirectory,'
+                              'PartOf,BindsTo,BindReadOnlyPaths,ProtectSystem,UnitFileState,ImportCredential,'
+                              'DeviceAllow'],
+                             check=True, capture_output=True, text=True).stdout
+        shown = dict(line.split('=', 1) for line in raw.splitlines() if '=' in line)
+        self.assertEqual(shown['LoadState'], 'loaded')
+        self.assertIn('argv[]=/opt/domino/queue-worker/venv/bin/python -B v2_fees.py follow --chain base-8453 '
+                      '--chain-rpc-file /opt/domino/queue-worker/release/backend/runtime/chain-rpc.json --poll 60 ;',
+                      shown['ExecStart'])
+        self.assertEqual(shlex.split(shown['ImportCredential']), ['v2-rpc-*'])
+        self.assertIn('DeviceAllow=char-tpm rw', raw.splitlines())
+        self.assertEqual(shown['Restart'], 'always')
+        self.assertEqual((shown['User'], shown['SupplementaryGroups']), ('domino-write', 'domino-db'))
+        self.assertEqual(shown['WorkingDirectory'], '/opt/domino/public-data/current/backend')
+        self.assertEqual((shown['PartOf'], shown['BindsTo']),
+                         ('domino-public-data.target', 'domino-continuous-egress.service'))
+        self.assertEqual(shown['BindReadOnlyPaths'], '/etc/domino/continuous-reads/write.hosts:/etc/hosts:rbind')
+        self.assertEqual(shown['ProtectSystem'], 'strict')
+        self.assertIn(shown['UnitFileState'], ('disabled', 'indirect'))
+
     def test_the_v2_automation_template_runs_each_chain_with_its_sealed_passwords(self):
         # One instance per chain: its configuration, its own state directory, the two keystore passwords as
         # encrypted credentials, the hosted RPC URLs imported, and the TPM open for both.

@@ -6,7 +6,15 @@ import { SCHEMAS, ERRORS, CONSTANTS } from './schema-data.mjs';
 import { createContractValidators } from '../shared/closed-schema.mjs';
 
 export const CONTRACT_VERSION = '1.1.0-rc.1';
-export const ROUTES = Object.freeze(Object.keys(SCHEMAS));
+// 1.2.0-rc.1's window (launch round P3, 4 Nov 2026): it adds position-fees and changes no 1.1.0-rc.1 answer but its
+// version. The reader answers each request in the version it names (X-Domino-Read-Contract), so this package's
+// version, ROUTES and fixtures/valid stay 1.1.0-rc.1's, what the app and the read Worker read today; an answer may
+// carry either version; position-fees, NEXT_ROUTES, is 1.2.0-rc.1's alone (fixtures/1.2.0-rc.1/). Closing the window
+// makes NEXT_VERSION this package's.
+export const CONTRACT_VERSIONS = Object.freeze([...CONSTANTS.contractVersions]);
+export const NEXT_VERSION = CONSTANTS.nextVersion;
+export const NEXT_ROUTES = Object.freeze([...CONSTANTS.nextRoutes]);
+export const ROUTES = Object.freeze(Object.keys(SCHEMAS).filter((route) => !NEXT_ROUTES.includes(route)));
 export const ERROR_STATUS_BY_CODE = Object.freeze({ ...ERRORS });
 
 const ZERO = '0x' + '0'.repeat(40);
@@ -252,6 +260,98 @@ function knownToken(t) {
   return same(t.sources, [...new Set(t.sources)].sort((a, b) => order.indexOf(a) - order.indexOf(b)));
 }
 
+// ---------------------------------------------------------- position fees (1.2.0-rc.1)
+const ascendingPairs = (pairs) => pairs.every((pair, index) => index === 0 ||
+  pairs[index - 1][0] < pair[0] || (pairs[index - 1][0] === pair[0] && pairs[index - 1][1] < pair[1]));
+const sameBlock = (a, b) => a.number === b.number && a.hash === b.hash && a.timestamp === b.timestamp;
+
+function feeFollower(f) {
+  if ((f.status === 'current') !== (f.reason === null)) return false;
+  if ((f.through === null) !== (f.reason === 'fees_not_followed') || (f.status === 'unavailable') !== (f.through === null)) {
+    return false;
+  }
+  if ((f.lagSeconds === null) !== (f.through === null || f.indexedThrough === null)) return false;
+  return !(f.through !== null && f.indexedThrough !== null && f.through.number > f.indexedThrough.number);
+}
+
+function feeSettlement(e) {
+  if ((e.fees === null) !== (e.why !== null) || (e.settled !== null && e.fees === null)) return false;
+  if (e.auto !== (e.serviceFee !== null)) return false;
+  if (e.logIndexes.at(-1) !== e.logIndex || !e.logIndexes.every((index, i) => i === 0 || e.logIndexes[i - 1] < index)) {
+    return false;
+  }
+  const delta = BigInt(e.liquidityDelta);
+  return e.kind === (delta > 0n ? 'increase' : delta < 0n ? 'decrease' : 'collect');
+}
+
+function feePoint(p) {
+  if (p.hour % 3600 !== 0 || (p.kind === 'day') !== (p.hour % 86400 === 0)) return false;
+  if ((p.earned === null) !== (p.settled === null)) return false;
+  return p.earned === null || p.earned.every((earned, i) => BigInt(earned) >= BigInt(p.settled[i]));
+}
+
+function feeNow(n) {
+  const v4 = n.pool.dex === 4;
+  if (v4 !== (n.poolId !== null) || v4 === (n.poolAddress !== null) || v4 === (n.tokensOwed !== null)) return false;
+  if (n.tickLower >= n.tickUpper || n.inRange !== (n.tickLower <= n.tick && n.tick < n.tickUpper)) return false;
+  if ((n.earned === null) !== (n.settled === null) || (n.unsettled === null && n.earned !== null)) return false;
+  return n.earned === null ||
+    n.earned.every((earned, i) => BigInt(earned) === BigInt(n.settled[i]) + BigInt(n.unsettled[i]));
+}
+
+function positionFees(p) {
+  const followed = p.status !== 'not_followed';
+  const read = p.since !== null || p.events.length > 0 || p.transfers.length > 0 || p.points.length > 0;
+  // A position the follower has not joined yet (a pass away) is reading with nothing read.
+  if ((p.through === null) !== (p.status === 'not_followed' || (p.status === 'reading' && !read)) ||
+    (p.through === null) !== (p.freshness === null)) return false;
+  if (!followed && (read || p.why !== null || p.truncated)) return false;
+  if ((p.now !== null) !== (p.status === 'following')) return false;
+  if ((p.status === 'reading') !== (p.why === 'reading')) return false;
+  if (p.status === 'following' || p.status === 'burned') {
+    if (p.since === null) return false;
+    if (p.exact !== !['same_block', 'liquidity'].includes(p.why) || (p.exact && p.events.some((e) => e.why !== null))) {
+      return false;
+    }
+    if ((p.why === 'before_floor') !== (p.exact && p.since !== null && p.since.kind === 'floor')) return false;
+  } else if (p.exact) return false;
+  const settlements = p.events.map((e) => [e.block.number, e.logIndex]);
+  const moves = p.transfers.map((t) => [t.block.number, t.logIndex]);
+  if (!ascendingPairs(settlements) || !ascendingPairs(moves) ||
+    !p.points.every((point, i) => i === 0 || p.points[i - 1].block < point.block)) return false;
+  if (p.through !== null) {
+    const last = p.through.number;
+    if (settlements.some(([n]) => n > last) || moves.some(([n]) => n > last) || p.points.some((x) => x.block > last)) {
+      return false;
+    }
+  }
+  if (p.since !== null) {
+    const first = p.since.block.number;
+    if (settlements.some(([n]) => n < first) || p.points.some((x) => x.block < first)) return false;
+  }
+  if (p.now !== null && (!sameBlock(p.now.snapshot, p.through) || p.now.pool.dex !== p.dex)) return false;
+  return !(p.status === 'burned' && (p.transfers.length === 0 || p.transfers.at(-1).toAddress !== ZERO));
+}
+
+function positionFeesResponse(b) {
+  if (b.limitations.join() !== CONSTANTS.feeLimitations.join()) return false;
+  const keys = b.positions.map((p) => `${p.dex}:${p.tokenId}`);
+  if (new Set(keys).size !== keys.length) return false;
+  const events = Math.floor(CONSTANTS.maxFeeEvents / b.positions.length);
+  const points = Math.floor(CONSTANTS.maxFeePoints / b.positions.length);
+  if (b.positions.some((p) => p.events.length > events || p.points.length > points)) return false;
+  for (const p of b.positions) {
+    if (p.through !== null && (b.follower.through === null || p.through.number > b.follower.through.number)) return false;
+    if (p.freshness !== null) {
+      const age = Math.max(0, b.servedAt - p.through.timestamp);
+      if (p.freshness.ageSeconds !== age || (p.freshness.status === 'fresh') !== (age <= CONSTANTS.feeFreshSeconds)) {
+        return false;
+      }
+    }
+  }
+  return !(b.follower.status === 'unavailable' && b.positions.some((p) => p.status !== 'not_followed'));
+}
+
 function semantic(name, value) {
   switch (name) {
     case 'PoolRef': return value.currency0 < value.currency1 && !(value.dex === 3 && value.hooks !== ZERO);
@@ -317,6 +417,18 @@ function semantic(name, value) {
     case 'ChainBalancesRequest': return value.tokens === undefined || value.tokens === null ||
       unique(value.tokens.map((t) => `${t.chainId}:${t.address}`));
     case 'ChainTokensRequest': return value.query.trim().length > 0 && printable(value.query);
+    case 'FeeFollower': return feeFollower(value);
+    case 'FeeSettlement': return feeSettlement(value);
+    case 'FeeTransfer': return value.fromAddress !== value.toAddress;
+    case 'FeePoint': return feePoint(value);
+    case 'FeeNow': return feeNow(value);
+    case 'FeePositionRef': return BigInt(value.tokenId) !== 0n;
+    case 'PositionFees': return positionFees(value);
+    case 'PositionFeesResponse': return positionFeesResponse(value);
+    case 'PositionFeesRequest': {
+      const keys = value.positions.map((p) => `${p.dex}:${p.tokenId}`);
+      return new Set(keys).size === keys.length;
+    }
     default: return true;
   }
 }
@@ -338,6 +450,11 @@ export function validateExchange(route, request, response) {
   if (route === 'chain-tokens') {
     return response.chainId === request.chainId && response.query === request.query &&
       response.tokens.length <= (request.limit ?? 20);
+  }
+  if (route === 'position-fees') {
+    // 1.2.0-rc.1: the chain asked, and each position asked, in the order asked.
+    return response.chainId === request.chainId && same(response.positions.map((p) => `${p.dex}:${p.tokenId}`),
+      request.positions.map((p) => `${p.dex}:${p.tokenId}`));
   }
   if (route === 'chain-balances') {
     const chains = response.chains.map((c) => c.chainId);

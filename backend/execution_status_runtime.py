@@ -52,7 +52,8 @@ def status_gateway(path):
     from rpc_config import rpc_hosts
     from session_api import acquire_session_lock
     from session_chain import EoaChecker
-    from session_siwe import SiwePolicy
+    from bridge_identity import configured_preview_identity
+    from session_siwe import SiwePolicy, configured_preview_origins
     from session_store import SessionStore
     config=strict_json(private_file(path,16384))
     keys={'schemaVersion','kind','runtimeDirectory','database','session','access'}
@@ -64,18 +65,29 @@ def status_gateway(path):
             or '..' in Path(database['host']).parts or type(database['port']) is not int
             or not 1024<=database['port']<=65535 or database['dbname']!='domino_catalogue'):raise ValueError()
     session=config['session'];access=config['access']
-    if (type(session) is not dict or set(session)!={'origin','abuseSecretFile','rpcEndpoint','rpcAllowedHosts'}
-            or type(access) is not dict or set(access)!={'issuer','audience','serviceId'}):raise ValueError()
+    # previewOrigins (4 Nov 2026, launch round P3) is optional: a list of the exact Pages preview origins this listener
+    # also admits, the same the session listener's DOMINO_SESSION_PREVIEW_ORIGINS lists; absent, none, as before.
+    # access.previewServiceId (review L1) is optional too: the separate preview Workers' own Access identity. A
+    # malformed value of either turns the preview off and logs it (review L3); the canonical origin keeps serving.
+    keys,access_keys={'origin','abuseSecretFile','rpcEndpoint','rpcAllowedHosts'},{'issuer','audience','serviceId'}
+    if (type(session) is not dict or set(session) not in (keys,keys|{'previewOrigins'})
+            or type(access) is not dict or set(access) not in (access_keys,access_keys|{'previewServiceId'})):
+        raise ValueError()
     SiwePolicy(session['origin'])
+    previews=configured_preview_origins(session.get('previewOrigins'),session['origin'],'session.previewOrigins',
+                                        comma=False)
     hosts=rpc_hosts(session['rpcAllowedHosts'])
     secret=private_file(session['abuseSecretFile'],65).decode('ascii').removesuffix('\n')
     if not re.fullmatch(r'[0-9a-f]{64}',secret):raise ValueError()
-    verifier=AccessVerifier(access['issuer'],access['audience'],access['serviceId'])
+    verifier=AccessVerifier(access['issuer'],access['audience'],access['serviceId'],
+                            preview_service_id=configured_preview_identity(access.get('previewServiceId'),
+                                                                           access['serviceId'],'access.previewServiceId'))
     store=SessionStore(database,abuse_secret=bytes.fromhex(secret))
     checker=EoaChecker((session['rpcEndpoint'],),allowed_hosts=hosts,
                             execution_status_loopback=session['rpcEndpoint']==SNAPSHOT_LOOPBACK_RPC)
     service=ExecutionStatusService(OnboardingAuth(store,checker),ExecutionStatusReader(database))
-    gateway=ExecutionStatusGateway(service=service,verifier=verifier,origin=session['origin'],enabled=True)
+    gateway=ExecutionStatusGateway(service=service,verifier=verifier,origin=session['origin'],preview_origins=previews,
+                                   enabled=True)
     fd=private_directory(config['runtimeDirectory'])
     os.close(fd)
     lock=acquire_session_lock(Path(config['runtimeDirectory']))

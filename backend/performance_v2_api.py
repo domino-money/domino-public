@@ -41,7 +41,8 @@ def create_performance_v2_app(gateway=None):
 def main():
     import argparse
     import uvicorn
-    from bridge_identity import AccessVerifier
+    from bridge_identity import AccessVerifier, configured_preview_identity
+    from session_siwe import configured_preview_origins
     from onboarding_auth import OnboardingAuth
     from performance_runtime import Runtime
     from performance_v2_service import PerformanceV2Service
@@ -84,9 +85,14 @@ def main():
             service = PerformanceV2Service(OnboardingAuth(sessions,checker),runtime.enrollments,runtime.history,
                 runtime.valuation,runtime.admission,projection=project,
                 projection_refresh=runtime.projection_writer.request_projection_refresh)
+            # Review L1 (4 Nov 2026): the separate preview Workers' own Access identity, optional.
             verifier = AccessVerifier(os.environ.get('DOMINO_PERFORMANCE_ACCESS_ISSUER'),
-                os.environ.get('DOMINO_PERFORMANCE_ACCESS_AUDIENCE'),os.environ.get('DOMINO_PERFORMANCE_ACCESS_SERVICE_ID'))
-            gateway = PerformanceV2Gateway(service=service,verifier=verifier,origin=os.environ.get('DOMINO_SESSION_ORIGIN'),enabled=True)
+                os.environ.get('DOMINO_PERFORMANCE_ACCESS_AUDIENCE'), os.environ.get('DOMINO_PERFORMANCE_ACCESS_SERVICE_ID'),
+                preview_service_id=configured_preview_identity(os.environ.get('DOMINO_PERFORMANCE_ACCESS_PREVIEW_SERVICE_ID'),
+                    os.environ.get('DOMINO_PERFORMANCE_ACCESS_SERVICE_ID'), 'DOMINO_PERFORMANCE_ACCESS_PREVIEW_SERVICE_ID'))
+            gateway = PerformanceV2Gateway(service=service,verifier=verifier,origin=os.environ.get('DOMINO_SESSION_ORIGIN'),
+                preview_origins=configured_preview_origins(os.environ.get('DOMINO_SESSION_PREVIEW_ORIGINS'),
+                    os.environ.get('DOMINO_SESSION_ORIGIN'), 'DOMINO_SESSION_PREVIEW_ORIGINS'),enabled=True)
         uvicorn.run(create_performance_v2_app(gateway),host='127.0.0.1',port=args.port,workers=1,
             proxy_headers=False,access_log=False,server_header=False,limit_concurrency=16)
     except (ValueError,DataError,OSError):

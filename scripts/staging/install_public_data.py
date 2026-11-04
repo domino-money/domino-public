@@ -37,6 +37,13 @@ UNITS=tuple(f'domino-public-{lane}.service' for lane in ('current','history','ac
     # The V2 index (read-v6), one instance per chain profile. Installed, never enabled here: an
     # instance starts only on `systemctl enable --now`, after 052 and its registration.
     'domino-v2-indexer@.service',
+    # Featured pools on Base and Arbitrum One, in shadow, one instance per chain profile. Installed,
+    # never enabled here: a chain's timer starts only on `systemctl enable --now`, after 055.
+    'domino-featured-chain@.service',
+    'domino-featured-chain@.timer',
+    # The V2 fees (read-v6 position-fees), one instance per chain profile. Installed, never enabled
+    # here: an instance starts only on `systemctl enable --now`, after 054, behind its chain's indexer.
+    'domino-v2-fees@.service',
     'domino-queue-worker.service.d/90-public-data.conf',
     'domino-catalogue-follower.service.d/90-public-data.conf',
     'domino-queue-worker.timer.d/90-public-data.conf',
@@ -68,7 +75,7 @@ def plan(files,commit,digest):
     require(sha(read_installed(QUEUE/'release/backend/requirements-api.lock'))==
             sha(files['backend/requirements-api.lock'][0]),'dependency_change_needs_a_venv')
     for name in ('manage_public_data.py','public_history.py','public_observations.py','manage_activity.py',
-                 'manage_featured.py'):
+                 'manage_featured.py','manage_featured_chain.py','v2_fees.py'):
         require('backend/'+name in files,'public_source_missing')
     units={}
     for name in UNITS:

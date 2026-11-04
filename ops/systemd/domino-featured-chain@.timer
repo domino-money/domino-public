@@ -1,0 +1,19 @@
+[Unit]
+Description=Run the Domino featured pools shadow for %i every minute
+PartOf=domino-public-data.target
+
+[Timer]
+# Each minute: the chain's selection attempts in its window (its policy's
+# selectionHourUtc), and its list's health in the first minute of every ten
+# (manage_featured_chain.py). A calendar trigger always has a next elapse,
+# whatever happened to the last run or to a reboot (#278). A run still going
+# when the next minute comes is not started twice.
+OnCalendar=minutely
+AccuracySec=1s
+RandomizedDelaySec=2s
+
+# Installed by install_public_data.py and never enabled there: a chain's shadow
+# starts only on `systemctl enable --now domino-featured-chain@<profile>.timer`,
+# after 055 (docs/FEATURED_POOLS.md).
+[Install]
+WantedBy=domino-public-data.target

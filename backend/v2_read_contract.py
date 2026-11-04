@@ -44,9 +44,20 @@ from read_contract import WireModel
 
 CONTRACT_VERSION = '1.1.0-rc.1'
 ROUTES = ('portfolio', 'activity', 'chain-pools', 'chain-balances', 'chain-tokens')
+# read-v6 1.2.0-rc.1 (launch round P3, 4 Nov 2026; item 3.1, path B) adds position-fees and changes no
+# 1.1.0-rc.1 answer but its version. Its consumers (the app, the read Worker) move through a window, as
+# crosschain-v1's did (6 Oct 2026): the reader and the gateway answer each request in the version it names
+# (X-Domino-Read-Contract), 1.1.0-rc.1's five routes in either, position-fees in NEXT_VERSION alone; a request
+# naming none is answered in its route's first version. Until the app and the Worker move, the package's own
+# version (CONTRACT_VERSION, its ROUTES and fixtures/valid) stays 1.1.0-rc.1; closing the window makes NEXT_VERSION
+# the package's and drops the old one.
+NEXT_VERSION = '1.2.0-rc.1'
+CONTRACT_VERSIONS = (CONTRACT_VERSION, NEXT_VERSION)
+NEXT_ROUTES = ('position-fees',)
+ALL_ROUTES = ROUTES + NEXT_ROUTES
 # The routes that read stored data only; chain-pools and chain-balances read the chains at request time
 # (v2_chain_reads) and take the reader's provider lane.
-STORED_ROUTES = ('portfolio', 'activity', 'chain-tokens')
+STORED_ROUTES = ('portfolio', 'activity', 'chain-tokens', 'position-fees')
 # The enabled V2 chains (api-contracts/v2/chains), ascending; a constant so the
 # reader never loads the profiles to start. tests/test_read_v6_contract.py
 # holds it to the registry.
@@ -715,7 +726,7 @@ class Truncated(WireModel):
 
 class Envelope(WireModel):
     schemaVersion: Literal[1]
-    contractVersion: Literal[CONTRACT_VERSION]
+    contractVersion: Literal[CONTRACT_VERSIONS]
     wallet: Address
     servedAt: UInt
     coverage: Literal['complete', 'partial']
@@ -1201,7 +1212,7 @@ class ChainPoolsResponse(WireModel):
     """chain-pools: the token's pools against the chain's base currencies (or the paired token), Uniswap's standard
     hookless keys and the enabled v3 tiers, read at one block; listed when priced and holding liquidity."""
     schemaVersion: Literal[1]
-    contractVersion: Literal[CONTRACT_VERSION]
+    contractVersion: Literal[CONTRACT_VERSIONS]
     mode: Literal['live_chain_pools']
     chainId: ChainId
     token: Address
@@ -1301,7 +1312,7 @@ class ChainBalances(WireModel):
 class ChainBalancesResponse(WireModel):
     """chain-balances: a wallet's native and token balances on each chain asked, one block per chain."""
     schemaVersion: Literal[1]
-    contractVersion: Literal[CONTRACT_VERSION]
+    contractVersion: Literal[CONTRACT_VERSIONS]
     mode: Literal['live_chain_balances']
     wallet: Address
     servedAt: UInt
@@ -1354,7 +1365,7 @@ class KnownToken(WireModel):
 class ChainTokensResponse(WireModel):
     """chain-tokens: the tokens Domino knows on Base or Arbitrum One that match a query (known tokens only)."""
     schemaVersion: Literal[1]
-    contractVersion: Literal[CONTRACT_VERSION]
+    contractVersion: Literal[CONTRACT_VERSIONS]
     mode: Literal['known_chain_tokens']
     chainId: Literal[SEARCH_CHAIN_IDS]
     query: Annotated[str, Field(min_length=1, max_length=MAX_QUERY)]
@@ -1374,6 +1385,285 @@ class ChainTokensResponse(WireModel):
         if len(addresses) != len(set(addresses)):
             raise ValueError('tokens_duplicate')
         return self
+
+
+
+# ---------------------------------------------------------- position fees
+# Fees earned and Your APR on a chain's Domino V2 positions (1.2.0-rc.1; item 3.1, path B): what the chain's fee
+# follower (backend/v2_fees.py) stored for each, read from the V2 index's database with no call at request time.
+# Raw amounts only: USD is the app's, from the qualified prices it already reads.
+FEE_CHAIN_STATUSES = ('current', 'stale', 'unavailable')
+FEE_CHAIN_REASONS = ('fees_not_followed', 'reading_back', 'behind_index')
+FEE_STATUSES = ('following', 'reading', 'burned', 'not_followed')
+FEE_WHY = ('reading', 'same_block', 'liquidity', 'before_floor')
+FEE_LIMITATIONS = ('positions_known_to_domino_only', 'raw_amounts_without_usd', 'state_as_of_last_read',
+                   'no_execution_or_signing')
+MAX_FEE_POSITIONS = 8
+# What one answer carries, so it fits the read Worker's 1 MiB with room (a test builds the largest): its
+# positions' newest events and points, split evenly between them, and each one's newest transfers.
+MAX_FEE_EVENTS, MAX_FEE_POINTS, MAX_FEE_TRANSFERS = 1000, 1800, 16
+# A position's history is fresh while its newest block is at most this old; the fee follower reads every 60 s.
+FEE_FRESH_SECONDS = 120
+
+
+class FeeFollower(WireModel):
+    """The chain's fee follower: how far it read (`through`, always one of the index's checkpoints) against the
+    index's newest checkpoint. `reading_back`: it has not reached the index yet since it started."""
+    status: Literal[FEE_CHAIN_STATUSES]
+    reason: Literal[FEE_CHAIN_REASONS] | None
+    through: BlockRef | None
+    indexedThrough: BlockRef | None
+    lagSeconds: UInt | None
+    lastError: IndexFailure | None
+
+    @model_validator(mode='after')
+    def consistent(self):
+        if (self.status == 'current') != (self.reason is None):
+            raise ValueError('fee_follower_reason')
+        if (self.through is None) != (self.reason == 'fees_not_followed') or (
+                self.status == 'unavailable') != (self.through is None):
+            raise ValueError('fee_follower_through')
+        if (self.lagSeconds is None) != (self.through is None or self.indexedThrough is None):
+            raise ValueError('fee_follower_lag')
+        if self.through is not None and self.indexedThrough is not None and (
+                self.through.number > self.indexedThrough.number):
+            raise ValueError('fee_follower_ahead')
+        return self
+
+
+class FeeSince(WireModel):
+    """Where a history starts: the position's mint, or Domino's first block on the chain for a position minted
+    before it, whose fees owed then are not counted."""
+    kind: Literal['mint', 'floor']
+    block: BlockRef
+
+
+class FeeSettlement(WireModel):
+    """Every one of the position's settlements in one block (logIndexes; logIndex is the last): an increase, a
+    decrease (liquidity 0 after it: a close) or a collect, the liquidity after it, the fees it paid (v4) or credited
+    to tokensOwed (v3), and the fees settled since `since`. `fees` is null, with `why`, when it cannot be known."""
+    kind: Literal['increase', 'decrease', 'collect']
+    block: BlockRef
+    logIndex: UInt
+    logIndexes: Annotated[list[UInt], Field(min_length=1, max_length=256)]
+    tx: Hash
+    liquidityDelta: SignedRaw
+    liquidity: Raw
+    fees: RawPair | None
+    settled: RawPair | None
+    why: Literal['same_block', 'liquidity'] | None
+    # An automatic compound (the vault's Compounded in that transaction) and the service fee it charged.
+    auto: StrictBool
+    serviceFee: RawPair | None
+
+    @model_validator(mode='after')
+    def consistent(self):
+        if (self.fees is None) != (self.why is not None) or (self.settled is not None and self.fees is None):
+            raise ValueError('fee_settlement_fees')
+        if self.auto != (self.serviceFee is not None):
+            raise ValueError('fee_settlement_auto')
+        if self.logIndexes[-1] != self.logIndex or self.logIndexes != sorted(set(self.logIndexes)):
+            raise ValueError('fee_settlement_logs')
+        delta = int(self.liquidityDelta)
+        if self.kind != ('increase' if delta > 0 else 'decrease' if delta < 0 else 'collect'):
+            raise ValueError('fee_settlement_kind')
+        return self
+
+
+class FeeTransfer(WireModel):
+    """The NFT's own Transfer: its mint (from zero), every change of hands (into and out of a vault included) and
+    its burn (to zero)."""
+    block: BlockRef
+    logIndex: UInt
+    tx: Hash
+    fromAddress: Address
+    toAddress: Address
+
+    @model_validator(mode='after')
+    def consistent(self):
+        if self.fromAddress == self.toAddress:
+            raise ValueError('fee_transfer_self')
+        return self
+
+
+class FeePoint(WireModel):
+    """Measured Fees earned (settled plus what accrued since the last settlement) and settled, cumulative since
+    `since`, at a block standing for an hour (the day's first after HOURLY_DAYS days, `day`)."""
+    block: UInt
+    timestamp: UInt
+    hour: UInt
+    kind: Literal['hour', 'day']
+    earned: RawPair | None
+    settled: RawPair | None
+
+    @model_validator(mode='after')
+    def consistent(self):
+        if self.hour % 3600 or (self.kind == 'day') != (self.hour % 86400 == 0):
+            raise ValueError('fee_point_hour')
+        if (self.earned is None) != (self.settled is None):
+            raise ValueError('fee_point_values')
+        if self.earned is not None and any(int(e) < int(s) for e, s in zip(self.earned, self.settled)):
+            raise ValueError('fee_point_values')
+        return self
+
+
+class FeeNow(WireModel):
+    """The position at the follower's cursor, read with the same pass's events: its pool (v4 by id, v3 by
+    address), range, liquidity and price; the fee growth inside now and at its own checkpoint; v3's tokensOwed;
+    what a collect would pay now (`collectable`: on v3 tokensOwed included, which may hold principal a decrease
+    left); what accrued since its last settlement (`unsettled`, counted from `since`); Fees earned and settled;
+    the principal at the spot."""
+    snapshot: BlockRef
+    owner: Address
+    pool: PoolRef
+    poolId: Hash | None
+    poolAddress: Address | None
+    tickLower: Tick
+    tickUpper: Tick
+    liquidity: Raw
+    sqrtPriceX96: Raw
+    tick: Tick
+    inRange: StrictBool
+    protocolFee: Annotated[StrictInt, Field(ge=0, le=0xFFFFFF)]
+    feeGrowthInsideX128: RawPair
+    feeGrowthInsideLastX128: RawPair
+    tokensOwed: RawPair | None
+    collectable: RawPair
+    unsettled: RawPair | None
+    earned: RawPair | None
+    settled: RawPair | None
+    principalAtSpot: RawPair
+
+    @model_validator(mode='after')
+    def consistent(self):
+        v4 = self.pool.dex == 4
+        if v4 != (self.poolId is not None) or v4 == (self.poolAddress is not None) or v4 == (
+                self.tokensOwed is not None):
+            raise ValueError('fee_now_pool')
+        if self.tickLower >= self.tickUpper or self.inRange != (self.tickLower <= self.tick < self.tickUpper):
+            raise ValueError('fee_now_range')
+        if (self.earned is None) != (self.settled is None) or (self.unsettled is None and self.earned is not None):
+            raise ValueError('fee_now_values')
+        if self.earned is not None and [int(e) for e in self.earned] != [
+                int(s) + int(u) for s, u in zip(self.settled, self.unsettled)]:
+            raise ValueError('fee_now_values')
+        return self
+
+
+class FeePositionRef(WireModel):
+    dex: Dex
+    tokenId: Raw
+
+    @model_validator(mode='after')
+    def positive(self):
+        if int(self.tokenId) == 0:
+            raise ValueError('token_id')
+        return self
+
+
+class PositionFees(WireModel):
+    """One position's history. `following`: read with the follower, its state now included; `reading`: its
+    history (or the follower's) is still being read back; `burned`: its NFT burned at the last transfer;
+    `not_followed`: no position the index knows on this chain. `exact`: every settlement's fees since `since` are
+    known; `why` says what limits it (`reading`, `same_block`, `liquidity`) or, exact, that its history starts at
+    Domino's first block (`before_floor`)."""
+    dex: Dex
+    tokenId: Raw
+    positionManager: Address
+    status: Literal[FEE_STATUSES]
+    since: FeeSince | None
+    through: BlockRef | None
+    freshness: Freshness | None
+    exact: StrictBool
+    why: Literal[FEE_WHY] | None
+    now: FeeNow | None
+    events: Annotated[list[FeeSettlement], Field(max_length=MAX_FEE_EVENTS)]
+    transfers: Annotated[list[FeeTransfer], Field(max_length=MAX_FEE_TRANSFERS)]
+    points: Annotated[list[FeePoint], Field(max_length=MAX_FEE_POINTS)]
+    truncated: StrictBool
+
+    @model_validator(mode='after')
+    def consistent(self):
+        followed = self.status != 'not_followed'
+        # A position the follower has not joined yet (a pass away) is reading with nothing read.
+        if (self.through is None) != (self.status == 'not_followed' or self.status == 'reading' and not (
+                self.since or self.events or self.transfers or self.points)) or (
+                self.through is None) != (self.freshness is None):
+            raise ValueError('fee_position_through')
+        if not followed and (self.since or self.events or self.transfers or self.points or self.why is not None
+                             or self.truncated):
+            raise ValueError('fee_position_not_followed')
+        if (self.now is not None) != (self.status == 'following'):
+            raise ValueError('fee_position_now')
+        if (self.status == 'reading') != (self.why == 'reading'):
+            raise ValueError('fee_position_reading')
+        if self.status in ('following', 'burned'):
+            if self.since is None:
+                raise ValueError('fee_position_since')
+            if self.exact != (self.why not in ('same_block', 'liquidity')) or (
+                    self.exact and any(event.why is not None for event in self.events)):
+                raise ValueError('fee_position_exact')
+            if (self.why == 'before_floor') != (self.exact and self.since is not None and self.since.kind == 'floor'):
+                raise ValueError('fee_position_floor')
+        elif self.exact:
+            raise ValueError('fee_position_exact')
+        blocks = [(e.block.number, e.logIndex) for e in self.events]
+        if blocks != sorted(set(blocks)) or [p.block for p in self.points] != sorted({p.block for p in self.points}):
+            raise ValueError('fee_position_order')
+        moves = [(t.block.number, t.logIndex) for t in self.transfers]
+        if moves != sorted(set(moves)):
+            raise ValueError('fee_position_order')
+        last = self.through.number if self.through is not None else None
+        if any(n > last for n, _ in blocks) or any(p.block > last for p in self.points) or any(
+                n > last for n, _ in moves):
+            raise ValueError('fee_position_beyond')
+        first = None if self.since is None else self.since.block.number
+        if first is not None and (any(n < first for n, _ in blocks) or any(p.block < first for p in self.points)):
+            raise ValueError('fee_position_before_since')
+        if self.now is not None and (self.now.snapshot != self.through or self.now.pool.dex != self.dex):
+            raise ValueError('fee_position_now')
+        if self.status == 'burned' and (not self.transfers or self.transfers[-1].toAddress != ZERO):
+            raise ValueError('fee_position_burned')
+        return self
+
+
+class PositionFeesResponse(WireModel):
+    """position-fees: each position asked, in the order asked, as the chain's fee follower stored it."""
+    schemaVersion: Literal[1]
+    contractVersion: Literal[NEXT_VERSION]
+    mode: Literal['stored_v2_position_fees']
+    chainId: ChainId
+    servedAt: UInt
+    follower: FeeFollower
+    positions: Annotated[list[PositionFees], Field(min_length=1, max_length=MAX_FEE_POSITIONS)]
+    limitations: Annotated[list[Literal[FEE_LIMITATIONS]], Field(min_length=len(FEE_LIMITATIONS),
+                                                                max_length=len(FEE_LIMITATIONS))]
+    executionAvailable: Literal[False]
+
+    @model_validator(mode='after')
+    def consistent(self):
+        if list(self.limitations) != list(FEE_LIMITATIONS):
+            raise ValueError('limitations')
+        keys = [(p.dex, p.tokenId) for p in self.positions]
+        if len(keys) != len(set(keys)):
+            raise ValueError('fee_positions_duplicate')
+        share = MAX_FEE_EVENTS // len(self.positions), MAX_FEE_POINTS // len(self.positions)
+        if any(len(p.events) > share[0] or len(p.points) > share[1] for p in self.positions):
+            raise ValueError('fee_positions_share')
+        for p in self.positions:
+            if p.through is not None and (self.follower.through is None or p.through.number > self.follower.through.number):
+                raise ValueError('fee_positions_beyond')
+            if p.freshness is not None:
+                _fee_fresh(self.servedAt, p.through, p.freshness)
+        if self.follower.status == 'unavailable' and any(p.status != 'not_followed' for p in self.positions):
+            raise ValueError('fee_positions_unfollowed')
+        return self
+
+
+def _fee_fresh(served_at, through, freshness):
+    age = max(0, served_at - through.timestamp)
+    if freshness.ageSeconds != age or (freshness.status == 'fresh') != (age <= FEE_FRESH_SECONDS):
+        raise ValueError('freshness')
 
 
 # ---------------------------------------------------------------- requests
@@ -1433,10 +1723,38 @@ class ChainTokensRequest(WireModel):
         return self
 
 
+class PositionFeesRequest(WireModel):
+    """1.2.0-rc.1: up to MAX_FEE_POSITIONS positions of one chain, each once."""
+    chainId: ChainId
+    positions: Annotated[list[FeePositionRef], Field(min_length=1, max_length=MAX_FEE_POSITIONS)]
+
+    @model_validator(mode='after')
+    def distinct(self):
+        keys = [(p.dex, p.tokenId) for p in self.positions]
+        if len(keys) != len(set(keys)):
+            raise ValueError('duplicate_position')
+        return self
+
+
 REQUEST_MODELS = {'portfolio': PortfolioRequest, 'activity': ActivityPageRequest, 'chain-pools': ChainPoolsRequest,
-                  'chain-balances': ChainBalancesRequest, 'chain-tokens': ChainTokensRequest}
+                  'chain-balances': ChainBalancesRequest, 'chain-tokens': ChainTokensRequest,
+                  'position-fees': PositionFeesRequest}
 RESPONSE_MODELS = {'portfolio': PortfolioResponse, 'activity': ActivityResponse, 'chain-pools': ChainPoolsResponse,
-                   'chain-balances': ChainBalancesResponse, 'chain-tokens': ChainTokensResponse}
+                   'chain-balances': ChainBalancesResponse, 'chain-tokens': ChainTokensResponse,
+                   'position-fees': PositionFeesResponse}
+
+
+def answered_version(route, named):
+    """The version a request is answered in: the one it names (X-Domino-Read-Contract) when this contract has it,
+    else its route's first version. A version read-v6 never had is invalid_request; a route the version named does
+    not have (position-fees in 1.1.0-rc.1) is route_not_available."""
+    if named is None:
+        return NEXT_VERSION if route in NEXT_ROUTES else CONTRACT_VERSION
+    if named not in CONTRACT_VERSIONS:
+        raise ValueError('invalid_request')
+    if route in NEXT_ROUTES and named != NEXT_VERSION:
+        raise ValueError('route_not_available')
+    return named
 
 
 def validate_v6_response(route, body):
@@ -1448,11 +1766,18 @@ def validate_v6_response(route, body):
     return body
 
 
-def validate_v6_request_response(route, request, body):
+def validate_v6_request_response(route, request, body, version=None):
     """The answer is about what was asked (the gateway's consistency check): the wallet, the chain, the token, the
     query; an answer never longer than the limit asked; balances for exactly the chains and tokens asked (without
-    `tokens`, exactly Domino's chains: a balance chain answers only when named)."""
+    `tokens`, exactly Domino's chains: a balance chain answers only when named); the positions asked, in their
+    order; and, when given, in the version asked."""
     validate_v6_response(route, body)
+    if version is not None and body['contractVersion'] != version:
+        raise ValueError('v6_version_mismatch')
+    if route == 'position-fees' and (body['chainId'] != request['chainId'] or [
+            (p['dex'], p['tokenId']) for p in body['positions']] != [(p['dex'], p['tokenId'])
+                                                                    for p in request['positions']]):
+        raise ValueError('v6_fees_mismatch')
     if route in ('portfolio', 'activity', 'chain-balances') and body['wallet'] != request['wallet']:
         raise ValueError('v6_wallet_mismatch')
     if route == 'activity' and len(body['items']) > request.get('limit', DEFAULT_ITEMS):

@@ -284,8 +284,22 @@ class ActivityFollowerCliTests(unittest.TestCase):
     def test_domino_positions_follow_every_registered_pool_and_report_the_rest(self):
         argv=['manage_activity.py','--follow','--domino-positions','--quiet','--lag','100','--max-passes','1',
               '--poll-seconds','0']
-        running=self.patches(reader_factory(111))
-        running.append(patch.object(manage_activity,'position_pools',return_value={POOL:[7,9],ABSENT_POOL:[8]}))
+        budgets=[]
+        def index_rpc(*args,**kwargs):
+            budgets.append(kwargs['max_requests'])
+            return self.rpc
+        running=[item for item in self.patches(reader_factory(111)) if item.attribute!='IndexRpc']
+        running.append(patch.object(manage_activity,'IndexRpc',index_rpc))
+        scans=[]
+        def scan(store,rpc,*,through):
+            # The mint scan's own runs are test_domino_position_scan's: here, its target and its report.
+            scans.append((store.catalogue,through))
+            return {'targetBlock':through,'fromBlock':None,'scannedThrough':through,'spans':0,
+                    'rescannedFrom':None,'stoppedBecause':'caught_up','tokenIds':[7,8,9]}
+        def pools(rpc,head,token_ids):
+            self.assertEqual((head.number,token_ids),(111,[7,8,9]))
+            return {POOL:[7,9],ABSENT_POOL:[8]}
+        running+=[patch.object(manage_activity,'scan_mints',scan),patch.object(manage_activity,'position_pools',pools)]
         for item in running:item.start()
         try:
             # POOL is a catalogue hint without its Initialize block; ABSENT_POOL is unknown.
@@ -295,10 +309,18 @@ class ActivityFollowerCliTests(unittest.TestCase):
         finally:
             for item in running:item.stop()
         self.assertEqual(code,0)
+        # The scan stays the follower's lag behind the head (111), with the follower's own catalogue, and its
+        # requests come on top of one key read per position.
+        self.assertEqual(scans,[(self.catalogue,11),(self.catalogue,11)])
+        self.assertEqual(budgets[0],manage_activity.MAX_POSITIONS+manage_activity.MAX_SCAN_REQUESTS+16)
         report=json.loads(first.strip())
         self.assertIsNone(report['follow'])
-        self.assertEqual({key:value for key,value in report['dominoPositions'].items() if key!='notRegistered'},
+        self.assertEqual({key:value for key,value in report['dominoPositions'].items()
+                          if key not in ('notRegistered','scan')},
                          {'pools':2,'positions':3,'followed':0,'registeredNow':[]})
+        self.assertEqual(report['dominoPositions']['scan'],
+                         {'targetBlock':11,'fromBlock':None,'scannedThrough':11,'spans':0,'rescannedFrom':None,
+                          'stoppedBecause':'caught_up'})
         self.assertEqual(sorted((item['poolId'],item['reason']) for item in report['dominoPositions']['notRegistered']),
                          sorted([(POOL,'verified_initialization_block_required'),
                                  (ABSENT_POOL,'pool_not_in_catalogue')]))
@@ -307,7 +329,7 @@ class ActivityFollowerCliTests(unittest.TestCase):
         lines=second.strip().splitlines()
         self.assertEqual(len(lines),1,'--quiet prints the final report only')
         report=json.loads(lines[0])
-        self.assertEqual(report['dominoPositions'],
+        self.assertEqual({key:value for key,value in report['dominoPositions'].items() if key!='scan'},
                          {'pools':2,'positions':3,'followed':1,'registeredNow':[POOL],
                           'notRegistered':[{'poolId':ABSENT_POOL,'reason':'pool_not_in_catalogue'}]})
         self.assertEqual(list(report['follow']['targets']),[POOL])

@@ -1,0 +1,40 @@
+{
+  "chainId": 8453,
+  "contractVersion": "1.2.0-rc.1",
+  "executionAvailable": false,
+  "follower": {
+    "indexedThrough": null,
+    "lagSeconds": null,
+    "lastError": null,
+    "reason": "fees_not_followed",
+    "status": "unavailable",
+    "through": null
+  },
+  "limitations": [
+    "positions_known_to_domino_only",
+    "raw_amounts_without_usd",
+    "state_as_of_last_read",
+    "no_execution_or_signing"
+  ],
+  "mode": "stored_v2_position_fees",
+  "positions": [
+    {
+      "dex": 4,
+      "events": [],
+      "exact": false,
+      "freshness": null,
+      "now": null,
+      "points": [],
+      "positionManager": "0x7c5f5a4bbd8fd63184577525326123b519429bdc",
+      "since": null,
+      "status": "not_followed",
+      "through": null,
+      "tokenId": "41",
+      "transfers": [],
+      "truncated": false,
+      "why": null
+    }
+  ],
+  "schemaVersion": 1,
+  "servedAt": 1790431234
+}

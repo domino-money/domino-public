@@ -103,7 +103,7 @@
     },
     {
       "path": "backend/authenticated_api.py",
-      "sha256": "a79461b3057d272c697eee6496df67faac93a3fa0b3ea393e2222820118c5fa3"
+      "sha256": "e600e74a55c2f0d875d59cfb699cbf2d06ad14cee5e1cbb3b670f038ddeb0a54"
     },
     {
       "path": "backend/access_transport.py",
@@ -111,7 +111,7 @@
     },
     {
       "path": "backend/onboarding_auth.py",
-      "sha256": "a93cac3f85f3d2fcf6e551385b548dbeef89eecde94af6c54aa2dba7cfe6f253"
+      "sha256": "e9e9d1bf7cb3365652686103638002d60d85e548d1dcaa23a0a65dec2013120c"
     },
     {
       "path": "backend/session_models.py",
@@ -119,11 +119,11 @@
     },
     {
       "path": "backend/session_store.py",
-      "sha256": "80e483fd5d8a29cccdf4516af2a7b88382e8c197c387a134447be91d99732937"
+      "sha256": "621c332aa47a0e954973395b3a44a96c36532c47eb2ad06b20b8da92682eb901"
     },
     {
       "path": "backend/session_chain.py",
-      "sha256": "818a0c2971c926f1833f44a2a0545455ea79e71f3e4c58721849f28155010d60"
+      "sha256": "7149a19a0752aa6fbed222e08855f816b5ef7ab0e1dd6f9e734c0fed07cde7cc"
     },
     {
       "path": "backend/read_deadline.py",
@@ -131,7 +131,7 @@
     },
     {
       "path": "backend/hop_log.py",
-      "sha256": "cecd1132e819d745d59649c5e4e3c379a8262973a89fad0864b4d568100274c7"
+      "sha256": "d438d94750902364eaf16cc58ba3712d182178f3ffb810204f6357a868cd4639"
     },
     {
       "path": "backend/bridge_state.py",

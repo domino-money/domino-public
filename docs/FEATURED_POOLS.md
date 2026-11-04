@@ -59,8 +59,10 @@ keeps v1 for its tests.
 | `backend/migrations/043_featured_pools.sql` | The `domino_public.featured_*` tables |
 | `backend/migrations/044_demand_horizon.sql` | The collector's demand horizon (see below) |
 | `backend/migrations/045_featured_live.sql` | Health tracking, and the phase, mode, manual list and veto overrides |
+| `backend/migrations/055_featured_chains.sql` | Every featured row names its chain; Robinhood's keep 4663 ([per chain](#per-chain-base-and-arbitrum-one-in-shadow)) |
 | `api-contracts/read-v5/fixtures/` | The shared answers the Worker and the app validate against (`scripts/export-read-v5-fixtures.py`) |
 | `ops/systemd/domino-featured.service` | The loop, every 30 s, as `domino-write`; installed with public data, never enabled by the installer |
+| `backend/manage_featured_chain.py`, `featured_chain_selector.py`, `featured_chain_evidence.py`, `featured_chains.py`, `featured_policies/` | Base and Arbitrum One in shadow, with `ops/systemd/domino-featured-chain@.{timer,service}` ([per chain](#per-chain-base-and-arbitrum-one-in-shadow)) |
 
 ## A selection
 
@@ -258,6 +260,10 @@ psql -v ON_ERROR_STOP=1 -1 -f backend/migrations/044_demand_horizon.sql
 psql -v ON_ERROR_STOP=1 -1 -f backend/migrations/045_featured_live.sql
 ```
 
+A release from launch round P3 on scopes every featured query by chain and
+needs `055_featured_chains` first; see [per chain](#per-chain-base-and-arbitrum-one-in-shadow)
+for its order.
+
 `install_public_data.py` installs the unit with the release but does not enable
 it. Start the shadow:
 
@@ -302,6 +308,117 @@ Stop it with `systemctl disable --now domino-featured.service`. The served list
 then stays as it was, unrepaired: when it should go too, set `mode --set off`
 and wait for a tick (30 s) first. Disable the unit before rolling public data back to a release without
 `manage_featured.py`.
+
+## Per chain: Base and Arbitrum One, in shadow
+
+Launch round P3 (4 Nov 2026), design item 3.4. Base (8453) and Arbitrum One
+(42161) each select a list of their own every day, with Robinhood's rules,
+and keep it in shadow: it is recorded, and its health checked, but nothing is
+published and read-v5 does not change. Its `{chainId}` version (1.1.0-rc.1,
+v3 pools by their address) comes after the owner has seen the shadow lists.
+
+The owner's decisions of 4 Nov 2026: Robinhood's rules on each chain, Uniswap
+v3 and v4, Robinhood's floors (US$ 1M of 24 h volume, US$ 100k of TVL, US$ 10k
+of reference depth) and ceilings (off) to start, and the canonical USDC, USDT,
+cbBTC and WBTC admitted by address.
+
+| Piece | Robinhood | Base and Arbitrum One |
+| --- | --- | --- |
+| Policy | `featured_policy.json` (no `chain` block, unchanged) | `featured_policies/<profile>.json`, Robinhood's v2 values with the chain's facts |
+| Reference tokens | ETH, WETH, USDG | The profile's ETH, WETH and USDC, by address, checked against the profile on load (`featured_chains.py`) |
+| ETH price for depth | The ETH/USDG pool | The profile's Chainlink ETH/USD, refused while stale or while the sequencer is down or back for less than an hour |
+| Admitted by address | (none reviewed) | USDC is the stable; reviewed: Base cbBTC, Arbitrum USDT0, WBTC and cbBTC, each an address the pinned Uniswap token list names. Base's list names no USDT or WBTC, so neither is admitted there. A token that only reads like one stays out |
+| Listing | `uniswap-v4-robinhood` | Per Uniswap version, v3 then v4, each up to 10 pages; network and DEX ids in the policy, **to be confirmed** |
+| Verification, depth, token code | The collector's verified read and the own node, each pool at its own block | One block, the chain's head, through the V2 endpoints (`v2_rpc.py`: Chainstack first, Alchemy as fallback, never a public RPC), in a few Multicall3 calls (`featured_chain_evidence.py`) |
+| Identity | The catalogue or the PositionManager | v3: the pool is its factory's CREATE2 address for the token0, token1 and fee it reports. v4: the PositionManager's recorded key, hashed to the id |
+| APR | `pool_apr` | The same method: the fixed LP fee less the protocol's share (v3: 1/N of the fee), on the provider's 24 h volume over its TVL |
+| Embedded list | `SELECTED_POOLS` | `CHAIN_SELECTED_POOLS` (`selected_pools.py`): the WETH/USDC 0.05% v3 pool each profile verified; the app's copy comes with the chain's live round |
+| Window | 11:30-12:00 UTC, served from 12:00 | Base 09:30-10:00, Arbitrum 10:30-11:00 UTC: one listing at a time on the house's allowance |
+| Service | `domino-featured.service`, a loop | `domino-featured-chain@<profile>.timer` every minute, starting the oneshot `domino-featured-chain@<profile>.service` |
+
+### What runs
+
+`manage_featured_chain.py --chain <profile> --chain-rpc-file … tick`, once a
+minute:
+
+1. **Selection**, in the chain's window, each minute until one completes;
+   from 10 minutes before the selection hour the attempt is final and keeps
+   the previous list (`carried_over`). It lists GeckoTerminal's v3 then v4
+   pools of the chain by 24 h volume, 20 a page, until a page ends below the
+   volume floor, at the selection's provider priority (`listingProviderHeadroom`)
+   and pace (20 s apart, 30 s after a 429), and screens them on the provider's
+   figures. Only a complete listing reads the chain: the head, the pools'
+   identity and state with the Chainlink feed, each non-reference token's code,
+   their metadata with the depth's bitmap words, then the initialized ticks
+   within the band: four or five billed calls and one per candidate token, at
+   most 512 (not measured yet: tens, up to about 150 on Base, whose v4 lists
+   many hooked pools). A cut listing, a failed chain read or a head over 120 s
+   old is `incomplete`, never judged. The rules (`featured_pools.evaluate`,
+   `compose`) and the store are Robinhood's; the list is recorded as `shadow`,
+   with each pool's `chainId`, `dex` and v3 `address`.
+2. **Health**, in the first minute of every ten, of the chain's latest shadow
+   list: one `/pools/multi` call (refused or rate limited: the provider's
+   figures are unknown, and their conditions neither count nor clear) and one
+   Multicall3 call; in the first minute of the hour, also the listed tokens'
+   code (TA-5). It records the conditions the live service acts on
+   (`featured_health`, per chain) and reports `wouldWithdraw` with the same
+   windows (`featured_live.CONFIRM`). It withdraws, repairs, excludes and
+   serves nothing.
+
+A run's JSON line goes to the unit's journal (`service: featured-chain`).
+Overrides are per chain and apply from the next selection:
+
+```bash
+manage_featured_chain.py --chain base-8453 status
+manage_featured_chain.py --chain base-8453 exclude --token 0x… --reason "…"
+manage_featured_chain.py --chain base-8453 pin --pool-id 0x… --slot 1 --reason "…"   # a v3 pool by address
+manage_featured_chain.py --chain base-8453 --chain-rpc-file … health            # a check now, tokens included
+```
+
+The store (`FeaturedStore(catalogue, chain_id)`) refuses every serving step
+for a chain other than Robinhood: `serve`, `current`, `draft`, and the phase,
+mode, manual list and veto overrides. `featured_current` stays Robinhood's.
+
+### Starting the shadow (after the launch)
+
+1. Confirm GeckoTerminal's ids with one call each, from the VM:
+   `GET https://api.geckoterminal.com/api/v2/networks/base/dexes` and
+   `…/networks/arbitrum/dexes`. The policies say `base` with
+   `uniswap-v3-base` and `uniswap-v4-base`, and `arbitrum` with
+   `uniswap_v3_arbitrum` and `uniswap-v4-arbitrum`; native ETH in a v4 pool is
+   expected as the zero address, as on Robinhood (a pool listed otherwise fails
+   `provider_currency_or_pool_mismatch`). A wrong id answers 404 and leaves the
+   runs `incomplete` (`stoppedBy: http_404`). A changed id is a policy change:
+   it changes the policy version.
+2. Stop `domino-featured.service` (outside 11:30-12:30 UTC), apply
+   `055_featured_chains` as postgres (`apply_migrations.py --migrations
+   055_featured_chains`), install the public-data release that carries it, then
+   start `domino-featured.service` again: a release before 055 writes
+   `ON CONFLICT(address)` and `(pool_id,condition)`, which 055 replaces.
+3. `v2_rpc.py check --chain base-8453 --chain-rpc-file …` (and Arbitrum): the
+   writer's file the V2 indexers read already names both chains.
+4. `systemctl daemon-reload`, then
+   `systemctl enable --now domino-featured-chain@base-8453.timer` and
+   `domino-featured-chain@arbitrum-42161.timer`. Stop with `disable --now`.
+
+### Going live
+
+Not before the owner has read 3 to 5 days of shadow lists and set each chain's
+floors (the design expects many thin, high-turnover pools to pass Robinhood's).
+Then, in one round: read-v5 `1.1.0-rc.1` with `{chainId}` and v3 pools by
+address, in a version window with rc.2 for the Worker and the app; one
+`featured_current` row per chain; a live service per chain, whose readiness and
+keep-warm cannot lean on the collector, which follows Robinhood alone; the app
+reading each chain's list (0xdecimal). Until then the store refuses it.
+
+### Known limits
+
+- A v4 pool no position was ever minted in through the profile's
+  PositionManager has no recorded key: it stays `identity_unresolved`.
+- The figures are the listing's, read up to the selection's 10 minutes before
+  the chain; the rules rank on them as Robinhood's selection does.
+- In shadow, the provider's unknown figures keep their conditions' windows
+  without Robinhood's 6-hour horizon (#278).
 
 ## Provider priority (042, 047)
 

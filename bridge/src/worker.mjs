@@ -134,11 +134,42 @@ function config(env, protocol) {
   return { appOrigin, gatewayOrigin, enabledReads, clientId: env.ACCESS_CLIENT_ID, clientSecret: env.ACCESS_CLIENT_SECRET };
 }
 
-function checkBrowser(request, appOrigin, capability) {
+// Since 4 Nov 2026 (launch round P3, item 7: testing without real money), a private family's Worker (session and the
+// authenticated transport) also admits the Pages preview origins PREVIEW_ORIGINS lists, comma-separated, besides
+// APP_ORIGIN. Each is one exact origin compared as a whole string: https, a lower-case DNS name and nothing else (no
+// port, path, wildcard or IP), the form the listeners' SIWE policy takes (backend/session_siwe.py), at most
+// MAX_PREVIEW_ORIGINS, none twice, none APP_ORIGIN and none the Worker's own gateway. Unset or empty lists none, every
+// Worker's behaviour before. Why an exact list keeps the boundary: docs/PREVIEW_PUBLIC_READS.md, "Preview origins".
+//
+// A list that breaks a rule turns preview admission off, and only that (review L3, same day): APP_ORIGIN keeps
+// serving, every preview request is refused as an unlisted origin, and each request logs `preview_origins_invalid`
+// (wrangler tail; the private Workers keep no logs) until the list is fixed. It used to answer upstream_unavailable to
+// production too.
+export const MAX_PREVIEW_ORIGINS = 4;
+const PREVIEW_ORIGIN = /^https:\/\/(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+
+function previewOrigins(value, appOrigin, gatewayOrigin, service) {
+  if (value === undefined || value === '') return [];
+  const listed = typeof value === 'string' ? value.split(',') : null;
+  // The pattern admits only a URL's own serialized origin (lower case, no port, path, userinfo or trailing dot), so
+  // the string compared below is the one a browser sends in Origin for that host.
+  if (listed !== null && listed.length <= MAX_PREVIEW_ORIGINS && new Set(listed).size === listed.length &&
+      listed.every((origin) => origin.length <= 261 && PREVIEW_ORIGIN.test(origin) && origin !== appOrigin && origin !== gatewayOrigin)) {
+    return listed;
+  }
+  console.error(JSON.stringify({ service, error: 'preview_origins_invalid', previewAdmission: 'off' }));
+  return [];
+}
+
+// The browser origin a request comes from, when it is one of `origins` (APP_ORIGIN, then any preview origin): the
+// request URL's own origin, which the Origin header must name exactly, so a page on one admitted origin can never
+// speak for another through a third's host. Returned so the Worker tells its listener which one it admitted
+// (X-Domino-Browser-Origin), never a value the browser chose that this check did not compare.
+function browserOrigin(request, origins, capability) {
   const url = new URL(request.url);
-  if (url.origin !== appOrigin || (request.headers.has('Host') && request.headers.get('Host') !== url.host)) fail('origin_not_allowed');
+  if (!origins.includes(url.origin) || (request.headers.has('Host') && request.headers.get('Host') !== url.host)) fail('origin_not_allowed');
   const origin = request.headers.get('Origin');
-  if ((!capability || origin !== null) && origin !== appOrigin) fail('origin_not_allowed');
+  if ((!capability || origin !== null) && origin !== url.origin) fail('origin_not_allowed');
   for (const [header, accepted] of [
     ['Sec-Fetch-Site', ['same-origin']],
     ['Sec-Fetch-Mode', ['cors', 'same-origin']],
@@ -148,6 +179,12 @@ function checkBrowser(request, appOrigin, capability) {
     if (value !== null && !accepted.includes(value)) fail('origin_not_allowed');
   }
   if (request.headers.has('Sec-Fetch-User')) fail('origin_not_allowed');
+  return url.origin;
+}
+
+// The read Worker and the public families admit APP_ORIGIN alone, as before.
+function checkBrowser(request, appOrigin, capability) {
+  browserOrigin(request, [appOrigin], capability);
 }
 
 function jsonContentType(headers) {
@@ -449,4 +486,4 @@ export default createWorker();
 // Internal transport primitives shared with the separate session Worker. This
 // exports no reader dispatch or service credentials; read routes stay unchanged.
 export { BridgeError, fail, exactOrigin, checkBrowser, jsonContentType, lengthWithin,
-  cancelBody, deadline, readText, clientIp };
+  cancelBody, deadline, readText, clientIp, previewOrigins, browserOrigin };

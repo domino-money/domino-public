@@ -14,7 +14,7 @@
 // no session, so the app can ask whether the route is switched on before it plans (the read Worker's capabilities, in
 // this family's words). It never says more than this Worker's own configuration knows: which chains the listener
 // plans for is the listener's (position_plan_chain_unavailable), not this answer's.
-import { fail, BridgeError, checkBrowser, exactOrigin } from './worker.mjs';
+import { fail, BridgeError, browserOrigin, exactOrigin, previewOrigins } from './worker.mjs';
 import { createAuthenticatedWorker } from './authenticated-worker.mjs';
 import * as runtime from '../../api-contracts/position-plan-v1/runtime.mjs';
 
@@ -77,27 +77,29 @@ function headersFor(id) {
 /**
  * Whether the route is on, as authenticated-worker.mjs's config() decides it: the exact "true", and then a gateway
  * origin of its own and the Access pair, or the configuration is broken (upstream_unavailable, as every POST answers).
+ * `origins` are the browser origins its POSTs admit: APP_ORIGIN and the listed previews (4 Nov 2026, launch round P3).
  */
 function switchedOn(env) {
   const appOrigin = exactOrigin(env.APP_ORIGIN);
   if (!appOrigin) fail('upstream_unavailable');
-  if (env[`${ENV}_BRIDGE_ENABLED`] !== 'true') return { appOrigin, enabled: false };
   const gatewayOrigin = exactOrigin(env[`${ENV}_GATEWAY_ORIGIN`]);
+  const origins = [appOrigin, ...previewOrigins(env.PREVIEW_ORIGINS, appOrigin, gatewayOrigin, 'position-plan-bridge')];
+  if (env[`${ENV}_BRIDGE_ENABLED`] !== 'true') return { origins, enabled: false };
   const secret = (value) => typeof value === 'string' && /^[\x21-\x7e]{1,1024}$/u.exec(value)?.[0] === value;
   if (!gatewayOrigin || gatewayOrigin === appOrigin || !secret(env[`${ENV}_ACCESS_CLIENT_ID`]) ||
       !secret(env[`${ENV}_ACCESS_CLIENT_SECRET`])) fail('upstream_unavailable');
-  return { appOrigin, enabled: true };
+  return { origins, enabled: true };
 }
 
 /** GET capabilities: local, no session, no upstream call. Browser checks as the read Worker's capabilities GET. */
 function capabilities(request, env) {
   const id = crypto.randomUUID();
   try {
-    const { appOrigin, enabled } = switchedOn(env);
+    const { origins, enabled } = switchedOn(env);
     const url = new URL(request.url);
     if (url.search || url.hash) fail('route_not_available');
     if (request.method !== 'GET') fail('method_not_allowed');
-    checkBrowser(request, appOrigin, true);
+    browserOrigin(request, origins, true);
     const version = request.headers.get(HEADER);
     if (version !== null && version !== runtime.CONTRACT_VERSION) fail('upstream_contract_mismatch');
     return new Response(JSON.stringify({

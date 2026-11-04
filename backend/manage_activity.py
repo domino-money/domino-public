@@ -17,7 +17,9 @@ remembers how far it got in the request.
 pool-activity read calls coverage older than 120 s stale, so the default lag is
 100 blocks on a one-second chain. `--follow --domino-positions` adds every pool
 holding a Domino position (the Setup contract's SetupMinted events) on each run
-and registers those the catalogue can anchor (domino-activity-follow.timer).
+and registers those the catalogue can anchor (domino-activity-follow.timer). The
+scan of those events keeps a checkpoint (migration 056): a run reads only the
+blocks after it, up to the same lag behind the head.
 """
 import argparse
 from dataclasses import asdict
@@ -32,7 +34,7 @@ from activity_store import PgActivity
 from catalogue import configured_writer_catalogue
 from catalogue_indexer import INITIALIZE_TOPIC, IndexRpc, decode_initialize
 from discovery import POOL_MANAGER, STATE_VIEW, DataError, DiscoveryReader, bytes32
-from domino_positions import MAX_POSITIONS, position_pools
+from domino_positions import MAX_POSITIONS, MAX_SCAN_REQUESTS, PgMintScan, position_pools, scan_mints
 from followers import follow_many
 from indexer_io import MAX_INDEXER_SPAN, AdaptiveSpan, HeaderBudget, RequestBudget, indexer_transport
 from local_config import load_config
@@ -679,14 +681,18 @@ def main():
         if args.follow:
             positions=None
             if args.domino_positions:
-                # The head, the Setup contract's logs and one key read per position.
-                rpc=IndexRpc(url,transport=indexer_transport(60,budget=rpc_budget),max_requests=MAX_POSITIONS+16)
-                positions=position_pools(rpc,DiscoveryReader(rpc).snapshot())
+                # The head, the Setup contract's logs past the scan's checkpoint and one key read per position.
+                rpc=IndexRpc(url,transport=indexer_transport(60,budget=rpc_budget),
+                             max_requests=MAX_POSITIONS+MAX_SCAN_REQUESTS+16)
+                head=DiscoveryReader(rpc).snapshot()
+                # The scan stays as far behind the head as the walks it feeds.
+                scan=scan_mints(PgMintScan(catalogue),rpc,through=head.number-args.lag)
+                positions=position_pools(rpc,head,scan.pop('tokenIds'))
                 followed,registered_now,not_registered=domino_position_targets(store,worker,positions)
                 pool_ids=sorted(set(pool_ids)|set(followed))
                 positions={'pools':len(positions),'positions':sum(len(ids) for ids in positions.values()),
                            'followed':len(followed),'registeredNow':registered_now,
-                           'notRegistered':not_registered}
+                           'notRegistered':not_registered,'scan':scan}
             if not pool_ids:
                 if positions is not None:
                     print(json.dumps({'schemaVersion':1,'mode':'core_pool_activity_follower','chainId':4663,

@@ -89,7 +89,8 @@ def main():
     import argparse
     from pathlib import Path
     import uvicorn
-    from bridge_identity import AccessVerifier
+    from bridge_identity import AccessVerifier, configured_preview_identity
+    from session_siwe import configured_preview_origins
     from catalogue import database_settings
     from crosschain_across import destination_endpoints
     from crosschain_config import ConfigError, load_settings
@@ -119,12 +120,16 @@ def main():
             robinhood = configured_rpc_urls(config)
             auth = OnboardingAuth(SessionStore(database_settings(), abuse_secret=bytes.fromhex(secret)),
                                   EoaChecker(robinhood, allowed_hosts=hosts))
+            # Review L1 (4 Nov 2026): the separate preview Workers' own Access identity, optional.
             verifier = AccessVerifier(os.environ.get('DOMINO_CROSSCHAIN_ACCESS_ISSUER'),
-                os.environ.get('DOMINO_CROSSCHAIN_ACCESS_AUDIENCE'), os.environ.get('DOMINO_CROSSCHAIN_ACCESS_SERVICE_ID'))
+                os.environ.get('DOMINO_CROSSCHAIN_ACCESS_AUDIENCE'), os.environ.get('DOMINO_CROSSCHAIN_ACCESS_SERVICE_ID'),
+                preview_service_id=configured_preview_identity(os.environ.get('DOMINO_CROSSCHAIN_ACCESS_PREVIEW_SERVICE_ID'),
+                    os.environ.get('DOMINO_CROSSCHAIN_ACCESS_SERVICE_ID'), 'DOMINO_CROSSCHAIN_ACCESS_PREVIEW_SERVICE_ID'))
             service = build_service(settings, auth, robinhood_rpc=robinhood[0],
                                     chain_endpoints=destination_endpoints(settings.chain_rpc_file))
             gateway = CrosschainGateway(service=service, verifier=verifier, origin=os.environ.get('DOMINO_SESSION_ORIGIN'),
-                                        enabled=True)
+                                        preview_origins=configured_preview_origins(os.environ.get('DOMINO_SESSION_PREVIEW_ORIGINS'),
+                    os.environ.get('DOMINO_SESSION_ORIGIN'), 'DOMINO_SESSION_PREVIEW_ORIGINS'), enabled=True)
     except ConfigError as error:
         # The setting's name only, never its value.
         problem = str(error)

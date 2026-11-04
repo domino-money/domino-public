@@ -6,10 +6,13 @@ code is a contract account and stays unsupported. An observation never
 authenticates by itself. The session service must separately verify SIWE and
 atomically authorize against its private store, which also refuses a session
 whose account changed kind or delegate since it was admitted.
-Each check creates a new bounded reader; no positive code/session cache exists.
+Each check creates a new bounded reader. AccountCache keeps a positive answer
+about a minute for the read-only routes of the signed-in listeners only; sign-in
+and refresh (session_service.py) and every other route read the chain.
 """
 import math
 import re
+from threading import Lock
 import time
 
 from discovery import (CHAIN_ID, SNAPSHOT_LOOPBACK_RPC, DataError, address as normalized_address,
@@ -17,13 +20,19 @@ from discovery import (CHAIN_ID, SNAPSHOT_LOOPBACK_RPC, DataError, address as no
 from read_deadline import read_deadline
 from rpc_config import DEFAULT_RPC_HOSTS, MAX_RPC_ENDPOINTS, rpc_endpoint, rpc_hosts
 from rpc_failover import FailoverReadRpc
-from session_models import SessionError, account_code
+from session_models import SessionError, account_code, validate_account
 
 
 CHECK_BUDGET_SECONDS = 10
 MAX_CHECK_REQUESTS = 16
 MAX_BLOCK_AGE_SECONDS = 120
 MAX_FUTURE_SECONDS = 15
+# 4 Nov 2026 (launch round P3): every signed-in call paid the account check, six
+# sequential chain reads, a status poll included. A positive answer is kept this
+# long for read-only routes (onboarding_auth.READ_ONLY_ROUTES), and the listener
+# holds at most this many accounts, the oldest leaving first.
+ACCOUNT_CACHE_SECONDS = 60
+MAX_CACHED_ACCOUNTS = 4096
 
 
 class EoaChecker:
@@ -87,3 +96,46 @@ class EoaChecker:
             raise
         except Exception:
             raise SessionError('account_check_unavailable') from None
+
+
+class AccountCache:
+    """A positive account check kept ACCOUNT_CACHE_SECONDS, served only to a session admitted with its delegate.
+
+    P2 (3 Nov 2026) found why a plain positive cache is unsafe: a wallet
+    upgraded to EIP-7702 mid-session loops sign-in. The fresh check that sees the
+    new delegate revokes the session, the wallet signs in again with it, and the
+    cached answer from before the upgrade (no delegate) revokes the new session
+    on its next call, and the next, until the entry expires. So a cached answer
+    is served only when its delegate is the one the session was admitted with
+    (None for a plain EOA): it can only confirm a session as admitted, never
+    revoke one. Any other answer comes from the chain, and only that one revokes.
+    Every fresh positive answer replaces the account's entry, whichever route
+    asked, so the entry is the newest observation this listener holds. Failures
+    and unsupported accounts are never kept.
+    """
+
+    def __init__(self, checker, *, seconds=ACCOUNT_CACHE_SECONDS, capacity=MAX_CACHED_ACCOUNTS,
+                 clock=time.monotonic):
+        self.checker, self.seconds, self.capacity, self.clock = checker, seconds, capacity, clock
+        self.entries = {}
+        self.lock = Lock()
+
+    def fresh(self, owner):
+        """A check read from the chain; a positive one becomes the account's entry."""
+        observed = self.clock()
+        validation = dict(validate_account(self.checker.check(owner)))
+        with self.lock:
+            # Insertion order is age order: a renewed account moves to the end.
+            self.entries.pop(owner, None)
+            while len(self.entries) >= self.capacity:
+                del self.entries[next(iter(self.entries))]
+            self.entries[owner] = (observed + self.seconds, validation)
+        return dict(validation)
+
+    def read_only(self, owner, delegate):
+        """For a read-only route of a session admitted with `delegate`: the entry when it is younger than
+        ACCOUNT_CACHE_SECONDS and names that delegate, else a fresh check."""
+        entry = self.entries.get(owner)
+        if entry is not None and self.clock() < entry[0] and entry[1].get('delegate') == delegate:
+            return dict(entry[1])
+        return self.fresh(owner)

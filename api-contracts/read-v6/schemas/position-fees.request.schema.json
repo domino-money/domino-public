@@ -1,0 +1,61 @@
+{
+  "$defs": {
+    "FeePositionRef": {
+      "additionalProperties": false,
+      "properties": {
+        "dex": {
+          "enum": [
+            3,
+            4
+          ],
+          "title": "Dex",
+          "type": "integer"
+        },
+        "tokenId": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Tokenid",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        }
+      },
+      "required": [
+        "dex",
+        "tokenId"
+      ],
+      "title": "FeePositionRef",
+      "type": "object"
+    }
+  },
+  "$id": "https://domino.invalid/contracts/read-v6/position-fees.request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "1.2.0-rc.1: up to MAX_FEE_POSITIONS positions of one chain, each once.",
+  "properties": {
+    "chainId": {
+      "enum": [
+        4663,
+        8453,
+        42161
+      ],
+      "title": "Chainid",
+      "type": "integer"
+    },
+    "positions": {
+      "items": {
+        "$ref": "#/$defs/FeePositionRef"
+      },
+      "maxItems": 8,
+      "minItems": 1,
+      "title": "Positions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "chainId",
+    "positions"
+  ],
+  "title": "PositionFeesRequest",
+  "type": "object",
+  "x-contract-version": "1.2.0-rc.1"
+}

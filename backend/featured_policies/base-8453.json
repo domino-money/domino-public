@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "chain": {
+    "chainId": 8453,
+    "profile": "base-8453",
+    "stable": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+    "geckoTerminal": {"network": "base", "dexes": {"uniswap-v3-base": 3, "uniswap-v4-base": 4}}
+  },
+  "size": 6,
+  "selectionHourUtc": 10,
+  "selectionLeadMinutes": 30,
+  "selectionRetryUntilMinutes": 10,
+  "maxPins": 2,
+  "maxListingPages": 10,
+  "listingProviderHeadroom": 2,
+  "referenceTokens": {
+    "0x0000000000000000000000000000000000000000": {"symbol": "ETH", "decimals": 18},
+    "0x4200000000000000000000000000000000000006": {"symbol": "WETH", "decimals": 18},
+    "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913": {"symbol": "USDC", "decimals": 6}
+  },
+  "sameAssetPairs": [["0x0000000000000000000000000000000000000000", "0x4200000000000000000000000000000000000006"]],
+  "ethUsdPricePool": null,
+  "protectedSymbols": ["USDC", "USDT", "DAI", "BTC", "WBTC", "CBBTC",
+                       "TSLA", "GOOGL", "META", "MSTR", "NET", "CRCL", "SPY", "NVDAX3L"],
+  "forbiddenSymbols": ["DOMINO", "ROBINHOOD"],
+  "reviewedTokens": ["0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf"],
+  "requireReviewedTokens": false,
+  "rejectUpgradeableTokens": true,
+  "rankBy": "fresh",
+  "persistence": false,
+  "fill": ["fallback"],
+  "thresholds": {
+    "minVolume24hUsd": "1000000",
+    "minTvlUsd": "100000",
+    "minReferenceDepthUsd": "10000",
+    "maxAprPercent": null,
+    "maxTurnover24h": null,
+    "minPoolAgeHours": null,
+    "minTraders24h": null,
+    "minSwaps24h": null,
+    "minH6ShareOfH24": null,
+    "maxAbsPriceChange24hPercent": null,
+    "maxProviderPriceDeviation": null
+  },
+  "referenceDepth": {"bandPercent": "10", "maxSteps": 300},
+  "hysteresis": {"incumbentFloorFactor": "1", "challengerMargin": "1", "maxRankedSwapsPerDay": 6},
+  "diversity": {"perNonReferenceToken": 1, "keep": "deepest", "maxMajorPairs": 1},
+  "minPublishable": 1,
+  "validHours": 36,
+  "persistenceLookbackHours": 48
+}

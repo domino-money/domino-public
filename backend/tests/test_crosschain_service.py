@@ -10,8 +10,8 @@ import unittest
 from crosschain_contract_fixtures import (OUTPUT_ETH, OUTPUT_USDG, across_filled, build_fixtures, build_variants,
                                           relay_status, status_request)
 from crosschain_support import (CSRF, FEE, FILL_HASH, OTHER, OWNER, PRIVATE, RC1, SESSION, USDC_ARBITRUM, USDC_BASE,
-                                USDG, ZERO, FakeAuth, FakeRpc, default_routes, fixture, make_service, output_request,
-                                previous_request, quote_request, quote_time, relay_record)
+                                USDG, WETH_ROBINHOOD, ZERO, FakeAuth, FakeRpc, default_routes, fixture, make_service,
+                                output_request, previous_request, quote_request, quote_time, relay_record)
 from discovery import DataError
 from crosschain_http import ProviderError
 from crosschain_models import (CONTRACT_VERSION, CONTRACT_VERSIONS, PREVIOUS_VERSION, CrosschainError, advance,
@@ -24,6 +24,7 @@ from session_models import SessionError
 DEPOSITORY = '0x4cd00e387622c35bddb9b4c962c136462338bc31'
 SPOKE_ARBITRUM = '0xe35e9842fceaca96570b734083f4a58e8f7c5f2a'
 SPOKE_BASE = '0x09aea4b2242abc8bb4bb78d537a67a245a7bec64'
+WETH_ARBITRUM = '0x82af49447d8a07e3bd95bd0d56f35241523fbab1'
 USDG_FROM_BASE = dict(origin=8453, origin_token=USDC_BASE)
 ETH_FROM_BASE = dict(origin=8453, origin_token=ZERO, destination_token=ZERO)
 
@@ -468,6 +469,44 @@ class OriginsTests(unittest.TestCase):
         # Cached: a second request asks neither provider again.
         run(service, 'origins', {'destinationChainId': 4663, 'destinationToken': USDG})
         self.assertEqual((len(relay_http.calls), len(across_http.calls)), (1, 1))
+
+    def test_origins_for_eth_list_each_origins_native_currency_and_never_a_wrapped_route(self):
+        """Launch round P3 (4 Nov 2026), item 7: a deposit of ETH, the zero address, into Robinhood Chain.
+
+        Across bridges ETH from its native routes only, as the zero address with the origin's native symbol; its
+        routes into Robinhood's WETH are WETH, never ETH. Relay lists every currency it can start from, the native
+        one included. The zero address is each origin's own native currency (CRO on Cronos), and the destination
+        chain is no origin of its own.
+        """
+        relay_routes, across_routes = default_routes()
+        service, relay_http, across_http = make_service(relay_routes=relay_routes, across_routes=across_routes)
+        origins = run(service, 'origins', {'destinationChainId': 4663, 'destinationToken': ZERO})['origins']
+        self.assertEqual((origins['destinationChainId'], origins['destinationToken']), (4663, ZERO))
+        self.assertEqual([p['status'] for p in origins['providers']], ['listed', 'listed'])
+        chains = {chain['chainId']: {token['address']: token for token in chain['tokens']} for chain in origins['chains']}
+        self.assertNotIn(4663, chains)
+        # Native ETH where Across has a native route into Robinhood Chain: both providers, 18 decimals from Relay.
+        for chain in (1, 10, 8453, 42161):
+            with self.subTest(chain=chain):
+                self.assertEqual(chains[chain][ZERO], {'address': ZERO, 'symbol': 'ETH', 'decimals': 18,
+                                                       'providers': ['relay', 'across']})
+        # Linea: Relay starts from its ETH, Across has no native route into Robinhood Chain.
+        self.assertEqual(chains[59144][ZERO]['providers'], ['relay'])
+        # Cronos's zero address is CRO, Relay's alone (no Across SpokePool is pinned there).
+        self.assertEqual((chains[25][ZERO]['symbol'], chains[25][ZERO]['providers']), ('CRO', ['relay']))
+        # Across's WETH routes into Robinhood's WETH are not ETH: Arbitrum's WETH is Relay's alone here, and Polygon
+        # and BNB Chain, whose only routes in are WETH ones, are no origin of ETH.
+        self.assertEqual(chains[42161][WETH_ARBITRUM]['providers'], ['relay'])
+        self.assertTrue({137, 56}.isdisjoint(chains))
+        for tokens in chains.values():
+            self.assertTrue(all(token['providers'] == ['relay'] for address, token in tokens.items() if address != ZERO))
+        # The listing for Robinhood's WETH is another listing, which those routes do serve.
+        weth = run(service, 'origins', {'destinationChainId': 4663, 'destinationToken': WETH_ROBINHOOD})['origins']
+        weth_chains = {chain['chainId']: {token['address']: token for token in chain['tokens']} for chain in weth['chains']}
+        self.assertEqual(weth_chains[42161][WETH_ARBITRUM]['providers'], ['relay', 'across'])
+        self.assertIn(137, weth_chains)
+        # Relay's chain listing serves both; Across is asked once per destination token, never answered from the other's.
+        self.assertEqual((len(relay_http.calls), len(across_http.calls)), (1, 2))
 
     def test_a_throttled_provider_is_reported_and_the_other_still_lists(self):
         relay_routes, across_routes = default_routes()

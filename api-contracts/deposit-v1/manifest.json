@@ -235,15 +235,15 @@
     },
     {
       "path": "backend/deposit_api.py",
-      "sha256": "ac29874ee202de2d379e65bea13910147194179ff326fd28e04e4972be8a9b58"
+      "sha256": "d19eab2567875e7754f727d9899b6b4af6896055346791fe1f6e463631c3a287"
     },
     {
       "path": "backend/authenticated_api.py",
-      "sha256": "a79461b3057d272c697eee6496df67faac93a3fa0b3ea393e2222820118c5fa3"
+      "sha256": "e600e74a55c2f0d875d59cfb699cbf2d06ad14cee5e1cbb3b670f038ddeb0a54"
     },
     {
       "path": "backend/hop_log.py",
-      "sha256": "cecd1132e819d745d59649c5e4e3c379a8262973a89fad0864b4d568100274c7"
+      "sha256": "d438d94750902364eaf16cc58ba3712d182178f3ffb810204f6357a868cd4639"
     },
     {
       "path": "backend/access_transport.py",

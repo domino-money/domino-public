@@ -71,6 +71,20 @@ def limited(seconds):
     return error
 
 
+# Launch round P3 (4 Nov 2026), item 7, review M1 and L3. `origin` below is the browser origin a listener admitted, as
+# migration 057 stores it: None for the listener's canonical origin, the exact origin string for a listed preview. A
+# session is used only through the origin it signed in on, in both directions; and a preview's traffic spends budgets
+# of its own (every rate key kind, global, IP and account), so neither a preview nor anything deployed to its Pages
+# environment can spend production's site-wide limits or a production visitor's IP budget.
+def scoped(kind, origin):
+    """The rate key kind of `origin`'s traffic: production's own, or the preview's."""
+    return kind if origin is None else kind + '@preview'
+
+
+def same_origin(row, origin):
+    return row is not None and row['origin'] == origin
+
+
 class _DeadlineConnection:
     """Clamp every SQL operation to the same worker budget, including cleanup."""
     def __init__(self, conn):
@@ -189,11 +203,11 @@ class SessionStore:
                              'ON CONFLICT(key_hash) DO UPDATE SET reset_at=EXCLUDED.reset_at,count=1',
                              (key,now+timedelta(seconds=seconds)))
 
-    def _private_rate(self, conn, now, client, address):
+    def _private_rate(self, conn, now, client, address, origin=None):
         pending = []
         for kind,value in (('private-ip',client),('private-account',address)):
             if value is None:continue
-            key=self._key(kind,value)
+            key=self._key(scoped(kind,origin),value)
             row=conn.execute('SELECT * FROM private_limits WHERE key_hash=%s',(key,)).fetchone()
             if row:
                 delta=now-row['updated_at']
@@ -245,11 +259,11 @@ class SessionStore:
     def _session(conn, session):
         return conn.execute('SELECT * FROM sessions WHERE bearer_hash=%s',(digest(session),)).fetchone()
 
-    def bootstrap(self, client, preauth=None, session=None):
+    def bootstrap(self, client, preauth=None, session=None, origin=None):
         new,csrf=bearer(),bearer()
         def operation(conn,now):
-            denied=self._rate(conn,now,('issuance-global','all',ISSUANCE_GLOBAL_PER_MINUTE,60),
-                              ('issuance-ip',client,ISSUANCE_IP_PER_MINUTE,60))
+            denied=self._rate(conn,now,(scoped('issuance-global',origin),'all',ISSUANCE_GLOBAL_PER_MINUTE,60),
+                              (scoped('issuance-ip',origin),client,ISSUANCE_IP_PER_MINUTE,60))
             if denied:return denied
             if self._active(self._session(conn,session),now):
                 return SessionError('session_exists')
@@ -269,11 +283,11 @@ class SessionStore:
                     'credentials':{'preauth':new}}
         return self._transaction(operation)
 
-    def challenge(self, client, preauth, csrf, address, issue):
+    def challenge(self, client, preauth, csrf, address, issue, origin=None):
         identifier,nonce=secrets.token_hex(16),secrets.token_hex(16)
         def operation(conn,now):
-            denied=self._rate(conn,now,('issuance-global','all',ISSUANCE_GLOBAL_PER_MINUTE,60),
-                              ('issuance-ip',client,ISSUANCE_IP_PER_MINUTE,60))
+            denied=self._rate(conn,now,(scoped('issuance-global',origin),'all',ISSUANCE_GLOBAL_PER_MINUTE,60),
+                              (scoped('issuance-ip',origin),client,ISSUANCE_IP_PER_MINUTE,60))
             if denied:return denied
             context=self._context(conn,now,preauth,csrf)
             if isinstance(context,SessionError):return context
@@ -291,10 +305,10 @@ class SessionStore:
                                  min(expires,context['expires_at']),'challenge_invalid')
         return self._transaction(operation)
 
-    def reserve_verify(self, client, preauth, csrf, identifier, message, old_session=None):
+    def reserve_verify(self, client, preauth, csrf, identifier, message, old_session=None, origin=None):
         def operation(conn,now):
-            denied=self._rate(conn,now,('verify-global','all',VERIFY_GLOBAL_PER_MINUTE,60),
-                              ('verify-ip',client,VERIFY_IP_PER_MINUTE,60))
+            denied=self._rate(conn,now,(scoped('verify-global',origin),'all',VERIFY_GLOBAL_PER_MINUTE,60),
+                              (scoped('verify-ip',origin),client,VERIFY_IP_PER_MINUTE,60))
             if denied:return denied
             if self._active(self._session(conn,old_session),now):
                 return SessionError('session_exists')
@@ -309,7 +323,7 @@ class SessionStore:
             return challenge
         return self._transaction(operation)
 
-    def reserve_verified_address(self, preauth, csrf, challenge):
+    def reserve_verified_address(self, preauth, csrf, challenge, origin=None):
         """Called only after SIWE ownership proof, before any EOA provider read."""
         def operation(conn,now):
             context=self._context(conn,now,preauth,csrf)
@@ -321,12 +335,12 @@ class SessionStore:
                         ('address','nonce','message'))):
                 return SessionError('challenge_invalid')
             # Unsigned requests never spend another wallet's shared budget.
-            denied=self._rate(conn,now,('verified-address',current['address'],PROVEN_WALLET_PER_HOUR,3600))
+            denied=self._rate(conn,now,(scoped('verified-address',origin),current['address'],PROVEN_WALLET_PER_HOUR,3600))
             if denied:return denied
             return _CommitResult(None,min(context['expires_at'],current['expires_at']),'challenge_invalid')
         return self._transaction(operation)
 
-    def finish_verify(self, preauth, csrf, challenge, validation, old_session=None):
+    def finish_verify(self, preauth, csrf, challenge, validation, old_session=None, origin=None):
         new=bearer()
         new_csrf=session_csrf(new)
         def operation(conn,now):
@@ -347,11 +361,13 @@ class SessionStore:
             conn.execute('UPDATE contexts SET consumed_at=%s WHERE bearer_hash=%s',(now,digest(preauth)))
             conn.execute('UPDATE sessions SET revoked_at=%s WHERE bearer_hash=%s',(now,digest(old_session)))
             expires=now+timedelta(hours=12)
+            # The session is the origin's it signed in on (migration 057): None, the canonical one, or a preview's.
             conn.execute('INSERT INTO sessions(bearer_hash,csrf_hash,source_context_hash,address,chain_id,policy,'
-                         'created_at,last_used_at,expires_at,block_number,block_hash,delegate) VALUES '
-                         '(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                         'created_at,last_used_at,expires_at,block_number,block_hash,delegate,origin) VALUES '
+                         '(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
                          (digest(new),digest(new_csrf),digest(preauth),current['address'],CHAIN_ID,POLICY_VERSION,
-                          now,now,expires,validation['blockNumber'],validation['blockHash'],validation.get('delegate')))
+                          now,now,expires,validation['blockNumber'],validation['blockHash'],validation.get('delegate'),
+                          origin))
             return _CommitResult({'result':self._result(current['address'],expires,new_csrf,validation),
                     'credentials':{'preauth':None,'session':new}},
                     min(context['expires_at'],current['expires_at']),'challenge_invalid')
@@ -362,7 +378,7 @@ class SessionStore:
         return {'authenticated':True,'owner':{'address':address,'chainId':CHAIN_ID},
                 'expiresAt':utc(expires),'csrfToken':csrf,'validation':validation}
 
-    def me(self, session):
+    def me(self, session, origin=None):
         """Reload/bootstrap read: no RPC, renewal, cleanup, quota or revocation.
 
         The returned validation is the last stored observation, not a fresh EOA
@@ -371,7 +387,7 @@ class SessionStore:
         csrf=session_csrf(session)
         def operation(conn,now):
             row=self._session(conn,session)
-            if not self._active(row,now):return SessionError('session_required')
+            if not self._active(row,now) or not same_origin(row,origin):return SessionError('session_required')
             # Pre-v2 candidates used unrecoverable random CSRF. Never replace
             # their hash on GET; rollout revokes old sessions before enabling.
             if not same_hash(row['csrf_hash'],csrf):return SessionError('session_required')
@@ -382,16 +398,16 @@ class SessionStore:
                                  min(row['expires_at'],row['last_used_at']+timedelta(minutes=30)),'session_required')
         return self._transaction(operation,readonly=True)
 
-    def begin_private(self, client, session, csrf):
+    def begin_private(self, client, session, csrf, origin=None):
         def operation(conn,now):
             row=self._session(conn,session)
-            if not self._active(row,now):return SessionError('session_required')
+            if not self._active(row,now) or not same_origin(row,origin):return SessionError('session_required')
             # Missing/foreign CSRF must not consume another tab's refresh quota
             # or reach a code check that could revoke the session.
             if not same_hash(row['csrf_hash'],csrf):return SessionError('csrf_invalid')
-            denied=self._private_rate(conn,now,client,None)
+            denied=self._private_rate(conn,now,client,None,origin)
             if denied:return denied
-            denied=self._private_rate(conn,now,None,row['address'])
+            denied=self._private_rate(conn,now,None,row['address'],origin)
             return denied or row
         return self._transaction(operation)
 
@@ -408,10 +424,10 @@ class SessionStore:
         conn.execute('UPDATE sessions SET revoked_at=%s WHERE bearer_hash=%s',(now,digest(session)))
         return SessionError('session_required')
 
-    def finish_private(self, session, csrf, validation):
+    def finish_private(self, session, csrf, validation, origin=None):
         def operation(conn,now):
             row=self._session(conn,session)
-            if not self._active(row,now):return SessionError('session_required')
+            if not self._active(row,now) or not same_origin(row,origin):return SessionError('session_required')
             if not same_hash(row['csrf_hash'],csrf):return SessionError('csrf_invalid')
             changed=self._account_changed(conn,now,row,session,validation)
             if changed:return changed
@@ -421,7 +437,7 @@ class SessionStore:
                                  min(row['expires_at'],row['last_used_at']+timedelta(minutes=30)),'session_required')
         return self._transaction(operation)
 
-    def begin_preview(self, client, session, csrf, *, budget='onboarding'):
+    def begin_preview(self, client, session, csrf, *, budget='onboarding', origin=None):
         """Reserve costly preview reads before any external account/API check.
 
         This namespace is separate from login and private-read quotas; each
@@ -434,8 +450,8 @@ class SessionStore:
         transaction; stored credential hashes never do.
         """
         def operation(conn, now):
-            everyone = (budget + '-global', 'all', PREVIEW_GLOBAL_LIMIT, PREVIEW_WINDOW_SECONDS)
-            ip = (budget + '-ip', client, PREVIEW_IP_LIMIT, PREVIEW_WINDOW_SECONDS)
+            everyone = (scoped(budget + '-global', origin), 'all', PREVIEW_GLOBAL_LIMIT, PREVIEW_WINDOW_SECONDS)
+            ip = (scoped(budget + '-ip', origin), client, PREVIEW_IP_LIMIT, PREVIEW_WINDOW_SECONDS)
             denied = self._rate(conn, now, everyone, ip, charge=False)
             if denied:
                 return denied
@@ -443,13 +459,13 @@ class SessionStore:
                 token(session, required='session_required')
                 token(csrf, required='csrf_invalid')
                 row = self._session(conn, session)
-                if not self._active(row, now) or row['chain_id'] != CHAIN_ID:
+                if not self._active(row, now) or row['chain_id'] != CHAIN_ID or not same_origin(row, origin):
                     raise SessionError('session_required')
                 if not same_hash(row['csrf_hash'], csrf):
                     raise SessionError('csrf_invalid')
             except SessionError as error:
                 return self._rate(conn, now, ip) or error
-            denied = self._rate(conn, now, everyone, ip, (budget + '-account', row['address'],
+            denied = self._rate(conn, now, everyone, ip, (scoped(budget + '-account', origin), row['address'],
                                                           PREVIEW_ACCOUNT_LIMIT, PREVIEW_WINDOW_SECONDS))
             if denied:
                 return denied
@@ -458,10 +474,13 @@ class SessionStore:
             fresh = conn.execute('SELECT clock_timestamp() AS now').fetchone()['now']
             if not self._active(row, fresh):
                 return SessionError('session_required')
-            return {'address': row['address'], 'chainId': CHAIN_ID}
+            # The delegate the session was admitted with (None: a plain EOA). A
+            # cached account check may answer only a session admitted with its own
+            # delegate (onboarding_auth, 4 Nov 2026); this is no credential.
+            return {'address': row['address'], 'chainId': CHAIN_ID, 'delegate': row['delegate']}
         return self._transaction(operation)
 
-    def finish_preview(self, session, csrf, owner, validation):
+    def finish_preview(self, session, csrf, owner, validation, origin=None):
         """Reauthorize before/after provider work without rotating browser CSRF."""
         token(session, required='session_required')
         token(csrf, required='csrf_invalid')
@@ -469,7 +488,7 @@ class SessionStore:
         def operation(conn, now):
             row = self._session(conn, session)
             if (not self._active(row, now) or row['chain_id'] != CHAIN_ID
-                    or row['address'] != owner):
+                    or row['address'] != owner or not same_origin(row, origin)):
                 return SessionError('session_required')
             if not same_hash(row['csrf_hash'], csrf):
                 return SessionError('csrf_invalid')
@@ -488,12 +507,13 @@ class SessionStore:
         return self._transaction(lambda conn,now: conn.execute(
             'UPDATE sessions SET revoked_at=%s WHERE bearer_hash=%s',(now,digest(session))) and None)
 
-    def logout(self, client, preauth, session, csrf):
+    def logout(self, client, preauth, session, csrf, origin=None):
         def operation(conn,now):
             # Matching live credentials let a browser explicitly discard its
-            # own session, whatever else has already denied it.
+            # own session, whatever else has already denied it; another origin's
+            # session is none of this origin's (launch round P3, review M1).
             row=self._session(conn,session)
-            active=self._live(row,now)
+            active=self._live(row,now) and same_origin(row,origin)
             context=None
             if active and same_hash(row['csrf_hash'],csrf):
                 # Authenticated credentials take precedence over any unrelated

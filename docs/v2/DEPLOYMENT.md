@@ -11,6 +11,7 @@ validates as a loopback Anvil (`deploy-anvil.mjs`, `deploy-local.mjs`, `deploy-f
 | `scripts/v2/deploy-anvil.mjs` | Private Anvil instances, the offline gas simulation, rehearsal test accounts |
 | `scripts/v2/deploy-local.mjs` | Local deployments: an Anvil fork of a real chain, or an offline Anvil |
 | `scripts/v2/deploy-fork.mjs` | The three-chain fork rehearsal |
+| `scripts/v2/deploy-testnet.mjs` | The frozen release on Base Sepolia or Arbitrum Sepolia, through this tool's own functions ([TESTNET_DEPLOYMENT.md](TESTNET_DEPLOYMENT.md); not a release input) |
 | `scripts/v2/deploy-schema.mjs`, `deploy-manifest.schema.json` | The manifest: JSON Schema plus semantic rules |
 
 ## Components and addresses
@@ -85,8 +86,9 @@ not the committed one at that commit, and any RPC that is a development EVM (Anv
 
 **Inputs.** `roles.json` has exactly six EIP-55 checksummed addresses. A lower-case or mistyped address is
 refused, as are zero, placeholder-looking addresses (below 2^16 or one digit repeated), operator = publisher, a
-role that is a component or CreateX, and, for a public deployment, any of the ten public test-mnemonic keys
-(the same list `backend/v2_manifest.py` refuses).
+role that is a component or CreateX, and, for a public deployment, any of the ten public test-mnemonic keys.
+`backend/v2_manifest.py` refuses those ten and, since 4 Nov 2026, the mnemonic's next ninety as production roles
+(`api-contracts/v2/public-test-accounts.json`, whose first ten are this tool's, frozen with the release).
 
 ```json
 { "deployer": "0x706627E3E75b0603c4B6f9a1eBBfc635dA712747", "governance": "0x2B1d4098EC880058886B95A0E75069a7099C5a9d",

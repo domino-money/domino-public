@@ -21,10 +21,12 @@ import sys
 
 # The record's whole vocabulary. A key outside this set is dropped, never
 # logged, so a future call site cannot widen the surface by accident.
+# 'origin' (4 Nov 2026, launch round P3, review M1): the browser origin a signed-in listener admitted, one of
+# its configured origins, never a header value it refused.
 ALLOWED_KEYS = frozenset((
     'service', 'requestId', 'route', 'contractVersion', 'method', 'status',
     'durationMs', 'reason', 'gate', 'admitted', 'upstreamStatus', 'upstreamMs',
-    'budget', 'cache', 'limiter', 'mode'))
+    'budget', 'cache', 'limiter', 'mode', 'origin'))
 LONG_HEX = re.compile(r'0x[0-9a-fA-F]{12,}')
 MAX_TEXT = 64
 REQUEST_ID = re.compile(r'[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')

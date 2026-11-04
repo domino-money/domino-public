@@ -70,7 +70,11 @@ PACKAGED_MIGRATIONS = ('backend/migrations/015_unsigned_execution.sql',
                        'backend/migrations/046_gas_answer_heartbeat.sql',
                        'backend/migrations/047_provider_ceiling.sql',
                        'backend/migrations/052_v2_index.sql',
-                       'backend/migrations/053_activity_chunk_index.sql')
+                       'backend/migrations/053_activity_chunk_index.sql',
+                       'backend/migrations/054_v2_fees.sql',
+                       'backend/migrations/055_featured_chains.sql',
+                       'backend/migrations/056_position_mint_scan.sql',
+                       'backend/migrations/057_session_origin.sql')
 
 
 def packaged_records(files):

@@ -26,3 +26,17 @@ SELECTED_POOLS = (
     '0x9be7ab27227e115085b0949a819a73f6963ddc6da0c6204d37757c24297706e8',  # USDG/PRIORS
     '0xa95732060867f07aa9b8ae9a4b7b8d737bc3374f1dfbb952759c5ed676e8737c',  # USDG/VIRTUAL
 )
+
+# Base and Arbitrum One (launch round P3, 4 Nov 2026): each chain's embedded list, what completes its shadow
+# selection (featured_chain_selector). It starts with the WETH/USDC 0.05% Uniswap v3 pool each chain profile
+# verified on chain (api-contracts/v2/chains: getPool equal to its CREATE2 address); the pools the owner picks
+# after the shadow join it. A v3 pool is its address. Nothing in the app reads these yet: the app's copy
+# (app/src/config/selectedPools.ts) comes with the chain's live round, with read-v5's {chainId}.
+CHAIN_SELECTED_POOLS = {
+    8453: (
+        '0xd0b53d9277642d899df5c87a3966a349a798f224',  # WETH/USDC 0.05% (v3)
+    ),
+    42161: (
+        '0xc6962004f452be9203591991d15f6b388e09e8d0',  # WETH/USDC 0.05% (v3)
+    ),
+}

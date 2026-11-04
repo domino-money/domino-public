@@ -135,7 +135,7 @@ class Selector:
         if raw is None:
             return {'status': 'unmeasurable', 'reason': 'walk_exceeds_max_steps'}
         price = None
-        if self.policy['referenceTokens'][reference]['symbol'] != 'USDG':
+        if reference != rules.stable_of(self.policy):
             if 'ethPrice' not in ctx:
                 ctx['ethPrice'] = evidence.eth_price(rpc, self.policy, block)
             price = ctx['ethPrice']

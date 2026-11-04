@@ -1,0 +1,66 @@
+[Unit]
+Description=Domino V2 fees for %i (read-v6 position-fees)
+After=postgresql@16-domino.service domino-continuous-egress.service
+BindsTo=domino-continuous-egress.service
+PartOf=domino-public-data.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=domino-write
+Group=domino-write
+SupplementaryGroups=domino-db
+WorkingDirectory=@PUBLIC_ROOT@/current/backend
+# The writer reads only the names continuous_egress_policy.py pinned with its
+# egress set, never a DNS answer outside that set (#315).
+BindReadOnlyPaths=/etc/domino/continuous-reads/write.hosts:/etc/hosts
+# The instance is the chain profile (base-8453, arbitrum-42161). It reads the
+# writer's private V2 chain RPC file (backend/v2_rpc.py) through the hosted
+# endpoints in their order, as the V2 indexer does: the same user, egress and
+# credentials. Its providers' URLs carry their keys, sealed on the host as
+# v2-rpc-<chain>-<name>; its loader checks every chain the file names, so
+# every one of them is imported. It follows the V2 index's checkpoints, never
+# the head: start it after domino-v2-indexer@ for the same chain follows
+# (docs/v2/V2_FEES.md).
+ImportCredential=v2-rpc-*
+# The credentials are sealed with the host's TPM. systemd 255 opens the TPM
+# to the device policy for LoadCredentialEncrypted= but not for
+# ImportCredential=, and under PrivateDevices=yes the decryption then fails
+# with EPERM on /dev/tpmrm0 (the V2 indexer's unit, 4 Oct).
+DeviceAllow=char-tpm rw
+# A pass every 60 s once caught up: the positions' state then ("now") is at
+# most about a minute behind the index.
+ExecStart=@QUEUE_ROOT@/venv/bin/python -B v2_fees.py follow --chain %i --chain-rpc-file @QUEUE_ROOT@/release/backend/runtime/chain-rpc.json --poll 60
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+# `follow` returns 0 after five failed rounds in a row, so only `always`
+# brings it back.
+Restart=always
+RestartSec=15
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+TasksMax=32
+MemoryMax=512M
+CPUQuota=100%
+
+# Installed by install_public_data.py and never enabled there: an instance starts
+# only on `systemctl enable --now domino-v2-fees@<profile>.service`, after 054
+# and with the chain's domino-v2-indexer@ following.
+[Install]
+WantedBy=domino-public-data.target

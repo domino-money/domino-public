@@ -16,6 +16,9 @@ enabled = false
 SESSION_BRIDGE_ENABLED = "false"
 APP_ORIGIN = "https://domino.money"
 SESSION_GATEWAY_ORIGIN = "https://vm-session.domino.money"
+# Exact Pages preview origins this Worker also admits, comma-separated (4 Nov 2026, launch round P3): none.
+# Listing one also needs the listener's DOMINO_SESSION_PREVIEW_ORIGINS; docs/PREVIEW_PUBLIC_READS.md.
+PREVIEW_ORIGINS = ""
 
 # Access client IDs/secrets are provisioned separately in Cloudflare after review.
 # Do not add credentials, account overrides or environment bindings to this file.

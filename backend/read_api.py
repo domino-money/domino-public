@@ -1,6 +1,7 @@
 """Internal loopback API for public chain reads, not authenticated account data."""
 import asyncio
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from pathlib import Path
 import math
 import os
@@ -28,8 +29,10 @@ from featured_contract import (CONTRACT_VERSION as V5_CONTRACT_VERSION, Featured
                                FeaturedPoolsResponse, FeaturedReader, validate_featured_response)
 from v2_read_contract import (CONTRACT_VERSION as V6_CONTRACT_VERSION, ActivityPageRequest as V6ActivityRequest,
                               ChainBalancesRequest, ChainPoolsRequest, ChainTokensRequest,
-                              PortfolioRequest as V6PortfolioRequest, RESPONSE_MODELS as V6_RESPONSE_MODELS,
-                              STORED_ROUTES as V6_STORED_ROUTES, validate_v6_request_response, validate_v6_response)
+                              PortfolioRequest as V6PortfolioRequest, PositionFeesRequest as V6PositionFeesRequest,
+                              RESPONSE_MODELS as V6_RESPONSE_MODELS, STORED_ROUTES as V6_STORED_ROUTES,
+                              answered_version as v6_answered_version, validate_v6_request_response,
+                              validate_v6_response)
 from public_data_contract import (CONTRACT_VERSION as V3_CONTRACT_VERSION,
                                   REQUEST_MODELS as V3_REQUEST_MODELS,
                                   RESPONSE_MODELS as V3_RESPONSE_MODELS,
@@ -367,6 +370,8 @@ class LocalReadBoundary:
 
 
 SNAPSHOT_STORE = Path(__file__).resolve().parent / 'runtime' / 'markets-snapshot.json'
+# The read-v6 version a request is answered in (v2_read_contract.answered_version), for its route's handler.
+V6_ANSWERED = ContextVar('v6_answered', default=V6_CONTRACT_VERSION)
 # The tokens read-v6 chain-tokens learned from chain-pools reads (v2_chain_reads.LearnedTokens).
 LEARNED_TOKENS_STORE = Path(__file__).resolve().parent / 'runtime' / 'v2-learned-tokens.json'
 
@@ -495,6 +500,17 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
         v6 = request.url.path.startswith('/v6/read/')
         contract_version = (V6_CONTRACT_VERSION if v6 else V5_CONTRACT_VERSION if v5 else
                             V4_CONTRACT_VERSION if v4 else V3_CONTRACT_VERSION if v3 else CONTRACT_VERSION)
+        refused = None
+        v6_route = request.url.path.removeprefix('/v6/read/')
+        if v6 and v6_route in V6_RESPONSE_MODELS:
+            # read-v6's window (1.2.0-rc.1): each answer in the version its request names, else its route's first.
+            named = request.headers.getlist('x-domino-read-contract')
+            try:
+                if len(named) > 1:
+                    raise ValueError('invalid_request')
+                contract_version = v6_answered_version(v6_route, named[0] if named else None)
+            except ValueError as error:
+                refused = str(error)
         # Bounding a liveness answer by the read budget lets a reader that is
         # only slow to warm up report 504, which the gateway reads as the whole
         # upstream being unavailable. A probe answers on its own bound.
@@ -513,7 +529,11 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
                 response = None
         else:
             response = None
+        if response is None and refused is not None:
+            status, data = sanitize_error(refused)
+            response = JSONResponse(data, status_code=status)
         if response is None:
+            answered = V6_ANSWERED.set(contract_version)
             try:
                 with read_deadline(budget):
                     response = await call_next(request)
@@ -525,6 +545,8 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
                 # unexpected mid-hop failure is an upstream unavailability.
                 hop_log.note(reason='upstream_unavailable')
                 response = JSONResponse({'error': 'upstream_unavailable'}, status_code=503)
+            finally:
+                V6_ANSWERED.reset(answered)
         response.headers['X-Domino-Read-Contract'] = contract_version
         response.headers['X-Domino-Reader-Generation'] = generation
         # The path never reaches the record: only a declared route name does.
@@ -692,6 +714,15 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
             return featured.read()
         return run_read(operation, 'featured-pools', body.model_dump(), validator=validate_featured_response)
 
+    def answered_v6(route, request, result):
+        """The answer in the version its request named: 1.2.0-rc.1 changed no 1.1.0-rc.1 answer but its version."""
+        result = {**result, 'contractVersion': V6_ANSWERED.get()}
+        try:
+            validate_v6_request_response(route, request, result)
+        except (ValueError, TypeError):
+            raise DataError('upstream_contract_mismatch') from None
+        return result
+
     def stored_v6(route, body):
         # The V2 index only: one read-only snapshot, no RPC, the same answer for
         # the same wallet and index state.
@@ -700,13 +731,14 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
         def operation():
             if v2_reader is None:
                 raise DataError('upstream_unavailable')
-            result = (v2_reader.portfolio(request['wallet']) if route == 'portfolio' else
-                      v2_reader.activity(request['wallet'], request['limit'], request['cursor']))
-            try:
-                validate_v6_request_response(route, request, result)
-            except (ValueError, TypeError):
-                raise DataError('upstream_contract_mismatch') from None
-            return result
+            if route == 'position-fees':
+                result = v2_reader.position_fees(request['chainId'], [(position['dex'], int(position['tokenId']))
+                                                                      for position in request['positions']])
+            elif route == 'portfolio':
+                result = v2_reader.portfolio(request['wallet'])
+            else:
+                result = v2_reader.activity(request['wallet'], request['limit'], request['cursor'])
+            return answered_v6(route, request, result)
         return run_read(operation, route, request, validator=validate_v6_response)
 
     @app.post('/v6/read/portfolio', responses={200: {'model': V6_RESPONSE_MODELS['portfolio']}, **error_responses})
@@ -717,6 +749,12 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
     def v2_activity(body: V6ActivityRequest):
         return stored_v6('activity', body)
 
+    @app.post('/v6/read/position-fees', responses={200: {'model': V6_RESPONSE_MODELS['position-fees']},
+                                                   **error_responses})
+    def v2_position_fees(body: V6PositionFeesRequest):
+        # read-v6 1.2.0-rc.1: what the chain's fee follower stored (v2_fees), from the V2 index's database alone.
+        return stored_v6('position-fees', body)
+
     def live_v6(route, body, read):
         # The chains at request time (v2_chain_reads): one Multicall3 call per chain at its head, cached briefly.
         request = body.model_dump()
@@ -724,12 +762,7 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
         def operation():
             if chain_reads is None:
                 raise DataError('upstream_unavailable')
-            result = read(request)
-            try:
-                validate_v6_request_response(route, request, result)
-            except (ValueError, TypeError):
-                raise DataError('upstream_contract_mismatch') from None
-            return result
+            return answered_v6(route, request, read(request))
         return run_read(operation, route, request, validator=validate_v6_response)
 
     @app.post('/v6/read/chain-pools', responses={200: {'model': V6_RESPONSE_MODELS['chain-pools']}, **error_responses})

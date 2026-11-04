@@ -21,10 +21,11 @@ from dev_postgres import ADMIN, PORT, SOCKET
 from session_api import SessionGateway, create_session_app
 from session_models import CONTRACT_VERSION, RESPONSE_MODELS, SessionError
 from session_service import SessionService
-from session_siwe import SiwePolicy
+from session_siwe import SiwePolicy, siwe_policies
 from session_store import SessionStore
 
 ORIGIN='https://app.example.invalid'
+PREVIEW='https://preview.pages-project.invalid'
 PREFIX='/internal/session/v1/'
 VALIDATION={'method':'plain_eoa','blockNumber':'123','blockHash':'0x'+'ab'*32}
 
@@ -148,6 +149,148 @@ class SessionListenerTests(unittest.TestCase):
         self.assertEqual((response.status_code,response.json()),(403,{'error':'account_unsupported'}))
         self.assertIsNotNone(self.admin.execute('SELECT revoked_at FROM domino_sessions.sessions').fetchone()['revoked_at'])
         self.assertEqual(self.request('me',session=credentials['session']).status_code,401)
+
+    # Launch round P3 (4 Nov 2026), item 7: a listed Pages preview signs in through the same listener and store, with
+    # a sign-in message of its own; a challenge asked from one origin never signs in from the other.
+    def preview_client(self):
+        settings={'host':str(SOCKET),'port':PORT,'dbname':'domino_catalogue_tests'}
+        store=SessionStore(settings,abuse_secret=b'synthetic session listener abuse secret')
+        service=SessionService(store,siwe_policies(ORIGIN,PREVIEW),self.checker)
+        gateway=SessionGateway(service=service,verifier=self.verifier,origin=ORIGIN,preview_origins=PREVIEW,enabled=True)
+        client=TestClient(create_session_app(gateway),client=('127.0.0.1',43100),base_url='http://127.0.0.1:8879')
+        client.__enter__()
+        self.addCleanup(client.__exit__,None,None,None)
+        self.client,self.store=client,store
+
+    def challenge(self,origin):
+        initial=self.success('bootstrap',headers={'X-Domino-Browser-Origin':origin})
+        credentials={'preauth':initial['credentials']['preauth'],'csrf':initial['result']['csrfToken']}
+        issued=self.success('challenge',{'address':self.account.address,'chainId':4663},
+                            headers={'X-Domino-Browser-Origin':origin},**credentials)['result']
+        signature='0x'+Account.sign_message(encode_defunct(text=issued['message']),self.account.key).signature.hex()
+        return credentials,issued,{'challengeId':issued['challengeId'],'message':issued['message'],'signature':signature}
+
+    def test_a_listed_preview_signs_in_with_a_message_naming_the_preview(self):
+        self.preview_client()
+        credentials,issued,body=self.challenge(PREVIEW)
+        lines=issued['message'].split('\n')
+        self.assertEqual(lines[0],PREVIEW+' wants you to sign in with your Ethereum account:')
+        self.assertEqual(lines[5],'URI: '+PREVIEW+'/')
+        logged=self.success('verify',body,headers={'X-Domino-Browser-Origin':PREVIEW},**credentials)
+        session={'session':logged['credentials']['session'],'csrf':logged['result']['csrfToken']}
+        self.assertEqual(self.success('me',headers={'X-Domino-Browser-Origin':PREVIEW},session=session['session'])['result'],
+                         logged['result'])
+        self.assertEqual(self.success('logout',headers={'X-Domino-Browser-Origin':PREVIEW},**session)['result'],
+                         {'authenticated':False})
+        # Production signs in as it did, beside it, with its own message.
+        _,production,_=self.challenge(ORIGIN)
+        self.assertTrue(production['message'].startswith(ORIGIN+' wants you'))
+
+    def test_a_challenge_asked_from_one_origin_never_signs_in_from_the_other(self):
+        self.preview_client()
+        for asked,presented in ((PREVIEW,ORIGIN),(ORIGIN,PREVIEW)):
+            with self.subTest(asked=asked,presented=presented):
+                credentials,_,body=self.challenge(asked)
+                # Its own preauth context and CSRF, the owner's valid signature: refused, nothing created.
+                response=self.request('verify',body,headers={'X-Domino-Browser-Origin':presented},**credentials)
+                self.assertEqual((response.status_code,response.json()),(401,{'error':'challenge_invalid'}))
+                self.assertEqual(self.admin.execute('SELECT count(*) AS n FROM domino_sessions.sessions').fetchone()['n'],0)
+                self.checker.check.assert_not_called()
+                # The same signature still signs in where its message was asked: the refusal was the origin's.
+                logged=self.success('verify',body,headers={'X-Domino-Browser-Origin':asked},**credentials)
+                self.success('logout',headers={'X-Domino-Browser-Origin':asked},session=logged['credentials']['session'],
+                             csrf=logged['result']['csrfToken'])
+                self.admin.execute('TRUNCATE domino_sessions.sessions,domino_sessions.rate_limits,'
+                                   'domino_sessions.private_limits')
+                self.checker.check.reset_mock()
+
+    def test_an_unlisted_preview_reaches_no_store(self):
+        response=self.request('bootstrap',headers={'X-Domino-Browser-Origin':PREVIEW})
+        self.assertEqual((response.status_code,response.json()),(403,{'error':'origin_not_allowed'}))
+        self.assertEqual(self.admin.execute('SELECT count(*) AS n FROM domino_sessions.contexts').fetchone()['n'],0)
+
+    # Review M1 (4 Nov 2026): a session belongs to the origin it signed in on (migration 057).
+    def signed_in(self,origin):
+        credentials,_,body=self.challenge(origin)
+        logged=self.success('verify',body,headers={'X-Domino-Browser-Origin':origin},**credentials)
+        return {'session':logged['credentials']['session'],'csrf':logged['result']['csrfToken']}
+
+    def test_a_session_works_only_through_the_origin_it_signed_in_on_in_both_directions(self):
+        self.preview_client()
+        preview=self.signed_in(PREVIEW)
+        self.success('logout',headers={'X-Domino-Browser-Origin':PREVIEW},**preview)
+        self.admin.execute('TRUNCATE domino_sessions.rate_limits,domino_sessions.private_limits')
+        preview=self.signed_in(PREVIEW)
+        rows={row['origin'] for row in self.admin.execute(
+            'SELECT origin FROM domino_sessions.sessions WHERE revoked_at IS NULL').fetchall()}
+        self.assertEqual(rows,{PREVIEW})
+        self.checker.check.reset_mock()
+        # The preview's session, its own CSRF, presented through production: refused, untouched, not revoked.
+        for route,credentials in (('me',{'session':preview['session']}),('refresh',preview),('logout',preview)):
+            response=self.request(route,headers={'X-Domino-Browser-Origin':ORIGIN},**credentials)
+            self.assertEqual((response.status_code,response.json()),(401,{'error':'session_required'}),route)
+        self.checker.check.assert_not_called()
+        self.assertIsNone(self.admin.execute('SELECT revoked_at FROM domino_sessions.sessions').fetchone()['revoked_at'])
+        self.success('me',headers={'X-Domino-Browser-Origin':PREVIEW},session=preview['session'])
+        self.success('refresh',headers={'X-Domino-Browser-Origin':PREVIEW},**preview)
+        # The store's last recheck holds too, though the first already refused: neither origin's call passes for the other.
+        with self.assertRaisesRegex(SessionError,'^session_required$'):
+            self.store.finish_private(preview['session'],preview['csrf'],dict(VALIDATION))
+        self.store.finish_private(preview['session'],preview['csrf'],dict(VALIDATION),origin=PREVIEW)
+        # Production's session (NULL: the canonical origin) through the preview: refused the same way.
+        self.admin.execute('TRUNCATE domino_sessions.rate_limits,domino_sessions.private_limits')
+        production=self.signed_in(ORIGIN)
+        self.assertEqual(self.admin.execute('SELECT count(*) AS n FROM domino_sessions.sessions WHERE origin IS NULL '
+                                            'AND revoked_at IS NULL').fetchone()['n'],1)
+        for route,credentials in (('me',{'session':production['session']}),('refresh',production),('logout',production)):
+            response=self.request(route,headers={'X-Domino-Browser-Origin':PREVIEW},**credentials)
+            self.assertEqual((response.status_code,response.json()),(401,{'error':'session_required'}),route)
+        self.success('refresh',headers={'X-Domino-Browser-Origin':ORIGIN},**production)
+
+    def test_unlisting_a_preview_revokes_its_sessions_by_origin_and_no_others(self):
+        self.preview_client()
+        preview=self.signed_in(PREVIEW)
+        self.admin.execute('TRUNCATE domino_sessions.rate_limits,domino_sessions.private_limits')
+        production=self.signed_in(ORIGIN)
+        # The rollback step of docs/PREVIEW_PUBLIC_READS.md, as written there.
+        revoked=self.admin.execute("UPDATE domino_sessions.sessions SET revoked_at=now() "
+                                   "WHERE origin=%s AND revoked_at IS NULL",(PREVIEW,)).rowcount
+        self.assertEqual(revoked,1)
+        self.assertEqual(self.request('me',headers={'X-Domino-Browser-Origin':PREVIEW},
+                                      session=preview['session']).status_code,401)
+        self.success('me',headers={'X-Domino-Browser-Origin':ORIGIN},session=production['session'])
+
+    def test_a_previews_sign_in_spends_its_own_budgets_never_productions(self):
+        self.preview_client()
+        bucket=lambda kind,value:self.admin.execute('SELECT count FROM domino_sessions.rate_limits WHERE key_hash=%s',
+                                                    (self.store._key(kind,value),)).fetchone()
+        self.signed_in(PREVIEW)
+        for kind,value in (('issuance-global','all'),('issuance-ip','192.0.2.1'),('verify-global','all'),
+                           ('verify-ip','192.0.2.1')):
+            self.assertIsNone(bucket(kind,value),kind)
+            self.assertIsNotNone(bucket(kind+'@preview',value),kind)
+        self.assertEqual(bucket('issuance-global@preview','all')['count'],2)  # bootstrap and challenge
+        self.assertIsNone(bucket('verified-address',self.account.address.lower()))
+        self.assertEqual(bucket('verified-address@preview',self.account.address.lower())['count'],1)
+        # A refresh's private credits too.
+        self.success('refresh',headers={'X-Domino-Browser-Origin':PREVIEW},**self.signed_in(PREVIEW))
+        credit=lambda kind,value:self.admin.execute('SELECT 1 FROM domino_sessions.private_limits WHERE key_hash=%s',
+                                                    (self.store._key(kind,value),)).fetchone()
+        for kind,value in (('private-ip','192.0.2.1'),('private-account',self.account.address.lower())):
+            self.assertIsNotNone(credit(kind+'@preview',value),kind)
+            self.assertIsNone(credit(kind,value),kind)
+        self.admin.execute('TRUNCATE domino_sessions.rate_limits')
+        self.signed_in(ORIGIN)
+        self.assertEqual(bucket('issuance-global','all')['count'],2)
+        self.assertIsNone(bucket('issuance-global@preview','all'))
+
+    def test_the_stored_origin_is_one_the_listeners_admit_or_null(self):
+        self.preview_client()
+        self.signed_in(PREVIEW)
+        for value in ('http://preview.pages-project.invalid',PREVIEW+'/','https://PREVIEW.pages-project.invalid',
+                      'https://*.pages-project.invalid',''):
+            with self.subTest(value=value),self.assertRaises(psycopg.errors.CheckViolation):
+                self.admin.execute('UPDATE domino_sessions.sessions SET origin=%s',(value,))
 
 
 if __name__=='__main__':unittest.main()

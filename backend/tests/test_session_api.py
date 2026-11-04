@@ -58,7 +58,9 @@ class SessionApiTests(unittest.TestCase):
         self.assertEqual(response.headers['X-Content-Type-Options'],'nosniff')
         self.assertNotIn('set-cookie',response.headers)
         self.assertRegex(response.headers['X-Domino-Request-Id'],r'^[0-9a-f]{32}$')
-        self.service.execute.assert_called_once_with('bootstrap',{},client='192.0.2.1',preauth='p'*43,session='s'*43,csrf='c'*43)
+        # Changed on purpose 2026-11-04 (launch round P3): the service is told the origin admitted, for its SIWE message.
+        self.service.execute.assert_called_once_with('bootstrap',{},client='192.0.2.1',origin=ORIGIN,preauth='p'*43,
+                                                     session='s'*43,csrf='c'*43)
 
     def test_disabled_listener_and_exact_routes_methods(self):
         disabled=self.new_client(SessionGateway())
@@ -83,7 +85,8 @@ class SessionApiTests(unittest.TestCase):
                 response=self.post(route,body,headers={**HEADERS,'X-Domino-Session':'s'*43,'X-Domino-CSRF':'c'*43})
                 self.assertEqual(response.status_code,200,response.text)
                 self.assertEqual(response.json()['result'],responses[route])
-                self.service.execute.assert_called_once_with(route,body,client='192.0.2.1',preauth=None,session='s'*43,csrf='c'*43)
+                self.service.execute.assert_called_once_with(route,body,client='192.0.2.1',origin=ORIGIN,preauth=None,
+                                                             session='s'*43,csrf='c'*43)
                 for method in ('GET','PUT','PATCH','DELETE','OPTIONS'):
                     self.assertEqual(self.client.request(method,'/internal/session/v1/'+route).status_code,405)
 

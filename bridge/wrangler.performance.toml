@@ -13,6 +13,9 @@ enabled = false
 PERFORMANCE_BRIDGE_ENABLED = "false"
 APP_ORIGIN = "https://domino.money"
 PERFORMANCE_GATEWAY_ORIGIN = "https://vm-performance.domino.money"
+# Exact Pages preview origins this Worker also admits, comma-separated (4 Nov 2026, launch round P3): none.
+# Listing one also needs the listener's DOMINO_SESSION_PREVIEW_ORIGINS; docs/PREVIEW_PUBLIC_READS.md.
+PREVIEW_ORIGINS = ""
 
 # OxDecimal provisions the matching dedicated Access identity and tunnel path
 # /internal/performance/v2/(epochs|enroll|cards) to the loopback listener8900.

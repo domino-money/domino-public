@@ -402,6 +402,20 @@ formats are explicit compatibility failures, not an excuse to skip validation.
   not proof that an anonymous caller controls the address. Hash/enforce keys
   centrally and return 429 without revealing account existence.
 
+Since 4 Nov 2026 (launch round P3) a private family's Worker and its listener
+may also admit exact Pages preview origins (`PREVIEW_ORIGINS` on the Worker,
+`DOMINO_SESSION_PREVIEW_ORIGINS` on the listener), none as committed. Each is
+one whole string, never a pattern; the request URL's origin and its `Origin`
+header must be that same listed one; the Worker names it to the listener, which
+admits only a listed value and signs in with a message naming that host. Every
+session is bound to the origin it signed in on (migration 057, review M1): each
+listener holds every session check to the origin it admitted, so a preview's
+session is refused through production and production's through the preview,
+whoever presents the token, and a preview's traffic spends budgets of its own.
+The cookies stay host-only besides. The boundary, and what the Worker trusts of
+the Pages Function in front of it:
+[PREVIEW_PUBLIC_READS.md](PREVIEW_PUBLIC_READS.md#preview-origins-the-boundary).
+
 Origin and server-bound CSRF tokens are required in addition to SameSite;
 SameSite alone does not distinguish all sibling-origin attacks.
 [OWASP CSRF guidance](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html).

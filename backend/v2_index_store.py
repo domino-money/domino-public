@@ -606,6 +606,44 @@ class V2Reader:
                                  (list(chains), list(vaults))).fetchall()
         return {(row['chain_id'], row['vault']): row for row in rows}
 
+    # ------------------------------------------------------------- the fees (054)
+    def fee_follower(self, chain_id):
+        """The chain's fee follower (domino_v2.fee_cursor) and the index's newest checkpoint, either None."""
+        cursor = self.conn.execute('SELECT * FROM domino_v2.fee_cursor WHERE chain_id=%s', (chain_id,)).fetchone()
+        latest = self.conn.execute('''SELECT end_block,end_hash,end_timestamp FROM domino_v2.checkpoints
+          WHERE chain_id=%s ORDER BY end_block DESC LIMIT 1''', (chain_id,)).fetchone()
+        return cursor, latest
+
+    def fee_position(self, chain_id, dex, token_id, *, events, points, transfers):
+        """One position as the fee follower stored it: its row (or None, with whether the index knows it), its
+        newest settlements, transfers and points (each up to its limit, plus one to tell a cut), the first
+        settlement whose fees are not known, and its state at the cursor."""
+        key = (chain_id, dex, token_id)
+        row = self.conn.execute('''SELECT * FROM domino_v2.fee_positions WHERE chain_id=%s AND dex=%s
+          AND token_id=%s''', key).fetchone()
+        if row is None:
+            known = self.conn.execute('''SELECT 1 FROM domino_v2.positions WHERE chain_id=%s AND dex=%s
+              AND token_id=%s''', key).fetchone() is not None
+            return {'row': None, 'known': known}
+
+        def newest(query, limit):
+            found = self.conn.execute(query + ' LIMIT %s', (*key, limit + 1)).fetchall()
+            return list(reversed(found[:limit])), len(found) > limit
+        settlements, cut_events = newest('''SELECT * FROM domino_v2.fee_events WHERE chain_id=%s AND dex=%s
+          AND token_id=%s AND kind<>'transfer' ORDER BY block_number DESC,log_index DESC''', events)
+        moves, cut_transfers = newest('''SELECT * FROM domino_v2.fee_events WHERE chain_id=%s AND dex=%s
+          AND token_id=%s AND kind='transfer' ORDER BY block_number DESC,log_index DESC''', transfers)
+        measured, cut_points = newest('''SELECT * FROM domino_v2.fee_points WHERE chain_id=%s AND dex=%s
+          AND token_id=%s ORDER BY block_number DESC''', points)
+        unknown = self.conn.execute('''SELECT why FROM domino_v2.fee_events WHERE chain_id=%s AND dex=%s
+          AND token_id=%s AND kind<>'transfer' AND why IS NOT NULL ORDER BY block_number,log_index LIMIT 1''',
+                                    key).fetchone()
+        now = self.conn.execute('''SELECT * FROM domino_v2.fee_now WHERE chain_id=%s AND dex=%s
+          AND token_id=%s''', key).fetchone()
+        return {'row': row, 'known': True, 'events': settlements, 'transfers': moves, 'points': measured,
+                'truncated': cut_events or cut_transfers or cut_points,
+                'why': None if unknown is None else unknown['why'], 'now': now}
+
 
 def dumps(value):
     return json.dumps(value, sort_keys=True, separators=(',', ':'))

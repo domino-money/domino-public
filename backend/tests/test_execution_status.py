@@ -210,6 +210,57 @@ class ExecutionStatusStartupTests(unittest.TestCase):
                 self.assertEqual(failure.exception.code,2)
         run.assert_not_called()
 
+    def started(self, session=None, access=None):
+        """status_gateway on this profile with `session`/`access` changes, its lock closed; (gateway, stderr)."""
+        from execution_status_runtime import status_gateway
+        import contextlib, io
+        self.path.write_text(json.dumps({**self.config, 'session': {**self.config['session'], **(session or {})},
+                                         'access': {**self.config['access'], **(access or {})}}))
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            gateway, lock = status_gateway(self.path)
+        os.close(lock)
+        return gateway, stderr.getvalue()
+
+    def test_profile_may_list_the_exact_preview_origins_the_session_listener_lists(self):
+        """Launch round P3 (4 Nov 2026), item 7: session.previewOrigins, optional, a list; absent or empty, none.
+        Changed on purpose the same day (review L3): a malformed value turns the preview off, loudly, and the
+        canonical origin serves; it used to refuse the profile, stopping the listener at its next restart."""
+        from execution_status_runtime import status_gateway
+        preview, second = 'https://preview.domino-app-e65.pages.dev', 'https://p3-testing.domino-app-e65.pages.dev'
+        self.assertEqual(self.started({'previewOrigins': [preview, second]})[0].origins, (auth_fixture.ORIGIN, preview, second))
+        for listed in ([], None):
+            with self.subTest(listed=listed):
+                gateway, stderr = self.started({} if listed is None else {'previewOrigins': listed})
+                self.assertEqual((gateway.origins, stderr), ((auth_fixture.ORIGIN,), ''))
+        for listed in (preview, f'{preview},{second}', ['https://*.domino-app-e65.pages.dev'], [preview + '/'],
+                       [preview, preview], [auth_fixture.ORIGIN], [preview, 1], [preview, [second]], {'preview': preview},
+                       [f'https://b{n}.domino-app-e65.pages.dev' for n in range(5)]):
+            with self.subTest(malformed=listed):
+                gateway, stderr = self.started({'previewOrigins': listed})
+                self.assertTrue(gateway.enabled)
+                self.assertEqual(gateway.origins, (auth_fixture.ORIGIN,))
+                self.assertEqual(stderr, '<3>session.previewOrigins is malformed: preview origins are off, the canonical origin serves.\n')
+        # A key the profile does not know is still a broken profile.
+        self.path.write_text(json.dumps({**self.config, 'session': {**self.config['session'], 'previewOrigin': [preview]}}))
+        with self.assertRaises(ValueError):status_gateway(self.path)
+
+    def test_profile_may_name_the_preview_workers_own_access_identity(self):
+        """Review L1 (4 Nov 2026): access.previewServiceId, optional; malformed or production's own id, off, loudly."""
+        from execution_status_runtime import status_gateway
+        gateway, stderr = self.started(access={'previewServiceId': 'execution.preview'})
+        self.assertEqual((gateway.verifier.service_id, gateway.verifier.preview_service_id, stderr),
+                         ('execution.synthetic', 'execution.preview', ''))
+        self.assertIsNone(self.started()[0].verifier.preview_service_id)
+        for value in ('bad id!', 'execution.synthetic', 7, ''):
+            with self.subTest(value=value):
+                gateway, stderr = self.started(access={'previewServiceId': value})
+                self.assertIsNone(gateway.verifier.preview_service_id)
+                self.assertEqual(stderr, '' if value == '' else
+                                 '<3>access.previewServiceId is malformed: the preview Access identity is off, production serves.\n')
+        self.path.write_text(json.dumps({**self.config, 'access': {**self.config['access'], 'previewService': 'x'}}))
+        with self.assertRaises(ValueError):status_gateway(self.path)
+
     def test_config_rejects_keys_permissions_aliases_duplicates_and_missing_secret(self):
         from execution_status_runtime import status_gateway
         for patch_ in ({'schemaVersion':True},{'keyFile':'do-not-read'},{'database':{'host':'localhost','port':5432,'dbname':'domino_catalogue'}},

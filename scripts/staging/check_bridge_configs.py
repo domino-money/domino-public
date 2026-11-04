@@ -21,6 +21,15 @@ vm-position-plan gateway) and the read Worker's read-v6 pair, both off.
 Added 2026-10-02 (Domino V2, spec F7 §3.2, S2): the crosschain Worker
 (wrangler.crosschain.toml, CROSSCHAIN_* variables, its own vm-crosschain
 gateway), off.
+
+Added 2026-11-04 (launch round P3, item 7: testing without real money): each
+private family's Worker (session and the authenticated transport) carries
+PREVIEW_ORIGINS, the exact Pages preview origins it admits besides
+APP_ORIGIN. Committed empty. Changed on purpose the same day (review L2): a
+reviewed value may be that or the one preview alias the Pages forwarder routes
+(PREVIEW_ALIAS, app/functions/_lib/bridge.ts PREVIEW_ORIGIN), nothing else,
+so no reviewed configuration names a host the forwarder never sends, however
+well formed (another Pages project, a branch host, any other site).
 """
 from pathlib import Path
 import sys
@@ -54,6 +63,10 @@ GATE_EXPECTED = {
     "durable_objects": {"bindings": [{"name": "WIDE_GATE", "class_name": "WideGate"}]},
     "migrations": [{"tag": "v1", "new_sqlite_classes": ["WideGate"]}],
 }
+# The families whose Worker admits a listed preview origin: every private one (session and the authenticated
+# transport), never the read Worker or the setup release, which the preview reaches translated (functions/_lib/bridge.ts).
+PREVIEW_SERVICES = frozenset({"session", "onboarding", "deposit", "performance", "execution", "position-plan", "crosschain"})
+PREVIEW_ALIAS = "https://preview.domino-app-e65.pages.dev"
 KNOWN_CONFIGS = {
     "wrangler.example.toml", "wrangler.session.example.toml",
     "wrangler.onboarding.example.toml", "wrangler.deposit.example.toml",
@@ -75,6 +88,13 @@ def same_value(actual, expected):
 def flag_prefix(service):
     """A service's variable prefix: its name in upper case, a hyphen as an underscore (position-plan: POSITION_PLAN)."""
     return service.upper().replace("-", "_")
+
+
+def preview_origin_errors(value):
+    """Policy errors of a PREVIEW_ORIGINS value: "" (none) or exactly the forwarder's one preview alias."""
+    if value in ("", PREVIEW_ALIAS):
+        return []
+    return [f"PREVIEW_ORIGINS is neither empty nor the preview alias {PREVIEW_ALIAS}"]
 
 
 def validate(service, config):
@@ -104,6 +124,11 @@ def validate(service, config):
     if service == "setup":
         expected["vars"] = {"SETUP_WALLET_ENABLED": "false", "SEQUENCE_WALLET_ENABLED": "false"}
     errors = []
+    if service in PREVIEW_SERVICES:
+        # Committed empty; a reviewed list passes when its every origin does, and is then compared as itself.
+        listed = config.get("vars", {}).get("PREVIEW_ORIGINS") if isinstance(config.get("vars"), dict) else None
+        errors.extend(preview_origin_errors(listed))
+        expected["vars"]["PREVIEW_ORIGINS"] = listed
     if set(config) != set(expected):
         errors.append("unexpected or missing configuration fields")
     for key, value in expected.items():

@@ -175,6 +175,18 @@ Below, `$A_<lane>` stands for
     `053_activity_chunk_index`, the ledgers' per-chunk index on
     `domino_activity.events`, appends it after `052_v2_index`; it runs as the
     catalogue owner ([historical capacity](HISTORICAL_CAPACITY.md#the-per-chunk-read-and-its-index)).
+    An archive that carries `054_v2_fees`, the V2 fee follower's tables, appends
+    it after those; it runs as postgres, as 052 ([V2 fees](v2/V2_FEES.md#enabling-it-after-the-launch-in-this-order)).
+    One that carries `055_featured_chains`, the featured tables' chain,
+    appends it next, as postgres; on a fresh host nothing writes them yet
+    ([featured pools per chain](FEATURED_POOLS.md#per-chain-base-and-arbitrum-one-in-shadow)).
+    One that carries `056_position_mint_scan`, the activity follower's
+    mint-scan checkpoint, appends it next, as the catalogue owner; the
+    follower of step 13 needs it
+    ([backend README](../backend/README.md#core-pool-activity--api-040)).
+    One that carries `057_session_origin`, the sessions' origin (launch
+    round P3), applies it like 041, before the listeners of that archive:
+    `python3 -B apply_migrations.py $A_public_data --migrations 057_session_origin --apply`.
 
 12. **Queue-worker root.** The writer's lock and runtime, and the first host's
     four base units.

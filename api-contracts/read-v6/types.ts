@@ -2,6 +2,10 @@
 
 export type ReadV6ContractVersion = "1.1.0-rc.1";
 
+// The versions an answer may carry while 1.2.0-rc.1's window is open; ReadV6Next* are its routes.
+
+export type ReadV6ContractVersions = "1.1.0-rc.1" | "1.2.0-rc.1";
+
 export type Amount = {
   "token": string;
   "amount": string;
@@ -136,6 +140,80 @@ export type ExitModuleSet = {
   "stateNonce": string | null;
   "event": "ExitModuleSet";
   "module": string | null;
+};
+
+export type FeeFollower = {
+  "status": "current" | "stale" | "unavailable";
+  "reason": "fees_not_followed" | "reading_back" | "behind_index" | null;
+  "through": BlockRef | null;
+  "indexedThrough": BlockRef | null;
+  "lagSeconds": number | null;
+  "lastError": IndexFailure | null;
+};
+
+export type FeeNow = {
+  "snapshot": BlockRef;
+  "owner": string;
+  "pool": PoolRef;
+  "poolId": string | null;
+  "poolAddress": string | null;
+  "tickLower": number;
+  "tickUpper": number;
+  "liquidity": string;
+  "sqrtPriceX96": string;
+  "tick": number;
+  "inRange": boolean;
+  "protocolFee": number;
+  "feeGrowthInsideX128": Array<string>;
+  "feeGrowthInsideLastX128": Array<string>;
+  "tokensOwed": Array<string> | null;
+  "collectable": Array<string>;
+  "unsettled": Array<string> | null;
+  "earned": Array<string> | null;
+  "settled": Array<string> | null;
+  "principalAtSpot": Array<string>;
+};
+
+export type FeePoint = {
+  "block": number;
+  "timestamp": number;
+  "hour": number;
+  "kind": "hour" | "day";
+  "earned": Array<string> | null;
+  "settled": Array<string> | null;
+};
+
+export type FeePositionRef = {
+  "dex": 3 | 4;
+  "tokenId": string;
+};
+
+export type FeeSettlement = {
+  "kind": "increase" | "decrease" | "collect";
+  "block": BlockRef;
+  "logIndex": number;
+  "logIndexes": Array<number>;
+  "tx": string;
+  "liquidityDelta": string;
+  "liquidity": string;
+  "fees": Array<string> | null;
+  "settled": Array<string> | null;
+  "why": "same_block" | "liquidity" | null;
+  "auto": boolean;
+  "serviceFee": Array<string> | null;
+};
+
+export type FeeSince = {
+  "kind": "mint" | "floor";
+  "block": BlockRef;
+};
+
+export type FeeTransfer = {
+  "block": BlockRef;
+  "logIndex": number;
+  "tx": string;
+  "fromAddress": string;
+  "toAddress": string;
 };
 
 export type FeesCollected = {
@@ -338,6 +416,23 @@ export type Position = {
 export type PositionCustody = {
   "approved": string | null;
   "subscriber": string | null;
+};
+
+export type PositionFees = {
+  "dex": 3 | 4;
+  "tokenId": string;
+  "positionManager": string;
+  "status": "following" | "reading" | "burned" | "not_followed";
+  "since": FeeSince | null;
+  "through": BlockRef | null;
+  "freshness": Freshness | null;
+  "exact": boolean;
+  "why": "reading" | "same_block" | "liquidity" | "before_floor" | null;
+  "now": FeeNow | null;
+  "events": Array<FeeSettlement>;
+  "transfers": Array<FeeTransfer>;
+  "points": Array<FeePoint>;
+  "truncated": boolean;
 };
 
 export type PositionLive = {
@@ -657,7 +752,7 @@ export type PortfolioRequest = {
 
 export type PortfolioResponse = {
   "schemaVersion": 1;
-  "contractVersion": "1.1.0-rc.1";
+  "contractVersion": "1.1.0-rc.1" | "1.2.0-rc.1";
   "wallet": string;
   "servedAt": number;
   "coverage": "complete" | "partial";
@@ -682,7 +777,7 @@ export type ActivityRequest = {
 
 export type ActivityResponse = {
   "schemaVersion": 1;
-  "contractVersion": "1.1.0-rc.1";
+  "contractVersion": "1.1.0-rc.1" | "1.2.0-rc.1";
   "wallet": string;
   "servedAt": number;
   "coverage": "complete" | "partial";
@@ -704,7 +799,7 @@ export type ChainPoolsRequest = {
 
 export type ChainPoolsResponse = {
   "schemaVersion": 1;
-  "contractVersion": "1.1.0-rc.1";
+  "contractVersion": "1.1.0-rc.1" | "1.2.0-rc.1";
   "mode": "live_chain_pools";
   "chainId": 4663 | 8453 | 42161;
   "token": string;
@@ -727,7 +822,7 @@ export type ChainBalancesRequest = {
 
 export type ChainBalancesResponse = {
   "schemaVersion": 1;
-  "contractVersion": "1.1.0-rc.1";
+  "contractVersion": "1.1.0-rc.1" | "1.2.0-rc.1";
   "mode": "live_chain_balances";
   "wallet": string;
   "servedAt": number;
@@ -746,7 +841,7 @@ export type ChainTokensRequest = {
 
 export type ChainTokensResponse = {
   "schemaVersion": 1;
-  "contractVersion": "1.1.0-rc.1";
+  "contractVersion": "1.1.0-rc.1" | "1.2.0-rc.1";
   "mode": "known_chain_tokens";
   "chainId": 8453 | 42161;
   "query": string;
@@ -756,6 +851,23 @@ export type ChainTokensResponse = {
   "tokens": Array<KnownToken>;
   "truncated": boolean;
   "limitations": Array<"usd_from_qualified_sources_only" | "token_metadata_untrusted" | "state_as_of_last_read" | "no_execution_or_signing">;
+  "executionAvailable": false;
+};
+
+export type PositionFeesRequest = {
+  "chainId": 4663 | 8453 | 42161;
+  "positions": Array<FeePositionRef>;
+};
+
+export type PositionFeesResponse = {
+  "schemaVersion": 1;
+  "contractVersion": "1.2.0-rc.1";
+  "mode": "stored_v2_position_fees";
+  "chainId": 4663 | 8453 | 42161;
+  "servedAt": number;
+  "follower": FeeFollower;
+  "positions": Array<PositionFees>;
+  "limitations": Array<"positions_known_to_domino_only" | "raw_amounts_without_usd" | "state_as_of_last_read" | "no_execution_or_signing">;
   "executionAvailable": false;
 };
 
@@ -775,7 +887,27 @@ export interface ReadV6Responses {
   "chain-tokens": ChainTokensResponse;
 }
 
+export interface ReadV6NextRequests {
+  "portfolio": PortfolioRequest;
+  "activity": ActivityRequest;
+  "chain-pools": ChainPoolsRequest;
+  "chain-balances": ChainBalancesRequest;
+  "chain-tokens": ChainTokensRequest;
+  "position-fees": PositionFeesRequest;
+}
+
+export interface ReadV6NextResponses {
+  "portfolio": PortfolioResponse;
+  "activity": ActivityResponse;
+  "chain-pools": ChainPoolsResponse;
+  "chain-balances": ChainBalancesResponse;
+  "chain-tokens": ChainTokensResponse;
+  "position-fees": PositionFeesResponse;
+}
+
 export type ReadV6Route = keyof ReadV6Requests;
+
+export type ReadV6NextRoute = keyof ReadV6NextRequests;
 
 export type ReadV6ErrorCode = "activity_methodology_mismatch" | "activity_not_indexed" | "activity_pool_not_registered" | "activity_snapshot_reorganized" | "activity_window_budget_exhausted" | "block_unavailable" | "catalogue_database_unavailable" | "catalogue_not_configured" | "catalogue_revision_changed" | "catalogue_schema_mismatch" | "fixed_fee_mismatch" | "invalid_abi_response" | "invalid_json" | "invalid_market_query" | "invalid_nft_position_info" | "invalid_nft_snapshot_block" | "invalid_or_expired_cursor" | "invalid_pool_key" | "invalid_pool_state" | "invalid_quantity" | "invalid_request" | "invalid_rpc_envelope" | "invalid_snapshot_request" | "invalid_tick_spacing" | "invalid_token_list" | "json_required" | "local_client_required" | "manager_mismatch" | "method_not_allowed" | "metrics_snapshot_reorganized" | "missing_contract_code" | "missing_rpc_result" | "network_unavailable" | "nft_core_liquidity_mismatch" | "nft_live_position_has_no_owner" | "nft_pool_or_range_mismatch" | "nft_snapshot_reorganized" | "origin_not_allowed" | "pool_id_mismatch" | "provider_currency_mismatch" | "quantity_too_large" | "read_capacity_busy" | "read_deadline_exceeded" | "request_budget_exhausted" | "request_timeout" | "request_too_large" | "response_too_large" | "route_not_available" | "rpc_call_gas_limit" | "rpc_call_reverted" | "rpc_error" | "snapshot_not_built" | "snapshot_reorganized" | "stale_or_future_block" | "upstream_contract_mismatch" | "upstream_invalid_response" | "upstream_timeout" | "upstream_unavailable" | "wrong_chain";
 

@@ -80,14 +80,18 @@ class AuthStore:
         if csrf != CSRF:
             raise SessionError('csrf_invalid')
 
-    def begin_preview(self, client, session, csrf, *, budget):
+    # Changed on purpose 2026-11-04 (launch round P3, review M1): OnboardingAuth names the admitted origin, as the
+    # session store keeps it (None: the canonical one); the double records it.
+    def begin_preview(self, client, session, csrf, *, budget, origin=None):
         self.begin_calls += 1
-        self.budget = budget
+        self.budget, self.origin = budget, origin
         self._check(session, csrf)
         return {'address': self.owner, 'chainId': 4663}
 
-    def finish_preview(self, session, csrf, owner, validation):
+    def finish_preview(self, session, csrf, owner, validation, origin=None):
         self.finish_calls += 1
+        if origin != self.origin:
+            raise SessionError('session_required')
         self._check(session, csrf)
         if owner != self.owner:
             raise SessionError('session_required')

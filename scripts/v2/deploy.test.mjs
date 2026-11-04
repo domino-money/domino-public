@@ -138,6 +138,15 @@ test('the refused public test keys are the first ten accounts of the public test
   assert.deepEqual([...PUBLIC_TEST_ACCOUNTS], Array.from({ length: 10 }, (_, addressIndex) => mnemonicToAccount(mnemonic, { addressIndex }).address.toLowerCase()));
   // The rehearsal accounts are not among them (they carry EIP-7702 sweepers on the three chains).
   assert(Object.values(localRoles()).every(a => !PUBLIC_TEST_ACCOUNTS.includes(a.toLowerCase())));
+  // 2026-11-04 (launch round P3, item 7): the backend's production admission refuses the mnemonic's first 100
+  // (api-contracts/v2/public-test-accounts.json); this frozen tool's ten are that list's first ten, in order.
+  const shared = readJson(join(repoRoot, 'api-contracts/v2/public-test-accounts.json'));
+  assert.equal(shared.mnemonic, mnemonic);
+  assert.equal(shared.addresses.length, 100);
+  assert.deepEqual(shared.addresses.slice(0, 10), [...PUBLIC_TEST_ACCOUNTS]);
+  for (const addressIndex of [10, 57, 99]) {
+    assert.equal(shared.addresses[addressIndex], mnemonicToAccount(mnemonic, { addressIndex }).address.toLowerCase());
+  }
 });
 
 test('canonical CreateX and Safe fixtures authenticate independently of installation', () => {

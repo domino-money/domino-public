@@ -160,8 +160,14 @@ The explicit JSON configuration has these exact keys:
 ```
 
 The example is a shape, not deployment qualification or usable Access settings.
-The status service gets its own Access identity. The session origin and abuse
-secret must match the session service; the secret file contains exactly 64
+Since 4 Nov 2026 (launch round P3) `session` may also hold `previewOrigins`, a
+list of the exact Pages preview origins the session listener's
+`DOMINO_SESSION_PREVIEW_ORIGINS` lists, and `access` may hold
+`previewServiceId`, the separate preview Workers' own Access service id
+(review L1). Absent or empty: none. A malformed value of either turns the
+preview off with an error-priority line at start and the canonical origin keeps
+serving (review L3); an unknown key still refuses the profile. The status
+service gets its own Access identity. The session origin and abuse secret must match the session service; the secret file contains exactly 64
 lowercase hexadecimal characters, optionally followed by one newline. Database
 settings cannot choose a role: session authentication uses `domino_session_auth`
 and status reads use `domino_execution_reader`. The RPC endpoint is used only

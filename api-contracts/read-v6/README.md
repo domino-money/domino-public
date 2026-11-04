@@ -12,7 +12,7 @@ Two stored routes of the local reader (`backend/read_api.py`), separate from rea
 | `POST /v6/read/chain-balances` | `{wallet, tokens?}` | A wallet's balances on each chain asked, every Domino chain's base currencies by default; Ethereum and OP Mainnet only when asked |
 | `POST /v6/read/chain-tokens` | `{chainId, query, limit?}` | The tokens Domino knows on Base or Arbitrum One that match a query |
 
-Header `X-Domino-Read-Contract: 1.1.0-rc.1`. Through the gateway the paths are `/internal/read/v6/<route>`, with `--enable-v6` and each route named in `DOMINO_BRIDGE_V6_READS`, both off by default. The reader serves the stored routes only with `DOMINO_V2_READ=1` and the chain reads only with `DOMINO_V2_CHAIN_READS=1` (otherwise `upstream_unavailable`). The Worker forwards `/api/read/v6/<route>` for the routes its `ENABLED_V6_READS` names.
+Header `X-Domino-Read-Contract: 1.1.0-rc.1`; `1.2.0-rc.1` adds `position-fees` ([below](#120-rc1-position-fees-and-its-window)) and changes nothing else. Through the gateway the paths are `/internal/read/v6/<route>`, with `--enable-v6` and each route named in `DOMINO_BRIDGE_V6_READS`, both off by default. The reader serves the stored routes only with `DOMINO_V2_READ=1` and the chain reads only with `DOMINO_V2_CHAIN_READS=1` (otherwise `upstream_unavailable`). The Worker forwards `/api/read/v6/<route>` for the routes its `ENABLED_V6_READS` names.
 
 `wallet` is lower case. The read API does not authenticate wallets: everything here is public chain data, the same for anyone who asks about that address, and the reader refuses browser origins. Errors are read-v1's codes (`ERROR_STATUS_BY_CODE`): `catalogue_database_unavailable` or `upstream_unavailable` (503) when the index cannot be read at all, never a partial answer.
 
@@ -144,4 +144,31 @@ The app spec's §6.2 reads that need the chain itself (0xdecimal's list of 5 Oct
   - `looked_up`: tokens a `chain-pools` read found priced pools for, as Robinhood's catalogue learns from visitors.
 
   A query matches an address exactly, else a symbol exactly, then a symbol's prefix, then a word of the name, then either anywhere; within a rank the curated sources first. At most `limit` (1–24, default 20; `truncated`).
+
+## 1.2.0-rc.1: position-fees, and its window
+
+Launch round P3 (4 Nov 2026; item 3.1, path B, decided by the owner's delegation on 3 Nov): Fees earned and Your APR on Base and Arbitrum One, stored by a fee follower per chain ([docs/v2/V2_FEES.md](../../docs/v2/V2_FEES.md)) and answered from the V2 index's database, with no call at request time.
+
+**The window.** `1.2.0-rc.1` changes no `1.1.0-rc.1` answer but its version, as crosschain-v1's switch window did (6 Oct 2026):
+- the reader and the gateway answer each request in the version its `X-Domino-Read-Contract` names (`CONTRACT_VERSIONS`), a request naming none in its route's first version, and refuse a version read-v6 never had (`invalid_request`);
+- `position-fees` exists in `1.2.0-rc.1` alone: asked in `1.1.0-rc.1` it is `route_not_available`;
+- this package keeps `1.1.0-rc.1` as its own version: `CONTRACT_VERSION`, `ROUTES`, `ReadV6Route` and `fixtures/valid`, `fixtures/invalid` and `fixtures/requests` are what the app and the read Worker read today. `1.2.0-rc.1` is beside them: `NEXT_VERSION`, `NEXT_ROUTES`, `CONTRACT_VERSIONS`, the `ReadV6Next*` types and `fixtures/1.2.0-rc.1/`. An answer of `1.1.0-rc.1`'s five routes validates in either version;
+- the order: the reader (and gateway) first, with the route closed (`DOMINO_BRIDGE_V6_READS` does not name it); then the Worker speaks `1.2.0-rc.1` and accepts both (`versions`, as read-v5's protocol does); the route opens at the gateway, the tunnel and the Worker; the app moves; the window closes by making `1.2.0-rc.1` this package's version.
+
+**`POST /v6/read/position-fees`** `{chainId, positions: [{dex, tokenId}]}`: 1 to 8 positions of one chain, each once; the answer has them in the order asked. Stored lane. `limitations`: `positions_known_to_domino_only`, `raw_amounts_without_usd`, `state_as_of_last_read`, `no_execution_or_signing`. Raw amounts only: the app values them at the qualified prices it already reads.
+
+- **`follower`**: the chain's fee follower. `through` is how far it read, always one of the V2 index's checkpoints; `indexedThrough` the index's newest; `lagSeconds` between them. `current`, `stale` (`reading_back`: it has not reached the index since it started; `behind_index`: more than 120 s of chain time behind it) or `unavailable` (`fees_not_followed`: no follower on this chain; Robinhood has none).
+- **Per position**, `status`:
+  - `following`: read with the follower, its state at `through` in `now`;
+  - `reading`: its history, or the follower's, is still being read back (a position the index learned about after the follower passed its mint is read back from Domino's first block); `through` null while the follower has not joined it (a pass away);
+  - `burned`: its NFT burned (the last transfer is to the zero address); nothing more is read;
+  - `not_followed`: no position the V2 index knows on this chain, or no follower.
+- `since`: where the history starts: `mint`, or `floor`, Domino's first block on the chain (Base 52,176,808; Arbitrum One 511,706,605) for a position minted before it. What a `floor` position owed there is not counted, so 24H, 7D and 30D are exact and All is since that block.
+- `through` and `freshness` (`fresh` up to 120 s): every event up to `through` is in the history.
+- `exact` and `why`: `exact` when every settlement's fees since `since` are known. `why`: `reading`; `same_block` (on v4, two settlements of the position in one block after a liquidity change: the growth between them is not readable); `liquidity` (the events found do not account for the position's own state: one was not seen); or, exact, `before_floor`.
+- `events`: each block's settlements of the position, oldest first: `kind` `increase`, `decrease` (liquidity 0 after it: a close) or `collect`; `logIndexes` (`logIndex` the last), `tx`, `liquidityDelta`, the `liquidity` after; `fees`: what it paid (v4) or credited to the manager's `tokensOwed` (v3), per token, the position's liquidity times the change of its fee growth inside, 2^128 apart, as Uniswap computes it; `settled`: the sum since `since`; `auto` with `serviceFee`: an automatic compound (the vault's `Compounded`) and the fee it charged. `fees` null with `why` when it cannot be known; `settled` null from then on.
+- `transfers`: the NFT's own `Transfer`s (`fromAddress`, `toAddress`): its mint, into and out of a vault, its burn.
+- `points`: measured Fees earned (settled plus what accrued since the last settlement) and settled, cumulative since `since`, at a block standing for an `hour` (Unix seconds): one an hour for the last 8 days, then each UTC day's first (`kind: day`). A point carries its block's own `timestamp`.
+- `now` (`following` only): the position at `through`: `pool` (`poolId` on v4, `poolAddress` on v3), range, `liquidity`, `sqrtPriceX96`, `tick`, `inRange`, `protocolFee`, `feeGrowthInsideX128` and `feeGrowthInsideLastX128`, v3's `tokensOwed`, `collectable` (what a collect pays now; on v3 with `tokensOwed`, which may hold principal a decrease left), `unsettled` (accrued since the last settlement, counted from `since`), `earned` = `settled` + `unsettled`, and `principalAtSpot`. `earned` and `settled` are null when not exact.
+- **Bounds**: an answer carries at most 1,000 events and 1,800 points, split evenly between its positions, and 16 transfers a position, each position's newest; beyond 900,000 bytes the oldest events and points go first. `truncated` says so; `exact` and `now` do not depend on it.
 

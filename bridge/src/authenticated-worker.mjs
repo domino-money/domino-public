@@ -1,5 +1,5 @@
 import { parseStrictJson, JsonNumber } from './strict-json.mjs';
-import { BridgeError, fail, exactOrigin, checkBrowser, jsonContentType, lengthWithin,
+import { BridgeError, fail, exactOrigin, browserOrigin, previewOrigins, jsonContentType, lengthWithin,
   cancelBody, deadline, readText, clientIp } from './worker.mjs';
 import { credential } from '../../api-contracts/session-v1/runtime.mjs';
 
@@ -9,15 +9,19 @@ export function createAuthenticatedWorker(contract, { fetch: fetchImpl = globalT
   const { PREFIX, HEADER, CONTRACT_VERSION, ROUTES, ERROR_STATUS_BY_CODE,
     validateRequest, validateResponse, validateError } = contract;
   const LIMITS = contract.limits;
+// `origins`: APP_ORIGIN, then the exact preview origins PREVIEW_ORIGINS lists (4 Nov 2026, launch round P3; none
+// unless listed, and none while the list is malformed: worker.mjs previewOrigins). The gateway is never one of them.
 function config(env) {
   const appOrigin = exactOrigin(env.APP_ORIGIN);
   if (!appOrigin) fail('upstream_unavailable');
-  if (env[contract.envPrefix + '_BRIDGE_ENABLED'] !== 'true') return { appOrigin, enabled: false };
   const gatewayOrigin = exactOrigin(env[contract.envPrefix + '_GATEWAY_ORIGIN']);
+  const origins = [appOrigin, ...previewOrigins(env.PREVIEW_ORIGINS, appOrigin, gatewayOrigin,
+    contract.envPrefix.toLowerCase().replace('_', '-') + '-bridge')];
+  if (env[contract.envPrefix + '_BRIDGE_ENABLED'] !== 'true') return { origins, enabled: false };
   const secret = (value) => typeof value === 'string' && /^[\x21-\x7e]{1,1024}$/u.exec(value)?.[0] === value;
   if (!gatewayOrigin || gatewayOrigin === appOrigin || !secret(env[contract.envPrefix + '_ACCESS_CLIENT_ID']) ||
       !secret(env[contract.envPrefix + '_ACCESS_CLIENT_SECRET'])) fail('upstream_unavailable');
-  return { appOrigin, gatewayOrigin, enabled: true,
+  return { origins, gatewayOrigin, enabled: true,
     clientId: env[contract.envPrefix + '_ACCESS_CLIENT_ID'], clientSecret: env[contract.envPrefix + '_ACCESS_CLIENT_SECRET'] };
 }
 
@@ -77,7 +81,7 @@ function errorResponse(code, id, upstreamRetryAfter = null) {
   return new Response(JSON.stringify({ error: code }), { status: ERROR_STATUS_BY_CODE[code], headers });
 }
 
-async function upstream(request, route, text, body, settings, fetchImpl, ip, session, csrf, started, id) {
+async function upstream(request, route, text, body, settings, fetchImpl, ip, session, csrf, started, id, browser) {
   const remaining = LIMITS.totalMs - (Date.now() - started);
   if (remaining <= 0) fail('request_timeout');
   const scope = deadline(Math.min(LIMITS.upstreamMs, remaining), 'upstream_timeout',
@@ -89,7 +93,8 @@ async function upstream(request, route, text, body, settings, fetchImpl, ip, ses
       method: 'POST', redirect: 'manual', signal: scope.signal, body: text,
       headers: { 'Content-Type': 'application/json', [HEADER]: CONTRACT_VERSION,
         'CF-Access-Client-Id': settings.clientId, 'CF-Access-Client-Secret': settings.clientSecret,
-        'X-Domino-Client-Id': ip, 'X-Domino-Browser-Origin': settings.appOrigin,
+        // The origin browserOrigin() admitted: APP_ORIGIN or a listed preview the listener lists too.
+        'X-Domino-Client-Id': ip, 'X-Domino-Browser-Origin': browser,
         'X-Domino-Session': session, 'X-Domino-CSRF': csrf },
     }));
     pending.then((late) => { if (scope.signal.aborted) cancelBody(late?.body); }, () => {});
@@ -147,7 +152,7 @@ async function upstream(request, route, text, body, settings, fetchImpl, ip, ses
         const route = url.pathname.startsWith(PREFIX) ? url.pathname.slice(PREFIX.length) : '';
         if (!ROUTES.includes(route) || url.search || url.hash) fail('route_not_available');
         if (request.method !== 'POST') fail('method_not_allowed');
-        checkBrowser(request, settings.appOrigin, false);
+        const browser = browserOrigin(request, settings.origins, false);
         if (!settings.enabled) fail('route_not_available');
         const version = request.headers.get(HEADER);
         if (version !== null && version !== CONTRACT_VERSION) fail('upstream_contract_mismatch');
@@ -171,7 +176,7 @@ async function upstream(request, route, text, body, settings, fetchImpl, ip, ses
           if (error instanceof BridgeError) throw error;
           fail('invalid_request');
         } finally { scope.dispose(); }
-        return await upstream(request, route, text, body, settings, fetchImpl, ip, session, csrf, started, id);
+        return await upstream(request, route, text, body, settings, fetchImpl, ip, session, csrf, started, id, browser);
       } catch (error) { return errorResponse(error instanceof BridgeError ? error.code : 'upstream_unavailable', id); }
     },
   };

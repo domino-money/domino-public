@@ -27,6 +27,7 @@ from session_store import (CAPACITIES, LOCK_ID, PREVIEW_ACCOUNT_LIMIT, PREVIEW_G
 
 VALIDATION = {'method': 'plain_eoa', 'blockNumber': '123', 'blockHash': '0x' + 'ab' * 32}
 SECRET = b'synthetic onboarding abuse-key secret only'
+PREVIEW = 'https://preview.domino-app-e65.pages.dev'
 OWNER = '0x' + '12' * 20
 SESSION, CSRF = 's' * 43, 'c' * 43
 
@@ -59,7 +60,8 @@ class OnboardingAuthUnitTests(unittest.TestCase):
                               ('192.0.2.2', '192.0.2.2')):
             with self.subTest(raw=raw):
                 self.auth.begin(raw, SESSION, CSRF)
-                self.store.begin_preview.assert_called_with(expected, SESSION, CSRF, budget='onboarding')
+                # Changed on purpose 2026-11-04 (review M1): with the admitted origin, None outside a listener.
+                self.store.begin_preview.assert_called_with(expected, SESSION, CSRF, budget='onboarding', origin=None)
 
     def test_each_kind_of_signed_in_work_spends_its_own_budget(self):
         # 3 Nov 2026 (launch): status polling never spends what a plan or a quote needs.
@@ -72,7 +74,7 @@ class OnboardingAuthUnitTests(unittest.TestCase):
                                       ('deposit', 'create', 'onboarding'), ('onboarding', 'swap-preview', 'onboarding')):
             with self.subTest(family=family, route=route), serving(family, route):
                 self.auth.begin('192.0.2.1', SESSION, CSRF)
-                self.store.begin_preview.assert_called_with('192.0.2.1', SESSION, CSRF, budget=budget)
+                self.store.begin_preview.assert_called_with('192.0.2.1', SESSION, CSRF, budget=budget, origin=None)
             # The worker's next request starts from no family at all.
             self.assertEqual(preview_budget(), 'onboarding')
 
@@ -97,10 +99,11 @@ class OnboardingAuthUnitTests(unittest.TestCase):
         self.store.begin_preview.side_effect = lambda *args, **kwargs: (
             order.append('reserve'), {'address': OWNER, 'chainId': 4663})[-1]
         self.checker.effect = lambda owner: (order.append('account_check'), dict(VALIDATION))[-1]
-        self.store.finish_preview.side_effect = lambda *args: order.append('recheck')
+        self.store.finish_preview.side_effect = lambda *args, **kwargs: order.append('recheck')
         context = self.auth.begin('192.0.2.1', SESSION, CSRF)
         self.assertEqual(order, ['reserve', 'account_check', 'recheck'])
-        self.assertEqual(context, {'owner': OWNER, 'session': SESSION, 'csrf': CSRF, 'validation': VALIDATION})
+        # Changed on purpose 2026-11-04 (review M1): the context keeps the origin its session checks are held to.
+        self.assertEqual(context, {'owner': OWNER, 'session': SESSION, 'csrf': CSRF, 'validation': VALIDATION, 'origin': None})
         self.assertIsNone(self.auth.finish(context))
         self.assertEqual(order, ['reserve', 'account_check', 'recheck', 'recheck'])
         self.assertEqual(self.checker.calls, [OWNER])
@@ -173,6 +176,56 @@ class OnboardingAuthPostgresTests(unittest.TestCase):
         return self.admin.execute('SELECT count FROM domino_sessions.rate_limits WHERE key_hash=%s',
                                   (self.store._key(kind, value),)).fetchone()
 
+    def preview_login(self, number=1):
+        """A session signed in on the listed preview (review M1): its own SIWE message, its row's origin."""
+        from session_siwe import siwe_policies
+        service = SessionService(self.store, siwe_policies('https://domino.money', PREVIEW), self.checker)
+        client = f'192.0.2.{number}'
+        account = Account.from_key(bytes([number]) * 32)
+        first = service.execute('bootstrap', {}, client=client, origin=PREVIEW)
+        preauth, csrf = first['credentials']['preauth'], first['result']['csrfToken']
+        challenge = service.execute('challenge', {'address': account.address, 'chainId': 4663}, client=client,
+                                    preauth=preauth, csrf=csrf, origin=PREVIEW)['result']
+        signature = '0x' + Account.sign_message(encode_defunct(text=challenge['message']), account.key).signature.hex()
+        result = service.execute('verify', {'challengeId': challenge['challengeId'], 'message': challenge['message'],
+                                            'signature': signature}, client=client, preauth=preauth, csrf=csrf,
+                                 origin=PREVIEW)
+        return {'client': client, 'session': result['credentials']['session'],
+                'csrf': result['result']['csrfToken']}, account.address.lower()
+
+    def test_a_listener_holds_every_session_check_to_the_origin_it_admitted(self):
+        """Review M1 (4 Nov 2026): an authenticated listener's session checks take the origin it admitted."""
+        preview, preview_owner = self.preview_login(1)
+        self.assertEqual(self.row(preview['session'])['origin'], PREVIEW)
+        production, owner = self.login(2)
+        self.assertIsNone(self.row(production['session'])['origin'])
+        checked = self.checker.calls.count(owner)
+        with serving('position-plan', 'plan', PREVIEW):
+            self.assertEqual(self.auth.begin(**preview)['owner'], preview_owner)
+            self.error('session_required', lambda: self.auth.begin(**production))
+        # Refused before the account's budget or its chain check, not only at the last recheck.
+        self.assertIsNone(self.bucket('plan-account@preview', owner))
+        self.assertEqual(self.checker.calls.count(owner), checked)
+        with serving('position-plan', 'plan'):
+            self.assertEqual(self.auth.begin(**production)['owner'], owner)
+            self.error('session_required', lambda: self.auth.begin(**preview))
+        # The context's later recheck keeps its origin even outside the listener's scope.
+        with serving('position-plan', 'plan', PREVIEW):
+            context = self.auth.begin(**preview)
+        self.auth.finish(context)
+        self.error('session_required', lambda: self.auth.finish({**context, 'origin': None}))
+        self.error('session_required', lambda: self.store.finish_preview(preview['session'], preview['csrf'],
+                                                                         preview_owner, dict(VALIDATION)))
+        # A preview's plans spend the preview's budgets, production's its own. A refused attempt spends the IP budget
+        # of the origin it came through, as any refused credential does.
+        for kind, value in (('plan-global', 'all'), ('plan-ip', '192.0.2.1'), ('plan-account', preview_owner)):
+            self.assertEqual(self.bucket(kind + '@preview', value)['count'], 2, kind)
+        self.assertEqual(self.bucket('plan-ip@preview', '192.0.2.2')['count'], 1)
+        self.assertEqual(self.bucket('plan-global', 'all')['count'], 1)
+        self.assertEqual(self.bucket('plan-account', owner)['count'], 1)
+        self.assertEqual(self.bucket('plan-ip', '192.0.2.1')['count'], 1)
+        self.assertIsNone(self.bucket('plan-account', preview_owner))
+
     def row(self, session):
         return self.admin.execute('SELECT * FROM domino_sessions.sessions WHERE bearer_hash=%s',
                                   (digest(session),)).fetchone()
@@ -181,7 +234,8 @@ class OnboardingAuthPostgresTests(unittest.TestCase):
         credentials, owner = self.login()
         initial = self.row(credentials['session'])
         projection = self.store.begin_preview(**credentials)
-        self.assertEqual(projection, {'address': owner, 'chainId': 4663})
+        # The delegate the session was admitted with travels too: a cached account check may answer only it.
+        self.assertEqual(projection, {'address': owner, 'chainId': 4663, 'delegate': None})
         context = self.auth.begin(**credentials)
         self.assertIsNone(self.auth.finish(context))
         current = self.row(credentials['session'])

@@ -70,7 +70,8 @@ def build_planners(settings, *, provider_config=None, registry=None):
 def main():
     import argparse
     import uvicorn
-    from bridge_identity import AccessVerifier
+    from bridge_identity import AccessVerifier, configured_preview_identity
+    from session_siwe import configured_preview_origins
     from catalogue import database_settings
     from local_config import load_config
     from onboarding_auth import OnboardingAuth
@@ -103,12 +104,16 @@ def main():
                                   EoaChecker(configured_rpc_urls(config), allowed_hosts=hosts))
             provider = load_config(args.rpc_config) if args.rpc_config else None
             planners = build_planners(settings, provider_config=provider)
+            # Review L1 (4 Nov 2026): the separate preview Workers' own Access identity, optional.
             verifier = AccessVerifier(os.environ.get('DOMINO_POSITION_PLAN_ACCESS_ISSUER'),
-                os.environ.get('DOMINO_POSITION_PLAN_ACCESS_AUDIENCE'),
-                os.environ.get('DOMINO_POSITION_PLAN_ACCESS_SERVICE_ID'))
+                os.environ.get('DOMINO_POSITION_PLAN_ACCESS_AUDIENCE'), os.environ.get('DOMINO_POSITION_PLAN_ACCESS_SERVICE_ID'),
+                preview_service_id=configured_preview_identity(os.environ.get('DOMINO_POSITION_PLAN_ACCESS_PREVIEW_SERVICE_ID'),
+                    os.environ.get('DOMINO_POSITION_PLAN_ACCESS_SERVICE_ID'), 'DOMINO_POSITION_PLAN_ACCESS_PREVIEW_SERVICE_ID'))
             service = PositionPlanService(auth, planners, private_values=settings.private_values())
             gateway = PositionPlanGateway(service=service, verifier=verifier,
-                                          origin=os.environ.get('DOMINO_SESSION_ORIGIN'), enabled=True)
+                                          origin=os.environ.get('DOMINO_SESSION_ORIGIN'),
+                                          preview_origins=configured_preview_origins(os.environ.get('DOMINO_SESSION_PREVIEW_ORIGINS'),
+                    os.environ.get('DOMINO_SESSION_ORIGIN'), 'DOMINO_SESSION_PREVIEW_ORIGINS'), enabled=True)
     except ConfigError as error:
         problem = str(error)  # the setting's name only, never its value
     except (ValueError, DataError, OSError):

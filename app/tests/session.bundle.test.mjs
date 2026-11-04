@@ -1341,7 +1341,14 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // On CI that is about 667,680 B, 3,680 B over 664,000 B, and 408,638 B, 138 B over 408,500 B. Raise domino v2 to
     // 668,500 B and all lazy to 406,500 B: each overshoot rounded up to 0.5 kB, plus one more 0.5 kB of headroom. No
     // dependency, and every other ceiling unchanged.
-    for (const [family, files, productionBudget] of [['initial entry', first, 242_000], ['route screens', routes, 191_000], ['session/public reads', base, 168_000], ['financial', financial, 347_000], ['pool history chart', poolChart, 13_000], ['all lazy', allLazy, 406_500], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 668_500], ['V2 fixture data', fixtureData, 13_000]]) {
+    // Changed on purpose 2026-11-04 (launch round P3, PR #456: read-v6 1.2.0-rc.1 adds the position-fees route for Base
+    // and Arbitrum Fees earned): src/v2in/transports.ts imports the package's validators, which dispatch on every route,
+    // so the route's request and response schemas land in domino v2 before the app calls it. CI measured domino v2 at
+    // 671,196 B in dist (.wallet-test-v2-dist 669,514 B; run 41836942796) against 667,576 B on main at 0f9c520d (run
+    // 41834140551): +3,620 B, 2,696 B over 668,500 B. Every other family moved by under 0.1 kB. Raise domino v2 to
+    // 672,000 B: the overshoot rounded up to 0.5 kB plus one more 0.5 kB of headroom. No dependency, every other ceiling
+    // unchanged.
+    for (const [family, files, productionBudget] of [['initial entry', first, 242_000], ['route screens', routes, 191_000], ['session/public reads', base, 168_000], ['financial', financial, 347_000], ['pool history chart', poolChart, 13_000], ['all lazy', allLazy, 406_500], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 672_000], ['V2 fixture data', fixtureData, 13_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       const testOnly = dir !== DIST && (family === 'financial' || family === 'all lazy');
       const budget = productionBudget + (testOnly ? 3_000 : 0);

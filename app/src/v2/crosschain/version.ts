@@ -39,7 +39,11 @@ export const CROSSCHAIN_V1_PIN = Object.freeze({
   // provider's budget, and authenticated_api.py and onboarding_auth.py name a 429's Retry-After by cause, wait up to
   // 2.5 s for a free worker and give each kind of signed-in work its own preview budget; no route, schema, reason
   // code or version moved.
-  manifestSha256: 'f2ec59298a6fe75e8f9dd9b0ce4edbeaf9409e9a67aa43fba9c325d5ef87db95',
+  // Changed on purpose (data) 2026-11-04 (launch round P3): authenticated_api.py, onboarding_auth.py and
+  // crosschain_api.py: a session belongs to the origin it signed in on, and a listed preview origin rides its own
+  // Access identity; a read-only route may take an account check up to a minute old, for the delegate the session was
+  // admitted with; no route, schema, reason code or version moved.
+  manifestSha256: '44cd1260eeb75e42a86e4bd53c79ecfc3f78034525fb8aefb642542d7deebf7a',
   /** The manifest's own `status`: the service is built but off until the owner's keys and the Worker route exist. */
   status: 'candidate_disabled_pending_keys_and_worker',
 } as const)

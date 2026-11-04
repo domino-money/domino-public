@@ -55,7 +55,8 @@ def load_admission(path):
 def main():
     import argparse
     import uvicorn
-    from bridge_identity import AccessVerifier
+    from bridge_identity import AccessVerifier, configured_preview_identity
+    from session_siwe import configured_preview_origins
     from catalogue import database_settings
     from deposit_prepare import DirectDepositPreparer
     from deposit_allowances import AllowanceReader
@@ -102,10 +103,14 @@ def main():
             service = DepositService(auth, DepositStore(settings), preparer,
                 lambda: ReceiptReconciler(rpc_factory(), token_guard=preparer.token_guard), private_values=(api_key,),
                 allowance_reader_factory=lambda: AllowanceReader(rpc_factory()))
+            # Review L1 (4 Nov 2026): the separate preview Workers' own Access identity, optional.
             verifier = AccessVerifier(os.environ.get('DOMINO_DEPOSIT_ACCESS_ISSUER'),
-                os.environ.get('DOMINO_DEPOSIT_ACCESS_AUDIENCE'), os.environ.get('DOMINO_DEPOSIT_ACCESS_SERVICE_ID'))
-            gateway = DepositGateway(service=service, verifier=verifier,
-                origin=os.environ.get('DOMINO_SESSION_ORIGIN'), enabled=True)
+                os.environ.get('DOMINO_DEPOSIT_ACCESS_AUDIENCE'), os.environ.get('DOMINO_DEPOSIT_ACCESS_SERVICE_ID'),
+                preview_service_id=configured_preview_identity(os.environ.get('DOMINO_DEPOSIT_ACCESS_PREVIEW_SERVICE_ID'),
+                    os.environ.get('DOMINO_DEPOSIT_ACCESS_SERVICE_ID'), 'DOMINO_DEPOSIT_ACCESS_PREVIEW_SERVICE_ID'))
+            gateway = DepositGateway(service=service, verifier=verifier, origin=os.environ.get('DOMINO_SESSION_ORIGIN'),
+                preview_origins=configured_preview_origins(os.environ.get('DOMINO_SESSION_PREVIEW_ORIGINS'),
+                    os.environ.get('DOMINO_SESSION_ORIGIN'), 'DOMINO_SESSION_PREVIEW_ORIGINS'), enabled=True)
     except (ValueError, models.DepositError, DataError, OSError):
         if lock is not None:
             os.close(lock)

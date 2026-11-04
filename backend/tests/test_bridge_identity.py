@@ -35,6 +35,53 @@ class IdentityFixtures:
 
 
 class AccessIdentityTests(IdentityFixtures, unittest.TestCase):
+    def test_a_preview_only_identity_is_named_and_only_when_configured(self):
+        """Review L1 (4 Nov 2026): a second, preview-only service id of the same Access application."""
+        from bridge_identity import PREVIEW, PRODUCTION
+        plain = self.verifier()
+        self.assertEqual(plain.verify(self.token()), PRODUCTION)
+        self.assertIsNone(plain.preview_service_id)
+        with self.assertRaises(DataError):
+            plain.verify(self.token(common_name='fixture-preview.access'))
+        both = AccessVerifier(ISSUER, AUDIENCE, SERVICE, preview_service_id='fixture-preview.access',
+                              loader=lambda: {'keys': [self.jwk]})
+        self.assertEqual(both.verify(self.token()), PRODUCTION)
+        self.assertEqual(both.verify(self.token(common_name='fixture-preview.access')), PREVIEW)
+        for values in [{'common_name': 'other.access'}, {'common_name': 'fixture-preview.access', 'type': 'org'},
+                       {'common_name': 'fixture-preview.access', 'sub': 'a-human-user'}]:
+            with self.subTest(values=values), self.assertRaises(DataError):
+                both.verify(self.token(**values))
+        for value in (SERVICE, 'bad id!', '', 'x' * 129, 7):
+            with self.subTest(value=value), self.assertRaises(DataError):
+                AccessVerifier(ISSUER, AUDIENCE, SERVICE, preview_service_id=value)
+
+    def test_each_origin_is_carried_by_its_own_identity(self):
+        """The preview identity never carries the canonical origin; with it configured, production carries only that."""
+        from types import SimpleNamespace
+        from bridge_identity import PREVIEW, PRODUCTION, identity_carries
+        canonical, preview = 'https://domino.money', 'https://preview.domino-app-e65.pages.dev'
+        single, paired = SimpleNamespace(preview_service_id=None), SimpleNamespace(preview_service_id='fixture-preview')
+        self.assertEqual({(verifier is paired, identity, origin): identity_carries(verifier, identity, origin, canonical)
+                          for verifier in (single, paired) for identity in (PRODUCTION, PREVIEW)
+                          for origin in (canonical, preview)},
+                         {(False, PRODUCTION, canonical): True, (False, PRODUCTION, preview): True,
+                          (False, PREVIEW, canonical): False, (False, PREVIEW, preview): True,
+                          (True, PRODUCTION, canonical): True, (True, PRODUCTION, preview): False,
+                          (True, PREVIEW, canonical): False, (True, PREVIEW, preview): True})
+
+    def test_a_malformed_preview_identity_setting_is_off_and_said_so(self):
+        """Review L3: never a reason to stop the listener; production keeps serving."""
+        import io
+        from bridge_identity import configured_preview_identity
+        for value, expected in ((None, None), ('', None), ('fixture-preview.access', 'fixture-preview.access')):
+            stream = io.StringIO()
+            self.assertEqual(configured_preview_identity(value, SERVICE, 'X_ID', stream=stream), expected)
+            self.assertEqual(stream.getvalue(), '')
+        for value in (SERVICE, 'bad id!', 'x' * 129, 7, ['a']):
+            stream = io.StringIO()
+            self.assertIsNone(configured_preview_identity(value, SERVICE, 'X_ID', stream=stream))
+            self.assertEqual(stream.getvalue(), '<3>X_ID is malformed: the preview Access identity is off, production serves.\n')
+
     def test_actual_rs256_signature_and_service_claim_binding(self):
         verifier = self.verifier()
         self.assertTrue(verifier.verify(self.token()))

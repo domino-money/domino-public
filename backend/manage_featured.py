@@ -21,7 +21,7 @@ import threading
 import time
 
 from catalogue import configured_writer_catalogue
-from discovery import DataError, bytes32
+from discovery import DataError
 from featured_live import Live, window
 from featured_pools import load_policy
 from featured_selector import Selector
@@ -59,7 +59,7 @@ def tick(selector, store, policy, now, live=None, clock=time.time):
 def pin(store, policy, pool_id, slot, reason, until):
     if type(slot) is not int or not 1 <= slot <= policy['size']:
         raise DataError('invalid_featured_pin_slot')
-    pool_id = bytes32(pool_id)
+    pool_id = store.pool_subject(pool_id)
     active = [item for item in store.overrides(int(time.time()))['pins'] if item['poolId'] != pool_id]
     if len(active) >= policy['maxPins']:
         raise DataError('featured_pins_full')

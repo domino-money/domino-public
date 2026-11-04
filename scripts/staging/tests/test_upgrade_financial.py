@@ -47,6 +47,13 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/052_v2_index.sql',
     # The ledgers' per-chunk index: applied by apply_migrations.py, never by this upgrade.
     'backend/migrations/053_activity_chunk_index.sql',
+    # The V2 fee follower's tables: applied by apply_migrations.py, never by this upgrade.
+    'backend/migrations/054_v2_fees.sql',
+    # The featured-pools tables per chain: applied by apply_migrations.py, never by this upgrade.
+    'backend/migrations/055_featured_chains.sql',
+    # The activity follower's mint-scan checkpoint: applied by apply_migrations.py, never by this upgrade.
+    'backend/migrations/056_position_mint_scan.sql',
+    'backend/migrations/057_session_origin.sql',
 )
 
 

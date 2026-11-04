@@ -1,5 +1,5 @@
 import { parseStrictJson, JsonNumber } from './strict-json.mjs';
-import { BridgeError, fail, exactOrigin, checkBrowser, jsonContentType, lengthWithin,
+import { BridgeError, fail, exactOrigin, browserOrigin, previewOrigins, jsonContentType, lengthWithin,
   cancelBody, deadline, readText, clientIp } from './worker.mjs';
 import { CONTRACT_VERSION, ROUTES, ERROR_STATUS_BY_CODE, credential,
   validateRequest, validateEnvelope, validateError } from '../../api-contracts/session-v1/runtime.mjs';
@@ -8,14 +8,17 @@ const PREFIX = '/api/session/v1/';
 const HEADER = 'X-Domino-Session-Contract';
 export const SESSION_LIMITS = Object.freeze({ requestBytes: 8192, responseBytes: 16384, cookiesBytes: 8192, bodyMs: 5000, totalMs: 20000, upstreamMs: 15000 });
 
+// `origins`: APP_ORIGIN, then the exact preview origins PREVIEW_ORIGINS lists (4 Nov 2026, launch round P3; none
+// unless listed, and none while the list is malformed: worker.mjs previewOrigins). The gateway is never one of them.
 function config(env) {
   const appOrigin = exactOrigin(env.APP_ORIGIN);
   if (!appOrigin) fail('upstream_unavailable');
-  if (env.SESSION_BRIDGE_ENABLED !== 'true') return { appOrigin, enabled: false };
   const gatewayOrigin = exactOrigin(env.SESSION_GATEWAY_ORIGIN);
+  const origins = [appOrigin, ...previewOrigins(env.PREVIEW_ORIGINS, appOrigin, gatewayOrigin, 'session-bridge')];
+  if (env.SESSION_BRIDGE_ENABLED !== 'true') return { origins, enabled: false };
   const secret = (value) => typeof value === 'string' && /^[\x21-\x7e]{1,1024}$/u.exec(value)?.[0] === value;
   if (!gatewayOrigin || gatewayOrigin === appOrigin || !secret(env.SESSION_ACCESS_CLIENT_ID) || !secret(env.SESSION_ACCESS_CLIENT_SECRET)) fail('upstream_unavailable');
-  return { appOrigin, gatewayOrigin, enabled: true, clientId: env.SESSION_ACCESS_CLIENT_ID, clientSecret: env.SESSION_ACCESS_CLIENT_SECRET };
+  return { origins, gatewayOrigin, enabled: true, clientId: env.SESSION_ACCESS_CLIENT_ID, clientSecret: env.SESSION_ACCESS_CLIENT_SECRET };
 }
 
 // Parse only our two exact cookie names. Duplicate credentials, quoted values
@@ -69,7 +72,7 @@ function successResponse(envelope, id) {
   return new Response(JSON.stringify(envelope.result), { headers });
 }
 
-async function upstream(request, route, text, settings, fetchImpl, ip, cookies, csrf, started, id) {
+async function upstream(request, route, text, settings, fetchImpl, ip, cookies, csrf, started, id, browser) {
   const remaining = SESSION_LIMITS.totalMs - (Date.now() - started);
   if (remaining <= 0) fail('request_timeout');
   const scope = deadline(Math.min(SESSION_LIMITS.upstreamMs, remaining), 'upstream_timeout', request.signal, started + SESSION_LIMITS.totalMs);
@@ -78,7 +81,8 @@ async function upstream(request, route, text, settings, fetchImpl, ip, cookies, 
     const headers = {
       'Content-Type': 'application/json', [HEADER]: CONTRACT_VERSION,
       'CF-Access-Client-Id': settings.clientId, 'CF-Access-Client-Secret': settings.clientSecret,
-      'X-Domino-Client-Id': ip, 'X-Domino-Browser-Origin': settings.appOrigin,
+      // The origin browserOrigin() admitted: APP_ORIGIN or a listed preview, whose SIWE message the listener writes.
+      'X-Domino-Client-Id': ip, 'X-Domino-Browser-Origin': browser,
     };
     for (const [name, value] of Object.entries(cookies)) headers[`X-Domino-${name}`] = value;
     if (csrf) headers['X-Domino-CSRF'] = csrf;
@@ -140,7 +144,7 @@ export function createSessionWorker({ fetch: fetchImpl = globalThis.fetch,
         const route = url.pathname.startsWith(PREFIX) ? url.pathname.slice(PREFIX.length) : '';
         if (!ROUTES.includes(route) || url.search || url.hash) fail('route_not_available');
         if (request.method !== (route === 'me' ? 'GET' : 'POST')) fail('method_not_allowed');
-        checkBrowser(request, settings.appOrigin, route === 'me');
+        const browser = browserOrigin(request, settings.origins, route === 'me');
         if (!settings.enabled) fail('route_not_available');
         const requestedVersion = request.headers.get(HEADER);
         if (requestedVersion !== null && requestedVersion !== CONTRACT_VERSION) fail('upstream_contract_mismatch');
@@ -172,7 +176,7 @@ export function createSessionWorker({ fetch: fetchImpl = globalThis.fetch,
             fail('invalid_request');
           } finally { scope.dispose(); }
         }
-        return await upstream(request, route, text, settings, fetchImpl, ip, cookies, csrf, started, id);
+        return await upstream(request, route, text, settings, fetchImpl, ip, cookies, csrf, started, id, browser);
       } catch (error) { return errorResponse(error instanceof BridgeError ? error.code : 'upstream_unavailable', id); }
     },
   };

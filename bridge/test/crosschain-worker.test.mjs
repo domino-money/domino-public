@@ -88,8 +88,9 @@ function committed() {
 
 test('the committed config keeps the three routes off, logs nothing and names its own gateway', async () => {
   const { toml, vars } = committed();
+  // Changed on purpose 2026-11-04 (launch round P3): PREVIEW_ORIGINS, committed empty (no preview admitted).
   assert.deepEqual(vars, { CROSSCHAIN_BRIDGE_ENABLED: 'false', APP_ORIGIN: 'https://domino.money',
-    CROSSCHAIN_GATEWAY_ORIGIN: 'https://vm-crosschain.domino.money' });
+    CROSSCHAIN_GATEWAY_ORIGIN: 'https://vm-crosschain.domino.money', PREVIEW_ORIGINS: '' });
   assert.match(toml, /^name = "domino-crosschain-bridge"$/m);
   assert.match(toml, /^main = "src\/crosschain-worker\.mjs"$/m);
   assert.match(toml, /^\[observability\]\nenabled = false$/m);

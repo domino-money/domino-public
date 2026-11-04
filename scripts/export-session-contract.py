@@ -105,6 +105,7 @@ export function validateEnvelope(route:SessionRoute, value:unknown):boolean;
                     'backend/session_store.py', 'backend/hop_log.py',
                     'backend/migrations/027_remove_wallet_access_gate.sql',
                     'backend/migrations/041_session_delegated_accounts.sql',
+                    'backend/migrations/057_session_origin.sql',
                     'backend/tests/session_contract_fixtures.py', 'scripts/export-session-contract.py']
     manifest = {
         'contract': 'session-v1', 'contractVersion': CONTRACT_VERSION,
