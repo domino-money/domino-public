@@ -143,7 +143,7 @@
     },
     {
       "path": "backend/crosschain_api.py",
-      "sha256": "19c719f90e6a57f46474fc66aeb4e1575462e32d8dbf7e338266cb4b3c28ca34"
+      "sha256": "e07e0556b85031c7e3bdd052f2af09e6449dbb715ec90b47782e6f62e5878805"
     },
     {
       "path": "backend/crosschain_common.py",
@@ -151,19 +151,19 @@
     },
     {
       "path": "backend/crosschain_relay.py",
-      "sha256": "bff30453aad149c5244133c35fc9763c58ce8365532adddd0074622e576fad3c"
+      "sha256": "3dc3e9c9cfd51234bebe4908cfd4ff7bc98e59f3d61e57cf2ca78a60fec91c8b"
     },
     {
       "path": "backend/crosschain_across.py",
-      "sha256": "0cddf7ce24704bdc7010346970c4748e840113a88c8699bde5d658d4417ba32c"
+      "sha256": "e58223d4400dbdb444c2eb1fb7964fc898900ef841f5f8234581ce848e182fad"
     },
     {
       "path": "backend/crosschain_http.py",
-      "sha256": "5f680caba1283a2caadd83e105f2dddc184640b5e15f0c08bf9b9b9fb80006e2"
+      "sha256": "693d29ff30dac2f86eeb13fd3c37717e7da6a924903abd7f8551781780a215d0"
     },
     {
       "path": "backend/crosschain_config.py",
-      "sha256": "4a67f1bd02c57c2c0fce9a38647866e632b103574cb72691ac39a29d383f2cf1"
+      "sha256": "3735eea6a7c769e7a4afc22101993e350c8a50d2bba4ef36e346202e0e82152e"
     },
     {
       "path": "backend/crosschain_pins.json",
@@ -171,15 +171,15 @@
     },
     {
       "path": "backend/authenticated_api.py",
-      "sha256": "d498d87b4aba6705ae2fb33c94ddf63a3108fd8a95d9fbcf213dba32877eb35e"
+      "sha256": "a79461b3057d272c697eee6496df67faac93a3fa0b3ea393e2222820118c5fa3"
     },
     {
       "path": "backend/onboarding_auth.py",
-      "sha256": "0060646f6ceaf95da3b597c68110737d17129afae8dce4120f206de1ed5677d4"
+      "sha256": "a93cac3f85f3d2fcf6e551385b548dbeef89eecde94af6c54aa2dba7cfe6f253"
     },
     {
       "path": "backend/tests/crosschain_support.py",
-      "sha256": "9a72bea2a1b18a52bedcbe555ec48a41f6edc49a7fb534b9a4c552766d91e548"
+      "sha256": "5d5ed8034655bbf417c36441aa8daa4f779e56359f02924141d4f4b05a128a3b"
     },
     {
       "path": "backend/tests/crosschain_contract_fixtures.py",

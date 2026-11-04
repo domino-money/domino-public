@@ -20,6 +20,7 @@ accepts the Python selection and refuses every other token with FeeMismatch.
 
 Run after the contract build with DOMINO_TEST_EVM=1.
 """
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -36,7 +37,7 @@ from eth_hash.auto import keccak
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from discovery import parse_block  # noqa: E402
+from discovery import TRADING_QUOTE_ENDPOINT, TRADING_SWAP_ENDPOINT, parse_block  # noqa: E402
 import v2_fee_rule as fee_rule  # noqa: E402
 import v2_l1_fee as l1_fee  # noqa: E402
 import v2_liquidity as liq  # noqa: E402
@@ -70,6 +71,31 @@ def liq_pool_id(pool):
 
 def topic_address(topic):
     return '0x' + topic[-40:]
+
+
+@contextmanager
+def answers_asked_again():
+    """Every read a plan holds an answer to is asked of the chain again, as before 3 Nov 2026."""
+    from v2_quotes import PoolQuoter
+    quote_each, readiness = PoolQuoter.quote_each, v2_position_plan._Context._readiness
+
+    def quote_each_again(self, requests):
+        self._answered.clear()
+        return quote_each(self, requests)
+
+    def readiness_again(self, zap_plan, priced):
+        self._readiness_reads.clear()
+        return readiness(self, zap_plan, priced)
+    with mock.patch.object(PoolQuoter, 'quote_each', quote_each_again), \
+            mock.patch.object(v2_position_plan._Context, '_readiness', readiness_again):
+        yield
+
+
+def repeated_reads(asked, profile):
+    """The Multicall3 reads a planner sent more than once, each by its params (block included)."""
+    reads = [json.dumps(call['params'], sort_keys=True) for call in asked
+             if call.get('method') == 'eth_call' and call['params'][0].get('to') == profile.multicall3]
+    return sorted({read for read in reads if reads.count(read) > 1})
 
 
 class LatestHead:
@@ -117,7 +143,8 @@ class S1JourneyEvmTests(unittest.TestCase):
         cls.usd, cls.tka, cls.tkb = fx.tokens(3)
         fx.deploy_domino([(cls.usd, 1), (ZERO, 2), (fx.weth, 2)])
         cls.deployment = fx.deployment
-        cls.planner = PositionPlanner(fx.profile, fx.endpoints(), LatestHead(cls.local), cls.deployment,
+        cls.asked = []  # what the planner asked the chain, plan by plan
+        cls.planner = PositionPlanner(fx.profile, fx.endpoints(cls.asked), LatestHead(cls.local), cls.deployment,
                                       clock=time.time, nonce_word=lambda: 0x5151)
         cls.lp = cls.local.account('liquidity provider').address.lower()
         for token in (cls.usd, cls.tka, cls.tkb):
@@ -155,10 +182,26 @@ class S1JourneyEvmTests(unittest.TestCase):
 
     def plan(self, request, owner):
         validated = PlanRequest.model_validate(request).model_dump()
+        self.asked.clear()
         body = self.planner.plan(validated, owner)
+        # Every read is pinned to the plan's block: one sent twice is an answer already in hand (3 Nov 2026).
+        self.assertEqual(repeated_reads(self.asked, self.fx.profile), [])
         # The closed contract, models and rules, accepts it as the service would send it.
         PlanResponse.model_validate({'contractVersion': CONTRACT_VERSION, 'plan': body})
         return body
+
+    def assertSamePlanAskingAgain(self, plan, asked, request, owner):
+        """`plan(request, owner)` twice at one block and one clock: with the answers in hand, and with each asked of
+        the chain again (as before 3 Nov 2026). The same plan, from fewer reads."""
+        validated = PlanRequest.model_validate(request).model_dump()
+        asked.clear()
+        kept = plan(validated, owner)
+        self.assertEqual(repeated_reads(asked, self.fx.profile), [])
+        asked.clear()
+        with answers_asked_again():
+            again = plan(validated, owner)
+        self.assertNotEqual(repeated_reads(asked, self.fx.profile), [])
+        self.assertEqual(kept, again)
 
     def execute(self, body, account, *, sender=None):
         """The wallet's steps, then the action (signed when the path needs it)."""
@@ -409,6 +452,12 @@ class S1JourneyEvmTests(unittest.TestCase):
         with mock.patch.object(v2_position_plan, 'MAX_CORRECTIONS', 0):
             quoted = self.plan(request, owner)
         body = self.plan(request, owner)
+        # Both legs ask for the token's first hops to the hubs: one Multicall3 round, asked once since 3 Nov 2026.
+        now = int(self.local.request('eth_getBlockByNumber', ['latest', False])['timestamp'], 16) + 1
+        asked = []
+        planner = PositionPlanner(self.fx.profile, self.fx.endpoints(asked), LatestHead(self.local), self.deployment,
+                                  clock=lambda: now, nonce_word=lambda: 0x5151)
+        self.assertSamePlanAskingAgain(planner.plan, asked, request, owner)
         self.assertEqual([leg['pools'][0]['id'] for leg in body['legs']], [liq_pool_id(crossed)] * 2)
         self.assertEqual([leg['amountInRaw'] for leg in quoted['legs']], [leg['amountInRaw'] for leg in body['legs']])
         self.assertNotEqual([leg['expectedOutRaw'] for leg in quoted['legs']],
@@ -885,7 +934,8 @@ class S1RouterLegEvmTests(unittest.TestCase):
     def planner(self, api):
         from v2_uniswap_api import TradingApiLegs
         legs = TradingApiLegs('synthetic-offline-key', transport=api, clock=time.time)
-        return PositionPlanner(self.fx.profile, self.fx.endpoints(), LatestHead(self.local), self.deployment,
+        self.asked = []  # this planner's own reads, apart from the fake API's
+        return PositionPlanner(self.fx.profile, self.fx.endpoints(self.asked), LatestHead(self.local), self.deployment,
                                router_legs=legs, clock=time.time, nonce_word=lambda: 0x77)
 
     def test_a_better_router_leg_runs_through_router_2_1_2(self):
@@ -899,6 +949,9 @@ class S1RouterLegEvmTests(unittest.TestCase):
         body = self.planner(api).plan(request, owner)
         PlanResponse.model_validate({'contractVersion': CONTRACT_VERSION, 'plan': body})
         self.assertEqual(body['routing']['router'], {'status': 'chosen', 'reason': None})
+        # The API's calls for the one leg: the probe's quote and call, then both again at the amount the plan
+        # settled on.
+        self.assertEqual(api.calls, [TRADING_QUOTE_ENDPOINT, TRADING_SWAP_ENDPOINT] * 2)
         leg, = body['legs']
         self.assertEqual((leg['kind'], leg['source'], leg['pools'][0]['id']),
                          ('universal_router', 'uniswap_trading_api', self.hidden.pool_id))
@@ -934,11 +987,23 @@ class S1RouterLegEvmTests(unittest.TestCase):
                 self.assertEqual(quoted['simulation']['status'], uncorrected)
                 body = self.planner(api).plan(request, owner)
                 PlanResponse.model_validate({'contractVersion': CONTRACT_VERSION, 'plan': body})
+                # Rebuilt and simulated again at the same block, with its balances and approvals in hand: no
+                # Multicall3 read went twice (3 Nov 2026).
+                self.assertGreaterEqual(sum(call.get('method') == 'eth_simulateV1' for call in self.asked), 2)
+                self.assertEqual(repeated_reads(self.asked, self.fx.profile), [])
                 leg, = body['legs']
                 self.assertEqual((leg['source'], body['simulation']['status'], body['warnings']),
                                  ('uniswap_trading_api', 'ok', []))
                 self.assertEqual(leg['expectedOutRaw'], str(api.output(self.usd, int(leg['amountInRaw']))))
                 self.assertNotEqual(leg['expectedOutRaw'], quoted['legs'][0]['expectedOutRaw'])
+                # The same plan when its rebuild asks its balances and approvals again (at one clock: the API's
+                # router deadline and the plan's follow it).
+                now = int(self.local.request('eth_getBlockByNumber', ['latest', False])['timestamp'], 16) + 1
+                with mock.patch('time.time', return_value=now):
+                    planner = self.planner(api)
+                    case = S1JourneyEvmTests('test_create_with_a_swap_signed_through_permit2')
+                    case.fx = self.fx
+                    case.assertSamePlanAskingAgain(planner.plan, self.asked, request, owner)
                 case = S1JourneyEvmTests('test_create_with_a_swap_signed_through_permit2')
                 case.local, case.fx = self.local, self.fx
                 case.assertExecutedAsPlanned(body, case.execute(body, account))

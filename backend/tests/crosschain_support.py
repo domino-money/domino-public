@@ -158,8 +158,8 @@ class FakeHttp:
     def __init__(self, provider, routes=None):
         self.provider, self.routes, self.calls = provider, dict(routes or {}), []
 
-    def _answer(self, method, path, params, body):
-        self.calls.append({'method': method, 'path': path, 'params': params, 'body': body})
+    def _answer(self, method, path, params, body, status=False):
+        self.calls.append({'method': method, 'path': path, 'params': params, 'body': body, 'status': status})
         answer = self.routes.get((method, path))
         if answer is None:
             raise ProviderError(f'{self.provider}_unavailable')
@@ -169,8 +169,8 @@ class FakeHttp:
             raise answer
         return deepcopy(answer)
 
-    def get(self, path, params=None, *, timeout, retry=False):
-        return self._answer('GET', path, params, None)
+    def get(self, path, params=None, *, timeout, retry=False, status=False):
+        return self._answer('GET', path, params, None, status)
 
     def post(self, path, body, *, timeout, retry=False):
         return self._answer('POST', path, None, body)

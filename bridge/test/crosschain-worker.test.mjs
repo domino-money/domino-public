@@ -350,11 +350,12 @@ test('only the three POST paths dispatch, and a request is the package\'s exactl
   assert.equal(h.calls.length, 0);
 });
 
-for (const [code, status] of Object.entries(ERROR_STATUS_BY_CODE)) test(`the listener's refusal ${code} passes with its own status, and nothing else of it`, async () => {
+// Changed on purpose 3 Nov 2026 (launch round P2): a 429 keeps the listener's own Retry-After (it was always 60).
+for (const [code, status] of Object.entries(ERROR_STATUS_BY_CODE)) test(`the listener's refusal ${code} passes with its own status, a 429 with its own Retry-After, and nothing else of it`, async () => {
   assert.equal(validateError(status, { error: code }), true);
   const h = harness(() => response({ error: code }, status, { 'Set-Cookie': 'secret=1', 'X-Secret': 'secret', 'Retry-After': '5' }));
   const result = await h.worker.fetch(request(), env);
-  assert.equal(result.headers.get('Retry-After'), status === 429 ? '60' : null);
+  assert.equal(result.headers.get('Retry-After'), status === 429 ? '5' : null);
   await error(result, code);
   assert.equal(result.headers.get('X-Secret'), null);
 });

@@ -129,7 +129,7 @@ signature. `previewChecks.status` can be blocked/incomplete even with HTTP200;
 | 403 `account_unsupported` | Explain the login scope (EOAs, plain or EIP-7702 delegated; not contract wallets); public reads remain separate. |
 | 409 `preview_expired` | Request a fresh preview when needed. |
 | 422 `provider_request_rejected` | Preserve selection and explain unavailable input/route; do not substitute a pool. |
-| 429 rate/capacity error | Honor `Retry-After: 60`; no background retry loop. |
+| 429 rate/capacity error | Honor `Retry-After`, 1 to 60 whole seconds by cause: 2 to 5 for `*_capacity_busy`, the seconds until the window admits again for `session_rate_limited`, 60 otherwise; the worker relays the listener's value (60 on every 429 before 3 Nov 2026). No background retry loop. |
 | 502/503/504 | Preserve inputs and show unavailable data, never manufactured zero amounts. |
 
 The package exports all exact error/status combinations. Responses are JSON,
@@ -151,8 +151,10 @@ The private listener permits numeric-loopback clients and only
 and Authorization headers are forbidden. Its separate Access service JWT must
 verify before any session DB, account RPC or Uniswap work.
 
-The session store reserves the IP attempt, checks active session/chain/CSRF, and
-reserves account/global quotas. The existing EOA checker runs before the
+The session store reads the global and IP quotas, checks active
+session/chain/CSRF (a failed check still spends the IP attempt), then reserves
+the IP, account and global attempts together; a quota's refusal reserves none
+of them. The existing EOA checker runs before the
 provider. Fresh DB guards before and after provider work reject expiry, logout
 and changed session credentials while a calculation is running. The final
 `session-v1` 3.0.0-rc.4 authority rechecks the live session before account RPC
@@ -170,13 +172,18 @@ request's fresh EOA check. Previews and protected refresh keep CSRF stable.
 | Worker total / upstream | 25 / 20 seconds, shared absolute deadlines |
 | Private listener total | 20 seconds including upload, Access, DB, account RPC and provider |
 | Uniswap request | Existing 12 seconds, shortened by remaining parent budget |
-| Concurrent private workers | 2, no queue, singleton listener |
-| IP / account / global | 20 / 10 / 60 per 60-second window, shared by every route |
+| Concurrent private workers | 8; up to 4 more wait at most 2.5 s for one, never past their deadline; singleton listener |
+| IP / account / global | 120 / 30 / 1000 per 60-second window, per kind of signed-in work |
 
 Durable limits use keyed IP/account identifiers in the existing auth schema.
 IP scope is canonical IPv4 or IPv6 /64. Multiple sessions share an account quota.
-Failures retain reserved attempts; process restart does not reset them. These are
-conservative development limits, not a production SLA; fixed-window bursts remain
+Failures after admission retain reserved attempts; a quota's refusal reserves
+nothing. Process restart does not reset them. Since 3 Nov 2026 each kind of
+signed-in work has its own quotas (`onboarding_auth.BUDGETS`): plans,
+cross-chain quotes and origins, cross-chain status, and execution and
+performance reads; these previews, swap routes and deposits keep the shared
+`onboarding` ones. The kind is part of the keyed identifier, so no migration.
+These are development limits, not a production SLA; fixed-window bursts remain
 bounded by concurrency. Timeout/disconnect retains a worker's slot until the
 actual operation exits. There are no retries, cached unsigned transactions or
 scheduled execution. The composed producer applies session migrations008/011/027
@@ -246,3 +253,15 @@ Rollback disables the onboarding worker/listener and restores matching consumer,
 producer and contract builds. Login/public reads can remain available. This
 feature does not migrate session data, rotate credentials or authorize financial
 operations. Signing, broadcast and receipt reconciliation remain separate work.
+
+Keep `ONBOARDING_BRIDGE_ENABLED` off on the deployed worker until the listener
+answers through its tunnel (3 Nov 2026, launch round P2, pentest F-19: every
+`/api/onboarding/v1/*` answered 503 while the listener was not running).
+Switched off, every route answers 404 `route_not_available`, onboarding-v1's
+code for a route this deployment does not serve, and the app shows the feature
+as unavailable without a retry. Switched on in front of a stopped listener,
+every route answers 503 `upstream_unavailable`, which the app shows as an outage
+to retry: the worker cannot tell a listener never started from one restarting,
+and the contract has no more specific code. A 503 `bridge_unavailable` without
+the contract header is the Pages forwarder's: the `ONBOARDING_BRIDGE` binding
+itself is missing or broken.

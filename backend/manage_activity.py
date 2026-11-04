@@ -330,12 +330,15 @@ def worker_exit_code(results):
     The run's budget ends some claim in every busy run: that is where a run
     stops once something advanced, not a failure. A run that advanced nothing
     before its budget ran out, or any other refusal, is one the unit shows.
+    A claim another writer was moving (contention: the activity follower holds
+    or just advanced that pool) is neither: the pool moved.
     """
     budget=failed=0
     for item in results:
         if 'reason' in item:
-            if error_class(item['reason'])=='run_budget':budget+=1
-            else:failed+=1
+            kind=error_class(item['reason'])
+            if kind=='run_budget':budget+=1
+            elif kind!='contention':failed+=1
     advanced=len(results)-budget-failed
     return 0 if not failed and (advanced or not budget) else 1
 

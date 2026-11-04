@@ -62,10 +62,18 @@ function headersFor(id) {
     [HEADER]: CONTRACT_VERSION, 'X-Domino-Request-Id': id });
 }
 
-function errorResponse(code, id) {
+// A 429 keeps the listener's own wait when it names a whole 1 to 60 seconds, else the 60 every 429 said before
+// (3 Nov 2026, launch round P2). This Worker used to put 60 over whatever the listener named; the same round has
+// the listeners name 2 to 5 s for a *_capacity_busy, whose slot frees in about 4 s, and the seconds left of the
+// window for a rate limit. worker.mjs retryAfter() is the same check, defaulting to 1.
+function retryAfter(value) {
+  return /^[0-9]{1,3}$/u.test(value ?? '') && Number(value) >= 1 && Number(value) <= 60 ? String(Number(value)) : '60';
+}
+
+function errorResponse(code, id, upstreamRetryAfter = null) {
   if (!Object.hasOwn(ERROR_STATUS_BY_CODE, code)) code = 'upstream_unavailable';
   const headers = headersFor(id);
-  if (ERROR_STATUS_BY_CODE[code] === 429) headers.set('Retry-After', '60');
+  if (ERROR_STATUS_BY_CODE[code] === 429) headers.set('Retry-After', retryAfter(upstreamRetryAfter));
   return new Response(JSON.stringify({ error: code }), { status: ERROR_STATUS_BY_CODE[code], headers });
 }
 
@@ -122,7 +130,7 @@ async function upstream(request, route, text, body, settings, fetchImpl, ip, ses
     const validError = validateError(response.status, data);
     scope.check();
     if (!validError) fail('upstream_unavailable');
-    return errorResponse(data.error, id);
+    return errorResponse(data.error, id, response.headers.get('Retry-After'));
   } catch (error) {
     if (error instanceof BridgeError) throw error;
     if (scope.signal.aborted) throw scope.signal.reason;

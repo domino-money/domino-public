@@ -551,7 +551,8 @@ class AcrossProvider:
     def observe(self, deposit_tx_hash):
         """The deposit, or None while Across has not indexed it (it polls every ~10 s)."""
         try:
-            payload = self.http.get('/deposit', {'depositTxnRef': deposit_tx_hash}, timeout=self.read_seconds, retry=True)
+            payload = self.http.get('/deposit', {'depositTxnRef': deposit_tx_hash}, timeout=self.read_seconds, retry=True,
+                                    status=True)
         except ProviderError as error:
             if str(error) == 'across_not_found':
                 return None

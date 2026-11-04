@@ -6,6 +6,7 @@ import ipaddress
 import json
 import math
 import os
+import random
 import re
 import secrets
 from threading import BoundedSemaphore
@@ -18,6 +19,7 @@ from pydantic import ValidationError
 from bridge_state import strict_json
 from discovery import DataError
 import hop_log
+from onboarding_auth import serving
 from read_deadline import read_deadline
 from session_models import SessionError
 
@@ -27,6 +29,32 @@ from session_models import SessionError
 MAX_WORKERS = 8
 TOTAL_SECONDS = 20
 UPLOAD_SECONDS = 5
+# 3 Nov 2026 (launch): a full listener holds a request up to SLOT_WAIT_SECONDS for a slot, never past
+# its own deadline, instead of refusing it at once: a plan holds its slot ~4 s at p50, so the 9th was
+# refused with a slot seconds from free. At most MAX_WAITING wait: each holds one of uvicorn's 16
+# connections (limit_concurrency), past which uvicorn answers a bare 503, so the JSON 429 with its
+# Retry-After stays what sheds load.
+SLOT_WAIT_SECONDS = 2.5
+SLOT_POLL_SECONDS = 0.05
+MAX_WAITING = 4
+# Retry-After on a 429, by cause, a whole number of seconds from 1 to 60 (3 Nov 2026; every 429 said 60):
+# a capacity-busy refusal (a worker slot, the session store's lock) 2 to 5 s at random, so the tabs it
+# refused do not all come back in the same second; a rate limit the seconds until its window admits
+# again; anything else (a provider's limit, an owner's own caps) the minute it always said. The bridge
+# Workers pass 1 to 60 through.
+CAPACITY_RETRY_SECONDS = (2, 5)
+MAX_RETRY_SECONDS = 60
+# An owner's 16 active deposits: one of them has to end, so no short wait clears it.
+OWNER_LIMITS = frozenset(('deposit_owner_capacity_busy',))
+
+
+def retry_after(code, wait=None):
+    """Retry-After for a 429 answering `code`; `wait`: the seconds a rate limit named, when it did."""
+    if code.endswith('_capacity_busy') and code not in OWNER_LIMITS:
+        return random.randint(*CAPACITY_RETRY_SECONDS)
+    if type(wait) in (int, float) and math.isfinite(wait):
+        return max(1, min(MAX_RETRY_SECONDS, math.ceil(wait)))
+    return MAX_RETRY_SECONDS
 
 
 class AuthenticatedGateway:
@@ -43,11 +71,30 @@ class AuthenticatedGateway:
             raise ValueError('invalid_onboarding_gateway_budget')
         self.service, self.verifier, self.origin, self.enabled = service, verifier, origin, enabled
         self.clock, self.total_seconds, self.upload_seconds = clock, total_seconds, upload_seconds
-        self.slot = BoundedSemaphore(MAX_WORKERS)
+        self.slot, self.waiting = BoundedSemaphore(MAX_WORKERS), BoundedSemaphore(MAX_WAITING)
+
+    async def take_slot(self, deadline):
+        """A worker slot now, or within SLOT_WAIT_SECONDS behind at most MAX_WAITING others; never past `deadline`."""
+        if self.slot.acquire(blocking=False):
+            return True
+        wait = min(SLOT_WAIT_SECONDS, deadline - self.clock())
+        if wait <= 0 or not self.waiting.acquire(blocking=False):
+            return False
+        try:
+            loop = asyncio.get_running_loop()
+            until = loop.time() + wait
+            while (left := until - loop.time()) > 0:
+                await asyncio.sleep(min(SLOT_POLL_SECONDS, left))
+                if self.slot.acquire(blocking=False):
+                    return True
+            return False
+        finally:
+            self.waiting.release()
 
     def execute(self, route, body, headers, deadline, version=None):
         """`version`: the one the request named, for a family with a switch window (CONTRACT_VERSIONS); its service
-        and its models answer in that version. None for every other family, which has one."""
+        and its models answer in that version. None for every other family, which has one. Answers (status, body,
+        wait): `wait`, the seconds a rate limit named for its Retry-After, else None."""
         OnboardingError = self.contract.Error
         validate_response = self.contract.validate_response
         MAX_RESPONSE = self.contract.MAX_RESPONSE
@@ -56,7 +103,8 @@ class AuthenticatedGateway:
             remaining = deadline - self.clock()
             if remaining <= 0:
                 raise OnboardingError('request_timeout')
-            with read_deadline(remaining, clock=self.clock):
+            # The family ('/internal/<family>/v1/') and route choose the session's preview budget.
+            with read_deadline(remaining, clock=self.clock), serving(self.contract.PREFIX.split('/')[2], route):
                 try:
                     self.verifier.verify(headers['assertion'])
                 except Exception:
@@ -68,16 +116,16 @@ class AuthenticatedGateway:
                 if len(encoded.encode()) > MAX_RESPONSE or any(headers[name] and headers[name] in encoded
                         for name in ('assertion', 'session', 'csrf')):
                     raise OnboardingError('upstream_invalid_response')
-                return 200, response
+                return 200, response, None
         except (OnboardingError, SessionError) as error:
             normalized = OnboardingError(error.code)
-            return normalized.status, {'error': normalized.code}
+            return normalized.status, {'error': normalized.code}, getattr(error, 'retry_after', None)
         except DataError:
-            return 504, {'error': 'request_timeout'}
+            return 504, {'error': 'request_timeout'}, None
         except (ValidationError, ValueError, TypeError):
-            return 502, {'error': 'upstream_invalid_response'}
+            return 502, {'error': 'upstream_invalid_response'}, None
         except Exception:
-            return 503, {'error': 'upstream_unavailable'}
+            return 503, {'error': 'upstream_unavailable'}, None
         finally:
             self.slot.release()
 
@@ -134,13 +182,14 @@ def create_authenticated_app(gateway):
                              reason=reason, durationMs=int((gateway.clock() - opened) * 1000),
                              **hop_log.close_notes(notes))
 
-            def result(status, body):
-                record(status, body.get('error') if isinstance(body, dict) else None)
+            def result(status, body, wait=None):
+                reason = body.get('error') if isinstance(body, dict) else None
+                record(status, reason)
                 headers = {'Cache-Control': 'no-store, no-transform', 'X-Content-Type-Options': 'nosniff',
                            'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
                            HEADER: version, 'X-Domino-Request-Id': request_id}
                 if status == 429:
-                    headers['Retry-After'] = '60'
+                    headers['Retry-After'] = str(retry_after(reason or '', wait))
                 return JSONResponse(body, status_code=status, headers=headers)
 
             def error(code):
@@ -218,7 +267,7 @@ def create_authenticated_app(gateway):
                 return error('invalid_request')
             if gateway.clock() >= deadline:
                 return error('request_timeout')
-            if not gateway.slot.acquire(blocking=False):
+            if not await gateway.take_slot(deadline):
                 return error(getattr(contract, 'CAPACITY_CODE', 'onboarding_capacity_busy'))
             try:
                 future = asyncio.get_running_loop().run_in_executor(executor, gateway.execute, match[1], body,
@@ -231,10 +280,10 @@ def create_authenticated_app(gateway):
             future.add_done_callback(pending.discard)
             try:
                 async with asyncio.timeout(max(0, deadline - gateway.clock())):
-                    status, response = await asyncio.shield(future)
+                    status, response, wait = await asyncio.shield(future)
                 if gateway.clock() >= deadline:
                     return error('request_timeout')
-                return result(status, response)
+                return result(status, response, wait)
             except TimeoutError:
                 return error('request_timeout')
             except Exception:

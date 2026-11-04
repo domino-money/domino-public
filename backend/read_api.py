@@ -147,18 +147,28 @@ class ReadGate:
     # second against a slot a six-second read owns sent three visitors opening
     # Home back five times each. A refusal now reports the delay the gate can
     # actually see, so one honest answer replaces a run of hopeful ones.
+    # 3 Nov 2026 (launch): except a stored read, which may wait `stored_wait`
+    # seconds for a slot (public_gate). Stored reads answer in milliseconds, so a
+    # full stored lane frees within milliseconds, and refusing at once sent a
+    # page's burst back for a whole Retry-After. No more reads wait than the lane
+    # has slots, so waiting never crowds out the connections uvicorn admits
+    # (CONNECTION_LIMIT); past that a read is refused at once, as before.
     MIN_RETRY_AFTER, MAX_RETRY_AFTER = 1, 10
+    MAX_STORED_WAIT = 5
     # The start interval paces a caller and must not punish one pacing itself
     # correctly: a client spacing 1.1 s against a 1 s rule loses to scheduling
     # jitter alone without this tolerance.
     INTERVAL_TOLERANCE = 0.05
 
     def __init__(self, interval=1, clock=time.monotonic, *, stored_capacity=1, stored_interval=None,
-                 provider_capacity=1):
+                 provider_capacity=1, stored_wait=0):
         if type(stored_capacity) is not int or not 1 <= stored_capacity <= 8:
             raise ValueError('invalid_stored_capacity')
         if type(provider_capacity) is not int or not 1 <= provider_capacity <= 16:
             raise ValueError('invalid_provider_capacity')
+        if (type(stored_wait) not in (int, float) or not math.isfinite(stored_wait)
+                or not 0 <= stored_wait <= self.MAX_STORED_WAIT):
+            raise ValueError('invalid_stored_wait')
         self.slot, self.lock = BoundedSemaphore(provider_capacity), Lock()
         self.provider_capacity, self.provider_inflight = provider_capacity, 0
         self.interval, self.clock, self.last = interval, clock, float('-inf')
@@ -167,6 +177,7 @@ class ReadGate:
             raise ValueError('invalid_stored_interval')
         self.stored_capacity,self.stored_inflight = stored_capacity,0
         self.stored_slot, self.stored_last = BoundedSemaphore(stored_capacity), float('-inf')
+        self.stored_wait, self.stored_waiting = stored_wait, 0
         self.held = {self.PROVIDER: None, self.STORED: None}
 
     def kind_of(self, route, body=None):
@@ -201,9 +212,45 @@ class ReadGate:
         return max(self.MIN_RETRY_AFTER,
                    min(self.MAX_RETRY_AFTER, math.ceil(max(interval_left, slot_left))))
 
-    def enter(self, kind=PROVIDER):
+    def wait_seconds(self, kind):
+        """How long a read of this lane may wait for a slot: the stored lane's wait; the provider lane never waits."""
+        return self.stored_wait if kind == self.STORED else 0
+
+    def queue(self, kind):
+        """A place among the reads waiting for this lane, or False: it does not wait, or its waiting room is full."""
+        with self.lock:
+            if not self.wait_seconds(kind) or self.stored_waiting >= self.stored_capacity:
+                return False
+            self.stored_waiting += 1
+            return True
+
+    def unqueue(self, kind):
+        with self.lock:
+            if kind != self.STORED or self.stored_waiting < 1:
+                raise ValueError('stored_wait_not_held')
+            self.stored_waiting -= 1
+
+    def _wait_for(self, kind, slot):
+        # A blocking wait, for the reader's own worker threads; the gateway's
+        # event loop polls instead (read_gateway.Gateway.admit). It takes at
+        # most half of what the read has left, so a read that waited in vain is
+        # still refused as busy, not timed out.
+        seconds, deadline = self.wait_seconds(kind), current_read_deadline()
+        try:
+            if deadline is not None:
+                seconds = min(seconds, deadline.remaining() / 2)
+        except DataError:
+            return False
+        if seconds <= 0 or not self.queue(kind):
+            return False
+        try:
+            return slot.acquire(timeout=seconds)
+        finally:
+            self.unqueue(kind)
+
+    def enter(self, kind=PROVIDER, *, wait=True):
         slot = self.stored_slot if kind == self.STORED else self.slot
-        if not slot.acquire(blocking=False):
+        if not slot.acquire(blocking=False) and not (wait and self._wait_for(kind, slot)):
             return False
         with self.lock:
             interval = self.stored_interval if kind == self.STORED else self.interval
@@ -254,16 +301,20 @@ class ReadGate:
 # lanes add no demand, they only admit it sooner, so 16 stays inside both.
 PROVIDER_CAPACITY = 16
 # Connections uvicorn itself admits, above the gate's lanes (16 provider, 8 stored),
-# the health checks and cloudflared's idle keep-alive connections: past it uvicorn
-# answers a bare 503, so the gate, which refuses in JSON with an honest Retry-After,
-# must be what shapes load. 8 here refused three of eight concurrent wallet reads on
-# 26 September 2026.
+# the 8 stored reads that may wait for one, the health checks and cloudflared's idle
+# keep-alive connections: past it uvicorn answers a bare 503, so the gate, which
+# refuses in JSON with an honest Retry-After, must be what shapes load. 8 here
+# refused three of eight concurrent wallet reads on 26 September 2026.
 CONNECTION_LIMIT = 64
+# How long a stored read waits for a stored lane before it is refused (3 Nov 2026,
+# launch): about a second, against reads that each hold a lane for milliseconds.
+STORED_WAIT_SECONDS = 1
 
 
 def public_gate():
     """The lanes of the public reader and of the gateway in front of it."""
-    return ReadGate(interval=0, provider_capacity=PROVIDER_CAPACITY, stored_capacity=8, stored_interval=0)
+    return ReadGate(interval=0, provider_capacity=PROVIDER_CAPACITY, stored_capacity=8, stored_interval=0,
+                    stored_wait=STORED_WAIT_SECONDS)
 
 
 class LocalReadBoundary:

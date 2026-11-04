@@ -9,12 +9,15 @@ from decimal import Decimal
 from pathlib import Path
 import sys
 import unittest
+from unittest import mock
 
 from eth_abi import encode
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from discovery import TRADING_QUOTE_ENDPOINT, TRADING_QUOTE_HEADERS, TRADING_SWAP_ENDPOINT, DataError  # noqa: E402
+from discovery import (KEEPALIVE_OPENER, TRADING_QUOTE_ENDPOINT, TRADING_QUOTE_HEADERS, TRADING_SWAP_ENDPOINT,  # noqa: E402
+                       DataError)
 from v2_chains import chain  # noqa: E402
+import v2_uniswap_api  # noqa: E402
 from v2_uniswap_api import EXECUTE_SELECTOR, MSG_SENDER, TradingApiLegs  # noqa: E402
 
 BASE = chain('base-8453')
@@ -228,6 +231,16 @@ class RouterLegTests(unittest.TestCase):
                              deadline=DEADLINE)
                 self.assertEqual(str(raised.exception), 'uniswap_api_' + code)
                 self.assertNotIn(KEY, str(raised.exception))
+
+    def test_the_api_is_asked_over_kept_connections(self):
+        # 3 Nov 2026: a leg's /quote and /swap, and a plan's legs, share kept HTTPS connections to the API's host.
+        self.assertIs(TradingApiLegs(KEY)._transport, v2_uniswap_api.kept_json_http)
+        headers = {'x-api-key': KEY, **TRADING_QUOTE_HEADERS}
+        with mock.patch.object(v2_uniswap_api, 'json_http', return_value={'ok': True}) as sent:
+            self.assertEqual(v2_uniswap_api.kept_json_http(TRADING_SWAP_ENDPOINT, {'quote': {}}, timeout=6,
+                                                           headers=headers), {'ok': True})
+        self.assertEqual(sent.call_args.args, (TRADING_SWAP_ENDPOINT, {'quote': {}}))
+        self.assertEqual(sent.call_args.kwargs, {'opener': KEEPALIVE_OPENER, 'timeout': 6, 'headers': headers})
 
 
 if __name__ == '__main__':

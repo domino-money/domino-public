@@ -10,15 +10,25 @@ from discovery import CHAIN_ID, DataError, address, bytes32
 class MarketCache:
     """Coalesce reads, bound provider usage and retain explicitly stale observations.
 
-    The local HTTP gate already allows one read at a time. This lock also prevents
-    duplicate provider calls by other in-process callers. No threads or jobs run
-    in the background; upstream timeouts are enforced by the provider adapter.
+    Provider calls go one at a time (`fetching`), so concurrent callers never
+    duplicate one. No threads or jobs run in the background; upstream timeouts
+    are enforced by the provider adapter.
+
+    3 Nov 2026 (launch): the reader runs 16 provider reads at once, and they all
+    took one lock for the whole of any provider call, so a cache hit for one pool
+    waited out a five-second miss for another, holding its lane. Now `lock`
+    guards only the entries and is never held across a call: hits, cooldowns and
+    cache-only reads never wait for the provider. And a refresh, an entry still
+    usable but past its 60 s, never queues behind a call in progress: it answers
+    its stale value as provider_capacity_busy, as an exhausted budget does, so a
+    pool's first reading, which has nothing to show without the provider, goes
+    first.
     """
     def __init__(self, provider, *, clock=time.monotonic, reserve_provider=None):
         self.provider, self.clock = provider, clock
         self.entries = OrderedDict()
         self.requests = deque()
-        self.lock = Lock()
+        self.lock, self.fetching = Lock(), Lock()
         self.ttl, self.max_stale, self.retry_delay = 60, 300, 15
         self.capacity, self.requests_per_minute = 256, 25
         self.reserve_provider = reserve_provider
@@ -62,22 +72,18 @@ class MarketCache:
         # Never reuse a chart (including stale fallback) for a different address.
         key = (kind, pool_id, token if kind == 'hourly_prices' else None, currency)
         with self.lock:
-            now = self.clock()
-            entry = self.entries.get(key)
-            if entry is not None and now < entry['attempted']:
-                del self.entries[key]
-                entry = None
-            if entry is not None:
-                self.entries.move_to_end(key)
-                age = now - entry['stored'] if entry['data'] is not None else None
-                if age is not None and age < self.ttl:
-                    return self._result(entry, now, 'hit')
-                if now < entry['retryAt']:
-                    return self._result(entry, now, 'cooldown', entry['reason'])
-            if not allow_provider:
-                usable=entry is not None and entry['data'] is not None and now-entry['stored']<=self.max_stale
-                return self._result(entry,now,'hit' if usable else 'miss',
-                                    entry['reason'] if usable else 'provider_unavailable')
+            answer, entry, now = self._cached(key, allow_provider)
+        if answer is not None:
+            return answer
+        refresh = entry is not None and entry['data'] is not None and now - entry['stored'] <= self.max_stale
+        if not self.fetching.acquire(blocking=not refresh):
+            return self._result(entry, now, 'rate_limited', 'provider_capacity_busy')
+        try:
+            # The call just ahead may have answered this very key, or failed it.
+            with self.lock:
+                answer, entry, now = self._cached(key, allow_provider)
+            if answer is not None:
+                return answer
             while self.requests and self.requests[0] <= now - 60:
                 self.requests.popleft()
             if len(self.requests) >= self.requests_per_minute:
@@ -103,13 +109,41 @@ class MarketCache:
                 entry = {**(entry or {'data': None, 'stored': None}),
                          'attempted': finished, 'retryAt': finished + self.retry_delay,
                          'reason': reason}
-                self._store(key, entry)
+                with self.lock:
+                    self._store(key, entry)
                 return self._result(entry, finished, 'stale_fallback', reason)
             finished = self.clock()
             entry = {'data': deepcopy(data), 'stored': finished, 'attempted': finished,
                      'retryAt': finished, 'reason': None}
-            self._store(key, entry)
+            with self.lock:
+                self._store(key, entry)
             return self._result(entry, finished, 'miss')
+        finally:
+            self.fetching.release()
+
+    def _cached(self, key, allow_provider):
+        """Under `lock`: the answer that needs no provider call, if there is one, with the entry and the time.
+
+        An entry is never changed in place, only replaced, so it can be read
+        after the lock is released.
+        """
+        now = self.clock()
+        entry = self.entries.get(key)
+        if entry is not None and now < entry['attempted']:
+            del self.entries[key]
+            entry = None
+        if entry is not None:
+            self.entries.move_to_end(key)
+            age = now - entry['stored'] if entry['data'] is not None else None
+            if age is not None and age < self.ttl:
+                return self._result(entry, now, 'hit'), entry, now
+            if now < entry['retryAt']:
+                return self._result(entry, now, 'cooldown', entry['reason']), entry, now
+        if not allow_provider:
+            usable=entry is not None and entry['data'] is not None and now-entry['stored']<=self.max_stale
+            return (self._result(entry,now,'hit' if usable else 'miss',
+                                 entry['reason'] if usable else 'provider_unavailable'), entry, now)
+        return None, entry, now
 
     def _store(self, key, entry):
         self.entries[key] = entry

@@ -6,8 +6,10 @@ from crosschain_support import (FEE, OTHER, OWNER, RELAY_REQUEST, USDC_ARBITRUM,
                                 fixture, output_call, provider_request, relay_record)
 from discovery import DataError
 from crosschain_common import encode_call, load_pins
-from crosschain_relay import (DEPOSIT_ERC20, DEPOSIT_NATIVE, RelayProvider, expected_for_minimum, parse_chains,
+from crosschain_http import ProviderError, ProviderHttp
+from crosschain_relay import (DEPOSIT_ERC20, DEPOSIT_NATIVE, RELAY_API, RelayProvider, expected_for_minimum, parse_chains,
                               parse_quote, parse_request_record, parse_status)
+from test_crosschain_http import Clock, Opener
 
 PINS = load_pins()
 DEPOSITORY = '0x4cd00e387622c35bddb9b4c962c136462338bc31'
@@ -358,6 +360,23 @@ class RelayRequestTests(unittest.TestCase):
         self.assertEqual(provider.record(RELAY_REQUEST)['actualRaw'], 350000)
         self.assertEqual(provider.record(RELAY_REQUEST)['actualRaw'], 350000)
         self.assertEqual(len(http.calls), 1)
+
+    def test_tracking_draws_on_the_status_share_and_never_starves_quotes(self):
+        # The status reads (its status and, once filled, its fee record) have their own share of the provider's
+        # calls (3 Nov 2026): polling uses it up, and every quote still has its slot.
+        status, quote = fixture('relay-status-waiting.json'), fixture('relay-quote-usdc-arbitrum-usdg.json')
+        opener = Opener(*([status] * 4 + [relay_record()] + [quote] * 10))
+        http = ProviderHttp('relay', RELAY_API, per_minute=15, status_per_minute=5, opener=opener, clock=Clock(),
+                            sleep=lambda seconds: None)
+        provider = RelayProvider(http, PINS, fee_recipient=FEE, has_key=True)
+        for _ in range(4):
+            provider.observe(RELAY_REQUEST)
+        provider.record(RELAY_REQUEST)
+        with self.assertRaisesRegex(ProviderError, 'relay_rate_limited'):
+            provider.observe(RELAY_REQUEST)
+        for _ in range(10):
+            provider.quote(provider_request(**USDG_REQUEST))
+        self.assertEqual(len(opener.requests), 15)
 
     def test_chains_keep_only_pinned_evm_chains_whose_live_depository_matches(self):
         listing = fixture('relay-chains.json')

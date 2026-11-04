@@ -235,6 +235,30 @@ for (const [code, status] of Object.entries(ERROR_STATUS_BY_CODE)) test(`safe ex
   await error(result, code);
   assert.equal(result.headers.get('X-Secret'), null);
 });
+// 3 Nov 2026 (launch round P2), the shared transport (authenticated-worker.mjs): a 429 keeps the listener's
+// Retry-After when it names a whole 1 to 60 seconds, written as an integer; anything else is the 60 every 429 said
+// before. The listener's wait reaches no other status.
+const RETRY_AFTER = [['1', '1'], ['2', '2'], ['5', '5'], ['60', '60'], ['05', '5'], [null, '60'], ['', '60'], ['0', '60'],
+  ['61', '60'], ['600', '60'], ['0005', '60'], ['-1', '60'], ['+5', '60'], ['1.5', '60'], ['1e1', '60'], ['0x10', '60'],
+  ['5s', '60'], ['5, 7', '60'], ['Wed, 04 Nov 2026 12:00:00 GMT', '60']];
+for (const code of Object.keys(ERROR_STATUS_BY_CODE).filter((code) => ERROR_STATUS_BY_CODE[code] === 429)) {
+  test(`${code} keeps the listener's Retry-After only when it is a whole 1 to 60 seconds`, async () => {
+    for (const [given, sent] of RETRY_AFTER) {
+      const h = harness(() => response({ error: code }, 429, given === null ? {} : { 'Retry-After': given }));
+      const result = await h.worker.fetch(request(), env);
+      assert.equal(result.headers.get('Retry-After'), sent, `Retry-After ${given}`);
+      await error(result, code);
+    }
+  });
+}
+test('a refusal other than a 429 carries no Retry-After, whatever the listener sent', async () => {
+  for (const [code, status] of Object.entries(ERROR_STATUS_BY_CODE).filter(([, status]) => status !== 429)) {
+    const h = harness(() => response({ error: code }, status, { 'Retry-After': '5' }));
+    const result = await h.worker.fetch(request(), env);
+    assert.equal(result.headers.get('Retry-After'), null, code);
+    await error(result, code);
+  }
+});
 for (const route of ROUTES) test(`${route} rejects mismatched echo, chain and unexpected executable fields`, async () => {
   for (const mutate of [
     (body) => { body.preview.request.amountRaw += '1'; },
@@ -300,6 +324,24 @@ for (const raw of ['1.0', '1e0', '1.00000000000000001', '9007199254740993']) tes
   const text = JSON.stringify(fresh()).replace('"schemaVersion":1', `"schemaVersion":${raw}`);
   const h = harness(() => response(text));
   await error(await h.worker.fetch(request(), env), 'upstream_invalid_response');
+});
+// 3 Nov 2026 (launch round P2, pentest F-19: every /api/onboarding/v1/* answered 503 while the listener was not
+// running). Switched off, every route is onboarding-v1's own 404 route_not_available, which the app shows as a
+// feature not served; switched on in front of a stopped listener, every route is 503 upstream_unavailable, as the
+// contract has no code that tells a listener never started from one restarting (docs/ONBOARDING_API.md).
+test('switched off, every route is route_not_available; switched on before its listener, upstream_unavailable', async () => {
+  for (const route of ROUTES) {
+    const off = harness();
+    await error(await off.worker.fetch(request(route), { ...env, ONBOARDING_BRIDGE_ENABLED: 'false' }), 'route_not_available');
+    assert.equal(off.calls.length, 0);
+    for (const stopped of [() => Promise.reject(new TypeError('fetch failed')),
+      () => new Response('<html>Bad gateway</html>', { status: 502, headers: { 'Content-Type': 'text/html' } }),
+      () => new Response('error code: 1033', { status: 530, headers: { 'Content-Type': 'text/plain' } })]) {
+      const on = harness(stopped);
+      await error(await on.worker.fetch(request(route), env), 'upstream_unavailable');
+      assert.equal(on.calls.length, 1);
+    }
+  }
 });
 test('unversioned Access errors, redirects, HTML and arbitrary errors are sanitized', async () => {
   for (const output of [new Response('access denied', { status: 403 }), response('', 302, { Location: 'https://evil.invalid' }),

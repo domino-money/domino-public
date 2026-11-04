@@ -44,8 +44,15 @@ The separate, disabled `src/session-worker.mjs` now implements the session
 transport for backend #31/frontend #14. It has its own routes, Access identity,
 auth listener and private storage; it does not add session routes to the reader.
 See the [session contract](../api-contracts/session-v1/README.md) and
-[session runbook](../docs/WALLET_SESSIONS.md). The sections below describe the
-unchanged **read Worker** only.
+[session runbook](../docs/WALLET_SESSIONS.md).
+
+Since 3 Nov 2026 (launch round P2), a 429 from the session Worker, or from the
+transport onboarding, deposit, performance, execution, position-plan and
+crosschain share (`src/authenticated-worker.mjs`), carries the listener's own
+`Retry-After` when it is a whole 1–60 seconds, written as an integer, and 60
+otherwise. Before, both put 60 on every 429, whatever the listener named. The
+read Worker's bound is the same, with a default of 1. The sections below
+describe the unchanged **read Worker** only.
 
 This directory contains an undeployed Cloudflare Worker candidate for contract
 `read-v1` / `1.1.0-rc.3`. Live reads default to **disabled**. It has no wallet session,
@@ -183,6 +190,17 @@ errors; they do not initiate wallet sign-in. Rate-limit `Retry-After` is normali
 to an integer from 1–60 seconds, defaulting to 1. Errors never echo input,
 upstream bodies, headers, credentials or stack traces. This implementation logs
 no bodies, addresses, IPs, cursors, credentials or other diagnostics.
+
+One exception to "JSON" (3 Nov 2026, 0xdecimal's pentest F-17): Cloudflare
+serves its own page in place of a 502 these Workers answer, and by its own
+documentation in place of a 504 too, so the browser gets no JSON for
+`upstream_contract_mismatch`, `upstream_invalid_response`, `upstream_timeout`
+or `read_deadline_exceeded` (nor, from the session and authenticated Workers,
+`request_timeout` and position-plan's `position_plan_fee_not_backed`). Those
+statuses are the contracts' own, exported from the backend's error tables, and
+the app accepts a code only with its contract status. Moving them to 503 is
+therefore a contract change shipped together with the app, not a Worker change:
+the Workers take every status from the contract they bundle.
 
 ## Disabled example configuration
 

@@ -114,6 +114,20 @@ class QuoterTests(unittest.TestCase):
         self.assertEqual((out[2].amount_out, out[2].source), (55, 'v4_quoter'))
         self.assertEqual(quotes.best(out), out[0])
 
+    def test_a_round_asked_again_at_the_block_is_answered_from_the_first(self):
+        # 3 Nov 2026: a token split between two pool tokens through the same hubs asked for its first hops twice.
+        block = Block(100, '0x' + 'ab' * 32, 1)
+        v4 = quotes.Path(4, A, (PoolRef(4, A, B, 3000, 60),))
+        rpc = FakeRpc([(True, encode(['uint256', 'uint256'], [55, 80000]))])
+        quoter = quotes.PoolQuoter(BASE, rpc, block)
+        first = quoter.quote([v4], 1000)
+        self.assertEqual((quoter.quote([v4], 1000), quoter.quote_each([(v4, 1000)])), (first, first))
+        self.assertEqual((len(rpc.calls), quoter.rounds), (1, 1))
+        # Another amount is another round.
+        rpc.rows = [(True, encode(['uint256', 'uint256'], [66, 80000]))]
+        self.assertEqual(quoter.quote([v4], 2000)[0].amount_out, 66)
+        self.assertEqual((len(rpc.calls), quoter.rounds), (2, 2))
+
     def test_the_quoter_calls_target_the_profile_quoters(self):
         v3 = quotes.Path(3, A, (PoolRef(3, A, B, 3000, 60),))
         target, data = quotes.quote_call(BASE, v3, 5)

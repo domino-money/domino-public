@@ -41,7 +41,11 @@ def build_planners(settings, *, provider_config=None, registry=None):
     Robinhood reads through the read path's provider file (the own node first);
     Base and Arbitrum through the V2 chain RPC file's hosted endpoints, billed
     per call. Each chain's head is shared through DOMINO_V2_HEAD_DIRECTORY when set.
+    Every call goes over a kept HTTPS connection (v2_chain_reads.kept_rpc, since
+    3 Nov 2026): a plan makes about ten, and a new TLS handshake each tripled
+    Chainstack's round trip from the VM (5 Oct 2026: 360 ms against 118 ms).
     """
+    from v2_chain_reads import kept_rpc
     from v2_chains import default_registry
     from v2_head import HeadFollower
     from v2_position_plan import PositionPlanner
@@ -55,7 +59,8 @@ def build_planners(settings, *, provider_config=None, registry=None):
     for key in settings.chains:
         chain = registry.chain(key)
         deployment = load_chain_deployment(settings.manifests[key], chain)
-        endpoints = configured_endpoints(chain, provider_config=provider_config, chain_rpc_config=rpc_config)
+        endpoints = configured_endpoints(chain, provider_config=provider_config, chain_rpc_config=rpc_config,
+                                         send=kept_rpc)
         shared = Path(settings.head_directory) / f'{key}.head.json' if settings.head_directory else None
         follower = HeadFollower(endpoints, max_age_seconds=HEAD_MAX_AGE_SECONDS, shared_path=shared)
         planners[chain.chainId] = PositionPlanner(chain, endpoints, follower, deployment, router_legs=router_legs)

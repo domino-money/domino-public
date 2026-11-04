@@ -279,6 +279,13 @@ class WorkerExitTests(unittest.TestCase):
         self.assertEqual(worker_exit_code([done,{**done,'reason':'network_unavailable'}]),1)
         self.assertEqual(worker_exit_code([done,{**done,'status':'blocked','reason':'initialize_anchor_not_found'}]),1)
 
+    def test_a_pool_another_writer_moves_is_no_failure(self):
+        """3 Nov 2026: the activity follower holding, or committing first, a pool the run claimed."""
+        busy={'poolId':POOL_ID,'status':'indexing','reason':'catalogue_writer_busy'}
+        self.assertEqual(worker_exit_code([busy]),0)
+        self.assertEqual(worker_exit_code([{**busy,'reason':'activity_checkpoint_changed'}]),0)
+        self.assertEqual(worker_exit_code([busy,{**busy,'reason':'network_unavailable'}]),1)
+
 
 class AnchorArgumentTests(unittest.TestCase):
     def test_explicit_anchors_are_parsed_per_pool(self):

@@ -179,7 +179,7 @@
     },
     {
       "path": "backend/authenticated_api.py",
-      "sha256": "d498d87b4aba6705ae2fb33c94ddf63a3108fd8a95d9fbcf213dba32877eb35e"
+      "sha256": "a79461b3057d272c697eee6496df67faac93a3fa0b3ea393e2222820118c5fa3"
     },
     {
       "path": "backend/hop_log.py",
@@ -191,7 +191,7 @@
     },
     {
       "path": "backend/onboarding_auth.py",
-      "sha256": "0060646f6ceaf95da3b597c68110737d17129afae8dce4120f206de1ed5677d4"
+      "sha256": "a93cac3f85f3d2fcf6e551385b548dbeef89eecde94af6c54aa2dba7cfe6f253"
     },
     {
       "path": "backend/tests/performance_v2_contract_fixtures.py",

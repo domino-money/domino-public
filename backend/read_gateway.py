@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from bridge_identity import AccessVerifier
-from bridge_state import ClientBudgets, OpaqueCursors, strict_json
+from bridge_state import ClientBudgets, ClientShares, OpaqueCursors, strict_json
 from discovery import DataError
 from read_api import (CONNECTION_LIMIT, public_gate, AssetsRequest, TokenRequest, PoolsRequest, PoolMarketRequest, NftPositionsRequest,
                       CatalogueRequest, ActivityRequest, MarketsSnapshotRequest, ReadGate)
@@ -57,6 +57,15 @@ MAX_RESPONSE = 1024 * 1024
 # it may cost, so it gets less. 2 Nov 2026, public launch: 7 to 10 people on New position behind one shared IPv4 would
 # spend a provider budget of 12, then 60 a minute, so it is 30, then 300 a minute.
 VISITOR_BUDGETS = {ReadGate.STORED: (30, 240), ReadGate.PROVIDER: (30, 300)}
+# How often a read waiting for a stored lane looks again (3 Nov 2026): the gateway's event loop must not block on the
+# lane, and a stored read holds one for milliseconds.
+LANE_POLL_SECONDS = 0.01
+
+
+def visitor_share(capacity):
+    """The most of a lane one visitor holds at once (bridge_state.ClientShares, F-02): half, so the other half is
+    always someone else's. 8 provider and 4 stored reads at once, against a burst of 30 that used to take them all."""
+    return max(1, capacity // 2)
 
 
 def safe_error(code):
@@ -106,7 +115,36 @@ class Gateway:
         # The reader's own lanes: the provider lane's capacity and the stored lane
         # (v3, the featured list, the V2 index).
         self.gate = gate or (public_gate() if enabled_v3 or enabled_v5 or enabled_v6 else ReadGate())
+        self.shares = {kind: ClientShares(visitor_share(capacity)) for kind, capacity in (
+            (ReadGate.PROVIDER, self.gate.provider_capacity), (ReadGate.STORED, self.gate.stored_capacity))}
         self.clock, self.wall_clock = clock, wall_clock
+
+    async def admit(self, kind, client):
+        """Take one of this visitor's share of the lane, then the lane: 'admitted', or what refused it.
+
+        A stored read that finds either taken waits for both, up to the gate's
+        wait (3 Nov 2026, launch), in the gate's waiting room, holding neither
+        meanwhile. A provider read is refused at once, as before. The wait is
+        real time, whatever clock the gateway was given.
+        """
+        shares, waiting = self.shares[kind], False
+        until = time.monotonic() + self.gate.wait_seconds(kind)
+        try:
+            while True:
+                if not shares.take(client):
+                    refusal = 'visitor_share'
+                elif self.gate.enter(kind, wait=False):
+                    return 'admitted'
+                else:
+                    shares.give(client)
+                    refusal = 'lane'
+                if time.monotonic() >= until or not (waiting or self.gate.queue(kind)):
+                    return refusal
+                waiting = True
+                await anyio.sleep(LANE_POLL_SECONDS)
+        finally:
+            if waiting:
+                self.gate.unqueue(kind)
 
     def execute(self, route, body, assertion, client, deadline, *, version='v1', request_id=None):
         status, data, _ = self.execute_with_hints(route, body, assertion, client, deadline,
@@ -344,8 +382,10 @@ def create_gateway(gateway=None):
             except (DataError, ValidationError, ValueError, TypeError):
                 return result(422, {'error': 'invalid_request'})
             kind = gateway.gate.kind_of(match[1], body)
-            if not gateway.gate.enter(kind):
-                hop_log.note(gate=kind, admitted=False)
+            admission = await gateway.admit(kind, client)
+            if admission != 'admitted':
+                # The record says which refused it: the lane, or this visitor's share of it.
+                hop_log.note(gate=kind, admitted=False, limiter=admission)
                 return result(429, {'error': 'read_capacity_busy'}, retry_after=gateway.gate.retry_after(kind))
             hop_log.note(gate=kind, admitted=True)
             started = Event()
@@ -356,7 +396,7 @@ def create_gateway(gateway=None):
                                                       version=version, request_id=request_id)
                 return gateway.execute_with_hints(match[1], body, assertion, client, deadline, request_id=request_id)
             try:
-                # Only an admitted operation can enter the pool; no pending read queue.
+                # Only an admitted operation can enter the pool; a read waits for a lane before it, never in it.
                 with anyio.CancelScope(shield=True):
                     status, data, hints = await anyio.to_thread.run_sync(execute,
                                                                        abandon_on_cancel=False, limiter=app.state.worker_limiter)
@@ -367,6 +407,8 @@ def create_gateway(gateway=None):
                 # Dispatch failure must release admission; a started worker owns its release.
                 if not started.is_set():
                     gateway.gate.leave(kind)
+                # The share is the visitor's until the work it admitted is over: the shielded worker has returned.
+                gateway.shares[kind].give(client)
 
         except BaseException:
             # A client that vanishes mid-body must still leave a record.
@@ -375,8 +417,8 @@ def create_gateway(gateway=None):
     app.state.gateway = gateway
     # One worker per lane the gate admits, so an admitted read never waits for
     # a worker: 2 matched the one provider and one stored lane of #157, but
-    # #238 gave this gateway the reader's 16 + 4 and left the pool at 2, so 18
-    # admitted reads queued here while the reader had lanes free.
+    # #238 gave this gateway the reader's 16 + 4 (8 since #432) and left the
+    # pool at 2, so 18 admitted reads queued here while the reader had lanes free.
     app.state.worker_limiter = anyio.CapacityLimiter(gateway.gate.provider_capacity
                                                      + gateway.gate.stored_capacity)
     return app

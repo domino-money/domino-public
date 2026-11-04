@@ -130,6 +130,74 @@ class MarketCacheTests(unittest.TestCase):
         self.assertEqual(len(self.provider.calls), 1)
         self.assertEqual(sorted(r['cache']['status'] for r in results), ['hit', 'miss'])
 
+    def held_call(self, pool_id):
+        """A provider call for `pool_id` that stays in progress until the returned event is set."""
+        entered, release = Event(), Event()
+        original = self.provider.pool
+        def read(requested):
+            if requested == pool_id:
+                entered.set()
+                if not release.wait(3):
+                    raise AssertionError('test coordination timeout')
+            return original(requested)
+        self.provider.pool = read
+        results = []
+        thread = Thread(target=lambda: results.append(self.cache.get('pool', pool_id)), daemon=True)
+        thread.start()
+        self.assertTrue(entered.wait(1))
+        return thread, release, results
+
+    def in_thread(self, *args, **kwargs):
+        """A get that must answer within a second; it fails the test, not hangs it, when it waits."""
+        results = []
+        thread = Thread(target=lambda: results.append(self.cache.get(*args, **kwargs)), daemon=True)
+        thread.start()
+        thread.join(1)
+        return results
+
+    def test_a_hit_never_waits_for_a_provider_call_in_progress(self):
+        # 3 Nov 2026 (launch): the reader runs 16 provider reads at once, and a hit queued behind any miss.
+        cached = '0x' + 'cd' * 32
+        self.cache.get('pool', cached)
+        thread, release, results = self.held_call(POOL)
+        try:
+            hit, = self.in_thread('pool', cached)
+            self.assertEqual((hit['status'], hit['cache']['status']), ('available', 'hit'))
+            cache_only, = self.in_thread('pool', '0x' + 'ef' * 32, allow_provider=False)
+            self.assertEqual(cache_only['cache']['status'], 'miss')
+        finally:
+            release.set()
+            thread.join(3)
+        self.assertEqual(results[0]['cache']['status'], 'miss')
+        self.assertEqual(self.provider.calls, [('pool', cached), ('pool', POOL)])
+
+    def test_a_refresh_answers_stale_rather_than_queue_behind_a_first_reading(self):
+        known = '0x' + 'cd' * 32
+        self.cache.get('pool', known)
+        self.now += 61
+        thread, release, results = self.held_call(POOL)
+        first = []
+        waiting = Thread(target=lambda: first.append(self.cache.get('pool', '0x' + 'ef' * 32)), daemon=True)
+        try:
+            # A pool already shown answers its stale value at once, as when the budget is spent...
+            refresh, = self.in_thread('pool', known)
+            self.assertEqual((refresh['status'], refresh['reason'], refresh['cache']['status']),
+                             ('stale', 'provider_capacity_busy', 'rate_limited'))
+            self.assertEqual(refresh['data']['reportedLiquidityUsd'], '1.23')
+            # ...while a pool read for the first time, with nothing to show, takes its turn.
+            waiting.start()
+            waiting.join(0.2)
+            self.assertEqual(first, [], 'a first reading waits for the call in progress')
+        finally:
+            release.set()
+            thread.join(3)
+            if waiting.ident is not None:
+                waiting.join(3)
+        self.assertEqual(first[0]['cache']['status'], 'miss')
+        self.assertEqual(self.provider.calls, [('pool', known), ('pool', POOL), ('pool', '0x' + 'ef' * 32)])
+        # With no call in progress, the refresh is made.
+        self.assertEqual(self.cache.get('pool', known)['cache']['status'], 'miss')
+
     def test_invalid_input_is_rejected_before_provider(self):
         for kind, pool, token in [('pool', 'bad', 'base'), ('write', POOL, 'base'),
                                   ('hourly_prices', POOL, 'arbitrary')]:

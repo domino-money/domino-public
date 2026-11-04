@@ -447,6 +447,13 @@ On 3 Nov 2026 at 13:15:52 UTC, release `763e9859` (branch `hotfix/v2-automation-
 - **Rollback:** `install_v2_automation.py --rollback 763e9859…`, `daemon-reload`, then restart the three instances.
 - **Not in it yet:** the pass's read budget, the submit gate and the call-timeout failover (item 4.5, 3 Nov). They reach the automation with its next release.
 
+On 3 Nov 2026 at 16:46:09 UTC, release `69ccef77` (branch `hotfix/p1-45-v2-automation`: `763e9859` plus item 4.5 from #454) replaced `763e9859`. The monitor moved to the same release at 16:48:20 UTC.
+- **Call timeout:** a call that outlives its own ceiling moves the read to the next endpoint, which is then held for 15 s, doubling up to 120 s. Each such call logs `v2_rpc_slow_call`. The first one, at 16:49:59 UTC, moved a Base read from Chainstack to the fallback.
+- **Pass budget:** a pass's reads share twice `passSeconds`, and a plan with less than one `passSeconds` left before its deadline is not sent (`v2_plan_deadline_near`).
+- **Files:** `v2_automation.py`, `v2_head.py`, `v2_rpc.py` and `rpc_failover.py` are byte-identical to `1be3481f`. This base's `discovery.py` predates #453, so it carries only the 4.5 lines.
+- **Restart:** each instance after a pass that sent nothing. The first passes were clean on the three chains, with `attention` empty.
+- **Rollback:** `install_v2_automation.py --rollback 69ccef77…` and `install_monitor.py --rollback 69ccef77…`, `daemon-reload`, then restart the three instances and the monitor.
+
 Still open:
 - **Funding and admission:** the operator needs ETH on each chain (about 0.0065 ETH on Robinhood and 0.005 ETH on Base and Arbitrum on 5 Oct). The registry admitted both roles at deployment.
 - **Monitoring:** the production monitor ([OPS_MONITOR.md](../OPS_MONITOR.md)) watches the passes, the signer and the operator's balance on each chain since 5 Oct 15:26 UTC, and alerts on Telegram since 15:41 UTC. An intent held in `attention` for 15 minutes and the daily spend against `dailyCapWei` (80%, then the cap) are alerted once this release's report is deployed with the monitor's (2 Nov 2026, not deployed yet). Still to add:

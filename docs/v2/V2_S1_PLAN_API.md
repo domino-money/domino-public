@@ -50,7 +50,7 @@ The boundary is the onboarding and cross-chain listeners' own (`backend/authenti
 - a SIWE session and its CSRF token;
 - the header `X-Domino-Position-Plan-Contract: 1.0.0-rc.2`.
 
-Limits: request body 8 KiB, response 384 KiB, 20 s per request, 8 plans at a time (`position_plan_capacity_busy` beyond them), 16 connections, one worker process.
+Limits: request body 8 KiB, response 384 KiB, 20 s per request, 8 plans at a time, 16 connections, one worker process. Since 3 Nov 2026 a 9th to 12th plan waits up to 2.5 s for a slot (never past its deadline), then is refused with `position_plan_capacity_busy` and `Retry-After` 2 to 5 s; a 13th is refused at once. Plans spend their own session preview budget (`plan`, 120 per IP, 30 per account and 1000 site-wide a minute), apart from status polling.
 
 **The owner is the session's wallet.** It receives the NFT and every refund. No request names an owner or a recipient, so F7 §2.5.4's "one account pays for another's position" is not offered.
 
@@ -271,7 +271,7 @@ HTTP errors carry `{"error": "<code>"}` and nothing else.
 | --- | ---: | --- |
 | `invalid_request` | 400 | Shape, a field outside its action, slippage outside 10–500, `currency0 ≥ currency1`, duplicate inputs, ticks out of order |
 | `session_required`, `csrf_invalid`, `origin_not_allowed`, `account_unsupported`, `session_rate_limited`, … | 401–429 | The shared session boundary (`onboarding_models.ERROR_STATUS_BY_CODE`) |
-| `position_plan_capacity_busy` | 429 | More than 8 plans at once |
+| `position_plan_capacity_busy` | 429 | More than 8 plans at once, after waiting up to 2.5 s for a slot; `Retry-After` 2 to 5 s |
 | `position_plan_not_owner` | 403 | The session's wallet does not own the position |
 | `position_plan_position_not_found` | 404 | No such position on that manager (burned or never minted) |
 | `position_plan_pool_not_initialized` | 409 | A pool without a price and no `initialPrice` |
@@ -357,25 +357,32 @@ Before its first plan, the planner proves on-chain the code of the components it
 
 ## Calls and cost
 
-Measured on the recorded fixtures (`backend/tests/fixtures/position-plan/recordings.json`). A billed call is each JSON-RPC call, each inside a batch included:
+Measured on the recorded fixtures (`backend/tests/fixtures/position-plan/recordings.json`), and pinned per plan by `backend/tests/test_v2_position_plan_calls.py`. A billed call is each JSON-RPC call, each inside a batch included:
 
 | Plan | HTTP requests | Billed calls |
 | --- | ---: | ---: |
 | create, Permit2, one own-pool leg | 8 | 9 |
 | create, native ETH | 9 | 10 |
 | create on a new pool, one leg through another pool | 9 | 10 |
-| create from a token outside the pool (a v3 and a v4 leg) | 10 | 11 |
+| create from a token outside the pool (a v3 and a v4 leg) | 8 (10 before 3 Nov 2026) | 9 (11) |
 | increase, direct | 9 | 16 |
 | change range, direct | 9 | 16 |
 | exit converted, direct | 9 | 16 |
 | exit to both tokens, relayed | 7 | 14 |
 | create on Robinhood (Nitro), one own-pool leg (L1 data fee 0) | 10 | 11 |
 
-Each count includes one head read (`eth_getBlockByNumber`, shared by every V2 service through F6's head file, at most one per chain every 2 s), the account's `eth_getCode` and one `eth_simulateV1`. The L1 data fee costs no call on Base (inside the readiness Multicall3) and one on Nitro (NodeInterface): the Robinhood create above is the Base one plus that call. Each round of pool quotes (a probe, then a confirmation at the final amount) is one Multicall3 call. A v4 position read is 9 calls (F6's reader); aggregating it through Multicall3 (F6's next billing lever) would save about 7.
+Each count includes one head read (`eth_getBlockByNumber`, shared by every V2 service through F6's head file, at most one per chain every 2 s), the account's `eth_getCode` and one `eth_simulateV1`. The L1 data fee costs no call on Base (inside the readiness Multicall3) and one on Nitro (NodeInterface): the Robinhood create above is the Base one plus that call. Each round of pool quotes (a probe, then a confirmation at the final amount) is one Multicall3 call. Since 3 Nov 2026 no answer in hand is asked for again at the block:
+- A leg confirmed at the amount its probe priced takes the probe's quote: an exit converts what it holds at the amount it probed, and an even split often lands on its probes (the outside-token create above).
+- A round of quotes asked again is answered from the first, for example a token's first hops to the hubs, which both of its legs ask for.
+- A rebuild from the simulated call ([Simulation and gas](#simulation-and-gas)) has its balances and approvals in hand. On Base the L1 data fee rides in the same Multicall3 read and moves with the call data, so that read is asked again there.
+
+A v4 position read is 9 calls (F6's reader); aggregating it through Multicall3 (F6's next billing lever) would save about 7.
 
 Once per process, before the first plan: one batched read of the manifest's verification block and the code of the registry and the zap (with its v4 steps), plus F6's Uniswap code proofs (2 per version).
 
 With a key, router legs add 2 Trading API calls (quote and swap) per conversion, and 2 more when the final amount differs from the probe: at most 8 per plan (two conversions). Each call has 6 s; the plan as a whole has the listener's 20 s.
+
+**Kept connections (3 Nov 2026).** Every chain call goes over a kept HTTPS connection (`v2_chain_reads.kept_rpc`). From the VM a new TLS handshake for each call tripled Chainstack's round trip: 360 ms against 118 ms on 5 Oct 2026. The own node's loopback hop keeps its own route. The Trading API's calls share kept connections too (`v2_uniswap_api.kept_json_http`), so a leg's swap follows its quote on the same connection.
 
 ## Evidence
 
@@ -385,6 +392,8 @@ With a key, router legs add 2 Trading API calls (quote and swap) per conversion,
 | `test_v2_position_plan_evm.py` `FeeRuleParityEvmTests` | **Fee-rule parity on the deployed zap's bytecode.** For 96 random routes with random registry ranks (written into the registry's storage), `zap.create` with the Python rule's terms passes the zap's fee check (and stops later, at a router the registry deliberately does not admit), while every other token of the route is refused with `FeeMismatch`; plus F1b's table on the zap |
 | `test_v2_position_plan_evm.py` journeys (vendored and Base-deployed Uniswap) | Each plan executed end to end with the real zap: create with a swap through Permit2; increase, change range and exit converted, direct; a v4 increase refunding the fees the position earned before it and from its own swap; exit to both tokens (no fee); a relayed exit sent by another account; v3 create, increase, change range and exit; native ETH on v4; native ETH paying a v3 WETH pool; a token outside the pool split in two legs; new v4 and v3 pools at the owner's price; refusals; an EIP-7702 delegated account (direct only). On every one, each leg delivered exactly `expectedOutRaw`, `FeeCharged` was exactly `fee.amountRaw`, the liquidity exactly `expected.liquidity`, and the zap's refunds exactly `expected.returned` (an exit without legs is paid by the position manager itself, with no refund) |
 | `test_v2_position_plan_evm.py` `S1RouterLegEvmTests` | A router leg through Robinhood's deployed Universal Router 2.1.2 runtime, chosen when better and executed; a router route through the position's pool refused |
+| `test_v2_position_plan_calls.py`, `test_v2_uniswap_api.py` (3 Nov 2026) | Every chain's planner on kept connections, and the Trading API too |
+| `test_v2_position_plan_calls.py`, `test_v2_position_plan_evm.py`, `test_v2_quotes.py` (3 Nov 2026) | Each recorded plan's exact HTTP requests and billed calls, replayed in order, its answer the committed export's. On the local chains no plan sends one Multicall3 read twice, and a plan whose answers in hand are asked again (two legs through one pool; router legs rebuilt on Nitro) is the same plan |
 | `test_v2_position_plan_evm.py` local swap | The Python swap equals QuoterV2's and V4Quoter's answers across at least three initialized ticks, on v4 and v3 |
 | `test_v2_position_plan_evm.py` minimums | On ±1% and ±10% v4 ranges, a create executes at every point of the ±s band with exactly the formula's liquidity, equals `minLiquidity` at the worse edge and reverts past it (`InsufficientLiquidity(uint128,uint128)`), and past the better edge where the formula falls below the minimum; an exit executes across the band, pays exactly its minimum at each edge and reverts one step past either (`MinimumAmountInsufficient(uint128,uint128)`); a converted exit of a ±1% position executes after a move inside the band |
 | `test_v2_position_plan_evm.py` L1 data fee | Base: the captured GasPriceOracle reproduces Base's answers for a sample transaction, and the plan's fee and bound are the oracle's for the plan's own transaction, read with no call of its own; Robinhood: one NodeInterface call, the L1 gas of the call's bytes times the L2 base fee (stand-in), and `unavailable` with the plan intact when the node does not answer |

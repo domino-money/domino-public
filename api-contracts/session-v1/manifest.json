@@ -131,7 +131,7 @@
     },
     {
       "path": "backend/session_api.py",
-      "sha256": "dd31ab023b98ac7e03ccb7e5849490a68ff47908d7a20e2d65c3694a55952d47"
+      "sha256": "71c685cd5613373c8cfda31fe62fd75d0c16b537b954ff0174cf7e2d9a7dc3db"
     },
     {
       "path": "backend/access_transport.py",
@@ -147,7 +147,7 @@
     },
     {
       "path": "backend/session_store.py",
-      "sha256": "2a836ddcf3676a57519c13cec24e9877635aafc53af9ddf64f4f12bb3142825d"
+      "sha256": "80e483fd5d8a29cccdf4516af2a7b88382e8c197c387a134447be91d99732937"
     },
     {
       "path": "backend/hop_log.py",

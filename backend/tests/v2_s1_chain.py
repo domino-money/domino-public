@@ -421,14 +421,17 @@ class S1Fixture:
                 raise AssertionError('registry rank slot moved')
 
     # ------------------------------------------------------------- reading
-    def endpoints(self):
-        """The planner's chain client: v2_rpc's transport to this Anvil."""
+    def endpoints(self, asked=None):
+        """The planner's chain client: v2_rpc's transport to this Anvil. `asked`, a list, also keeps what this
+        client alone sent (the chain's `sent` has every client's)."""
         from v2_rpc import ChainEndpoints, Endpoint
         local = self.chain
 
         def send(_url, body):
             local.calls += len(body) if isinstance(body, list) else 1
             local.sent.extend(body if isinstance(body, list) else [body])
+            if asked is not None:
+                asked.extend(body if isinstance(body, list) else [body])
             return local.transport(body)
         endpoint = Endpoint('local', 'anvil.invalid', 'https://anvil.invalid/', None, 100, None, None)
         return ChainEndpoints(self.profile, (endpoint,), 'test', send=send)

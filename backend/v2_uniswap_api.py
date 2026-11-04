@@ -30,8 +30,8 @@ from decimal import Decimal
 import re
 import time
 
-from discovery import (ZERO, DataError, TRADING_QUOTE_ENDPOINT, TRADING_QUOTE_HEADERS, TRADING_SWAP_ENDPOINT,
-                       address, bytes32, decode, json_http)
+from discovery import (KEEPALIVE_OPENER, ZERO, DataError, TRADING_QUOTE_ENDPOINT, TRADING_QUOTE_HEADERS,
+                       TRADING_SWAP_ENDPOINT, address, bytes32, decode, json_http)
 from read_deadline import read_deadline
 from uniswap_liquidity import checked_api_key
 from uniswap_quote import _decimal, _integer, _raw
@@ -152,10 +152,16 @@ def _commands(data, zap, native_in):
     return deadline
 
 
+def kept_json_http(url, body=None, **kwargs):
+    """json_http over kept HTTPS connections (discovery.KEEPALIVE_OPENER, 3 Nov 2026): a leg asks /quote and then
+    /swap of the same host, and a plan may ask for several legs; each call paid a new TCP and TLS handshake."""
+    return json_http(url, body, opener=KEEPALIVE_OPENER, **kwargs)
+
+
 class TradingApiLegs:
     """One quote and its /swap per leg. No retries, cache, signer or stored authorization."""
 
-    def __init__(self, api_key, *, transport=json_http, clock=time.time, timeout=TIMEOUT_SECONDS):
+    def __init__(self, api_key, *, transport=kept_json_http, clock=time.time, timeout=TIMEOUT_SECONDS):
         self._api_key = checked_api_key(api_key)
         self._transport, self._clock, self.timeout = transport, clock, timeout
 

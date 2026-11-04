@@ -20,7 +20,8 @@ from read_deadline import read_deadline
 from session_models import SessionError
 from session_service import SessionService
 from session_siwe import SiwePolicy
-from session_store import (CAPACITIES, CLEANUP_BATCH, ISSUANCE_IP_PER_MINUTE, SessionStore, digest, session_csrf,
+from session_store import (CAPACITIES, CLEANUP_BATCH, ISSUANCE_GLOBAL_PER_MINUTE, ISSUANCE_IP_PER_MINUTE,
+                           VERIFY_GLOBAL_PER_MINUTE, VERIFY_IP_PER_MINUTE, SessionStore, digest, session_csrf,
                            _DeadlineConnection)
 
 VALIDATION={'method':'plain_eoa','blockNumber':'123','blockHash':'0x'+'ab'*32}
@@ -312,6 +313,56 @@ class SessionStoreTests(unittest.TestCase):
             client='198.51.100.30',preauth=initial['credentials']['preauth'],csrf=initial['result']['csrfToken'])
         key=self.store._key('verified-address',self.account.address.lower())
         self.assertIsNone(self.admin.execute('SELECT * FROM domino_sessions.rate_limits WHERE key_hash=%s',(key,)).fetchone())
+
+    def count(self,kind,value):
+        row=self.admin.execute('SELECT count FROM domino_sessions.rate_limits WHERE key_hash=%s',
+                               (self.store._key(kind,value),)).fetchone()
+        return row and row['count']
+
+    def fill(self,kind,value,count,seconds):
+        self.admin.execute("INSERT INTO domino_sessions.rate_limits VALUES (%s,clock_timestamp()+%s*interval '1 second',%s) "
+                           'ON CONFLICT(key_hash) DO UPDATE SET reset_at=EXCLUDED.reset_at,count=EXCLUDED.count',
+                           (self.store._key(kind,value),seconds,count))
+
+    def refused(self,operation):
+        with self.assertRaises(SessionError) as raised:operation()
+        self.assertEqual(raised.exception.code,'session_rate_limited')
+        return raised.exception.retry_after
+
+    def test_a_refused_sign_in_step_charges_neither_its_ip_nor_the_site(self):
+        # 3 Nov 2026 (launch): every limit is read before any is charged, so no refusal spends a budget.
+        for index in range(ISSUANCE_IP_PER_MINUTE):self.call('bootstrap',client='192.0.2.9')
+        self.refused(lambda:self.call('bootstrap',client='192.0.2.9'))
+        self.assertEqual(self.count('issuance-global','all'),ISSUANCE_IP_PER_MINUTE)
+        self.fill('issuance-global','all',ISSUANCE_GLOBAL_PER_MINUTE,42)
+        self.assertTrue(40<self.refused(lambda:self.call('bootstrap',client='192.0.2.10'))<=42)
+        self.assertIsNone(self.count('issuance-ip','192.0.2.10'))
+        # Its fullest window is the one named, whichever limit is read first.
+        for site,ip in ((50,10),(10,50)):
+            self.fill('issuance-global','all',ISSUANCE_GLOBAL_PER_MINUTE,site)
+            self.fill('issuance-ip','192.0.2.9',ISSUANCE_IP_PER_MINUTE,ip)
+            self.assertTrue(48<self.refused(lambda:self.call('bootstrap',client='192.0.2.9'))<=50,(site,ip))
+
+    def test_a_refused_challenge_or_verify_charges_neither_its_ip_nor_the_site(self):
+        credentials,body=self.pending()
+        before=self.count('issuance-ip',credentials['client'])
+        self.fill('issuance-global','all',ISSUANCE_GLOBAL_PER_MINUTE,30)
+        self.refused(lambda:self.call('challenge',{'address':self.account.address,'chainId':4663},**credentials))
+        self.assertEqual(self.count('issuance-ip',credentials['client']),before)
+        self.fill('verify-global','all',VERIFY_GLOBAL_PER_MINUTE,30)
+        self.refused(lambda:self.call('verify',body,**credentials))
+        self.assertIsNone(self.count('verify-ip',credentials['client']))
+        self.assertEqual(self.admin.execute('SELECT attempts FROM domino_sessions.challenges').fetchone()['attempts'],0)
+        self.admin.execute('DELETE FROM domino_sessions.rate_limits WHERE key_hash=%s',(self.store._key('verify-global','all'),))
+        self.fill('verify-ip',credentials['client'],VERIFY_IP_PER_MINUTE,30)
+        self.refused(lambda:self.call('verify',body,**credentials))
+        self.assertIsNone(self.count('verify-global','all'))
+        self.assertEqual(self.checker.calls,[])
+
+    def test_a_refused_refresh_names_the_seconds_until_its_next_attempt(self):
+        p,b,c,r=self.login()
+        for index in range(5):self.call('refresh',**c)
+        self.assertTrue(0<self.refused(lambda:self.call('refresh',**c))<=2)
 
     def test_private_bucket_burst_five_refills_at_thirty_per_minute_across_instances(self):
         p,b,c,r=self.login()

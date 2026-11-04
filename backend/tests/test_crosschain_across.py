@@ -8,17 +8,18 @@ import unittest
 
 from eth_abi import decode, encode
 
-from crosschain_support import (FEE, FILL_HASH, OTHER, OWNER, USDC_ARBITRUM, USDC_BASE, USDG, WETH_ROBINHOOD, ZERO,
-                                FakeHttp, FakeRpc, across_deposit, across_record, fill_receipt, fixture, output_call,
-                                provider_request, quote_time)
+from crosschain_support import (DEPOSIT_HASH, FEE, FILL_HASH, OTHER, OWNER, USDC_ARBITRUM, USDC_BASE, USDG,
+                                WETH_ROBINHOOD, ZERO, FakeHttp, FakeRpc, across_deposit, across_record, fill_receipt,
+                                fixture, output_call, provider_request, quote_time)
 from discovery import DataError
-from crosschain_across import (DEPOSIT, DEPOSIT_NATIVE, DRAIN, EMIT, INSTRUCTIONS, MAKE_CALL, TRANSFER, WITHDRAW,
-                               AcrossProvider, ChainRpc, EndpointsChainRpc, destination_endpoints, message_fee,
+from crosschain_across import (ACROSS_API, DEPOSIT, DEPOSIT_NATIVE, DRAIN, EMIT, INSTRUCTIONS, MAKE_CALL, TRANSFER,
+                               WITHDRAW, AcrossProvider, ChainRpc, EndpointsChainRpc, destination_endpoints, message_fee,
                                parse_deposit, parse_quote, parse_routes)
 from crosschain_common import encode_call, load_destinations, load_pins
 from v2_chains import default_registry
 from v2_rpc import ChainEndpoints, Endpoint
-from crosschain_http import ProviderError
+from crosschain_http import ProviderError, ProviderHttp
+from test_crosschain_http import Clock, Opener
 
 PINS, DESTINATIONS = load_pins(), load_destinations()
 SPOKE_ARBITRUM = '0xe35e9842fceaca96570b734083f4a58e8f7c5f2a'
@@ -320,6 +321,21 @@ class AcrossTrackingTests(unittest.TestCase):
         http = FakeHttp('across', {('GET', '/deposit'): record} if record is not None else {})
         return AcrossProvider(http, PINS, DESTINATIONS, fee_recipient=FEE,
                               rpc_factory=(lambda chain: rpc) if rpc is not None else None), http
+
+    def test_tracking_draws_on_the_status_share_and_never_starves_quotes(self):
+        # The deposit record is a status read with its own share of the provider's calls (3 Nov 2026).
+        record, quote = across_record(USDG_QUOTE, origin=42161, status='pending'), fixture(USDG_QUOTE)
+        opener = Opener(*([record] * 3 + [quote] * 6))
+        http = ProviderHttp('across', ACROSS_API, per_minute=9, status_per_minute=3, opener=opener, clock=Clock(),
+                            sleep=lambda seconds: None)
+        provider = AcrossProvider(http, PINS, DESTINATIONS, fee_recipient=FEE)
+        for _ in range(3):
+            self.assertEqual(provider.observe(DEPOSIT_HASH)['state'], 'pending')
+        with self.assertRaisesRegex(ProviderError, 'across_rate_limited'):
+            provider.observe(DEPOSIT_HASH)
+        for _ in range(6):
+            provider.quote(provider_request(**USDG_REQUEST), now=quote_time())
+        self.assertEqual(len(opener.requests), 9)
 
     def test_deposit_records_map_states(self):
         for status, state in (('pending', 'pending'), ('filled', 'filled'), ('expired', 'refund_pending'),

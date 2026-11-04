@@ -3,7 +3,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from bridge_state import ClientBudgets, OpaqueCursors, strict_json
+from bridge_state import ClientBudgets, ClientShares, OpaqueCursors, strict_json
 from discovery import DataError, ZERO
 from inventory import CursorCodec
 from test_discovery import OWNER, TOKEN, OTHER
@@ -31,6 +31,39 @@ class BridgeStateTests(unittest.TestCase):
         self.assertTrue(budget.admit('192.0.2.2'))
         with self.assertRaises(DataError): budget.admit('attacker,192.0.2.3')
         self.assertNotIn('192.0.2.2', repr(budget.items))
+
+    def test_a_full_table_makes_room_with_an_address_whose_budget_has_refilled(self):
+        # 3 Nov 2026 (launch): a full table refused every new visitor for up to five minutes.
+        now = [0.]
+        budget = ClientBudgets(clock=lambda: now[0], capacity=2, burst=5, per_minute=30)  # a whole burst back in 10 s
+        self.assertEqual([budget.admit('192.0.2.1') for _ in range(6)], [True] * 5 + [False])
+        now[0] = 1
+        self.assertTrue(budget.admit('192.0.2.2'))
+        now[0] = 2
+        self.assertFalse(budget.admit('192.0.2.3'), 'the least recently used, 192.0.2.1, is refilling')
+        now[0] = 9.9
+        self.assertFalse(budget.admit('192.0.2.3'), 'a little short of its burst still')
+        self.assertEqual(len(budget.items), 2)
+        now[0] = 10
+        self.assertTrue(budget.admit('192.0.2.3'))
+        self.assertEqual(len(budget.items), 2)
+        # 192.0.2.1 left with a full burst, and comes back to one, no more: room is made by 192.0.2.2, refilled too.
+        self.assertEqual([budget.admit('192.0.2.1') for _ in range(6)], [True] * 5 + [False])
+        self.assertEqual(len(budget.items), 2)
+
+    def test_an_address_mid_burst_cannot_reset_its_budget_by_being_pushed_out(self):
+        now = [0.]
+        budget = ClientBudgets(clock=lambda: now[0], capacity=2, burst=5, per_minute=30)  # one back every 2 s
+        self.assertEqual([budget.admit('192.0.2.1') for _ in range(6)], [True] * 5 + [False])
+        now[0] = 1
+        self.assertTrue(budget.admit('192.0.2.2'))
+        # However many visitors come, none pushes the spent address out while it refills.
+        for second, visitor in enumerate(('192.0.2.3', '2001:db8:1::1', '192.0.2.4', '2001:db8:2::1'), start=2):
+            now[0] = second / 2 + 1
+            self.assertFalse(budget.admit(visitor), visitor)
+        now[0] = 4
+        # Two returned in 4 s, exactly what it would have had if nobody else had come.
+        self.assertEqual([budget.admit('192.0.2.1') for _ in range(3)], [True, True, False])
 
     def test_opaque_cursor_bound_context_expiry_and_reader_generation(self):
         now = [1000.]
@@ -85,3 +118,36 @@ class ClientBudgetRetryAfterTests(unittest.TestCase):
         slow = ClientBudgets(clock=lambda: now[0], burst=1, per_minute=1)
         self.assertTrue(slow.admit('192.0.2.1'))
         self.assertEqual(slow.retry_after('192.0.2.1'), 10, 'a minute becomes the ten-second ceiling')
+
+
+class ClientShareTests(unittest.TestCase):
+    def test_a_client_holds_at_most_its_share_and_gets_it_back(self):
+        shares = ClientShares(2)
+        self.assertEqual([shares.take('192.0.2.1') for _ in range(3)], [True, True, False])
+        # The same visitor by any spelling, an IPv6 /64 as one; another visitor is untouched.
+        self.assertFalse(shares.take('::ffff:192.0.2.1'))
+        self.assertTrue(shares.take('192.0.2.2'))
+        self.assertEqual([shares.take('2001:db8::1'), shares.take('2001:db8::2'), shares.take('2001:db8::3')],
+                         [True, True, False])
+        shares.give('192.0.2.1')
+        self.assertTrue(shares.take('192.0.2.1'))
+        self.assertFalse(shares.take('192.0.2.1'))
+        for _ in range(2):
+            shares.give('192.0.2.1')
+        self.assertEqual([shares.take('192.0.2.1') for _ in range(3)], [True, True, False])
+        self.assertNotIn('192.0.2', repr(shares.held))
+
+    def test_only_reads_in_hand_are_counted(self):
+        shares = ClientShares(1)
+        with self.assertRaisesRegex(ValueError, 'client_share_not_held'):
+            shares.give('192.0.2.1')
+        self.assertTrue(shares.take('192.0.2.1'))
+        shares.give('192.0.2.1')
+        self.assertEqual(shares.held, {})
+        with self.assertRaisesRegex(ValueError, 'client_share_not_held'):
+            shares.give('192.0.2.1')
+        with self.assertRaises(DataError):
+            shares.take('attacker,192.0.2.3')
+        for share in (0, 1.0, True, None):
+            with self.subTest(share=share), self.assertRaisesRegex(ValueError, 'invalid_client_share'):
+                ClientShares(share)

@@ -36,7 +36,10 @@ export const READ_V6_PIN = {
   // vault for the same root replaces the old one; null once that vault let it go: Leave automation, its auto-exit, a
   // successor withdrawn), not the first vault forever (v2_index_store.py, v2_read_service.py, the README); same
   // version, same schemas and fixtures.
-  manifestSha256: '4dc7de6702afe07c758d888547f2e4071780dc54c4e19d0c22a2796fb5ddefa1',
+  // Changed on purpose (data) 2026-11-03 (launch round P2): read_api.py and read_gateway.py: a stored read waits
+  // about a second for a lane, and one visitor holds at most half of a lane; no route, schema, reason code or version
+  // moved.
+  manifestSha256: 'd5f460736392feae5f2f1123289f76fa0b3b98eb8f1011f8289dffb145eb59ab',
 } as const
 
 export const POSITION_PLAN_V1_PIN = {
@@ -49,5 +52,10 @@ export const POSITION_PLAN_V1_PIN = {
   // Changed on purpose (data) 2026-11-02: v2_position_plan_service.py, which the manifest hashes, keeps a read refused
   // for its intrinsic gas (an L1 price spike) as upstream_unavailable now that it reads as rpc_call_gas_limit; no
   // route, schema, error code or version moved.
-  manifestSha256: 'aa85f81be7aab84f9a4de6f3bf39c98290e8ef118fb838e28d2d597ea3221cbd',
+  // Changed on purpose (data) 2026-11-03 (launch round P2): v2_position_plan.py, v2_position_plan_api.py,
+  // v2_quotes.py and v2_uniswap_api.py ask a plan's chain and Trading API calls over kept connections and never ask
+  // again for an answer in hand (the same plans), and authenticated_api.py and onboarding_auth.py name a 429's Retry-
+  // After by cause, wait up to 2.5 s for a free worker and give each kind of signed-in work its own preview budget;
+  // no route, schema, reason code or version moved.
+  manifestSha256: '15c61e0cad88b476eb06531247c3dc0ec5af4d7d9d94d563317131959771a2ca',
 } as const

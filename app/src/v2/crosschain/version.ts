@@ -34,7 +34,12 @@ export const CROSSCHAIN_V1_PIN = Object.freeze({
    *  the listener logs which provider won and why). One backend file changed; the contract and its version did not.
    *  Changed on purpose (data) 2026-10-06: crosschain-v1 1.1.0-rc.1 (quoting by output: amountKind, maxInputRaw,
    *  inputRaw, input_above_max, the decision by rate), and the listener's switch window for 1.0.0-rc.1. */
-  manifestSha256: 'ae024b8f25b2de94fc4d09fa88895798a2225111e4cc87c31d3c63cab74c7045',
+  // Changed on purpose (data) 2026-11-03 (launch round P2): crosschain_http.py, crosschain_relay.py,
+  // crosschain_across.py, crosschain_api.py and crosschain_config.py give bridge status reads their own share of each
+  // provider's budget, and authenticated_api.py and onboarding_auth.py name a 429's Retry-After by cause, wait up to
+  // 2.5 s for a free worker and give each kind of signed-in work its own preview budget; no route, schema, reason
+  // code or version moved.
+  manifestSha256: 'f2ec59298a6fe75e8f9dd9b0ce4edbeaf9409e9a67aa43fba9c325d5ef87db95',
   /** The manifest's own `status`: the service is built but off until the owner's keys and the Worker route exist. */
   status: 'candidate_disabled_pending_keys_and_worker',
 } as const)

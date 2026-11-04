@@ -80,8 +80,9 @@ class AuthStore:
         if csrf != CSRF:
             raise SessionError('csrf_invalid')
 
-    def begin_preview(self, client, session, csrf):
+    def begin_preview(self, client, session, csrf, *, budget):
         self.begin_calls += 1
+        self.budget = budget
         self._check(session, csrf)
         return {'address': self.owner, 'chainId': 4663}
 
@@ -141,6 +142,8 @@ class PerformanceApiTests(unittest.TestCase):
             self.assertNotIn('"'+name+'"', response.text)
         self.reader.list_epochs.assert_called_once_with(OWNER, [self.epoch])
         self.assertEqual((self.auth_store.begin_calls, self.auth_store.finish_calls), (1, 2))
+        # Its own preview budget, apart from plans and quotes (3 Nov 2026).
+        self.assertEqual(self.auth_store.budget, 'execution-performance')
         self.assertEqual(response.headers['X-Domino-Performance-Contract'], CONTRACT_VERSION)
         self.assertEqual(set(response.headers['cache-control'].split(', ')), {'no-store', 'no-transform'})
         for name in ('set-cookie', 'access-control-allow-origin', 'content-encoding'):
@@ -292,7 +295,7 @@ class PerformanceApiTests(unittest.TestCase):
         try:
             response = self.post()
             self.assertEqual((response.status_code, response.json()), (429, {'error': 'performance_capacity_busy'}))
-            self.assertEqual(response.headers['Retry-After'], '60')
+            self.assertIn(response.headers['Retry-After'], {'2', '3', '4', '5'})
         finally:
             for _ in range(MAX_WORKERS): self.gateway.slot.release()
         self.reader.list_epochs.side_effect = PerformanceStoreError('performance_store_unavailable')

@@ -91,7 +91,7 @@
   "sources": [
     {
       "path": "backend/v2_position_plan.py",
-      "sha256": "2498e01eb530fd56edb91ce7836eba10128240341684737bfa9de430aa9ee05c"
+      "sha256": "5548dba2ffcb9175682105bd127812ede9c2b7e18b55349041eb64e8f9d739fb"
     },
     {
       "path": "backend/v2_position_plan_models.py",
@@ -107,7 +107,7 @@
     },
     {
       "path": "backend/v2_position_plan_api.py",
-      "sha256": "3d78f42f9038b0d2a07bd968890d79028fa4b199ace8b8990771de5a5519cea4"
+      "sha256": "3cfdebb79fb6a8395f406c8a8cdcee3f06e1e1d03bcecc01a0d8354e795983e8"
     },
     {
       "path": "backend/v2_position_plan_config.py",
@@ -123,7 +123,7 @@
     },
     {
       "path": "backend/v2_quotes.py",
-      "sha256": "c81bd3b7ce6a4130f7aeb557dfc8391fb01ace166efe1648cfa87d9b522d23e2"
+      "sha256": "ea73d71f19364338746ec1ea5f165da8ad00487bea576bd8e218eefa91a1da04"
     },
     {
       "path": "backend/v2_liquidity.py",
@@ -135,15 +135,15 @@
     },
     {
       "path": "backend/v2_uniswap_api.py",
-      "sha256": "ee904c35d6e7c494fd733d4ff4259f0e07efe2916ce75cb2085559557b4dbc02"
+      "sha256": "d134727d48b630c186207962c87ec30cea0c4b475674bd03332b1f0d4253bdd4"
     },
     {
       "path": "backend/authenticated_api.py",
-      "sha256": "d498d87b4aba6705ae2fb33c94ddf63a3108fd8a95d9fbcf213dba32877eb35e"
+      "sha256": "a79461b3057d272c697eee6496df67faac93a3fa0b3ea393e2222820118c5fa3"
     },
     {
       "path": "backend/onboarding_auth.py",
-      "sha256": "0060646f6ceaf95da3b597c68110737d17129afae8dce4120f206de1ed5677d4"
+      "sha256": "a93cac3f85f3d2fcf6e551385b548dbeef89eecde94af6c54aa2dba7cfe6f253"
     },
     {
       "path": "backend/onboarding_models.py",
@@ -159,7 +159,7 @@
     },
     {
       "path": "backend/tests/fixtures/position-plan/recordings.json",
-      "sha256": "d52df1cb21e0742feb9063ae958d50cbaf217f0befe8924c262b84b817f71ef1"
+      "sha256": "fb880d3c892199e521662c2d21c2367591aa0053f578b50d672d63ee309254ef"
     },
     {
       "path": "scripts/export-position-plan-contract.py",

@@ -164,10 +164,12 @@ All read by `backend/crosschain_config.py`.
 | Across integrator id (`0x` + 4 hex) | `DOMINO_ACROSS_INTEGRATOR_ID` | – | production |
 | Provider timeout, 2–15 s (default 10) | `DOMINO_CROSSCHAIN_PROVIDER_TIMEOUT_SECONDS` | – | optional |
 | Calls per minute per provider | `DOMINO_RELAY_REQUESTS_PER_MINUTE`, `DOMINO_ACROSS_REQUESTS_PER_MINUTE` | – | optional |
+| Of those, the status reads' own (0 to the total − 1) | `DOMINO_RELAY_STATUS_PER_MINUTE`, `DOMINO_ACROSS_STATUS_PER_MINUTE` | – | optional |
 | Destination RPC for the Across fee proof (wins over the chain RPC file) | `DOMINO_CROSSCHAIN_RPC_URL_8453`, `_42161`, `_4663` | `crosschain-rpc-<chainId>` | optional |
 | V2 chain RPC file (F6): Base's and Arbitrum's hosted endpoints for the fee proof | `DOMINO_V2_CHAIN_RPC_FILE` | `v2-rpc-<chain>-<name>`, its URLs | optional |
 
 The per-minute defaults are 45 with a Relay key and 20 without; 60 with an Across key and 10 without.
+A third of each total, rounded down, is the status reads' own unless set, and quotes and listings keep the rest: with the keys, Relay's 45 are 30 for quotes and 15 for status, Across' 60 are 40 and 20. A status share of 0 puts every call back on one budget.
 
 - **Destination RPCs.** Base and Arbitrum read the V2 chain RPC file's hosted endpoints (F6, `backend/v2_rpc.py`: Chainstack, Alchemy, then the chain's public endpoint), billed per call, one receipt per filled deposit.
   - **Order and limits:** the endpoints go in order, each with its batch, log-range and pace limits. One that fails cools down and the next answers (`EndpointsChainRpc`).
@@ -278,10 +280,13 @@ The owner chose a window (option A, 6 Oct 2026): the listener answers both versi
   - `crosschain_fees.py across-fees --chain 8453 --from-block N [--to-block M]` totals the ERC-20 fees Across fills paid the recipient. It reads `Transfer` logs from the pinned handlers to the recipient, at most 10,000 blocks per `eth_getLogs`.
   - Native ETH fees from Across leave no log. They are proven per deposit by `status`, or seen in the recipient's ETH balance.
 - **Rate limits.**
-  - Each provider has a per-process budget.
-  - A 429 blocks that provider until its `Retry-After` passes (default 60 s, at most 10 min); during the block it is reported `rate_limited` without being called.
+  - Each provider has a per-process budget, its calls per minute.
+  - The status reads have their own share of it since 3 Nov 2026: Relay's status and fee record, and Across' deposit record. Quotes and listings keep the rest.
+    - The app asks about a tracked transfer every 10 s or more, so one transfer takes about 6 status reads a minute. A third of Relay's 45 follows about 2 transfers at once, and a third of Across' 60 about 3.
+    - That polling never takes a quote's slot. When the status share runs out, `status` answers `provider_rate_limited` and the app asks again later.
+  - A 429 blocks only its own kind of call (quotes and listings, or status reads) until its `Retry-After` passes (default 60 s, at most 10 min). During the block that kind is reported `rate_limited` without being called, so a throttled status read never blocks a quote.
   - Listings (`/chains`, `/available-routes`) are cached for 10 minutes and served stale for up to an hour if the provider fails.
-  - Status reads retry once after a network or 5xx failure. Quotes are never retried.
+  - Status reads and listings retry once after a network or 5xx failure, on the request's own slot: a failing provider costs a status poll one slot, not two. Quotes are never retried.
 - **Records.** Each request leaves one `hop_log` line (route, status, duration, and the `contractVersion` the request named, so 1.0.0-rc.1 traffic can be counted during the switch window). It never includes a body, address, key or provider text.
   - Each quote answered also leaves one decision line just before it (`crosschain_service.decision_record`, the owner's request of 5 Oct 2026, after the first quotes could not be traced to a provider). Its vocabulary is closed (`DECISION_KEYS`):
     - `record: decision`, with the origin and destination chain ids;

@@ -64,6 +64,13 @@ def same_hash(stored, value):
     return value is not None and hmac.compare_digest(bytes(stored), digest(value))
 
 
+def limited(seconds):
+    """session_rate_limited, carrying the seconds until the limit admits again: the listeners' Retry-After."""
+    error = SessionError('session_rate_limited')
+    error.retry_after = seconds
+    return error
+
+
 class _DeadlineConnection:
     """Clamp every SQL operation to the same worker budget, including cleanup."""
     def __init__(self, conn):
@@ -153,19 +160,34 @@ class SessionStore:
     def _room(self, conn, table):
         return conn.execute(f'SELECT count(*) AS n FROM {table}').fetchone()['n'] < CAPACITIES[table]
 
-    def _rate(self, conn, now, kind, value, maximum, seconds):
-        key = self._key(kind,value)
-        row = conn.execute('SELECT * FROM rate_limits WHERE key_hash=%s', (key,)).fetchone()
-        if row and row['reset_at']>now:
-            if row['count']>=maximum:
-                return SessionError('session_rate_limited')
-            conn.execute('UPDATE rate_limits SET count=count+1 WHERE key_hash=%s', (key,))
-        else:
-            if not row and not self._room(conn,'rate_limits'):
-                return SessionError('session_capacity_busy')
-            conn.execute('INSERT INTO rate_limits(key_hash,reset_at,count) VALUES (%s,%s,1) '
-                         'ON CONFLICT(key_hash) DO UPDATE SET reset_at=EXCLUDED.reset_at,count=1',
-                         (key,now+timedelta(seconds=seconds)))
+    def _rate(self, conn, now, *limits, charge=True):
+        """Charge one attempt to every (kind, value, maximum, seconds) limit, or to none of them.
+
+        3 Nov 2026 (launch): every limit is read before any is charged, the site-wide one first, so a
+        refusal commits no increment to the others and a refused attempt never spends its caller's own
+        budget. The advisory lock holds from the reads to the charge. A refusal names the seconds until
+        its fullest window resets; charge=False only reads.
+        """
+        windows, wait = [], None
+        for kind, value, maximum, seconds in limits:
+            key = self._key(kind,value)
+            row = conn.execute('SELECT * FROM rate_limits WHERE key_hash=%s', (key,)).fetchone()
+            live = bool(row and row['reset_at']>now)
+            if live and row['count']>=maximum:
+                wait = max(wait or 0, (row['reset_at']-now).total_seconds())
+            windows.append((key, row is None, live, seconds))
+        if wait is not None:
+            return limited(wait)
+        new = sum(missing for _, missing, _, _ in windows)
+        if new and conn.execute('SELECT count(*) AS n FROM rate_limits').fetchone()['n']+new>CAPACITIES['rate_limits']:
+            return SessionError('session_capacity_busy')
+        for key, _, live, seconds in windows if charge else ():
+            if live:
+                conn.execute('UPDATE rate_limits SET count=count+1 WHERE key_hash=%s', (key,))
+            else:
+                conn.execute('INSERT INTO rate_limits(key_hash,reset_at,count) VALUES (%s,%s,1) '
+                             'ON CONFLICT(key_hash) DO UPDATE SET reset_at=EXCLUDED.reset_at,count=1',
+                             (key,now+timedelta(seconds=seconds)))
 
     def _private_rate(self, conn, now, client, address):
         pending = []
@@ -182,7 +204,7 @@ class SessionStore:
                     return SessionError('session_capacity_busy')
                 credit=10000000
             if credit<2000000:
-                return SessionError('session_rate_limited')
+                return limited((2000000-credit)/1000000)
             pending.append((key,credit-2000000))
         # A request that subsequently fails an owner budget or its chain check
         # still consumes reserved capacity, preventing repeated expensive failures.
@@ -226,9 +248,8 @@ class SessionStore:
     def bootstrap(self, client, preauth=None, session=None):
         new,csrf=bearer(),bearer()
         def operation(conn,now):
-            denied=self._rate(conn,now,'issuance-ip',client,ISSUANCE_IP_PER_MINUTE,60)
-            if denied:return denied
-            denied=self._rate(conn,now,'issuance-global','all',ISSUANCE_GLOBAL_PER_MINUTE,60)
+            denied=self._rate(conn,now,('issuance-global','all',ISSUANCE_GLOBAL_PER_MINUTE,60),
+                              ('issuance-ip',client,ISSUANCE_IP_PER_MINUTE,60))
             if denied:return denied
             if self._active(self._session(conn,session),now):
                 return SessionError('session_exists')
@@ -251,9 +272,8 @@ class SessionStore:
     def challenge(self, client, preauth, csrf, address, issue):
         identifier,nonce=secrets.token_hex(16),secrets.token_hex(16)
         def operation(conn,now):
-            denied=self._rate(conn,now,'issuance-ip',client,ISSUANCE_IP_PER_MINUTE,60)
-            if denied:return denied
-            denied=self._rate(conn,now,'issuance-global','all',ISSUANCE_GLOBAL_PER_MINUTE,60)
+            denied=self._rate(conn,now,('issuance-global','all',ISSUANCE_GLOBAL_PER_MINUTE,60),
+                              ('issuance-ip',client,ISSUANCE_IP_PER_MINUTE,60))
             if denied:return denied
             context=self._context(conn,now,preauth,csrf)
             if isinstance(context,SessionError):return context
@@ -273,9 +293,8 @@ class SessionStore:
 
     def reserve_verify(self, client, preauth, csrf, identifier, message, old_session=None):
         def operation(conn,now):
-            denied=self._rate(conn,now,'verify-ip',client,VERIFY_IP_PER_MINUTE,60)
-            if denied:return denied
-            denied=self._rate(conn,now,'verify-global','all',VERIFY_GLOBAL_PER_MINUTE,60)
+            denied=self._rate(conn,now,('verify-global','all',VERIFY_GLOBAL_PER_MINUTE,60),
+                              ('verify-ip',client,VERIFY_IP_PER_MINUTE,60))
             if denied:return denied
             if self._active(self._session(conn,old_session),now):
                 return SessionError('session_exists')
@@ -302,7 +321,7 @@ class SessionStore:
                         ('address','nonce','message'))):
                 return SessionError('challenge_invalid')
             # Unsigned requests never spend another wallet's shared budget.
-            denied=self._rate(conn,now,'verified-address',current['address'],PROVEN_WALLET_PER_HOUR,3600)
+            denied=self._rate(conn,now,('verified-address',current['address'],PROVEN_WALLET_PER_HOUR,3600))
             if denied:return denied
             return _CommitResult(None,min(context['expires_at'],current['expires_at']),'challenge_invalid')
         return self._transaction(operation)
@@ -402,35 +421,38 @@ class SessionStore:
                                  min(row['expires_at'],row['last_used_at']+timedelta(minutes=30)),'session_required')
         return self._transaction(operation)
 
-    def begin_preview(self, client, session, csrf):
+    def begin_preview(self, client, session, csrf, *, budget='onboarding'):
         """Reserve costly preview reads before any external account/API check.
 
-        This namespace is separate from login and private-read quotas. Expected
-        denials commit the already reserved attempts, including bad credentials
-        and a later account/global limit. Only the verified public owner leaves
-        this transaction; stored credential hashes never do.
+        This namespace is separate from login and private-read quotas; each
+        `budget` (onboarding_auth.BUDGETS) has its own IP, account and
+        site-wide keys. The site-wide and IP limits are read before the
+        credentials, and a refusal by any limit charges none of them (3 Nov
+        2026). Missing, malformed or unknown credentials still spend the IP's
+        attempt: guessing is never free. An admitted attempt keeps its charges
+        whatever fails later. Only the verified public owner leaves this
+        transaction; stored credential hashes never do.
         """
         def operation(conn, now):
-            denied = self._rate(conn, now, 'onboarding-ip', client,
-                                PREVIEW_IP_LIMIT, PREVIEW_WINDOW_SECONDS)
+            everyone = (budget + '-global', 'all', PREVIEW_GLOBAL_LIMIT, PREVIEW_WINDOW_SECONDS)
+            ip = (budget + '-ip', client, PREVIEW_IP_LIMIT, PREVIEW_WINDOW_SECONDS)
+            denied = self._rate(conn, now, everyone, ip, charge=False)
             if denied:
                 return denied
             try:
                 token(session, required='session_required')
                 token(csrf, required='csrf_invalid')
+                row = self._session(conn, session)
+                if not self._active(row, now) or row['chain_id'] != CHAIN_ID:
+                    raise SessionError('session_required')
+                if not same_hash(row['csrf_hash'], csrf):
+                    raise SessionError('csrf_invalid')
             except SessionError as error:
-                return error
-            row = self._session(conn, session)
-            if not self._active(row, now) or row['chain_id'] != CHAIN_ID:
-                return SessionError('session_required')
-            if not same_hash(row['csrf_hash'], csrf):
-                return SessionError('csrf_invalid')
-            for kind, value, maximum in (
-                    ('onboarding-account', row['address'], PREVIEW_ACCOUNT_LIMIT),
-                    ('onboarding-global', 'all', PREVIEW_GLOBAL_LIMIT)):
-                denied = self._rate(conn, now, kind, value, maximum, PREVIEW_WINDOW_SECONDS)
-                if denied:
-                    return denied
+                return self._rate(conn, now, ip) or error
+            denied = self._rate(conn, now, everyone, ip, (budget + '-account', row['address'],
+                                                          PREVIEW_ACCOUNT_LIMIT, PREVIEW_WINDOW_SECONDS))
+            if denied:
+                return denied
             # Keep reservations when expiry is crossed during the DB work.
             # The separate finish guard rechecks immediately before provider use.
             fresh = conn.execute('SELECT clock_timestamp() AS now').fetchone()['now']

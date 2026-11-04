@@ -238,6 +238,29 @@ for (const [code, status] of Object.entries(ERROR_STATUS_BY_CODE)) test(`finite 
   const h = harness(() => response({ error: code }, status, { 'Set-Cookie': 'evil=1' }));
   await error(await h.worker.fetch(request(), env), code);
 });
+// 3 Nov 2026 (launch round P2): a 429 keeps the listener's Retry-After when it names a whole 1 to 60 seconds, written
+// as an integer; anything else is the 60 every 429 said before. The listener's wait reaches no other status.
+const RETRY_AFTER = [['1', '1'], ['2', '2'], ['5', '5'], ['60', '60'], ['05', '5'], [null, '60'], ['', '60'], ['0', '60'],
+  ['61', '60'], ['600', '60'], ['0005', '60'], ['-1', '60'], ['+5', '60'], ['1.5', '60'], ['1e1', '60'], ['0x10', '60'],
+  ['5s', '60'], ['5, 7', '60'], ['Wed, 04 Nov 2026 12:00:00 GMT', '60']];
+for (const code of Object.keys(ERROR_STATUS_BY_CODE).filter((code) => ERROR_STATUS_BY_CODE[code] === 429)) {
+  test(`${code} keeps the listener's Retry-After only when it is a whole 1 to 60 seconds`, async () => {
+    for (const [given, sent] of RETRY_AFTER) {
+      const h = harness(() => response({ error: code }, 429, given === null ? {} : { 'Retry-After': given }));
+      const result = await h.worker.fetch(request(), env);
+      assert.equal(result.headers.get('Retry-After'), sent, `Retry-After ${given}`);
+      await error(result, code);
+    }
+  });
+}
+test('a refusal other than a 429 carries no Retry-After, whatever the listener sent', async () => {
+  for (const [code, status] of Object.entries(ERROR_STATUS_BY_CODE).filter(([, status]) => status !== 429)) {
+    const h = harness(() => response({ error: code }, status, { 'Retry-After': '5' }));
+    const result = await h.worker.fetch(request(), env);
+    assert.equal(result.headers.get('Retry-After'), null, code);
+    await error(result, code);
+  }
+});
 for (const body of [
   { ...envelopes.me, secret: 'private' }, { ...envelopes.me, credentials: { session: token } },
   { ...envelopes.me, result: { ...loggedIn, sessionToken: token } },

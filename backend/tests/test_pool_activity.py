@@ -223,6 +223,28 @@ class ActivityPostgresTests(unittest.TestCase):
         self.assertEqual(worker.step(POOL,through=13)['status'],'caught_up_to_target')
         self.assertEqual(self.counts(),(2,4))
 
+    def test_a_follower_and_a_parallel_walker_never_walk_one_pool_at_once(self):
+        """3 Nov 2026: the activity follower (global key) and the queue worker (--parallel-walks, the pool's key)
+        walked the same pools at once. Every walker now holds the pool's key, so whichever comes second is refused
+        before it reads anything, and the first one commits."""
+        self.register()
+        parallel=ActivityIndexer(self.store,self.rpc,parallel_walks=True)
+        refused=[]
+        def meet(walker,through):
+            def attempt():
+                self.rpc.after_logs=None
+                try:walker.step(POOL,through=through)
+                except DataError as error:refused.append(str(error))
+            return attempt
+        # The follower mid-walk refuses the parallel walker...
+        self.rpc.after_logs=meet(parallel,11)
+        self.assertEqual(self.worker.step(POOL,through=11)['status'],'indexed')
+        # ...and a parallel walker mid-walk refuses the follower.
+        self.rpc.after_logs=meet(self.worker,13)
+        self.assertEqual(parallel.step(POOL,through=13)['status'],'indexed')
+        self.assertEqual(refused,['catalogue_writer_busy']*2)
+        self.assertEqual(self.counts(),(2,4))
+
     def test_events_outside_the_retention_window_are_derived_and_labelled(self):
         """A deep backfill must not pay a provider header per event block."""
         with patch('activity_indexer.RETENTION_BLOCKS',1):

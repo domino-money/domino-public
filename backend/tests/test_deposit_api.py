@@ -85,7 +85,7 @@ class DepositApiTests(unittest.TestCase):
         try:
             result=self.post();self.assertEqual(result.status_code,429)
             self.assertEqual(result.json(),{'error':'deposit_capacity_busy'})
-            self.assertEqual(result.headers['Retry-After'],'60')
+            self.assertIn(result.headers['Retry-After'],{'2','3','4','5'})
         finally:
             for _ in range(MAX_WORKERS): self.gateway.slot.release()
 

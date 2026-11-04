@@ -161,7 +161,8 @@ class PgPublicData:
 
     def search(self, query, *, limit=20):
         """Search only already verified identities; symbols never select a contract."""
-        if type(query) is not str or not 1 <= len(query.strip()) <= 96 or not 1 <= limit <= 24:
+        # PostgreSQL text cannot hold a NUL: a query with one is a bad request, never a database failure (F-18).
+        if type(query) is not str or not 1 <= len(query.strip()) <= 96 or '\x00' in query or not 1 <= limit <= 24:
             raise DataError('invalid_request')
         term = query.strip().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
         with self.connection() as conn:

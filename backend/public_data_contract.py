@@ -100,6 +100,14 @@ class SearchRequest(WireModel):
     query: Annotated[StrictStr, Field(min_length=1, max_length=96)]
     limit: Annotated[StrictInt, Field(ge=1, le=24)] = 20
 
+    @model_validator(mode='after')
+    def storable(self):
+        # F-18 (21 Oct 2026 pentest, fixed 3 Nov 2026): PostgreSQL text cannot hold U+0000, so a NUL in the query
+        # reached the database and came back 503 catalogue_database_unavailable. A bad request, refused by each hop.
+        if '\x00' in self.query:
+            raise ValueError('query')
+        return self
+
 
 class SearchResponse(WireModel):
     schemaVersion: Literal[1]

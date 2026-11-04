@@ -190,14 +190,15 @@ or a service SLA. Account limits belong to the later session slice.
 
 | Control | Initial value / behavior |
 | --- | --- |
-| Per-IP read budget | 30 requests/minute, burst 5; all replicas of the BFF share the gateway's authoritative budget |
+| Per-IP read budget | One per reader lane (`read_gateway.py` `VISITOR_BUDGETS`): stored reads 30 at once, then 240/minute; provider reads 30 at once, then 300/minute (2 Nov 2026). All replicas of the BFF share the gateway's authoritative budget |
+| Per-IP share of the lanes | At most half of each lane at once: 8 provider reads, 4 stored (3 Nov 2026, pentest F-02). A budget bounds how often a visitor reads, not how many of its reads run together; one address's burst used to hold every lane. A stored read past the share waits for the visitor's own, as below |
 | Verified-account budget when present | Also 30/minute, burst 5; neither account nor IP replaces the other limit |
-| Global backend read admission | One actual operation in flight; at most one start/second; no waiting queue |
+| Global backend read admission | 16 provider lanes and 8 stored, no start interval (`read_api.py` `public_gate`), in the gateway and again in the reader. A provider read is refused at once when its lane is full. A stored read waits up to 1 s for a lane, and for half of what its read budget has left at most; no more reads wait than the lane has slots, and past that one is refused at once (3 Nov 2026) |
 | Provider budget | Keep PR #10's shared 25 market requests/minute; no retries to bypass it |
 | Browser body deadline | 5 seconds, included in 20-second total request budget |
 | Upstream work budget | At most 15 seconds remaining after validation, including subrequests; transport timeouts cannot reset it |
 | Response limit | 1 MiB decoded JSON, streamed bound; oversized output is an error, never silently truncated |
-| Rate-limit state | At most 10,000 active keys, idle expiry 5 minutes; reject new keys if full instead of evicting active budgets |
+| Rate-limit state | At most 10,000 active keys, idle expiry 5 minutes. When full, a new key takes the place of the least recently used one once that key's budget has refilled: it comes back to the full burst it would have had, so leaving never resets a spent budget. A new key is refused only while every key is still refilling (3 Nov 2026; until then every new key was refused) |
 
 The current reader does not implement a cooperative end-to-end RPC deadline.
 Add and test that control before exposure. A browser abort or edge timeout does

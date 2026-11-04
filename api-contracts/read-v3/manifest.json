@@ -79,7 +79,7 @@
   "sources": [
     {
       "path": "backend/public_data_contract.py",
-      "sha256": "717d9750cb10f3a666801cce63c4f59271054624f77668e2a7fe824320c0727e"
+      "sha256": "5c883aaa8cefb3a73ce0fd9b07c00f23219335eefcd0760fcc806560ee2f74c3"
     },
     {
       "path": "scripts/export-read-v3-contract.py",

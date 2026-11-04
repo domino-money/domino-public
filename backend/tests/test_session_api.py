@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 import json
 from pathlib import Path
 import sys
+import threading
 from threading import Event
 import time
 from types import SimpleNamespace
@@ -16,6 +17,7 @@ from pydantic import ValidationError
 
 from discovery import DataError
 from read_deadline import current_read_deadline
+import session_api
 from session_api import SessionGateway, create_session_app, MAX_WORKERS
 from session_models import (CONTRACT_VERSION, REQUEST_MODELS, RESPONSE_MODELS, SessionError,
                             validate_body)
@@ -192,6 +194,52 @@ class SessionApiTests(unittest.TestCase):
         while client.app.state.pending and time.monotonic()<deadline:time.sleep(.01)
         self.service.execute.side_effect=None
         self.assertEqual(self.post(client=client).status_code,200)
+
+    def test_retry_after_names_the_cause_of_each_429(self):
+        # 3 Nov 2026 (launch): every 429 said 2 s. Always a whole number of seconds from 1 to 60.
+        self.assertEqual({session_api.retry_after('session_capacity_busy') for _ in range(400)},{2,3,4,5})
+        for wait,expected in ((12.2,13),(.01,1),(3600,60),(-3,1),(None,60),(float('nan'),60),(True,60)):
+            self.assertEqual(session_api.retry_after('session_rate_limited',wait),expected,wait)
+        from session_store import limited
+        self.service.execute.side_effect=limited(41.5)
+        response=self.post()
+        self.assertEqual((response.status_code,response.json()),(429,{'error':'session_rate_limited'}))
+        self.assertEqual(response.headers['Retry-After'],'42')
+
+    def test_a_full_listener_waits_for_a_slot_before_refusing(self):
+        for _ in range(MAX_WORKERS):self.gateway.slot.acquire()
+        try:
+            threading.Timer(.3,self.gateway.slot.release).start()
+            started=time.monotonic()
+            self.assertEqual(self.post().status_code,200)
+            self.assertGreaterEqual(time.monotonic()-started,.25)
+        finally:
+            for _ in range(MAX_WORKERS-1):self.gateway.slot.release()
+
+    def test_the_wait_ends_at_the_request_deadline_and_releases_its_place(self):
+        gateway=SessionGateway(service=self.service,verifier=self.verifier,origin=ORIGIN,enabled=True,total_seconds=.3)
+        client=self.new_client(gateway)
+        for _ in range(MAX_WORKERS):gateway.slot.acquire()
+        try:
+            for attempt in range(session_api.MAX_WAITING+1):
+                started=time.monotonic()
+                response=self.post(client=client)
+                elapsed=time.monotonic()-started
+                self.assertEqual((response.status_code,response.json()),(429,{'error':'session_capacity_busy'}))
+                self.assertIn(response.headers['Retry-After'],{'2','3','4','5'})
+                self.assertTrue(.2<=elapsed<1.5,(attempt,elapsed))
+        finally:
+            for _ in range(MAX_WORKERS):gateway.slot.release()
+        for _ in range(session_api.MAX_WAITING):self.assertTrue(self.gateway.waiting.acquire(blocking=False))
+        try:
+            for _ in range(MAX_WORKERS):self.gateway.slot.acquire()
+            started=time.monotonic()
+            self.assertEqual(self.post().json(),{'error':'session_capacity_busy'})
+            self.assertLess(time.monotonic()-started,1)
+        finally:
+            for _ in range(MAX_WORKERS):self.gateway.slot.release()
+            for _ in range(session_api.MAX_WAITING):self.gateway.waiting.release()
+        self.service.execute.assert_not_called()
 
     def test_slow_body_is_bounded_before_any_auth_or_db_work(self):
         gateway=SessionGateway(service=self.service,verifier=self.verifier,origin=ORIGIN,enabled=True,upload_seconds=.03)

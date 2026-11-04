@@ -173,6 +173,9 @@ class LauncherTests(unittest.TestCase):
         service = build_service(settings, auth=Mock(), robinhood_rpc='https://rpc.domino.money/' + 'k' * 20 + '/')
         self.assertEqual(service.relay.http._headers, {'x-api-key': PRIVATE[0]})
         self.assertEqual(service.across.http._headers, {'Authorization': 'Bearer ' + PRIVATE[1]})
+        # Each provider's calls a minute: quotes and listings, then the status reads' own share (3 Nov 2026).
+        for http, quotes, status in ((service.relay.http, 30, 15), (service.across.http, 40, 20)):
+            self.assertEqual((http.budget.per_minute, http.status_budget.per_minute), (quotes, status))
         self.assertEqual(service.across.integrator_id, '0xdead')
         self.assertTrue(service.relay.has_key)
         self.assertIs(service.across.rpc_factory(4663), service.across.rpc_factory(4663))

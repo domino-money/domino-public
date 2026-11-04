@@ -8,11 +8,16 @@ headers carry API keys.
 
 Rate limits: a per-process budget keeps the service under the provider's limit
 (Relay documents 50 quotes per minute for a default key; Across publishes no
-numbers and rate-limits unauthenticated traffic strictly). A 429 blocks further
-calls to that provider until its Retry-After passes, so a throttled provider is
-reported at once instead of being hammered. Retries: one, and only for
-idempotent reads (listings, status) after a network or 5xx failure; a quote is
-never retried, since its price moves and the caller can ask again.
+numbers and rate-limits unauthenticated traffic strictly). Since 3 Nov 2026 the
+status reads that track a deposit (`status=True`) have their own share of it,
+and quotes and listings keep the rest: a tracked transfer is asked about every
+10 s or more, and that polling never takes a quote's slot. A 429 blocks further
+calls of its kind (quotes, or status reads) until its Retry-After passes, so a
+throttled provider is reported at once instead of being hammered, and a
+throttled status read never blocks a quote. Retries: one, and only for
+idempotent reads (listings, status) after a network or 5xx failure, on the
+request's own slot; a quote is never retried, since its price moves and the
+caller can ask again.
 """
 from collections import deque
 from decimal import Decimal, InvalidOperation
@@ -95,10 +100,14 @@ def _provider_code(raw):
 
 
 class ProviderHttp:
-    def __init__(self, provider, base_url, *, headers=None, per_minute, opener=_JSON_OPENER,
+    """`per_minute` is every call to the provider; `status_per_minute` of them are the status reads' own (0: they
+    share one budget with everything else, as the operator's fee tool does)."""
+    def __init__(self, provider, base_url, *, headers=None, per_minute, status_per_minute=0, opener=_JSON_OPENER,
                  clock=time.monotonic, sleep=time.sleep, max_bytes=MAX_RESPONSE):
         if provider not in ('relay', 'across'):
             raise ValueError('invalid_provider')
+        if type(per_minute) is not int or type(status_per_minute) is not int or not 0 <= status_per_minute < per_minute:
+            raise ValueError('invalid_rate_budget')
         parsed = urllib.parse.urlsplit(base_url)
         if (parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password
                 or parsed.query or parsed.fragment or parsed.port not in (None, 443)):
@@ -109,19 +118,20 @@ class ProviderHttp:
                 raise ValueError('invalid_provider_header')
         self.provider, self.base_url = provider, base_url.rstrip('/')
         self._headers = headers
-        self.budget = RateBudget(per_minute, clock=clock)
+        self.budget = RateBudget(per_minute - status_per_minute, clock=clock)
+        self.status_budget = RateBudget(status_per_minute, clock=clock) if status_per_minute else self.budget
         self._opener, self._sleep, self._max_bytes = opener, sleep, max_bytes
 
     def _code(self, kind, provider_code=None):
         return ProviderError(f'{self.provider}_{kind}', provider_code)
 
-    def get(self, path, params=None, *, timeout, retry=False):
-        return self._request('GET', path, params, None, timeout, retry)
+    def get(self, path, params=None, *, timeout, retry=False, status=False):
+        return self._request('GET', path, params, None, timeout, retry, self.status_budget if status else self.budget)
 
     def post(self, path, body, *, timeout, retry=False):
-        return self._request('POST', path, None, body, timeout, retry)
+        return self._request('POST', path, None, body, timeout, retry, self.budget)
 
-    def _request(self, method, path, params, body, timeout, retry):
+    def _request(self, method, path, params, body, timeout, retry, budget):
         if not re.fullmatch(r'(?:/(?!\.\.?(?:/|$))[A-Za-z0-9._-]+)+', path):
             raise ValueError('invalid_provider_path')
         url = self.base_url + path
@@ -129,20 +139,25 @@ class ProviderHttp:
             if any(not isinstance(value, str) for value in params.values()):
                 raise ValueError('invalid_provider_query')
             url += '?' + urllib.parse.urlencode(params)
+        # One slot per request: its retry rides on it (3 Nov 2026), so a failing provider costs a status poll one
+        # slot, not two.
+        if not budget.acquire():
+            raise self._code('rate_limited')
         attempts = 2 if retry else 1
         for attempt in range(attempts):
-            if not self.budget.acquire():
-                raise self._code('rate_limited')
             try:
-                return self._once(method, url, body, timeout)
+                return self._once(method, url, body, timeout, budget)
             except ProviderError as error:
                 if attempt + 1 < attempts and str(error) == f'{self.provider}_unavailable':
                     check_read_deadline()
                     self._sleep(0.25)
+                    # Never through a 429 back-off that another call began meanwhile.
+                    if budget.blocked_for():
+                        raise self._code('rate_limited') from None
                     continue
                 raise
 
-    def _once(self, method, url, body, timeout):
+    def _once(self, method, url, body, timeout, budget):
         headers = {'Accept': 'application/json', 'User-Agent': USER_AGENT, **self._headers}
         data = None
         if body is not None:
@@ -165,7 +180,7 @@ class ProviderHttp:
                                 raise self._code('response_too_large')
                             chunks.append(chunk)
                 except urllib.error.HTTPError as error:
-                    raise self._http_error(error) from None
+                    raise self._http_error(error, budget) from None
                 try:
                     return json.loads(b''.join(chunks), parse_float=Decimal, parse_constant=_reject_json_constant,
                                       object_pairs_hook=_strict_json_object)
@@ -180,7 +195,7 @@ class ProviderHttp:
         except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException, ValueError):
             raise self._code('unavailable') from None
 
-    def _http_error(self, error):
+    def _http_error(self, error, budget):
         status = error.code
         retry_after = error.headers.get('Retry-After') if error.headers is not None else None
         try:
@@ -194,7 +209,7 @@ class ProviderHttp:
             pass
         code = _provider_code(raw)
         if status == 429:
-            self.budget.back_off(retry_after_seconds(retry_after))
+            budget.back_off(retry_after_seconds(retry_after))
             return self._code('rate_limited', code)
         if status in (401, 403):
             return self._code('credentials_rejected', code)

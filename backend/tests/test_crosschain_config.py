@@ -24,6 +24,7 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.fee_recipient, '0x' + '2a' * 20)
         self.assertEqual((settings.relay_api_key, settings.across_api_key, settings.across_integrator_id), (None, None, None))
         self.assertEqual((settings.provider_timeout, settings.relay_per_minute, settings.across_per_minute), (10, 20, 10))
+        self.assertEqual((settings.relay_status_per_minute, settings.across_status_per_minute), (6, 3))
         self.assertEqual((settings.rpc_urls, settings.private_values()), ({}, ()))
 
     def test_the_fee_recipient_is_required_and_not_zero(self):
@@ -44,6 +45,20 @@ class SettingsTests(unittest.TestCase):
         self.refuse({**BASE, 'DOMINO_RELAY_API_KEY': 'has space'}, 'relay_api_key')
         self.refuse({**BASE, 'DOMINO_CROSSCHAIN_PROVIDER_TIMEOUT_SECONDS': '60'}, 'crosschain_provider_timeout_seconds')
         self.refuse({**BASE, 'DOMINO_ACROSS_REQUESTS_PER_MINUTE': '0'}, 'across_requests_per_minute')
+
+    def test_the_status_reads_share_is_a_third_of_each_total_unless_set(self):
+        keyed = {**BASE, 'DOMINO_RELAY_API_KEY': PRIVATE[0], 'DOMINO_ACROSS_API_KEY': PRIVATE[1]}
+        settings = load_settings(keyed)
+        self.assertEqual((settings.relay_per_minute, settings.relay_status_per_minute,
+                          settings.across_per_minute, settings.across_status_per_minute), (45, 15, 60, 20))
+        settings = load_settings({**keyed, 'DOMINO_RELAY_REQUESTS_PER_MINUTE': '100', 'DOMINO_ACROSS_REQUESTS_PER_MINUTE': '2'})
+        self.assertEqual((settings.relay_status_per_minute, settings.across_status_per_minute), (33, 0))
+        settings = load_settings({**keyed, 'DOMINO_RELAY_STATUS_PER_MINUTE': '0', 'DOMINO_ACROSS_STATUS_PER_MINUTE': '59'})
+        self.assertEqual((settings.relay_status_per_minute, settings.across_status_per_minute), (0, 59))
+        # At least one call a minute stays the quotes'.
+        self.refuse({**keyed, 'DOMINO_ACROSS_STATUS_PER_MINUTE': '60'}, 'across_status_per_minute')
+        self.refuse({**BASE, 'DOMINO_RELAY_STATUS_PER_MINUTE': '20'}, 'relay_status_per_minute')
+        self.refuse({**BASE, 'DOMINO_RELAY_STATUS_PER_MINUTE': '-1'}, 'relay_status_per_minute')
 
     def test_destination_rpc_urls_are_https_secrets(self):
         url = 'https://base-mainnet.example.invalid/v2/' + 'k' * 24

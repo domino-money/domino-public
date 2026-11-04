@@ -341,6 +341,7 @@ Live since 6 Oct 2026, 15:59:48 UTC ([In production](#in-production-robinhood-fi
 - read `ce77f967` at 13:14:58 UTC (branch `hotfix/read-launch-fixes`): newest chunks through the primary key (#440), a position's vault is the one that took it last (#441), StateView and PositionManager reads with 30M gas (#449);
 - public-data `f2d9a2aa` at 13:13:27 UTC (branch `hotfix/featured-launch-fixes`): #439's Top pools fixes, #440 and #449;
 - read `a0b245aa` and public-data `3f76dc6a` at 14:28:49–14:29:52 UTC (branches `hotfix/access-401-*`): Cloudflare Access's keys refreshed in the background (the gateway), and #401's stale-head set-aside in the reader and the three indexers;
+- read `b5bb5a63` and public-data `ccacac9e` at 16:44:23–16:46:04 UTC (branches `hotfix/p1-45-*`): item 4.5's call-timeout failover (#454) in the reader and the gateway, the three lanes, the three indexers and featured. read also carries the regenerated read-v1, read-v2 and performance-v1 manifests. position-plan `99641321` and crosschain `9813c37c` moved with the read target;
 - rollback: `--rollback <commit>` of `install_read_release.py` or `install_public_data.py`, `daemon-reload`, and the restart the move made (`domino-continuous-reads.target` for read, after restoring its two saved 70 drop-ins; the indexers for public-data).
 
 ## What 3a, #301 and F7 must align with

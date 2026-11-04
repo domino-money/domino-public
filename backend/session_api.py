@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 import ipaddress
 import math
 import os
+import random
 import re
 import secrets
 import hop_log
@@ -33,6 +34,18 @@ MAX_WORKERS=8
 TOTAL_SECONDS=20
 UPLOAD_SECONDS=5
 PREFIX='/internal/session/v1/'
+# 3 Nov 2026 (launch), as authenticated_api: a full listener holds a request up to 2.5 s for a slot,
+# never past its deadline, with at most 4 waiting inside uvicorn's 16 connections. Retry-After by
+# cause, 1 to 60 s (every 429 said 2): a full listener or the store's lock 2 to 5 s at random, a rate
+# limit the seconds until its window admits again.
+SLOT_WAIT_SECONDS,SLOT_POLL_SECONDS,MAX_WAITING=2.5,.05,4
+CAPACITY_RETRY_SECONDS,MAX_RETRY_SECONDS=(2,5),60
+
+
+def retry_after(code,wait=None):
+    if code=='session_capacity_busy':return random.randint(*CAPACITY_RETRY_SECONDS)
+    if type(wait) in (int,float) and math.isfinite(wait):return max(1,min(MAX_RETRY_SECONDS,math.ceil(wait)))
+    return MAX_RETRY_SECONDS
 
 
 def acquire_session_lock(runtime):
@@ -80,9 +93,23 @@ class SessionGateway:
             raise ValueError('invalid_session_gateway_budget')
         self.service,self.verifier,self.origin,self.enabled=service,verifier,origin,enabled
         self.clock,self.total_seconds,self.upload_seconds=clock,total_seconds,upload_seconds
-        self.slot=BoundedSemaphore(MAX_WORKERS)
+        self.slot,self.waiting=BoundedSemaphore(MAX_WORKERS),BoundedSemaphore(MAX_WAITING)
+
+    async def take_slot(self, deadline):
+        if self.slot.acquire(blocking=False):return True
+        wait=min(SLOT_WAIT_SECONDS,deadline-self.clock())
+        if wait<=0 or not self.waiting.acquire(blocking=False):return False
+        try:
+            loop=asyncio.get_running_loop()
+            until=loop.time()+wait
+            while (left:=until-loop.time())>0:
+                await asyncio.sleep(min(SLOT_POLL_SECONDS,left))
+                if self.slot.acquire(blocking=False):return True
+            return False
+        finally:self.waiting.release()
 
     def execute(self, route, body, headers, deadline):
+        # (status, body, wait): wait is the seconds a rate limit named for its Retry-After, else None.
         try:
             remaining=deadline-self.clock()
             if remaining<=0:raise SessionError('request_timeout')
@@ -109,15 +136,15 @@ class SessionGateway:
                     else:
                         try:token(value,required='upstream_invalid_response')
                         except SessionError:raise SessionError('upstream_invalid_response') from None
-                return 200,response
+                return 200,response,None
         except SessionError as error:
-            return error.status,{'error':error.code}
+            return error.status,{'error':error.code},getattr(error,'retry_after',None)
         except DataError:
-            return 504,{'error':'request_timeout'}
+            return 504,{'error':'request_timeout'},None
         except (ValidationError,ValueError,TypeError):
-            return 502,{'error':'upstream_invalid_response'}
+            return 502,{'error':'upstream_invalid_response'},None
         except Exception:
-            return 503,{'error':'upstream_unavailable'}
+            return 503,{'error':'upstream_unavailable'},None
         finally:
             self.slot.release()
 
@@ -159,12 +186,13 @@ def create_session_app(gateway=None):
                              contractVersion=CONTRACT_VERSION,method=request.method,status=status,
                              reason=reason,durationMs=int((gateway.clock()-opened)*1000),
                              **hop_log.close_notes(notes))
-            def result(status,body):
-                record(status,body.get('error') if isinstance(body,dict) else None)
+            def result(status,body,wait=None):
+                reason=body.get('error') if isinstance(body,dict) else None
+                record(status,reason)
                 headers={'Cache-Control':'no-store, no-transform','X-Content-Type-Options':'nosniff',
                          'Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'",
                          'X-Domino-Session-Contract':CONTRACT_VERSION,'X-Domino-Request-Id':request_id}
-                if status==429:headers['Retry-After']='2'
+                if status==429:headers['Retry-After']=str(retry_after(reason or '',wait))
                 return JSONResponse(body,status_code=status,headers=headers)
             def error(code):
                 item=SessionError(code)
@@ -224,7 +252,7 @@ def create_session_app(gateway=None):
             except TimeoutError:return error('request_timeout')
             except (DataError,ValidationError,ValueError,TypeError,SessionError):return error('invalid_request')
             if gateway.clock()>=deadline:return error('request_timeout')
-            if not gateway.slot.acquire(blocking=False):return error('session_capacity_busy')
+            if not await gateway.take_slot(deadline):return error('session_capacity_busy')
             try:
                 future=asyncio.get_running_loop().run_in_executor(executor,gateway.execute,route,body,
                     {'assertion':assertion,'client':client,**credentials},deadline)
@@ -237,9 +265,9 @@ def create_session_app(gateway=None):
                 # shield keeps the actual worker and admission alive on timeout or
                 # disconnect; the HTTP response itself is still bounded by 20s.
                 async with asyncio.timeout(max(0,deadline-gateway.clock())):
-                    status,response=await asyncio.shield(future)
+                    status,response,wait=await asyncio.shield(future)
                 if gateway.clock()>=deadline:return error('request_timeout')
-                return result(status,response)
+                return result(status,response,wait)
             except TimeoutError:return error('request_timeout')
             except Exception:return error('upstream_unavailable')
 

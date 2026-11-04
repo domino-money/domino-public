@@ -249,11 +249,14 @@ def quote_call(chain, path, amount_in):
 
 
 class PoolQuoter:
-    """Quotes at one pinned block, every call of a round in one Multicall3 eth_call."""
+    """Quotes at one pinned block, every call of a round in one Multicall3 eth_call. A round asked again is answered
+    from the first, since the block is pinned (3 Nov 2026: a token split between two pool tokens through the same
+    hubs asked for its first hops twice)."""
 
     def __init__(self, chain, rpc, block):
         self.chain, self.rpc, self.block = chain, rpc, block
         self.rounds = 0
+        self._answered = {}
 
     def quote(self, paths, amount_in):
         """One Quote (or None) per path for the same exact input."""
@@ -264,8 +267,11 @@ class PoolQuoter:
         requests = [(path, int(amount)) for path, amount in requests if int(amount) > 0]
         if not requests:
             return []
-        rows = multicall(self.rpc, self.chain, self.block, [quote_call(self.chain, p, a) for p, a in requests])
-        self.rounds += 1
+        calls = tuple(quote_call(self.chain, p, a) for p, a in requests)
+        rows = self._answered.get(calls)
+        if rows is None:
+            rows = self._answered[calls] = multicall(self.rpc, self.chain, self.block, list(calls))
+            self.rounds += 1
         out = []
         for (path, amount), row in zip(requests, rows):
             if path.dex == DEX_V3:

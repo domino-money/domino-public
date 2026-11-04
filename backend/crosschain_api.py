@@ -54,7 +54,8 @@ def build_service(settings, auth, *, robinhood_rpc=None, chain_endpoints=None):
     pins, destinations = load_pins(), load_destinations()
     relay_headers = {'x-api-key': settings.relay_api_key} if settings.relay_api_key else None
     across_headers = {'Authorization': 'Bearer ' + settings.across_api_key} if settings.across_api_key else None
-    relay = RelayProvider(ProviderHttp('relay', RELAY_API, headers=relay_headers, per_minute=settings.relay_per_minute),
+    relay = RelayProvider(ProviderHttp('relay', RELAY_API, headers=relay_headers, per_minute=settings.relay_per_minute,
+                                       status_per_minute=settings.relay_status_per_minute),
                           pins, fee_recipient=settings.fee_recipient, has_key=bool(settings.relay_api_key),
                           timeout=settings.provider_timeout)
     urls = dict(settings.rpc_urls)
@@ -74,7 +75,8 @@ def build_service(settings, auth, *, robinhood_rpc=None, chain_endpoints=None):
                 return None
         return clients[chain]
 
-    across = AcrossProvider(ProviderHttp('across', ACROSS_API, headers=across_headers, per_minute=settings.across_per_minute),
+    across = AcrossProvider(ProviderHttp('across', ACROSS_API, headers=across_headers, per_minute=settings.across_per_minute,
+                                         status_per_minute=settings.across_status_per_minute),
                             pins, destinations, fee_recipient=settings.fee_recipient,
                             integrator_id=settings.across_integrator_id, timeout=settings.provider_timeout,
                             rpc_factory=rpc_factory)

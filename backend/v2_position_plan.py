@@ -16,7 +16,9 @@ zap's paths. This module builds the plan from the chain at one pinned block:
    delivers ROUTER_ADVANTAGE_BPS more than the best pool route and does not
    touch the position's pool. Swap amounts are sized so the mint uses what the
    zap holds: exactly against the own pool's price after the swap, by a
-   linear model and one confirming quote elsewhere.
+   linear model and one confirming quote elsewhere (the probe's own when the
+   amount is the one it priced). Every read is pinned to the block, so no
+   answer in hand is asked for again.
 3. The fee, exactly as the zap enforces it (v2_fee_rule, F1b): 65 bps of the
    swapped amount in the best-ranked charge currency of the route, ranks read
    from the deployed registry; (0, address(0)) with no legs.
@@ -247,6 +249,7 @@ class _Context:
         self.warnings = []
         self.quoter = PoolQuoter(self.chain, rpc, self.block)
         self.router_status = None
+        self._readiness_reads = {}  # the readiness Multicall3 answers at the block, by their calls
 
     # --------------------------------------------------------------- build
     def build(self):
@@ -545,7 +548,12 @@ class _Context:
 
     def _confirm(self, route, amount_in, own_snapshot=None):
         """The leg for exactly amount_in: re-quoted (a path), simulated (own
-        pool), or the router's own quote when the amount is the one it priced."""
+        pool), or the probe's own quote (a path or the router) when the amount
+        is the one it priced."""
+        if route.kind == 'path' and amount_in == route.probe_in:
+            # The same quoter call at the same block: its answer is in hand (3 Nov 2026). An exit converts what it
+            # holds at the amount it probed, and an even split often lands on its probes.
+            return self._leg_for(route, amount_in, route.probe_out)
         if route.kind == 'path':
             quote, = self.quoter.quote([route.path], amount_in)
             if quote is None:
@@ -1113,7 +1121,13 @@ class _Context:
             manager, token_id = self.position.position.position_manager, self.position.position.token_id
             nft = (manager, token_id, reads.add(manager, function(interface, 'getApproved'), token_id),
                    reads.add(manager, function(interface, 'isApprovedForAll'), self.owner, self.zap))
-        answers = reads.run(self.rpc, self.chain, self.block)
+        # A rebuild from what the simulated call delivered (MAX_CORRECTIONS) asks the same balances and approvals at
+        # the same block: their answer is in hand (3 Nov 2026). On OP Stack the L1 fee rides in the same read and
+        # moves with the call data, so that read is asked again.
+        key = tuple(reads.calls)
+        answers = self._readiness_reads.get(key)
+        if answers is None:
+            answers = self._readiness_reads[key] = reads.run(self.rpc, self.chain, self.block)
         if l1_slots is not None:
             l1_data_fee = l1_fee.op_result(self.chain, self.block, answers, l1_slots, transaction)
         else:

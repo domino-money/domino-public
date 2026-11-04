@@ -111,6 +111,89 @@ class ProviderHttpTests(unittest.TestCase):
         http.get('/chains', timeout=5)
         self.assertEqual(len(opener.requests), 3)
 
+    def test_status_reads_have_their_own_share_of_the_providers_calls(self):
+        # Relay with a key: 45 a minute, 15 of them the status reads' own (3 Nov 2026). Polling a tracked transfer
+        # uses its share up and the quotes still have all of theirs; neither takes the other's, and the provider is
+        # asked 45 times in all.
+        clock = Clock()
+        opener = Opener(*([{'ok': True}] * 47))
+        http = client(opener, clock, per_minute=45, status_per_minute=15)
+        for _ in range(15):
+            http.get('/intents/status/v3', {'requestId': '0x01'}, timeout=5, retry=True, status=True)
+        with self.assertRaisesRegex(ProviderError, 'relay_rate_limited'):
+            http.get('/intents/status/v3', {'requestId': '0x01'}, timeout=5, retry=True, status=True)
+        for _ in range(29):
+            http.post('/quote/v2', {}, timeout=5)
+        http.get('/chains', timeout=5, retry=True)
+        for request in (lambda: http.post('/quote/v2', {}, timeout=5), lambda: http.get('/chains', timeout=5)):
+            with self.assertRaisesRegex(ProviderError, 'relay_rate_limited'):
+                request()
+        self.assertEqual(len(opener.requests), 45)
+        clock.now += 61
+        http.get('/intents/status/v3', {'requestId': '0x01'}, timeout=5, status=True)
+        http.post('/quote/v2', {}, timeout=5)
+        self.assertEqual(len(opener.requests), 47)
+
+    def test_without_a_status_share_every_call_draws_on_one_budget(self):
+        opener = Opener(*([{'ok': True}] * 2))
+        http = client(opener, per_minute=2)
+        self.assertIs(http.status_budget, http.budget)
+        http.get('/intents/status/v3', timeout=5, status=True)
+        http.post('/quote/v2', {}, timeout=5)
+        for request in (lambda: http.get('/intents/status/v3', timeout=5, status=True),
+                        lambda: http.post('/quote/v2', {}, timeout=5)):
+            with self.assertRaisesRegex(ProviderError, 'relay_rate_limited'):
+                request()
+
+    def test_a_retried_status_read_spends_one_slot(self):
+        # One slot left: the read fails once, is asked again on the same slot and answers. No answer is left over
+        # for the refused read: an HTTPError never read is never closed, and its "Implicitly cleaning up" warning
+        # lands in whatever test captures stderr when it is collected (#455's CI, 3-4 Nov 2026).
+        opener = Opener(http_error(503), {'status': 'pending'})
+        http = client(opener, per_minute=2, status_per_minute=1)
+        self.assertEqual(http.get('/intents/status/v3', timeout=5, retry=True, status=True), {'status': 'pending'})
+        self.assertEqual(len(opener.requests), 2)
+        with self.assertRaisesRegex(ProviderError, 'relay_rate_limited'):
+            http.get('/intents/status/v3', timeout=5, retry=True, status=True)
+        self.assertEqual(len(opener.requests), 2)
+        # Listings retry on their request's slot too.
+        self.assertEqual(client(Opener(http_error(503), {'ok': True}), per_minute=1).get('/chains', timeout=5, retry=True),
+                         {'ok': True})
+
+    def test_a_retry_never_goes_through_a_back_off_another_call_began(self):
+        http = None
+
+        def throttled_meanwhile(seconds):
+            http.status_budget.back_off(30)
+        opener = Opener(http_error(503), {'status': 'success'})
+        http = ProviderHttp('relay', 'https://api.relay.link', headers={'x-api-key': KEY}, per_minute=10,
+                            status_per_minute=5, opener=opener, clock=Clock(), sleep=throttled_meanwhile)
+        with self.assertRaisesRegex(ProviderError, 'relay_rate_limited'):
+            http.get('/intents/status/v3', timeout=5, retry=True, status=True)
+        self.assertEqual(len(opener.requests), 1)
+
+    def test_a_429_blocks_only_its_own_kind_of_call(self):
+        clock = Clock()
+        opener = Opener(http_error(429, b'', '30'), {'ok': True}, http_error(429, b'', '20'), {'ok': True})
+        http = client(opener, clock, per_minute=45, status_per_minute=15)
+        with self.assertRaisesRegex(ProviderError, 'relay_rate_limited'):
+            http.get('/intents/status/v3', timeout=5, status=True)
+        self.assertEqual((http.status_budget.blocked_for(), http.budget.blocked_for()), (30, 0))
+        # A throttled status read never blocks a quote.
+        self.assertEqual(http.post('/quote/v2', {}, timeout=5), {'ok': True})
+        with self.assertRaisesRegex(ProviderError, 'relay_rate_limited'):
+            http.get('/intents/status/v3', timeout=5, status=True)
+        self.assertEqual(len(opener.requests), 2)
+        with self.assertRaisesRegex(ProviderError, 'relay_rate_limited'):
+            http.post('/quote/v2', {}, timeout=5)
+        self.assertEqual((http.status_budget.blocked_for(), http.budget.blocked_for()), (30, 20))
+        # Each back-off ends on its own Retry-After.
+        clock.now += 21
+        self.assertEqual(http.post('/quote/v2', {}, timeout=5), {'ok': True})
+        with self.assertRaisesRegex(ProviderError, 'relay_rate_limited'):
+            http.get('/intents/status/v3', timeout=5, status=True)
+        self.assertEqual(len(opener.requests), 4)
+
     def test_reads_retry_once_after_a_failure_but_quotes_never(self):
         opener = Opener(http_error(503), {'ok': True})
         self.assertEqual(client(opener).get('/chains', timeout=5, retry=True), {'ok': True})
@@ -141,6 +224,12 @@ class ProviderHttpTests(unittest.TestCase):
             client(Opener()).get('/../etc', timeout=5)
         with self.assertRaises(ValueError):
             RateBudget(0)
+        # The status share is part of the total and leaves the quotes at least one call.
+        for per_minute, status in ((10, 10), (10, 11), (10, -1), (10, 2.5), (10, None), (10.0, 2)):
+            with self.subTest(per_minute=per_minute, status=status), self.assertRaises(ValueError):
+                ProviderHttp('relay', 'https://api.relay.link', per_minute=per_minute, status_per_minute=status)
+        http = ProviderHttp('relay', 'https://api.relay.link', per_minute=10, status_per_minute=9)
+        self.assertEqual((http.budget.per_minute, http.status_budget.per_minute), (1, 9))
 
     def test_retry_after_is_bounded(self):
         self.assertEqual([retry_after_seconds(v) for v in ('5', ' 7 ', '0', '100000', 'Wed, 21 Oct 2026', None)],

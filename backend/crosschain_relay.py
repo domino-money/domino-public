@@ -376,7 +376,8 @@ class RelayProvider:
         return parse_quote(payload, request, self.pins, fee_bps=self.fee_bps)
 
     def observe(self, request_id):
-        payload = self.http.get('/intents/status/v3', {'requestId': request_id}, timeout=self.read_seconds, retry=True)
+        payload = self.http.get('/intents/status/v3', {'requestId': request_id}, timeout=self.read_seconds, retry=True,
+                                status=True)
         return parse_status(payload)
 
     def record(self, request_id):
@@ -387,7 +388,7 @@ class RelayProvider:
         if settled is not None:
             return settled
         try:
-            payload = self.http.get('/requests/v3', {'id': request_id}, timeout=self.read_seconds, retry=True)
+            payload = self.http.get('/requests/v3', {'id': request_id}, timeout=self.read_seconds, retry=True, status=True)
         except ProviderError as error:
             if str(error) == 'relay_not_found':
                 return None

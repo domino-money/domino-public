@@ -239,15 +239,21 @@ after the previous issuance is resolved. Do not force the user to increase caps.
 
 Body/response limits are 8 KiB/256 KiB. Upload is 5 seconds; shared worker total is 25
 seconds and private listener total 20 seconds, including auth and database work.
-The listener admits two actual workers with no queue, retaining capacity when
-HTTP times out while underlying work finishes. Read-only deposit RPC is a
+The listener admits eight actual workers; up to four more requests wait at most
+2.5 seconds for one, never past their deadline. It retains capacity when HTTP
+times out while underlying work finishes. Read-only deposit RPC is a
 separate allowlist (160 calls/20 seconds, no broadcast methods); receipt scans
 have a 15-second nested deadline. This first configuration uses the selected
 primary RPC without automatic failover or retries.
 
 SIWE's durable keyed IP/account/global preview budgets are shared with this
-service: 20/10/60 attempts per 60 seconds. Failures retain reserved attempts. These
-are development limits, not an SLA. `Retry-After:60` accompanies 429 responses.
+service (the `onboarding` kind of ONBOARDING_API.md): 120/30/1000 attempts per 60
+seconds. Failures after admission retain reserved attempts; a budget's refusal
+reserves none. These are development limits, not an SLA. A 429's `Retry-After` is
+1 to 60 whole seconds: 2 to 5 for `deposit_capacity_busy` and the session's
+capacity codes, the seconds until the window admits again for
+`session_rate_limited`, 60 for the owner caps below, which no wait clears. The
+Worker relays the listener's value since 3 Nov 2026; before, every 429 said 60.
 The private schema separates active admission from retained audit history.
 It permits 16 active and 128 retained operations per owner, 10,000 active and
 50,000 retained globally; existing over-limit histories from an upgrade remain

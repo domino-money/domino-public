@@ -8,6 +8,7 @@ import unittest
 
 sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).resolve().parent)]
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from bridge_http import LocalReaderHTTP
 from bridge_state import ClientBudgets
 from discovery import DataError, POOL_MANAGER
@@ -167,6 +168,63 @@ class ReadV3GatewayTests(IdentityFixtures, unittest.TestCase):
             with self.subTest(route=route, version=version), self.assertRaisesRegex(DataError, '^route_not_available$'):
                 transport.request(route, {}, deadline=time.monotonic() + 1, version=version)
         self.assertEqual(self.public.calls, [])
+
+    def test_a_nul_in_the_search_query_is_a_bad_request_at_every_hop(self):
+        # F-18 (21 Oct 2026 pentest): PostgreSQL refused the NUL, and it came back 503 catalogue_database_unavailable.
+        for query in ('a\x00b', '\x00', 'WETH\x00'):
+            with self.subTest(query=query):
+                for response in (self.post('search', {'query': query}),
+                                 self.reader.post('/v3/read/search', json={'query': query})):
+                    self.assertEqual((response.status_code, response.json()), (422, {'error': 'invalid_request'}))
+        self.assertEqual(self.public.calls, [])
+        self.assertEqual(self.post('search', {'query': 'WETH'}).status_code, 200)
+
+
+class TextInputTests(unittest.TestCase):
+    """Every free-text field the read routes take, and what keeps a NUL in it from a database (F-18, 3 Nov 2026)."""
+
+    @staticmethod
+    def free_text(schema, defs, path):
+        # A string with no pattern, enum or constant: anything a client types.
+        if '$ref' in schema:
+            yield from TextInputTests.free_text(defs[schema['$ref'].split('/')[-1]], defs, path)
+            return
+        for key in ('anyOf', 'oneOf', 'allOf'):
+            for option in schema.get(key, []):
+                yield from TextInputTests.free_text(option, defs, path)
+        if schema.get('type') == 'string' and not {'pattern', 'enum', 'const'} & set(schema):
+            yield path
+        if schema.get('type') == 'array' and 'items' in schema:
+            yield from TextInputTests.free_text(schema['items'], defs, path + '[]')
+        for name, child in schema.get('properties', {}).items():
+            yield from TextInputTests.free_text(child, defs, path + '.' + name)
+
+    def test_each_free_text_input_refuses_a_nul_before_any_database(self):
+        from featured_contract import FeaturedPoolsRequest
+        from pool_apr_contract import REQUEST_MODELS as V2_MODELS
+        from public_data_contract import REQUEST_MODELS as V3_MODELS
+        from read_gateway import REQUEST_MODELS as V1_MODELS
+        from sequence_snapshot import SequenceSnapshotRequest
+        from v2_read_contract import REQUEST_MODELS as V6_MODELS
+        found = set()
+        for version, models in (('v1', V1_MODELS), ('v2', V2_MODELS), ('v3', V3_MODELS),
+                                ('v4', {'sequence-snapshot': SequenceSnapshotRequest}),
+                                ('v5', {'featured-pools': FeaturedPoolsRequest}), ('v6', V6_MODELS)):
+            for route, model in models.items():
+                schema = model.model_json_schema()
+                found |= {(version, path) for path in self.free_text(schema, schema.get('$defs', {}), route)}
+        # A new free-text field joins this list with its own reason a NUL never reaches PostgreSQL.
+        self.assertEqual(found, {('v1', 'wallet-assets.cursor'), ('v3', 'search.query'), ('v6', 'chain-tokens.query')})
+        with self.assertRaises(ValidationError):
+            V3_MODELS['search'].model_validate({'query': 'a\x00b'})
+        with self.assertRaises(ValidationError):
+            V6_MODELS['chain-tokens'].model_validate({'chainId': 8453, 'query': 'a\x00b'})
+        # The wallet cursor is opaque: it is decoded (inventory.CursorCodec, bridge_state.OpaqueCursors), never stored.
+        reader = TestClient(create_app(ReadService(rpc_factory=FakeRpc, clock=lambda: 1010), gate=ReadGate(interval=0),
+                                       read_budget_seconds=15), base_url='http://127.0.0.1:8876')
+        self.addCleanup(reader.close)
+        response = reader.post('/v1/read/wallet-assets', json={'wallet': TOKEN, 'cursor': 'a\x00b'})
+        self.assertEqual((response.status_code, response.json()), (400, {'error': 'invalid_or_expired_cursor'}))
 
 
 if __name__ == '__main__':

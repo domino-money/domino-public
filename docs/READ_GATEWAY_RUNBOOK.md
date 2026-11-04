@@ -109,8 +109,12 @@ unmatched ingress. Never expose the reader, database, health or OpenAPI directly
 ## Bounds and failure recovery
 
 - BFF total budget: 20 seconds; upload: 5 seconds; upstream: at most 15 seconds.
-- Gateway body: 8 KiB; response: 1 MiB. One admitted operation, one start/second,
-  authoritative per-IP 30/minute with burst 5; no pending read queue.
+- Gateway body: 8 KiB; response: 1 MiB. The reader's lanes, 16 provider and 8
+  stored, with no start interval; authoritative per-IP budgets per lane, and at
+  most half of each lane per IP at once. A provider read finding its lane full is
+  refused at once; a stored read waits up to 1 s for a lane, at most 8 waiting
+  (3 Nov 2026). [Budgets](API_READ_BRIDGE.md#budgets-freshness-and-failure-behavior)
+  has the numbers.
 - The gateway uses numeric loopback without DNS or environment proxies. It sends
   the remaining reader budget after TCP connection, reserving 50 ms for return.
 - The reader shares one monotonic budget across nested provider requests. Socket

@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import threading
 from threading import Event
 import time
 from types import SimpleNamespace
@@ -15,6 +16,7 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient
+import authenticated_api
 from discovery import DataError
 from onboarding_api import OnboardingGateway, create_onboarding_app, main, MAX_WORKERS
 from onboarding_models import CONTRACT_VERSION
@@ -233,6 +235,66 @@ class OnboardingApiTests(unittest.TestCase):
         until=time.monotonic()+2
         while client.app.state.pending and time.monotonic()<until:time.sleep(.01)
         self.assertFalse(client.app.state.pending)
+
+    def test_retry_after_names_the_cause_of_each_429(self):
+        # 3 Nov 2026 (launch): every 429 said 60 s. Always a whole number of seconds from 1 to 60.
+        self.assertEqual({authenticated_api.retry_after('onboarding_capacity_busy') for _ in range(400)},{2,3,4,5})
+        for code in ('session_capacity_busy','position_plan_capacity_busy','deposit_capacity_busy','crosschain_capacity_busy'):
+            self.assertIn(authenticated_api.retry_after(code,40),range(2,6),code)
+        for wait,expected in ((12.2,13),(.01,1),(59.5,60),(3600,60),(-3,1),(None,60),(float('nan'),60),
+                              (float('inf'),60),(True,60),('5',60)):
+            self.assertEqual(authenticated_api.retry_after('session_rate_limited',wait),expected,wait)
+        # Neither a provider's limit nor an owner's own caps clear in seconds.
+        for code in ('provider_rate_limited','deposit_owner_capacity_busy','deposit_owner_history_full'):
+            self.assertEqual(authenticated_api.retry_after(code),60,code)
+
+    def test_a_rate_limit_answers_the_seconds_until_its_window_admits_again(self):
+        from session_store import limited
+        self.auth.begin.side_effect=limited(17.2)
+        response=self.post()
+        self.assertEqual((response.status_code,response.json()),(429,{'error':'session_rate_limited'}))
+        self.assertEqual(response.headers['Retry-After'],'18')
+
+    def test_a_full_listener_waits_for_a_slot_before_refusing(self):
+        for _ in range(MAX_WORKERS):self.gateway.slot.acquire()
+        try:
+            threading.Timer(.3,self.gateway.slot.release).start()
+            started=time.monotonic()
+            response=self.post()
+            self.assertEqual(response.status_code,200,response.text)
+            self.assertGreaterEqual(time.monotonic()-started,.25)
+        finally:
+            for _ in range(MAX_WORKERS-1):self.gateway.slot.release()
+
+    def test_the_wait_ends_at_the_request_deadline_and_releases_its_place(self):
+        gateway=OnboardingGateway(service=self.service,verifier=self.verifier,origin=ORIGIN,enabled=True,total_seconds=.3)
+        client=self.new_client(gateway)
+        for _ in range(MAX_WORKERS):gateway.slot.acquire()
+        try:
+            # More refusals than places to wait: each one waited, so each gave its place back.
+            for attempt in range(authenticated_api.MAX_WAITING+1):
+                started=time.monotonic()
+                response=self.post(client=client)
+                elapsed=time.monotonic()-started
+                self.assertEqual((response.status_code,response.json()),(429,{'error':'onboarding_capacity_busy'}))
+                self.assertIn(response.headers['Retry-After'],{'2','3','4','5'})
+                self.assertTrue(.2<=elapsed<1.5,(attempt,elapsed))
+        finally:
+            for _ in range(MAX_WORKERS):gateway.slot.release()
+        self.auth.begin.assert_not_called()
+
+    def test_past_the_waiting_places_a_request_is_refused_at_once(self):
+        for _ in range(MAX_WORKERS):self.gateway.slot.acquire()
+        for _ in range(authenticated_api.MAX_WAITING):self.gateway.waiting.acquire()
+        try:
+            started=time.monotonic()
+            response=self.post()
+            self.assertEqual((response.status_code,response.json()),(429,{'error':'onboarding_capacity_busy'}))
+            self.assertLess(time.monotonic()-started,1)
+        finally:
+            for _ in range(MAX_WORKERS):self.gateway.slot.release()
+            for _ in range(authenticated_api.MAX_WAITING):self.gateway.waiting.release()
+        self.auth.begin.assert_not_called()
 
     def test_slow_upload_is_bounded_before_access_and_auth(self):
         gateway=OnboardingGateway(service=self.service,verifier=self.verifier,origin=ORIGIN,enabled=True,upload_seconds=.03)

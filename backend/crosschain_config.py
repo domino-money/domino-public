@@ -14,6 +14,7 @@ never its value. docs/v2/F5_BRIDGE.md lists every name.
 | Across integrator id (0x + 4 hex) | DOMINO_ACROSS_INTEGRATOR_ID | - | production |
 | Provider timeout, seconds (2-15) | DOMINO_CROSSCHAIN_PROVIDER_TIMEOUT_SECONDS | - | no, 10 |
 | Requests per minute per provider | DOMINO_RELAY_REQUESTS_PER_MINUTE, DOMINO_ACROSS_REQUESTS_PER_MINUTE | - | no |
+| Of those, the status reads' own (0 to the total - 1) | DOMINO_RELAY_STATUS_PER_MINUTE, DOMINO_ACROSS_STATUS_PER_MINUTE | - | no, a third |
 | Destination RPC for the Across fee proof | DOMINO_CROSSCHAIN_RPC_URL_<chainId> | crosschain-rpc-<chainId> | no |
 | V2 chain RPC file (F6), Base's and Arbitrum's fee proofs | DOMINO_V2_CHAIN_RPC_FILE | v2-rpc-<chain>-<name> | no |
 
@@ -105,6 +106,8 @@ class CrosschainSettings:
     provider_timeout: int = 10
     relay_per_minute: int = 20
     across_per_minute: int = 10
+    relay_status_per_minute: int = 6
+    across_status_per_minute: int = 3
     rpc_urls: dict = field(default_factory=dict, repr=False)
     chain_rpc_file: str | None = None
 
@@ -133,10 +136,16 @@ def load_settings(environ=None):
     if chain_rpc_file is not None and not Path(chain_rpc_file).is_absolute():
         raise ConfigError('crosschain_config_chain_rpc_file')
     # Relay documents 50 quotes per minute for a default key; keyless and Across limits are unpublished.
+    relay_total = _integer(environ, 'DOMINO_RELAY_REQUESTS_PER_MINUTE', 45 if relay_key else 20, 1, 600)
+    across_total = _integer(environ, 'DOMINO_ACROSS_REQUESTS_PER_MINUTE', 60 if across_key else 10, 1, 600)
+    # Within each total, the status reads' own share (3 Nov 2026), a third unless set: the app asks about a tracked
+    # transfer every 10 s or more, and that polling never takes a quote's slot. 0 shares one budget, as before.
     return CrosschainSettings(
         fee_recipient=recipient.lower(), relay_api_key=relay_key, across_api_key=across_key,
         across_integrator_id=integrator.lower() if integrator else None,
         provider_timeout=_integer(environ, 'DOMINO_CROSSCHAIN_PROVIDER_TIMEOUT_SECONDS', 10, 2, 15),
-        relay_per_minute=_integer(environ, 'DOMINO_RELAY_REQUESTS_PER_MINUTE', 45 if relay_key else 20, 1, 600),
-        across_per_minute=_integer(environ, 'DOMINO_ACROSS_REQUESTS_PER_MINUTE', 60 if across_key else 10, 1, 600),
+        relay_per_minute=relay_total, across_per_minute=across_total,
+        relay_status_per_minute=_integer(environ, 'DOMINO_RELAY_STATUS_PER_MINUTE', relay_total // 3, 0, relay_total - 1),
+        across_status_per_minute=_integer(environ, 'DOMINO_ACROSS_STATUS_PER_MINUTE', across_total // 3, 0,
+                                          across_total - 1),
         rpc_urls=rpc_urls, chain_rpc_file=chain_rpc_file)

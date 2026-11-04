@@ -1,4 +1,5 @@
 """Per-pool Initialize/Swap/ModifyLiquidity/Donate/protocol event replay and reconciliation."""
+from contextlib import contextmanager
 from dataclasses import asdict
 
 from catalogue import checked_key, pool_lock_key
@@ -40,7 +41,8 @@ class ActivityIndexer:
         self.capacity=capacity
         # One writer per pool by default; `parallel_walks` narrows the global
         # catalogue lock to the pool being walked so different pools can be
-        # indexed at the same time. The same pool is always serialized.
+        # indexed at the same time. The same pool is always serialized, across
+        # both modes: every walker holds the pool's own key (writing()).
         self.parallel_walks=parallel_walks
         self.header_cache=header_cache if header_cache is not None else {}
         self.header_budget=header_budget
@@ -51,13 +53,28 @@ class ActivityIndexer:
     def lock(self,pool_id):
         return pool_lock_key(pool_id) if self.parallel_walks else True
 
+    @contextmanager
+    def writing(self,pool_id):
+        """A writer transaction that holds the pool's own key, whichever lock its mode takes.
+
+        The global key alone never meets a parallel walker's pool key. On 3 Nov 2026 the
+        activity follower (global) and the queue worker (--parallel-walks) walked the same
+        pools at once: 4% of the worker's runs ended in activity_checkpoint_changed, a
+        duplicate chunk or a reorg that was the other writer's commit. Now the second is
+        refused as catalogue_writer_busy before it reads anything."""
+        with self.store.catalogue.connection(writer=True,lock=self.lock(pool_id)) as conn:
+            if not self.parallel_walks and not conn.execute('SELECT pg_try_advisory_xact_lock(%s) AS held',
+                                                              (pool_lock_key(pool_id),)).fetchone()['held']:
+                raise DataError('catalogue_writer_busy')
+            yield conn
+
     def guard(self,conn):
         if self.publication_guard is not None:self.publication_guard(conn)
 
     def register(self,pool_id,initialization_block=None):
         pool_id=bytes32(pool_id)
         self.chain.check_chain()
-        with self.store.catalogue.connection(writer=True,lock=self.lock(pool_id)) as conn:
+        with self.writing(pool_id) as conn:
             existing=conn.execute('SELECT * FROM domino_activity.pools WHERE pool_id=%s',(pool_id,)).fetchone()
             if existing:
                 if initialization_block is not None and initialization_block!=existing['start_block']:
@@ -141,7 +158,7 @@ class ActivityIndexer:
 
     def _step(self,pool_id,*,through,span,attempt):
         self.chain.check_chain()
-        with self.store.catalogue.connection(writer=True,lock=self.lock(pool_id)) as conn:
+        with self.writing(pool_id) as conn:
             row=self.store.pool(conn,pool_id)
             rewind=self.reconcile(conn,row)
             if rewind is not None:

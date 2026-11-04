@@ -16,7 +16,7 @@ from eth_account.messages import encode_defunct
 
 from dev_postgres import ADMIN, PORT, SOCKET
 from discovery import DataError
-from onboarding_auth import OnboardingAuth
+from onboarding_auth import BUDGETS, OnboardingAuth, preview_budget, serving
 from read_deadline import read_deadline
 from session_models import SessionError
 from session_service import SessionService
@@ -59,7 +59,31 @@ class OnboardingAuthUnitTests(unittest.TestCase):
                               ('192.0.2.2', '192.0.2.2')):
             with self.subTest(raw=raw):
                 self.auth.begin(raw, SESSION, CSRF)
-                self.store.begin_preview.assert_called_with(expected, SESSION, CSRF)
+                self.store.begin_preview.assert_called_with(expected, SESSION, CSRF, budget='onboarding')
+
+    def test_each_kind_of_signed_in_work_spends_its_own_budget(self):
+        # 3 Nov 2026 (launch): status polling never spends what a plan or a quote needs.
+        for family, route, budget in (('position-plan', 'plan', 'plan'), ('crosschain', 'quote', 'crosschain-quote'),
+                                      ('crosschain', 'origins', 'crosschain-quote'),
+                                      ('crosschain', 'status', 'crosschain-status'),
+                                      ('execution', 'status', 'execution-performance'),
+                                      ('execution', 'availability', 'execution-performance'),
+                                      ('performance', 'cards', 'execution-performance'),
+                                      ('deposit', 'create', 'onboarding'), ('onboarding', 'swap-preview', 'onboarding')):
+            with self.subTest(family=family, route=route), serving(family, route):
+                self.auth.begin('192.0.2.1', SESSION, CSRF)
+                self.store.begin_preview.assert_called_with('192.0.2.1', SESSION, CSRF, budget=budget)
+            # The worker's next request starts from no family at all.
+            self.assertEqual(preview_budget(), 'onboarding')
+
+    def test_every_budgeted_route_is_a_route_its_family_serves(self):
+        import crosschain_api, crosschain_models, execution_status, performance_api, performance_models
+        import performance_v2_api, performance_v2_models, v2_position_plan_api, v2_position_plan_models
+        served = {(module.PREFIX.split('/')[2], route) for module, models in (
+            (v2_position_plan_api, v2_position_plan_models), (crosschain_api, crosschain_models),
+            (execution_status, execution_status), (performance_api, performance_models),
+            (performance_v2_api, performance_v2_models)) for route in models.REQUEST_MODELS}
+        self.assertLessEqual(set(BUDGETS), served)
 
     def test_invalid_client_never_touches_store_or_checker(self):
         for client in (None, {}, 'example.com', '2001:db8::1%en0', '192.0.2.1:443'):
@@ -70,7 +94,7 @@ class OnboardingAuthUnitTests(unittest.TestCase):
 
     def test_order_rechecks_database_before_provider_context_and_after_result(self):
         order = []
-        self.store.begin_preview.side_effect = lambda *args: (
+        self.store.begin_preview.side_effect = lambda *args, **kwargs: (
             order.append('reserve'), {'address': OWNER, 'chainId': 4663})[-1]
         self.checker.effect = lambda owner: (order.append('account_check'), dict(VALIDATION))[-1]
         self.store.finish_preview.side_effect = lambda *args: order.append('recheck')
@@ -86,7 +110,7 @@ class OnboardingAuthUnitTests(unittest.TestCase):
         self.error('csrf_invalid', lambda: self.auth.begin('192.0.2.1', SESSION, CSRF))
         self.assertEqual(self.checker.calls, [])
         now = [0.0]
-        def reserve(*args):
+        def reserve(*args, **kwargs):
             now[0] = 2.0
             return {'address': OWNER, 'chainId': 4663}
         self.store.begin_preview.side_effect = reserve
@@ -248,8 +272,22 @@ class OnboardingAuthPostgresTests(unittest.TestCase):
         self.error('session_rate_limited', lambda: self.auth.begin(**second))
         self.assertEqual(len(self.checker.calls), PREVIEW_ACCOUNT_LIMIT)
         self.assertEqual(self.bucket('onboarding-account', owner)['count'], PREVIEW_ACCOUNT_LIMIT)
+        # The refused attempt spent neither the site's budget nor its IP's (3 Nov 2026).
         self.assertEqual(self.bucket('onboarding-global', 'all')['count'], PREVIEW_ACCOUNT_LIMIT)
-        self.assertEqual(self.bucket('onboarding-ip', second['client'])['count'], PREVIEW_ACCOUNT_LIMIT // 2 + 1)
+        self.assertEqual(self.bucket('onboarding-ip', second['client'])['count'], PREVIEW_ACCOUNT_LIMIT // 2)
+
+    def test_status_polling_spends_its_own_budget_and_never_a_plans(self):
+        credentials, owner = self.login()
+        with serving('execution', 'status'):
+            for index in range(PREVIEW_ACCOUNT_LIMIT):
+                self.auth.begin(**credentials)
+            self.error('session_rate_limited', lambda: self.auth.begin(**credentials))
+        with serving('position-plan', 'plan'):
+            self.assertEqual(self.auth.begin(**credentials)['owner'], owner)
+        self.assertEqual(self.bucket('execution-performance-account', owner)['count'], PREVIEW_ACCOUNT_LIMIT)
+        self.assertEqual(self.bucket('plan-account', owner)['count'], 1)
+        self.assertEqual(self.bucket('plan-ip', credentials['client'])['count'], 1)
+        self.assertIsNone(self.bucket('onboarding-account', owner))
 
     def test_account_check_failures_consume_budget_without_revoke(self):
         credentials, owner = self.login()
@@ -284,7 +322,7 @@ class OnboardingAuthPostgresTests(unittest.TestCase):
         self.assertEqual(self.bucket('onboarding-ip', '192.0.2.40')['count'], 1)
         self.assertEqual(self.checker.calls, [])
 
-    def test_global_quota_is_shared_across_owners_and_persists_denied_account_reservation(self):
+    def test_global_quota_is_shared_across_owners_and_its_refusal_charges_nothing(self):
         full, rest = divmod(PREVIEW_GLOBAL_LIMIT, PREVIEW_ACCOUNT_LIMIT)
         for number in range(1, full + 2):
             credentials, owner = self.login(number)
@@ -295,8 +333,31 @@ class OnboardingAuthPostgresTests(unittest.TestCase):
         before = len(self.checker.calls)
         self.error('session_rate_limited', lambda: OnboardingAuth(self.peer, self.checker).begin(**credentials))
         self.assertEqual(len(self.checker.calls), before)
-        self.assertEqual(self.bucket('onboarding-account', owner)['count'], 1)
+        # 3 Nov 2026: a refused attempt no longer spends its own account's and IP's budgets.
+        self.assertIsNone(self.bucket('onboarding-account', owner))
+        self.assertIsNone(self.bucket('onboarding-ip', credentials['client']))
         self.assertEqual(self.bucket('onboarding-global', 'all')['count'], PREVIEW_GLOBAL_LIMIT)
+
+    def test_the_site_wide_limit_is_read_before_credentials_and_names_its_window(self):
+        credentials, owner = self.login()
+        self.checker.calls.clear()
+        self.admin.execute("INSERT INTO domino_sessions.rate_limits VALUES (%s,clock_timestamp()+interval '42 seconds',%s)",
+                           (self.store._key('onboarding-global', 'all'), PREVIEW_GLOBAL_LIMIT))
+        # Missing or unknown credentials are refused for the site, not charged to their IP.
+        for change in ({}, {'session': 'x' * 43}, {'session': None}):
+            with self.subTest(change=change), self.assertRaises(SessionError) as raised:
+                self.auth.begin(**{**credentials, **change})
+            self.assertEqual(raised.exception.code, 'session_rate_limited')
+            self.assertTrue(40 < raised.exception.retry_after <= 42, raised.exception.retry_after)
+        self.assertIsNone(self.bucket('onboarding-ip', credentials['client']))
+        self.assertIsNone(self.bucket('onboarding-account', owner))
+        self.assertEqual(self.checker.calls, [])
+        # The longest full window is the one named: the IP's here.
+        self.admin.execute("INSERT INTO domino_sessions.rate_limits VALUES (%s,clock_timestamp()+interval '55 seconds',%s)",
+                           (self.store._key('onboarding-ip', credentials['client']), PREVIEW_IP_LIMIT))
+        with self.assertRaises(SessionError) as raised:
+            self.auth.begin(**credentials)
+        self.assertTrue(53 < raised.exception.retry_after <= 55, raised.exception.retry_after)
 
     def test_concurrent_reservations_cannot_exceed_account_limit(self):
         credentials, owner = self.login()
@@ -325,17 +386,23 @@ class OnboardingAuthPostgresTests(unittest.TestCase):
         self.assertEqual(results.count('session_rate_limited'), 4, results)
         self.assertEqual(self.bucket('onboarding-account', owner)['count'], PREVIEW_ACCOUNT_LIMIT)
         self.assertEqual(self.bucket('onboarding-global', 'all')['count'], PREVIEW_ACCOUNT_LIMIT)
-        self.assertEqual(self.bucket('onboarding-ip', credentials['client'])['count'], PREVIEW_ACCOUNT_LIMIT + 4)
+        self.assertEqual(self.bucket('onboarding-ip', credentials['client'])['count'], PREVIEW_ACCOUNT_LIMIT)
 
-    def test_capacity_saturation_never_reaches_checker_and_keeps_reserved_ip(self):
-        credentials, owner = self.login()
-        initial = self.admin.execute('SELECT count(*) AS n FROM domino_sessions.rate_limits').fetchone()['n']
-        before = len(self.checker.calls)
-        with patch.dict(CAPACITIES, {'rate_limits': initial + 1}):
-            self.error('session_capacity_busy', lambda: self.auth.begin(**credentials))
-        self.assertEqual(len(self.checker.calls), before)
-        self.assertEqual(self.bucket('onboarding-ip', credentials['client'])['count'], 1)
-        self.assertIsNone(self.bucket('onboarding-account', owner))
+    def test_capacity_saturation_never_reaches_checker_and_charges_nothing(self):
+        # Room for one new key refuses before the credentials (the site's and the IP's are both new);
+        # room for two refuses when the account's would be the third: neither keeps the IP's charge.
+        for room in (1, 2):
+            with self.subTest(room=room):
+                self.setUp()
+                credentials, owner = self.login()
+                initial = self.admin.execute('SELECT count(*) AS n FROM domino_sessions.rate_limits').fetchone()['n']
+                before = len(self.checker.calls)
+                with patch.dict(CAPACITIES, {'rate_limits': initial + room}):
+                    self.error('session_capacity_busy', lambda: self.auth.begin(**credentials))
+                self.assertEqual(len(self.checker.calls), before)
+                for kind, value in (('onboarding-ip', credentials['client']), ('onboarding-account', owner),
+                                    ('onboarding-global', 'all')):
+                    self.assertIsNone(self.bucket(kind, value), kind)
 
     def test_fresh_expiry_guard_rolls_back_touch_and_keeps_prior_quota(self):
         credentials, owner = self.login()

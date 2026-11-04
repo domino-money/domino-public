@@ -144,6 +144,11 @@ the shared provider budget is 25 requests per 60 seconds with no waiting queue
 or background refresh. Each provider call has a five-second timeout. These are
 local development limits, not distributed production quotas or a source SLA.
 Provider update time remains unknown even for a newly retrieved response.
+Provider calls go one at a time, but nothing else waits for them (3 Nov 2026): a
+hit, a cooldown or a cache-only read answers at once, and a refresh of an entry
+still within its 300 seconds answers that stale value as `provider_capacity_busy`
+rather than queue behind a call in progress. Only a pool's first reading, which
+has nothing to show without the provider, waits its turn.
 
 This route needs no catalogue, price qualification registry, wallet or Uniswap
 key. It inherits the loopback/browser-origin boundary below. It does not replace
@@ -439,7 +444,7 @@ Subsequent commands resume the stored checkpoint. `--through` defaults to the ob
 
 The scan refuses more than 1,000 positions with `domino_positions_over_bound` (there were 14 on 2 Oct 2026). The public-data installer installs the service and timer; `domino-public-data.target` wants the timer.
 
-`domino-queue-worker.timer` registers and walks the pools reads ask for (`domino_activity.pool_requests`). Each minute one run of at most `--max-seconds` (50) claims requests one at a time: a pool the ledger has not registered first, since registering it lets `pool-activity` serve its live window at once, then pools asked for in the last minute, with every fourth claim kept for the background backlog. No claim starts with less than `--claim-reserve-seconds` (10) left. A claim the run's own deadline still cuts is recorded as `run_deadline_exceeded` (class `run_budget`) and keeps its span; a run that advanced a pool exits 0. A walked span doubles for the pool's next claim, up to `--span-ceiling`; a refused range, or one over the 2,000 events a fee, position or capital chunk replays, shrinks it.
+`domino-queue-worker.timer` registers and walks the pools reads ask for (`domino_activity.pool_requests`). Each minute one run of at most `--max-seconds` (50) claims requests one at a time: a pool the ledger has not registered first, since registering it lets `pool-activity` serve its live window at once, then pools asked for in the last minute, with every fourth claim kept for the background backlog. No claim starts with less than `--claim-reserve-seconds` (10) left. A claim the run's own deadline still cuts is recorded as `run_deadline_exceeded` (class `run_budget`) and keeps its span; a run that advanced a pool exits 0. A pool another walker holds, or commits first, is refused before any read (`catalogue_writer_busy`) or at its commit (`activity_checkpoint_changed`), class `contention`: no failure of the pool or the run, and the request waits 30 s, a following pool's cadence. The follower takes the global writer key and this worker the pool's own (`--parallel-walks`); every walker also holds the pool's own key, so the two never walk one pool at once (3 Nov 2026: before that, 4% of this worker's runs exited 1 on that race). A walked span doubles for the pool's next claim, up to `--span-ceiling`; a refused range, or one over the 2,000 events a fee, position or capital chunk replays, shrinks it.
 
 A requested pool the catalogue does not hold was initialized outside the catalogue's interval, usually before its start block. The worker searches that history for its Initialize, newest window first: `--search-span` blocks a window (1,000,000 in the unit, 5–9 s on the own node), `--search-seconds` (20) a run. The windows proved empty stay in the request's `detail.anchorSearch`, so the next run resumes below them. Only a search with nothing left to scan (`complete`) blocks the request as `initialize_anchor_not_found`; a request blocked by the earlier 400,000-block window is put back once. An id the core does not hold at the head is not searched: it waits as `pool_not_initialized`.
 

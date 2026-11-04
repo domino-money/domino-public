@@ -195,9 +195,13 @@ class PgRequests:
             raise DataError('pool_request_lease_lost')
         if span is not None and (type(span) is not int or not 1<=span<=100000):
             raise DataError('invalid_span_bounds')
-        failure_count=claim.get('consecutive_failures',0)+1 if error else 0
         classification=error_class(error) if error else None
-        delay=(min(900,5*(2**min(failure_count-1,8))) if error else 30 if status=='following' else 1)
+        # Contention is no failure of the pool's: its count and backoff stay, and the next claim
+        # waits a following pool's cadence instead of meeting the other writer again at once.
+        contention=classification=='contention'
+        failure_count=claim.get('consecutive_failures',0)+(0 if contention else 1) if error else 0
+        delay=(30 if contention else min(900,5*(2**min(failure_count-1,8))) if error else
+               30 if status=='following' else 1)
         if error:delay+=secrets.randbelow(max(1,delay//5))
         with self._connection(WRITER_ROLE) as conn:
             self.guard(claim,conn)
@@ -236,6 +240,8 @@ def error_class(reason):
     if reason in ('header_budget_exhausted','indexer_rpc_budget_exhausted','read_deadline_exceeded',
                   'run_deadline_exceeded'):
         return 'run_budget'
+    # Another writer holds the pool, or committed it first: the pool moved, the claim did not fail.
+    if reason in ('catalogue_writer_busy','activity_checkpoint_changed'):return 'contention'
     # A pool the catalogue has not seen may still be seeded, and a pool id not
     # initialized yet may still be, so both stay retryable. An Initialize the
     # search missed after covering all the history no stored source answers

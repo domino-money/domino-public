@@ -915,11 +915,11 @@
     },
     {
       "path": "backend/read_api.py",
-      "sha256": "c4ecd3422f3857f16364308b0858e099730e8f8287b809f66cf45acbb804a99a"
+      "sha256": "f3b2a90e8efb026a5243a24e3dfed93cf6003c476d1a4a45f0172bbf592d3880"
     },
     {
       "path": "backend/read_gateway.py",
-      "sha256": "89fc05ff08fcf9466a32bc0f65cd813022758bec85b2abe871ed4049b59839b3"
+      "sha256": "68f07fdf6867e95144d3625e3fa7a6176b8dcd06817b4a0a6f4640d39b2d0be7"
     },
     {
       "path": "backend/bridge_http.py",

@@ -1084,7 +1084,7 @@
     },
     {
       "path": "backend/read_api.py",
-      "sha256": "c4ecd3422f3857f16364308b0858e099730e8f8287b809f66cf45acbb804a99a"
+      "sha256": "f3b2a90e8efb026a5243a24e3dfed93cf6003c476d1a4a45f0172bbf592d3880"
     },
     {
       "path": "backend/read_service.py",
@@ -1116,11 +1116,11 @@
     },
     {
       "path": "backend/read_gateway.py",
-      "sha256": "89fc05ff08fcf9466a32bc0f65cd813022758bec85b2abe871ed4049b59839b3"
+      "sha256": "68f07fdf6867e95144d3625e3fa7a6176b8dcd06817b4a0a6f4640d39b2d0be7"
     },
     {
       "path": "backend/bridge_state.py",
-      "sha256": "4aa0f085c9805bb193aef2fb9c2fc13a755f6479d70768b90f94b67a2dedcb2e"
+      "sha256": "3670f72b9097a3ece2128e80b3dfe9774bd8b3c6b1c35a133f651cdf9de3003c"
     },
     {
       "path": "backend/bridge_http.py",
@@ -1172,7 +1172,7 @@
     },
     {
       "path": "backend/market_cache.py",
-      "sha256": "a0a25688e1d28e1b01eec0679a176e400b1476e94cec75f6beb9760a0394889e"
+      "sha256": "320a127f0519d50472ab5f8cc267cd95ce412583f1ae94fba8d17a2e0a125de6"
     },
     {
       "path": "backend/market_data.py",

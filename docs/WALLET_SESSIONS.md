@@ -160,18 +160,26 @@ expiry, including a final guard before committing authentication mutations.
 | Challenge | Up to 5 minutes, never beyond preauth expiry |
 | Verification attempts | 5 per challenge, atomically reserved |
 | Session | 12 hours absolute; 30 minutes idle |
-| Bootstrap + challenge issuance | Shared 5/minute/trusted IP |
+| Bootstrap + challenge issuance | Shared 30/minute/trusted IP |
 | Successful ownership proof before EOA RPC | 20/hour/proven wallet |
-| Bootstrap + challenge issuance globally | Shared 100/minute |
-| Verification globally | 200/minute |
-| Verification | 10/minute/trusted IP |
+| Bootstrap + challenge issuance globally | Shared 1000/minute |
+| Verification globally | 1000/minute |
+| Verification | 30/minute/trusted IP |
 | Protected session refresh | 30/minute, burst 5 per IP and verified account |
 
 These limits are abuse controls, not proof that an anonymous requester owns an
 address. IPv4-mapped IPv6 is normalized to IPv4; other IPv6 addresses share a
-/64 abuse scope so interface-address rotation cannot reset limits. Expected
-denials commit attempt/rate reservations. Saturation returns a
-fixed 429 rather than evicting live security records. Each transaction performs
+/64 abuse scope so interface-address rotation cannot reset limits. Since 3 Nov
+2026 a step reads every one of its limits, the global one first, before charging
+any: a refused attempt spends neither its IP's budget nor the global one.
+Expected denials after that (a bad context or challenge) commit the attempt and
+rate reservations. Saturation returns a 429 rather than evicting live security
+records. A 429's `Retry-After` is 1 to 60 whole seconds by cause: 2 to 5 at
+random for `session_capacity_busy` (the listener's 8 workers or the store's
+lock; a request first waits up to 2.5 s for a worker, never past its deadline,
+with at most 4 waiting), and for `session_rate_limited` the seconds until the
+fullest window admits again, at most 60 (the hourly wallet limit may refuse
+again then). Each transaction performs
 indexed cleanup in batches of at most 100 per cleanup pass; table capacities are
 10,000 contexts, 20,000 challenges, 10,000 sessions, 50,000 issuance/rate keys and
 20,000 private-limit keys. Expired/revoked records are unusable immediately even

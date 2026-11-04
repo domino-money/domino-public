@@ -209,5 +209,21 @@ class PoolRequestStoreTests(unittest.TestCase):
         self.assertEqual(row['error_class'],'provider_rate_limit')
         self.assertEqual(row['consecutive_failures'],1)
 
+    def test_contention_neither_counts_as_a_failure_nor_grows_the_backoff(self):
+        """Another writer moving the pool (3 Nov 2026): the request waits a following pool's 30 s, and its
+        failure count stays what the pool's own failures made it."""
+        self.assertEqual(error_class('activity_checkpoint_changed'),'contention')
+        self.requests.enqueue(POOL)
+        self.requests.record(POOL,'indexing',claim=self.requests.claim()[0],error='http_429')
+        with psycopg.connect(**self.catalogue.settings,user=ADMIN) as conn:
+            conn.execute("UPDATE domino_activity.pool_requests SET due_at=clock_timestamp()-interval '1 second'")
+        self.requests.record(POOL,'indexing',claim=self.requests.claim()[0],error='catalogue_writer_busy')
+        row=self.requests.status(POOL)
+        self.assertEqual((row['error_class'],row['consecutive_failures']),('contention',1))
+        with psycopg.connect(**self.catalogue.settings,user=ADMIN) as conn:
+            wait=conn.execute('SELECT extract(epoch FROM due_at-clock_timestamp()) FROM domino_activity.pool_requests '
+                              'WHERE pool_id=%s',(row['pool_id'],)).fetchone()[0]
+        self.assertTrue(28<wait<=36,wait)
+
 
 if __name__=='__main__':unittest.main()

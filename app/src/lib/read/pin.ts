@@ -140,13 +140,20 @@ export const PRODUCER_PIN = {
       // to its next route when a call outlives its own ceiling with the read's time left, and hold that route for
       // 15 s; to every caller it is still read_deadline_exceeded, an existing reason code. No read-v1 route, schema,
       // reason code or version moved.
-      manifestSha256: 'f268fdc8fa616bba556d7175a332bb9fd16291a9cb1d339212d273461dbe9c2d',
+      // Changed on purpose (data) 2026-11-03 (launch round P2): read_api.py, read_gateway.py, bridge_state.py and
+      // market_cache.py: a stored read waits about a second for a lane, one visitor holds at most half of a lane, a
+      // full visitor table makes room, and a market-cache hit never waits for a provider call; no route, schema,
+      // reason code or version moved.
+      manifestSha256: 'a41ebc3ffa0109d1c36f8e5c5f262a1a7dfcf01e20791b0eaeb747e6da3356a9',
     },
     'session-v1': {
       version: '3.0.0-rc.4',
       // Changed on purpose (data) 2026-11-02: session_store.py, which the manifest hashes, raises the sign-in and
       // signed-in rate limits for the public launch; no route, schema, reason code or version moved.
-      manifestSha256: '7e815e11ce6e86fb9af7627a949c88ae677cd2340f4cd19d2943f7560dae18d9',
+      // Changed on purpose (data) 2026-11-03 (launch round P2): session_store.py and session_api.py charge nothing
+      // for a refused attempt, name a 429's Retry-After by cause and wait up to 2.5 s for a free worker; no route,
+      // schema, reason code or version moved.
+      manifestSha256: '0b869804283530c432281301e5d1847f0935d7190eadffa1000dc8e7b4cf48db',
     },
     'onboarding-v1': {
       version: '1.1.0',
@@ -155,14 +162,21 @@ export const PRODUCER_PIN = {
       // or version moved.
       // Changed on purpose (data) 2026-11-02: session_store.py, which the manifest hashes, raises the signed-in rate
       // limits for the public launch; no route, schema, reason code or version moved.
-      manifestSha256: 'ea2e65fd801c02860529248df2ce1a603a1c682c3f03c69e529a69c70ab5527d',
+      // Changed on purpose (data) 2026-11-03 (launch round P2): authenticated_api.py, onboarding_auth.py and
+      // session_store.py charge nothing for a refused attempt, name a 429's Retry-After by cause, wait up to 2.5 s
+      // for a free worker and give each kind of signed-in work its own preview budget; no route, schema, reason code
+      // or version moved.
+      manifestSha256: 'a70eedcab027abcb3f7554446ea1e7b31dc9adebb73adbbb2cc996596d5902fe',
     },
     'deposit-v1': {
       version: '1.1.0-rc.4',
       // Changed on purpose (data) 2026-10-06: authenticated_api.py, which the manifest hashes, lets a family accept a
       // second contract version for a switch window (crosschain-v1's); deposit-v1 keeps its one, and no route, schema or
       // version moved.
-      manifestSha256: '3bd57d043a0534d6af4140dd06750eab515e5a52d134eff65ddf3d1b4b240fb6',
+      // Changed on purpose (data) 2026-11-03 (launch round P2): authenticated_api.py names a 429's Retry-After by
+      // cause, waits up to 2.5 s for a free worker and gives each kind of signed-in work its own preview budget; no
+      // route, schema, reason code or version moved.
+      manifestSha256: '77814f30bfa6c9888fb8e8e9ae884827b88ef8ec54efe171b929f7d5156a4a83',
     },
   },
 } as const
@@ -188,13 +202,19 @@ export const READ_V2_PIN = {
   // Access's keys in the background; no read-v2 route, schema or version moved.
   // Changed on purpose (data) 2026-11-03: discovery.py tells a call that outlived its own ceiling from a read that
   // outlived its deadline, so a failover client asks the next route; no read-v2 route, schema or version moved.
-  manifestSha256: 'a053d0bb3c3f06ccf12d71b7e66571aeb64a32278318c47a11f3b7d8ac06a9c4',
+  // Changed on purpose (data) 2026-11-03 (launch round P2): read_api.py, read_gateway.py, bridge_state.py and
+  // market_cache.py: a stored read waits about a second for a lane, one visitor holds at most half of a lane, a full
+  // visitor table makes room, and a market-cache hit never waits for a provider call; no route, schema, reason code
+  // or version moved.
+  manifestSha256: 'ad03cc4cc6cfa8e6d3936a554a536f8e7399c087ff8888d2e2a7f44347ab570e',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */
 export const READ_V3_PIN = {
   version: '3.0.0-rc.1',
-  manifestSha256: '33e1ab5984c9a0fdf3033ff36885453bfb375c37acf413ccfcdc82ca39e604bd',
+  // Changed on purpose (data) 2026-11-03 (launch round P2): public_data_contract.py refuses a NUL in a search query
+  // as invalid_request; no route, schema, reason code or version moved.
+  manifestSha256: '62174cfbbccaed6e5c5ad76e9482ecc6acd467554f5cd873f2e729f94df2e058',
 } as const
 
 /**
@@ -257,7 +277,10 @@ export const PERFORMANCE_V2_PIN = {
   // Changed on purpose (data) 2026-10-06: authenticated_api.py, which the manifest hashes, lets a family accept a second
   // contract version for a switch window (crosschain-v1's); performance-v2 keeps its one, and no route, schema or
   // version moved.
-  manifestSha256: '8fe57c6938fe66fd18db5149b9ae362088fe8ef7f8f265bee39e1d6673fe73ee',
+  // Changed on purpose (data) 2026-11-03 (launch round P2): authenticated_api.py and onboarding_auth.py name a 429's
+  // Retry-After by cause, wait up to 2.5 s for a free worker and give each kind of signed-in work its own preview
+  // budget; no route, schema, reason code or version moved.
+  manifestSha256: 'ab4f5781240fda5d9d134e09339cc6d829848a09305be93d04f7ad4077a49a22',
 } as const
 
 /** Sanitized private execution status, finalized receipts and short-lived service availability. */
@@ -266,5 +289,8 @@ export const EXECUTION_V1_PIN = {
   // Changed on purpose (data) 2026-10-06: authenticated_api.py, which the manifest hashes, lets a family accept a second
   // contract version for a switch window (crosschain-v1's); execution-v1 keeps its one, and no route, schema or version
   // moved.
-  manifestSha256: '19ea0a9de9b74e8f71ef717843c8bc0f9087c70bac109658fb1d48aa6e7d43d0',
+  // Changed on purpose (data) 2026-11-03 (launch round P2): authenticated_api.py and onboarding_auth.py name a 429's
+  // Retry-After by cause, wait up to 2.5 s for a free worker and give each kind of signed-in work its own preview
+  // budget; no route, schema, reason code or version moved.
+  manifestSha256: 'a0fb2f38fa3fb6e8b446f441701e98af23e1d3237f89fadf040ea550becba6d3',
 } as const

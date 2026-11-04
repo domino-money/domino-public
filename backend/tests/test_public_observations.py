@@ -175,6 +175,15 @@ class PublicObservationStorageTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             validate_response('search',{**response,'tokens':response['tokens']*2})
 
+    def test_a_nul_in_a_search_is_a_bad_request_never_a_database_failure(self):
+        # F-18 (21 Oct 2026 pentest): PostgreSQL text cannot hold U+0000; it came back catalogue_database_unavailable.
+        self.publish_token()
+        symbol=self.token['asset']['symbol']
+        for query in (symbol+'\x00','\x00',symbol[:1]+'\x00'+symbol[1:]):
+            with self.subTest(query=query),self.assertRaisesRegex(DataError,'^invalid_request$'):
+                self.reader.search(query)
+        self.assertEqual([row['entity_id'] for row in self.reader.search(symbol)],[TOKEN])
+
     def test_shared_provider_budget_applies_across_repository_instances(self):
         self.assertTrue(all(self.writer.reserve_provider() for _ in range(PROVIDER_CALLS_PER_MINUTE-1)))
         self.assertTrue(self.reader.reserve_provider())
