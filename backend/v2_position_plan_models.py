@@ -20,6 +20,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StrictBool, StrictInt, model_validator
 
 from onboarding_models import ERROR_STATUS_BY_CODE as AUTH_ERRORS
+from v2_chains import default_registry
 from v2_liquidity import MAX_TICK, MIN_TICK
 
 CONTRACT_VERSION = '1.0.0-rc.2'
@@ -106,7 +107,8 @@ Raw64 = Annotated[str, Field(pattern=r'^(0|[1-9][0-9]{0,19})$', max_length=20,
 Data = Annotated[str, Field(pattern=r'^0x(?:[0-9a-f]{2})*$', max_length=2 + 2 * 65536)]
 Tick = Annotated[StrictInt, Field(ge=MIN_TICK, le=MAX_TICK)]
 Dex = Literal[3, 4]
-Chain = Literal[4663, 8453, 42161]
+# The enabled V2 chains (api-contracts/v2/chains), ascending, as the package's CONSTANTS.chains are.
+Chain = Literal[tuple(profile.chainId for profile in default_registry().chains)]
 Uint8 = Annotated[StrictInt, Field(ge=0, le=255)]
 Uint16 = Annotated[StrictInt, Field(ge=0, le=65535)]
 Uint24 = Annotated[StrictInt, Field(ge=0, le=2**24 - 1)]

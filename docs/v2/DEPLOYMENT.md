@@ -12,6 +12,7 @@ validates as a loopback Anvil (`deploy-anvil.mjs`, `deploy-local.mjs`, `deploy-f
 | `scripts/v2/deploy-local.mjs` | Local deployments: an Anvil fork of a real chain, or an offline Anvil |
 | `scripts/v2/deploy-fork.mjs` | The three-chain fork rehearsal |
 | `scripts/v2/deploy-testnet.mjs` | The frozen release on Base Sepolia or Arbitrum Sepolia, through this tool's own functions ([TESTNET_DEPLOYMENT.md](TESTNET_DEPLOYMENT.md); not a release input) |
+| `scripts/v2/qualify-chain.mjs` | Day 1 on a new chain: whether V2 can deploy and run there, and a draft profile of verified values, read-only ([QUALIFY_CHAIN.md](QUALIFY_CHAIN.md); not a release input) |
 | `scripts/v2/deploy-schema.mjs`, `deploy-manifest.schema.json` | The manifest: JSON Schema plus semantic rules |
 
 ## Components and addresses

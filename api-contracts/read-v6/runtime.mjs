@@ -68,17 +68,25 @@ function tokenPrice(p) {
 
 // A token's price or its reason, as its chain's profile allows (v2_read_contract.priced): a Domino chain's, or for
 // chain-balances a balance chain's (Ethereum, OP Mainnet), each with its own stable, wrapped token, feed and heartbeat.
+// A profile without a feed (`nativePool`) prices the native currency and its wrapped token at that pool alone, and no
+// price there carries a feed's round.
 function priced(chainId, token, price, reason) {
   if ((price === null) === (reason === null)) return false;
   if (price === null) return true;
   const profile = CONSTANTS.priceProfiles[chainId];
   const eth = [ZERO, profile.wrapped];
+  const native = profile.nativePool ?? null;
   if ((price.source === 'chain_stable') !== (token === profile.stable) ||
-    (price.source === 'chainlink_eth_usd') !== eth.includes(token)) return false;
+    (price.source === 'chainlink_eth_usd') !== (native === null && eth.includes(token))) return false;
+  if (native !== null && eth.includes(token)) {
+    return price.source === 'pool' && price.ethUsd === null && price.pool !== null &&
+      Object.keys(native).every((k) => price.pool[k] === native[k]);
+  }
   if (price.pool !== null) {
     const pair = [price.pool.currency0, price.pool.currency1];
     const partner = pair[0] === token ? pair[1] : pair[1] === token ? pair[0] : null;
-    if (![profile.stable, ...eth].includes(partner) || (price.ethUsd !== null) !== eth.includes(partner)) return false;
+    if (![profile.stable, ...eth].includes(partner) ||
+      (price.ethUsd !== null) !== (native === null && eth.includes(partner))) return false;
   }
   return !(price.ethUsd !== null && (price.ethUsd.feed !== profile.feed ||
     price.snapshot.timestamp - price.ethUsd.updatedAt > profile.heartbeatSeconds));

@@ -611,5 +611,44 @@ class PublicTestAccountTests(unittest.TestCase):
             public_test_account.cache_clear()
 
 
+class HypeChainTests(unittest.TestCase):
+    """A chain whose native currency is HYPE and Chainlink does not serve (v2_hype_chain's synthetic profile): its
+    deployment is admitted against its profile as any chain's is, and named only where that profile is enabled."""
+
+    @classmethod
+    def setUpClass(cls):
+        import v2_hype_chain as hype
+        directory = tempfile.mkdtemp(prefix='domino-hype-')
+        try:
+            cls.chain = hype.registry(directory).chain(hype.CHAIN_ID)
+        finally:
+            shutil.rmtree(directory)
+        cls.hype = hype
+
+    def test_a_deployment_there_is_admitted_against_its_profile(self):
+        document = manifest_document(self.chain)
+        self.assertEqual(document['chain'], {'name': self.chain.name, 'chainId': self.hype.CHAIN_ID,
+                                             'nativeCurrency': 'HYPE'})
+        deployment = checked_deployment(document, self.chain)
+        self.assertEqual(deployment.manifest['dependencies']['wrappedNative'], self.hype.WHYPE.lower())
+        self.assertEqual(deployment.manifest['chargeCurrencies'],
+                         [{'token': c.address, 'rank': c.rank} for c in self.chain.chargeCurrencies])
+        with self.assertRaisesRegex(DataError, '^v2_deployment_chain_mismatch$'):
+            checked_deployment(mutated(lambda d: d['chain'].update(nativeCurrency='ETH'), document), self.chain)
+        # On another profile, it names a chain that one's registry does not enable.
+        with self.assertRaisesRegex(DataError, '^v2_deployment_invalid$'):
+            checked_deployment(document, BASE)
+
+    def test_alone_a_manifest_names_an_enabled_profiles_chain(self):
+        import v2_manifest
+        document = manifest_document(self.chain)
+        with self.assertRaisesRegex(DataError, '^v2_deployment_invalid$'):
+            checked_manifest(document)  # this repository enables no such chain yet
+        checked_manifest(document, enabled=(self.hype.CHAIN_ID,))
+        with patch.object(v2_manifest, 'enabled_chain_ids', return_value=(4663, 8453, 42161, self.hype.CHAIN_ID)):
+            checked_manifest(document)
+        self.assertEqual(v2_manifest.enabled_chain_ids(), tuple(p.chainId for p in v2_manifest.default_registry().chains))
+
+
 if __name__ == '__main__':
     unittest.main()

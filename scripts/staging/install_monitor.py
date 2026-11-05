@@ -41,6 +41,7 @@ import install_v2_automation as automation
 import prepare_disabled as install
 import upgrade_financial as financial
 from install_read_release import read_installed
+import v2_release_chains
 
 require = install.require
 COMPONENT = 'monitor'
@@ -136,8 +137,7 @@ def plan(files, commit, digest):
     require(re.fullmatch('[0-9a-f]{40}', commit) is not None, 'invalid_commit')
     require(ENTRY in files and LOCKFILE in files, 'entry_script_missing')
     require(REGISTRY_ABI in files and all(f'api-contracts/v2/chains/{chain}.json' in files
-                                          for chain in ('robinhood-4663', 'base-8453', 'arbitrum-42161')),
-            'v2_exports_missing')
+                                          for chain in v2_release_chains.CHAINS), 'v2_exports_missing')
     require(plan_listener.sha(files[LOCKFILE][0]) == plan_listener.sha(plan_listener.running_lock()),
             'dependency_lock_changed')
     root = RELEASES / commit / COMPONENT

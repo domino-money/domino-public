@@ -87,7 +87,9 @@ LIVE_LIMITATIONS = ('usd_from_qualified_sources_only', 'token_metadata_untrusted
 # Qualified USD (0xdecimal's item 4; the owner's decision #22 of 2 Oct 2026 and answers of 5 Oct 2026,
 # v2_chain_reads): the chain's stable at US$ 1, ETH and WETH at the profile's Chainlink ETH/USD within its heartbeat
 # (and past the sequencer's grace where it has an uptime feed), any other token at its deepest pool against those
-# holding at least PRICE_FLOOR_USD within PRICE_BAND_PERCENT of its price.
+# holding at least PRICE_FLOOR_USD within PRICE_BAND_PERCENT of its price. On a chain Chainlink does not serve, the
+# native currency and its wrapped token are priced as `pool` at the pool its profile names instead, under the same
+# floor, and no price there carries a feed's round (a PRICE_PROFILES entry with `nativePool`; none yet).
 PRICE_SOURCES = ('chain_stable', 'chainlink_eth_usd', 'pool')
 PRICE_REASONS = ('no_qualified_price_source', 'price_read_failed', 'pricing_limit_reached', 'decimals_unknown',
                  'eth_usd_stale', 'sequencer_down', 'no_pool', 'pool_depth_below_floor', 'pool_depth_unmeasurable',
@@ -96,7 +98,9 @@ MARKET_REASONS = ('no_qualified_reference', 'price_read_failed', 'eth_usd_stale'
                   'pool_depth_unmeasurable')
 PRICE_FLOOR_USD, PRICE_BAND_PERCENT = '10000.000000', 10
 # Each chain's stable, wrapped native token and Chainlink ETH/USD feed, from its profile (api-contracts/v2/chains, and
-# api-contracts/v2/balance-chains for Ethereum and OP Mainnet; test_read_v6_contract holds them equal).
+# api-contracts/v2/balance-chains for Ethereum and OP Mainnet; test_read_v6_contract holds them equal to
+# v2_chain_reads.price_profile). A chain without Chainlink would have `feed` and `heartbeatSeconds` null and
+# `nativePool`, the PoolRef its profile prices the native currency at; no chain read-v6 serves has one.
 PRICE_PROFILES = {
     1: {'stable': '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', 'wrapped': '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
         'feed': '0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419', 'heartbeatSeconds': 3600},
@@ -238,6 +242,8 @@ class EthUsd(WireModel):
     updatedAt: UInt
 
 
+# On a chain without Chainlink (a PRICE_PROFILES entry with `nativePool`), its native currency's price is a `pool`
+# price too, at the pool its profile names (priced). The docstring below is the schemas' description: unchanged.
 class TokenPrice(WireModel):
     """A qualified USD price: the chain's stable, the feed's ETH, or a pool's spot against one of them at the block read,
     with the pool and its depth within the band."""
@@ -267,20 +273,28 @@ class TokenPrice(WireModel):
 
 def priced(chain_id, token, price, reason):
     """A token's price or the reason it has none, as its chain's profile allows: the stable from itself, ETH and WETH
-    from the feed within its heartbeat, any other token from a pool against one of those."""
+    from the feed within its heartbeat, any other token from a pool against one of those. Where the profile has no
+    feed (`nativePool`), the native currency and its wrapped token come from that pool alone, and nothing carries a
+    feed's round."""
     if (price is None) == (reason is None):
         raise ValueError('price_reason')
     if price is None:
         return
     profile = PRICE_PROFILES[chain_id]
-    eth = (ZERO, profile['wrapped'])
+    eth, native_pool = (ZERO, profile['wrapped']), profile.get('nativePool')
     if (price.source == 'chain_stable') != (token == profile['stable']) or (price.source == 'chainlink_eth_usd') != (
-            token in eth):
+            native_pool is None and token in eth):
         raise ValueError('price_source')
+    if native_pool is not None and token in eth:
+        if price.source != 'pool' or price.ethUsd is not None or price.pool is None or (
+                price.pool.model_dump() != native_pool):
+            raise ValueError('price_pool')
+        return
     if price.pool is not None:
         pair = (price.pool.currency0, price.pool.currency1)
         partner = pair[1] if pair[0] == token else pair[0] if pair[1] == token else None
-        if partner not in (profile['stable'], *eth) or (price.ethUsd is not None) != (partner in eth):
+        if partner not in (profile['stable'], *eth) or (price.ethUsd is not None) != (native_pool is None and
+                                                                                       partner in eth):
             raise ValueError('price_pool')
     if price.ethUsd is not None and (price.ethUsd.feed != profile['feed'] or
                                      price.snapshot.timestamp - price.ethUsd.updatedAt > profile['heartbeatSeconds']):

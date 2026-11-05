@@ -42,7 +42,11 @@ export const READ_V6_PIN = {
   // Changed on purpose (data) 2026-11-04 (launch round P3): 1.2.0-rc.1 adds position-fees (Base's and Arbitrum's Fees
   // earned, migration 054) in a version window answered only to a request that names it; the package's own version,
   // routes and fixtures stay 1.1.0-rc.1.
-  manifestSha256: 'a79c38aa80f9ec4909ee8c9435b1cc3ca1b7a0b085912355047ecc83f269569b',
+  // Changed on purpose (data) 2026-11-05: a chain without Chainlink (Elysium's HYPE, not yet in read-v6) prices its
+  // native currency at the pool its profile names: runtime.mjs's price rule (a PRICE_PROFILES entry with `nativePool`,
+  // which no chain of this version has), the README and the consumer test, and the producer's v2_chain_reads.py and
+  // v2_read_contract.py; same version, same schemas, CONSTANTS and fixtures.
+  manifestSha256: '64597e63fc85362aea8379855b9190618b867e839d1a9de276c4460e6599fdd1',
 } as const
 
 export const POSITION_PLAN_V1_PIN = {
@@ -63,5 +67,8 @@ export const POSITION_PLAN_V1_PIN = {
   // Changed on purpose (data) 2026-11-04 (launch round P3): authenticated_api.py, onboarding_auth.py and
   // v2_position_plan_api.py: a session belongs to the origin it signed in on, and a listed preview origin rides its
   // own Access identity; no route, schema, reason code or version moved.
-  manifestSha256: '0567c8cde23f095fa71b8df30c3d7f7976c47ef439af11e203a69dc5761be838',
+  // Changed on purpose (data) 2026-11-05: v2_position_plan_models.py takes its chain ids from the enabled chain
+  // profiles, as the package's CONSTANTS.chains already did (still 4663, 8453, 42161); no route, schema, reason code or
+  // version moved.
+  manifestSha256: 'c93feedc0608c5e1b2758034b0e7101c39ba6aa82f633c616ead551b72fa4b6a',
 } as const

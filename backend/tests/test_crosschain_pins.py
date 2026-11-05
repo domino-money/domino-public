@@ -69,5 +69,40 @@ class PinTests(unittest.TestCase):
                     self.assertIn(value, names)
 
 
+class DestinationTests(unittest.TestCase):
+    """S2's destinations are the enabled profiles that name both providers. A profile naming none (v2_hype_chain's
+    synthetic HYPE chain, as Elysium's may) is a chain S2 does not serve: no destination, never an import failure."""
+
+    def destinations(self, change=None):
+        from pathlib import Path
+        import tempfile
+        import v2_hype_chain as hype
+        with tempfile.TemporaryDirectory() as directory:
+            for name, document in hype.docs(change=change).items():
+                (Path(directory) / name).write_text(json.dumps(document))
+            return load_destinations(directory)
+
+    def test_a_chain_without_providers_is_no_destination(self):
+        self.assertEqual(set(self.destinations()), ENABLED)
+
+    def test_a_chain_that_names_providers_names_both_at_the_app_fee(self):
+        from discovery import DataError
+        both = self.destinations(lambda d: d['bridge'].update(providers=['relay', 'across']))
+        self.assertEqual(set(both), ENABLED | {99801})
+        self.assertEqual({token: row['symbol'] for token, row in both[99801]['tokens'].items() if row['rank'] == 2},
+                         {ZERO: 'HYPE', both[99801]['wrappedNative']: 'WHYPE'})
+        for case, change in (('relay alone', lambda d: d['bridge'].update(providers=['relay'])),
+                             ('across alone', lambda d: d['bridge'].update(providers=['across'])),
+                             ('another fee, S2 off', lambda d: d['bridge'].update(appFeeBps=30)),
+                             ('no bridge', lambda d: d.pop('bridge'))):
+            with self.subTest(case=case), self.assertRaisesRegex(DataError, '^invalid_chain_profile$'):
+                self.destinations(change)
+
+    def test_the_fee_proofs_read_the_destinations_robinhood_through_its_own_node(self):
+        from crosschain_across import HOSTED_DESTINATIONS
+        from crosschain_config import DESTINATION_RPC_CHAINS
+        self.assertEqual((DESTINATION_RPC_CHAINS, HOSTED_DESTINATIONS), ((4663, 8453, 42161), (8453, 42161)))
+
+
 if __name__ == '__main__':
     unittest.main()

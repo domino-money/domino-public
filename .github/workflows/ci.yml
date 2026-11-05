@@ -424,7 +424,7 @@ jobs:
       - name: Verify V2 unsigned CREATE3 deployment tooling offline
         env:
           DOMINO_V2_COMPILE_CACHE: ${{ runner.temp }}/v2-deploy-compile
-        run: node --test scripts/v2/deploy.test.mjs scripts/v2/deploy-preflight.test.mjs scripts/v2/deploy-schema.test.mjs scripts/v2/deploy-fork.test.mjs scripts/v2/deploy-testnet.test.mjs scripts/v2/release-manifest.test.mjs
+        run: node --test scripts/v2/deploy.test.mjs scripts/v2/deploy-preflight.test.mjs scripts/v2/deploy-schema.test.mjs scripts/v2/deploy-fork.test.mjs scripts/v2/deploy-testnet.test.mjs scripts/v2/release-manifest.test.mjs scripts/v2/qualify-chain.test.mjs
       # The V2 freeze (docs/v2/FREEZE.md): the reviewed release manifest must be
       # what this compile produces, and the Foundry artifacts the backend EVM
       # tests deploy (built above) the same contracts. The compile is the

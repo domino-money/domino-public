@@ -11,7 +11,9 @@ billed calls a selection.
    its answers prove nothing. A v4 pool's key is the one the profile's PositionManager recorded for its id
    (poolKeys(bytes25)), hashed again to that id (discovery.PoolKey.checked): a pool nobody ever minted a position
    in through that PositionManager stays unresolved. Each pool's slot0 and active liquidity; and the profile's
-   Chainlink ETH/USD with its sequencer's uptime feed (v2_chain_reads.eth_usd).
+   Chainlink ETH/USD with its sequencer's uptime feed (v2_chain_reads.eth_usd) or, on a chain Chainlink does not
+   serve (gasPrice.poolNativeUsd), the native currency's USD from the pool its profile names, qualified as the chain
+   reads qualify it (its own walk within the band, before this round).
 2. The code of each non-reference token (eth_getCode), and of an EIP-1167 clone's target: what TA-1 to TA-5 read,
    judged as featured_evidence judges it on Robinhood.
 3. Those tokens' decimals and symbols, and the bitmap words the reference depth walks, one round; then the
@@ -31,7 +33,7 @@ from featured_evidence import MINIMAL_PROXY, delegates
 import featured_pools as rules
 from v2_abi import function
 from v2_chain_reads import CHAINLINK_ROUND, V3_TICK, V3_TICK_BITMAP, V4_TICK_BITMAP, V4_TICK_LIQUIDITY, aggregate, \
-    eth_usd, word
+    eth_usd, survey, word
 from v2_quotes import Abi
 from v2_rpc import batched_reads
 from v2_uniswap import DYNAMIC_FEE, MAX_TICK, MIN_TICK, v3_pool_address
@@ -56,7 +58,8 @@ HEX = re.compile(r'0x(?:[0-9a-fA-F]{2})*')
 @dataclass
 class ChainEvidence:
     """What one read found at `block`: each pool's identity and state (or why not), each token's evidence, each
-    pool's raw reference depth (or why not), and the profile's ETH/USD (usd, wire entry, reason)."""
+    pool's raw reference depth (or why not), and the native currency's USD (usd, the feed's wire entry or None,
+    reason): the profile's ETH/USD, or its native pool's."""
     block: Block
     eth: tuple
     pools: dict = field(default_factory=dict)  # pool id -> {'pool', 'liquidity'} or {'error'}
@@ -198,16 +201,26 @@ def band_ticks(pool, zero_for_one, band):
 
 def pools(chain, rpc, pool_ids, *, now):
     """Round 1 alone, at the head: each pool's identity and state, and the profile's ETH/USD, in one Multicall3
-    call per 512 reads (the health check's read)."""
+    call per 512 reads (the health check's read). On a chain without Chainlink, the native currency's USD is its
+    profile pool's, read first and measured as the chain reads measure it (v2_chain_reads.survey of no other pool: up
+    to three more calls)."""
     block = head(rpc, now=now)
     first = []
-    feed = chain.gasPrice.chainlinkEthUsd
-    feed_at = add(first, feed.proxy, CHAINLINK_ROUND.calldata())
-    uptime_at = (None if feed.sequencerUptimeFeed is None
-                 else add(first, feed.sequencerUptimeFeed, CHAINLINK_ROUND.calldata()))
+    feed = chain.native_feed
+    if feed is None:
+        native = survey(chain, rpc, block, (), {})
+        if native.native[1] == 'price_read_failed':
+            raise DataError('chain_read_failed')  # a depth round that did not come judges nothing
+        eth = native.eth
+    else:
+        feed_at = add(first, feed.proxy, CHAINLINK_ROUND.calldata())
+        uptime_at = (None if feed.sequencerUptimeFeed is None
+                     else add(first, feed.sequencerUptimeFeed, CHAINLINK_ROUND.calldata()))
     slots = {pool_id: _identity_calls(chain, pool_id, first) for pool_id in sorted(set(pool_ids))}
     rows = aggregate(rpc, chain, block, first)
-    found = ChainEvidence(block, eth_usd(chain, rows[feed_at], None if uptime_at is None else rows[uptime_at], block))
+    if feed is not None:
+        eth = eth_usd(chain, rows[feed_at], None if uptime_at is None else rows[uptime_at], block)
+    found = ChainEvidence(block, eth)
     for pool_id, at in slots.items():
         found.pools[pool_id] = (_v3_pool(chain, pool_id, rows, at) if len(pool_id) == 42
                                 else _v4_pool(pool_id, rows, at))

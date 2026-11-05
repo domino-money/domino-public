@@ -23,7 +23,7 @@ import sys
 from discovery import DataError
 from crosschain_across import ERC20_TRANSFER, MAX_LOG_BLOCKS, ChainRpc, EndpointsChainRpc, destination_endpoints
 from crosschain_common import address, bytes32, chain_id, load_pins, raw
-from crosschain_config import ConfigError, load_settings
+from crosschain_config import DESTINATION_RPC_CHAINS, ConfigError, load_settings
 from crosschain_http import ProviderHttp
 from crosschain_relay import RELAY_API, RelayProvider, parse_request_record
 
@@ -103,7 +103,7 @@ def main(argv=None, out=sys.stdout):
     requests.add_argument('--until', type=int)
     requests.add_argument('--pages', type=int, default=10)
     fees = commands.add_parser('across-fees')
-    fees.add_argument('--chain', type=int, required=True, choices=(4663, 8453, 42161))
+    fees.add_argument('--chain', type=int, required=True, choices=DESTINATION_RPC_CHAINS)
     fees.add_argument('--from-block', type=int, required=True)
     fees.add_argument('--to-block', type=int)
     args = parser.parse_args(argv)

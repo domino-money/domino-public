@@ -146,8 +146,8 @@ Consent takes two explicit acts: the vault's `setExitModule` and the mandate sig
 - Universal Router 2.1.2 (2.0 and 2.1.1 are sunset on 21 Oct 2026; never use them);
 - Permit2, Multicall3, CreateX and the wrapped native token;
 - the charge currencies in rank order: the stable first, then ETH/WETH;
-- the Chainlink ETH/USD feed used to price gas;
-- the bridge providers and the 35 bps app fee.
+- the Chainlink ETH/USD feed used to price gas or, on a chain Chainlink does not serve (Elysium's HYPE; 5 Nov 2026), `gasPrice.poolNativeUsd` instead: the one pool that prices the native currency against the rank-1 stable, a v3 pool by its CREATE2 address (`{dex: 3, pool, currency, stable, fee}`, the fee one of the profile's tiers, the pool in the verification record) or a hookless v4 pool by its id (`{dex: 4, poolId, currency, stable, fee, tickSpacing}`, `currency` the wrapped token or the zero address), qualified as any pool price is (`backend/v2_chain_reads.py`);
+- the bridge providers and the 35 bps app fee; no provider means S2 does not serve the chain (`backend/crosschain_common.py`).
 
 `backend/tests/test_v2_chain_profiles.py` checks the checksums, the ranks the fee rule depends on, and that every contract V2 uses is present and verified.
 

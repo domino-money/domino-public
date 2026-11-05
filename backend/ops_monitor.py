@@ -368,6 +368,17 @@ def eth(wei):
     return f'{wei / WEI:.4f}'
 
 
+@functools.lru_cache(maxsize=None)
+def native_symbol(chain_key):
+    """What a chain's balances and gas are in: its profile's native currency (ETH; HYPE on Elysium). ETH for a name
+    the registry cannot answer for, as every text said before."""
+    from v2_chains import default_registry
+    try:
+        return default_registry().chain(chain_key).nativeSymbol
+    except (OSError, ValueError):
+        return 'ETH'
+
+
 def check_units(cycle, config, state, states):
     section = {}
     for unit in config.services:
@@ -463,7 +474,8 @@ def check_gas(cycle, chain, mine, capped):
     if not journal_reported(mine):
         return  # check_attention warns that the passes do not report it
     spent, cap = int(mine['gas']['spentWei']), int(mine['gas']['dailyCapWei'])
-    text = f'automação {chain}: gás de 24 h {eth(spent)} de {eth(cap)} ETH ({spent * 100 // cap}% do teto diário)'
+    text = (f'automação {chain}: gás de 24 h {eth(spent)} de {eth(cap)} {native_symbol(chain)} '
+            f'({spent * 100 // cap}% do teto diário)')
     if spent >= cap or capped:
         cycle.check(f'automation:{chain}:gas', CRIT, text + (': a automação não envia mais' if spent >= cap else
                                                              ': um envio foi recusado no teto'))
@@ -828,7 +840,7 @@ def check_chains(cycle, config, state, chains, *, node=node_head, catalog=None):
                 wei = int(rpc.request('eth_getBalance', [item['address'], hex(number)]), 16)
                 key = f'balance:{item["label"]}:{chain_key}'
                 level = CRIT if wei < item['critWei'] else WARN if wei < item['warnWei'] else OK
-                cycle.check(key, level, f'saldo {item["label"]} em {chain_key}: {eth(wei)} ETH'
+                cycle.check(key, level, f'saldo {item["label"]} em {chain_key}: {eth(wei)} {native_symbol(chain_key)}'
                                         + ('' if level == OK else f' (mínimo {eth(item["critWei"])})'))
                 samples = state['samples'].setdefault(key, [])
                 hour = int(cycle.now // HOUR)
@@ -990,7 +1002,8 @@ def summary_text(cycle, state):
         lines.append(f'Automação {chain}: {entry["passes24h"]} passes, {entry["errors24h"]} erros, '
                      f'{submitted} envios, {confirmed} confirmados, {entry.get("vaults") or 0} vaults')
     for balance in cycle.sections.get('balances', []):
-        lines.append(f'Saldo {balance["label"]} {balance["chain"]}: {eth(int(balance["wei"]))} ETH '
+        lines.append(f'Saldo {balance["label"]} {balance["chain"]}: {eth(int(balance["wei"]))} '
+                     f'{native_symbol(balance["chain"])} '
                      f'(saiu {eth(int(balance["spent24h"]))} em 24 h)')
     for unit, entry in cycle.sections.get('listeners', {}).items():
         day = entry['requests24h']

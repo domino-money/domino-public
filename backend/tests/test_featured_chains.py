@@ -667,4 +667,63 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(fake.methods(),['eth_getBlockByNumber','eth_call'])
 
 
+class NoChainlinkEvidenceTests(unittest.TestCase):
+    """A chain Chainlink does not serve (v2_hype_chain's synthetic HYPE chain): the evidence's native USD is the spot
+    of the pool its profile names, qualified as the chain reads qualify it (v2_chain_reads.survey), read before round
+    1; a read whose depth round fails is no read."""
+
+    @classmethod
+    def setUpClass(cls):
+        import shutil
+        import tempfile
+        import v2_hype_chain as hype
+        directory=tempfile.mkdtemp(prefix='domino-hype-')
+        try:
+            cls.registry=hype.registry(directory)
+        finally:
+            shutil.rmtree(directory)
+        cls.hype,cls.chain=hype,cls.registry.chain(hype.CHAIN_ID)
+        cls.whype,cls.usdc=hype.WHYPE.lower(),hype.USDC.lower()
+
+    def fake(self,liquidity=None):
+        """The chain's provider, no feed to script; with `liquidity`, HYPE at US$ 40 in its WHYPE/USDC 0.05% pool."""
+        with unittest.mock.patch(f'{__name__}.feed'):
+            fake=Chain(self.chain)
+        if liquidity is not None:
+            low,high=sorted((self.whype,self.usdc))
+            price=Fraction(40*10**6,10**18) if low==self.whype else Fraction(10**18,40*10**6)
+            self.pool=v3_pool(fake,low,high,500,10,sqrt=sqrt_of(price),liquidity=liquidity)
+        return fake
+
+    def rpc(self,fake,budget=64):
+        entry=lambda name,url:{'name':name,'host':f'{name}.example.invalid','url':url,'archive':True,'maxBatchItems':100,
+                               'maxLogBlocks':10000,'requestsPerSecond':None}
+        document={'schemaVersion':1,'kind':'domino-v2-chain-rpc',
+                  'chains':{self.chain.key:{'endpoints':[entry('chainstack',CHAINSTACK),entry('alchemy',ALCHEMY)]}}}
+        endpoints=configured_endpoints(self.chain,chain_rpc_config=checked_chain_rpc_config(document,self.registry,environ={}),
+                                       send=fake)
+        return ChainReadRpc(endpoints,batch_reads=True,max_requests=budget)
+
+    def test_the_native_price_is_the_profile_pool_s_spot_once_it_qualifies(self):
+        fake=self.fake(10**18)
+        found=evidence.pools(self.chain,self.rpc(fake),[self.pool],now=NOW)
+        usd,entry,reason=found.eth
+        self.assertTrue(Fraction(39)<usd<Fraction(41),usd)
+        self.assertEqual((entry,reason),(None,None))  # no feed's round on this chain
+        self.assertEqual(found.pools[self.pool]['pool']['currencies'],sorted((self.whype,self.usdc)))
+        # The head, the pool's state, its words within the band, then round 1; no Chainlink round anywhere.
+        self.assertEqual(fake.methods(),['eth_getBlockByNumber','eth_call','eth_call','eth_call'])
+        self.assertNotIn(sel('latestRoundData()'),{call[1] for call in fake.subcalls})
+
+    def test_a_shallow_or_absent_pool_prices_nothing_and_a_failed_depth_round_fails_the_read(self):
+        for case,fake in (('shallow',self.fake(10**12)),('absent',self.fake())):
+            with self.subTest(case=case):
+                self.assertEqual(evidence.pools(self.chain,self.rpc(fake),[],now=NOW).eth,
+                                 (None,None,'no_qualified_price_source'))
+        # The head and the pool's state fit the budget; its words do not come, so nothing is judged.
+        fake=self.fake(10**18)
+        with self.assertRaisesRegex(DataError,'^chain_read_failed$'):
+            evidence.pools(self.chain,self.rpc(fake,budget=2),[],now=NOW)
+
+
 if __name__=='__main__':unittest.main()

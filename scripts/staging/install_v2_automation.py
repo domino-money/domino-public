@@ -45,6 +45,7 @@ import install_position_plan as plan_listener
 import prepare_disabled as install
 import upgrade_financial as financial
 from install_read_release import read_installed
+import v2_release_chains
 
 require = install.require
 COMPONENT = 'v2-automation'
@@ -155,8 +156,8 @@ def plan(files, commit, digest):
     require(ENTRY in files and LOCKFILE in files, 'entry_script_missing')
     manifests = sorted(name for name in files if MANIFEST.match(name))
     require(manifests, 'manifest_missing')
-    require(all(f'api-contracts/v2/chains/{chain}.json' in files
-                for chain in ('robinhood-4663', 'base-8453', 'arbitrum-42161')), 'chain_profiles_missing')
+    require(all(f'api-contracts/v2/chains/{chain}.json' in files for chain in v2_release_chains.CHAINS),
+            'chain_profiles_missing')
     require(plan_listener.sha(files[LOCKFILE][0]) == plan_listener.sha(plan_listener.running_lock()),
             'dependency_lock_changed')
     root = RELEASES / commit / COMPONENT

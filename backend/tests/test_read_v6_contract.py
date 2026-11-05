@@ -649,5 +649,66 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(body['positions'][0]['points'][-1]['block'], point['block_number'] + 299)
         self.assertEqual(body['positions'][0]['events'][-1]['block']['number'], settlement['block_number'] + 199)
 
+class FeedlessPriceProfileTests(unittest.TestCase):
+    """A chain without Chainlink: a PRICE_PROFILES entry with `nativePool` (no chain of this version has one). The
+    producer's rule, which runtime.mjs keeps on the same answers (consumer.test.mjs): the native currency and its
+    wrapped token at that pool alone, and no price there with a feed's round."""
+
+    ZERO = '0x' + '0' * 40
+
+    def feedless(self, name, profile):
+        body = copy.deepcopy(json.loads((PACKAGE / f'fixtures/valid/{name}.json').read_text()))
+        for entry in next(chain for chain in body['chains'] if chain['chainId'] == 8453)['balances']:
+            if entry['price'] is None:
+                continue
+            if entry['address'] in (self.ZERO, profile['wrapped']):
+                entry['price'] = {**entry['price'], 'source': 'pool', 'ethUsd': None,
+                                  'pool': dict(profile['nativePool']), 'depthUsd': '25000.000000'}
+            else:
+                entry['price']['ethUsd'] = None
+        return body
+
+    def test_the_native_currency_at_its_profile_pool_and_no_round_anywhere(self):
+        from unittest import mock
+        import v2_read_contract as contract
+        base = contract.PRICE_PROFILES[8453]
+        pool = {'dex': 3, 'currency0': base['wrapped'], 'currency1': base['stable'], 'fee': 500, 'tickSpacing': 10,
+                'hooks': self.ZERO}
+        profile = {'stable': base['stable'], 'wrapped': base['wrapped'], 'feed': None, 'heartbeatSeconds': None,
+                   'nativePool': pool}
+        original = {name: json.loads((PACKAGE / f'fixtures/valid/{name}.json').read_text())
+                    for name in ('chain-balances', 'chain-balances-asked')}
+        with mock.patch.dict(contract.PRICE_PROFILES, {8453: profile}):
+            for name in original:
+                with self.subTest(name=name):
+                    validate_v6_response('chain-balances', self.feedless(name, profile))
+                    with self.assertRaises(ValueError):
+                        validate_v6_response('chain-balances', original[name])  # ETH at a feed this chain lacks
+            for case, change in (
+                    ('another pool', lambda body: body['chains'][1]['balances'][1]['price']['pool'].update(fee=3000)),
+                    ('the native price with a round', lambda body: body['chains'][1]['balances'][1]['price'].update(
+                        ethUsd=original['chain-balances']['chains'][1]['balances'][1]['price']['ethUsd']))):
+                body = self.feedless('chain-balances', profile)
+                change(body)
+                with self.subTest(case=case), self.assertRaises(ValueError):
+                    validate_v6_response('chain-balances', body)
+            body = self.feedless('chain-balances-asked', profile)
+            body['chains'][0]['balances'][0]['price']['ethUsd'] = (
+                original['chain-balances-asked']['chains'][0]['balances'][0]['price']['ethUsd'])
+            with self.assertRaises(ValueError):
+                validate_v6_response('chain-balances', body)  # a price against WETH with a round
+        for name, body in original.items():
+            validate_v6_response('chain-balances', body)
+
+    def test_every_price_profile_is_its_chains_by_one_rule(self):
+        # The rule a chain without Chainlink takes too (v2_chain_reads.price_profile), so its entry is its profile's.
+        import v2_chain_reads
+        from v2_chains import default_balance_registry
+        from v2_read_contract import PRICE_PROFILES
+        chains = (*default_registry().chains, *default_balance_registry().chains)
+        self.assertEqual(PRICE_PROFILES, {chain.chainId: v2_chain_reads.price_profile(chain)
+                                          for chain in chains if chain.chainId in BALANCE_CHAIN_IDS})
+
+
 if __name__ == '__main__':
     unittest.main()

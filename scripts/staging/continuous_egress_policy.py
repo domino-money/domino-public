@@ -24,6 +24,7 @@ import egress_policy as shared
 import install_crosschain as crosschain
 import install_position_plan as position_plan
 import upgrade_financial as financial
+import v2_release_chains
 
 TABLE = 'domino_continuous_reads'
 TARGET = 'domino-continuous-reads.target'
@@ -71,10 +72,10 @@ ANALYTICS_HOSTS = frozenset(('api.geckoterminal.com', 'api.dexscreener.com'))
 UNISWAP_HOSTS = frozenset(('trade-api.gateway.uniswap.org', 'liquidity.api.uniswap.org'))
 # The V2 chains other than Robinhood (backend/v2_rpc.py): the hosted providers
 # of the private V2 chain RPC file, in its order (Chainstack, Alchemy), and the
-# chains' public endpoints as its last resort. Each URL's key is a sealed
-# credential (v2-rpc-<chain>-<name>); only the host is pinned here.
-CHAIN_HOSTS = frozenset(('base-mainnet.core.chainstack.com', 'base-mainnet.g.alchemy.com', 'mainnet.base.org',
-                         'arbitrum-mainnet.core.chainstack.com', 'arb-mainnet.g.alchemy.com', 'arb1.arbitrum.io'))
+# chains' public endpoints as its last resort, each chain's as v2-chains.json
+# lists them (v2_release_chains). Each URL's key is a sealed credential
+# (v2-rpc-<chain>-<name>); only the host is pinned here.
+CHAIN_HOSTS = frozenset(host for hosts in v2_release_chains.CHAINS.values() for host in hosts)
 # The balance chains (backend/v2_chains.py BalanceChainProfile: Ethereum and OP Mainnet), which the reader's read-v6
 # chain-balances alone reads, when a request names them: the hosted providers of its balance chain RPC file
 # (Chainstack, Alchemy) and OP Mainnet's public endpoint as a last resort. Each URL's key is a sealed credential

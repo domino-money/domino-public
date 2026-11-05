@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "kind": "domino-v2-release-chains",
+  "chains": {
+    "robinhood-4663": {
+      "egressHosts": []
+    },
+    "base-8453": {
+      "egressHosts": [
+        "base-mainnet.core.chainstack.com",
+        "base-mainnet.g.alchemy.com",
+        "mainnet.base.org"
+      ]
+    },
+    "arbitrum-42161": {
+      "egressHosts": [
+        "arbitrum-mainnet.core.chainstack.com",
+        "arb-mainnet.g.alchemy.com",
+        "arb1.arbitrum.io"
+      ]
+    }
+  }
+}

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { test } from 'node:test';
 import * as runtime from './runtime.mjs';
+import { CONSTANTS } from './schema-data.mjs';
 
 const read = (path) => JSON.parse(readFileSync(new URL(path, import.meta.url)));
 const list = (directory) => readdirSync(new URL(directory, import.meta.url)).filter((name) => name.endsWith('.json'));
@@ -179,4 +180,43 @@ test('position-fees asks for 1 to 8 positions of one chain, each once, and answe
   const priced = clone(body);
   priced.positions[0].now.earnedUsd = '1.00';
   assert(!runtime.validateResponse('position-fees', priced));
+});
+
+test('a chain without Chainlink prices its native currency at its profile\'s pool alone, and nothing there at a feed', () => {
+  // No chain this version serves is one (CONSTANTS.priceProfiles has no nativePool): Base's profile stands in for the
+  // test, feedless, its native currency at its WETH/USDC 0.05% pool (v2_read_contract.priced, the same rule).
+  const zero = '0x' + '0'.repeat(40);
+  const base = CONSTANTS.priceProfiles['8453'];
+  const nativePool = { dex: 3, currency0: base.wrapped, currency1: base.stable, fee: 500, tickSpacing: 10, hooks: zero };
+  const atPool = (price) => ({ ...price, source: 'pool', ethUsd: null, pool: { ...nativePool }, depthUsd: '25000.000000' });
+  const feedless = (name) => {
+    const body = clone(read(`./fixtures/valid/${name}.json`));
+    for (const entry of body.chains.find((chain) => chain.chainId === 8453).balances) {
+      if (entry.price === null) continue;
+      if ([zero, base.wrapped].includes(entry.address)) entry.price = atPool(entry.price);
+      else entry.price.ethUsd = null;
+    }
+    return body;
+  };
+  const native = (body) => body.chains.find((chain) => chain.chainId === 8453).balances.find((b) => b.address === zero);
+  try {
+    CONSTANTS.priceProfiles['8453'] = { stable: base.stable, wrapped: base.wrapped, feed: null, heartbeatSeconds: null,
+      nativePool };
+    for (const name of ['chain-balances', 'chain-balances-asked']) {
+      assert(runtime.validateResponse('chain-balances', feedless(name)), name);
+      assert(!runtime.validateResponse('chain-balances', read(`./fixtures/valid/${name}.json`)), `${name}: a feed's round`);
+    }
+    const elsewhere = feedless('chain-balances');
+    native(elsewhere).price.pool.fee = 3000;
+    assert(!runtime.validateResponse('chain-balances', elsewhere), 'another pool');
+    const fed = feedless('chain-balances');
+    native(fed).price.ethUsd = read('./fixtures/valid/chain-balances.json').chains[1].balances[1].price.ethUsd;
+    assert(!runtime.validateResponse('chain-balances', fed), 'the native price with a round');
+    const token = feedless('chain-balances-asked');
+    token.chains[0].balances[0].price.ethUsd = read('./fixtures/valid/chain-balances-asked.json').chains[0].balances[0].price.ethUsd;
+    assert(!runtime.validateResponse('chain-balances', token), 'a price against WETH with a round');
+  } finally {
+    CONSTANTS.priceProfiles['8453'] = base;
+  }
+  assert(runtime.validateResponse('chain-balances', read('./fixtures/valid/chain-balances.json')));
 });

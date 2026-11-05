@@ -377,5 +377,198 @@ class BalanceRefusalTests(unittest.TestCase):
                 load_balance_registry(directory, domino=load_registry())
 
 
+class NoChainlinkChainTests(unittest.TestCase):
+    """A chain whose native currency is HYPE and Chainlink does not serve (Elysium, v2_hype_chain's synthetic profile):
+    its profile names the pool that prices HYPE instead, and the profiles before it mean what they meant."""
+
+    def load(self, change=None, *, v4=False, tolerant=False):
+        import v2_hype_chain as hype
+        with tempfile.TemporaryDirectory() as directory:
+            for name, document in hype.docs(v4=v4, change=change).items():
+                (Path(directory) / name).write_text(json.dumps(document, indent=2))
+            return load_registry(directory, tolerant=tolerant)
+
+    def refused(self, change, rule, *, v4=False):
+        with self.assertRaisesRegex(DataError, '^v2_chain_profile_invalid$') as caught:
+            self.load(change, v4=v4)
+        self.assertIn(rule, str(caught.exception.__cause__))
+
+    def test_a_hype_chain_without_chainlink_loads_beside_the_live_ones(self):
+        import v2_hype_chain as hype
+        for v4 in (False, True):
+            with self.subTest(v4=v4):
+                registry = self.load(v4=v4)
+                self.assertEqual([p.chainId for p in registry.chains], [4663, 8453, 42161, hype.CHAIN_ID])
+                self.assertEqual((registry.pending, registry.refused), ((), ()))
+                chain = registry.chain(hype.KEY)
+                self.assertEqual((chain.nativeSymbol, chain.wrappedNative.symbol, chain.native_feed), ('HYPE', 'WHYPE', None))
+                self.assertEqual([(c.symbol, c.rank) for c in chain.chargeCurrencies], [('USDC', 1), ('HYPE', 2), ('WHYPE', 2)])
+                pool = chain.native_pool
+                self.assertEqual((pool.dex, pool.stable, pool.fee), (DEX_V4 if v4 else DEX_V3, hype.USDC.lower(), 500))
+                self.assertEqual(pool.currency, ZERO if v4 else hype.WHYPE.lower())
+                self.assertEqual(chain.bridge.providers, ())  # S2 off on this chain
+
+    def test_the_fixture_keeps_the_pending_files_testnet_facts(self):
+        import v2_hype_chain as hype
+        pending = documents().get('elysium.json')
+        if pending is None:
+            self.skipTest('Elysium is no longer pending')
+        self.assertEqual({key: pending['testnet'][key] for key in hype.TESTNET if key != 'stack'},
+                         {key: value for key, value in hype.TESTNET.items() if key != 'stack'})
+        self.assertEqual(pending['stack'], hype.TESTNET['stack'])
+
+    def test_the_live_profiles_keep_their_chainlink_feed(self):
+        for profile in map(load_registry().chain, ('robinhood-4663', 'base-8453', 'arbitrum-42161')):
+            with self.subTest(chain=profile.key):
+                self.assertIs(profile.native_feed, profile.gasPrice.chainlinkEthUsd)
+                self.assertIsNone(profile.native_pool)
+
+    def test_one_native_source_never_both_and_never_none(self):
+        arbitrum = documents()['arbitrum-42161.json']
+        self.refused(lambda d: d['gasPrice'].update(chainlinkEthUsd=arbitrum['gasPrice']['chainlinkEthUsd']),
+                     'Extra inputs are not permitted')
+        self.refused(lambda d: d.update(gasPrice={}), 'Field required')
+        self.refused(lambda d: d['gasPrice']['poolNativeUsd'].update(dex=2), 'dex')
+
+    def test_the_pool_pairs_the_native_currency_with_the_stable_at_rank_one(self):
+        import v2_hype_chain as hype
+        other = hype.synthetic('another token')
+
+        def stable_is(address):
+            return lambda d: d['gasPrice']['poolNativeUsd'].update(stable=address)
+
+        self.refused(stable_is(hype.WHYPE), 'native_usd_pool_invalid')
+        factory, init = (documents()['arbitrum-42161.json']['uniswap']['v3'][key] for key in ('factory', 'poolInitCodeHash'))
+
+        def paired(currency, stable):
+            # The factory's own pool of the pair, verified: only the rule on the pair itself can refuse it.
+            def change(d):
+                pool = hype.v3_pool(factory, init, currency, stable, 500)
+                d['chargeCurrencies'].append({'rank': 3, 'symbol': 'OTHER', 'address': other, 'decimals': 6})
+                records = d['verification']['contracts']
+                records.append({'name': 'OTHER', 'address': other, 'codehash': '0x' + '11' * 32})
+                if all(record['address'] != pool for record in records):
+                    records.append({'name': 'pool', 'address': pool, 'codehash': '0x' + '12' * 32})
+                d['gasPrice']['poolNativeUsd'].update(currency=currency, stable=stable, pool=pool)
+            return change
+
+        self.assertEqual(self.load(paired(hype.WHYPE, hype.USDC)).chain(hype.CHAIN_ID).native_pool.stable,
+                         hype.USDC.lower())
+        self.refused(paired(hype.WHYPE, other), 'native_usd_pool_invalid')  # a listed token, not the rank-1 stable
+        self.refused(paired(other, hype.USDC), 'native_usd_pool_invalid')  # not the native currency's pool
+
+        def wrapped_first(d):
+            # WHYPE alone at rank 1 (no native charge currency), and a pool of it with itself where its address says.
+            pool = hype.v3_pool(factory, init, hype.WHYPE, hype.WHYPE, 500)
+            d['chargeCurrencies'] = [{'rank': 1, 'symbol': 'WHYPE', 'address': hype.WHYPE, 'decimals': 18},
+                                     {'rank': 2, 'symbol': 'USDC', 'address': hype.USDC, 'decimals': 6}]
+            d['verification']['contracts'].append({'name': 'pool', 'address': pool, 'codehash': '0x' + '13' * 32})
+            d['gasPrice']['poolNativeUsd'].update(stable=hype.WHYPE, pool=pool)
+        self.refused(wrapped_first, 'native_usd_pool_invalid')
+        # v3 has no native currency: its pool holds the wrapped token. v4's may hold either.
+        self.refused(lambda d: d['gasPrice']['poolNativeUsd'].update(currency=ZERO), 'zero_contract_address')
+
+    def test_a_v3_pool_is_its_factorys_at_a_tier_the_profile_lists_and_verified(self):
+        import v2_hype_chain as hype
+        factory, init = (documents()['arbitrum-42161.json']['uniswap']['v3'][key] for key in ('factory', 'poolInitCodeHash'))
+
+        def at(fee):
+            def change(d):
+                pool = hype.v3_pool(factory, init, hype.WHYPE, hype.USDC, fee)
+                d['gasPrice']['poolNativeUsd'].update(fee=fee, pool=pool)
+                d['verification']['contracts'].append({'name': f'fee {fee}', 'address': pool,
+                                                       'codehash': '0x' + '22' * 32})
+            return change
+
+        self.assertEqual(self.load(at(3000)).chain(hype.CHAIN_ID).native_pool.fee, 3000)
+        self.refused(at(2500), 'native_usd_pool_invalid')  # at its CREATE2 address, but no tier of the profile
+        self.refused(lambda d: d['gasPrice']['poolNativeUsd'].update(fee=3000), 'native_usd_pool_invalid')
+        self.refused(lambda d: d['gasPrice']['poolNativeUsd'].update(pool=hype.synthetic('elsewhere')),
+                     'native_usd_pool_invalid')
+
+        def unverified(d):
+            pool = d['gasPrice']['poolNativeUsd']['pool']
+            d['verification']['contracts'] = [c for c in d['verification']['contracts'] if c['address'] != pool]
+        self.refused(unverified, 'consumed_contract_not_verified')
+
+    def test_a_v4_pool_is_the_hookless_key_its_id_hashes(self):
+        import v2_hype_chain as hype
+
+        def keyed(currency, fee, spacing, pool_id=None):
+            return lambda d: d['gasPrice']['poolNativeUsd'].update(
+                currency=currency, fee=fee, tickSpacing=spacing,
+                poolId=pool_id or hype.v4_pool_id(currency, hype.USDC, fee, spacing))
+
+        self.assertEqual(self.load(keyed(hype.WHYPE, 3000, 60), v4=True).chain(hype.CHAIN_ID).native_pool.currency,
+                         hype.WHYPE.lower())
+        self.refused(keyed(ZERO, 3000, 60, hype.v4_pool_id(ZERO, hype.USDC, 500, 10)), 'native_usd_pool_invalid', v4=True)
+        self.refused(keyed(ZERO, 0x800000, 10), 'fee', v4=True)  # a dynamic fee is its hook's, never a key's
+        self.refused(lambda d: d['gasPrice']['poolNativeUsd'].update(hooks=ZERO), 'Extra inputs', v4=True)
+
+    def test_the_universal_router_is_a_qualified_version(self):
+        from v2_manifest import POLICIES
+        self.assertEqual(v2_chains.UNIVERSAL_ROUTER_VERSIONS, {'2.1.2': 212})
+        self.assertTrue(all(number >= POLICIES['minimumUniversalRouterVersion']
+                            for number in v2_chains.UNIVERSAL_ROUTER_VERSIONS.values()))
+        self.assertTrue(all(version == '.'.join(str(number)) for version, number in
+                            v2_chains.UNIVERSAL_ROUTER_VERSIONS.items()))
+        for version in ('2.1.1', '2.0', '2.1.3', '3.0.0'):
+            with self.subTest(version=version):
+                self.refused(lambda d: d['uniswap']['universalRouter'].update(version=version), 'universalRouter')
+
+    def test_a_chain_without_bridge_providers_loads_and_one_with_both_too(self):
+        import v2_hype_chain as hype
+        for providers in ([], ['relay'], ['relay', 'across']):
+            with self.subTest(providers=providers):
+                registry = self.load(lambda d: d['bridge'].update(providers=providers))
+                self.assertEqual(registry.chain(hype.CHAIN_ID).bridge.providers, tuple(providers))
+        self.refused(lambda d: d['bridge'].pop('providers'), 'providers')
+
+    def test_a_bad_new_profile_costs_its_own_chain_where_the_services_load(self):
+        import v2_hype_chain as hype
+
+        def broken(d):
+            d['gasPrice'] = {}
+        with self.assertRaisesRegex(DataError, '^v2_chain_profile_invalid$'):
+            self.load(broken)
+        registry = self.load(broken, tolerant=True)
+        self.assertEqual([p.chainId for p in registry.chains], [4663, 8453, 42161])
+        self.assertEqual(registry.refused, (v2_chains.RefusedProfile(hype.KEY, hype.CHAIN_ID, 'v2_chain_profile_invalid'),))
+        for name in (hype.KEY, hype.CHAIN_ID):
+            with self.subTest(name=name), self.assertRaisesRegex(DataError, '^v2_chain_profile_invalid$'):
+                registry.chain(name)
+        self.assertEqual(registry.chain('base-8453').chainId, 8453)
+        with self.assertRaisesRegex(DataError, '^v2_chain_unknown$'):
+            registry.chain(99802)
+        # A file named for another chain id is set aside under its own name.
+        renamed = self.load(lambda d: d.update(chainId=99802), tolerant=True)
+        self.assertEqual([(r.key, r.chain_id, r.code) for r in renamed.refused],
+                         [(hype.KEY, hype.CHAIN_ID, 'v2_chain_profile_file_name')])
+        # A pending profile set aside answers for its slug; two chains on one id refuse the directory either way.
+        docs = documents()
+        docs['later.json'] = {'schemaVersion': 1, 'chainId': 5, 'slug': 'later', 'name': 'Later', 'enabled': False,
+                              'nativeSymbol': 'HYPE', 'stack': 'arbitrum-nitro', 'enableWhen': ['its mainnet']}
+        pending = self.directory_load(docs)
+        self.assertEqual([(r.key, r.chain_id) for r in pending.refused], [('later', None)])
+        with self.assertRaisesRegex(DataError, '^v2_chain_profile_invalid$'):
+            pending.chain('later')
+        docs = hype.docs()
+        docs['arb-8453.json'] = dict(documents()['arbitrum-42161.json'], chainId=8453, slug='arb')
+        with self.assertRaisesRegex(DataError, '^v2_chain_profile_duplicate$'):
+            self.directory_load(docs)
+
+    def directory_load(self, docs):
+        with tempfile.TemporaryDirectory() as directory:
+            for name, document in docs.items():
+                (Path(directory) / name).write_text(json.dumps(document, indent=2))
+            return load_registry(directory, tolerant=True)
+
+    def test_the_services_registry_is_the_tolerant_one(self):
+        from unittest import mock
+        with mock.patch.object(v2_chains, 'load_registry', return_value='loaded') as loaded:
+            self.assertEqual(v2_chains.default_registry.__wrapped__(), 'loaded')
+        loaded.assert_called_once_with(tolerant=True)
+
+
 if __name__ == '__main__':
     unittest.main()

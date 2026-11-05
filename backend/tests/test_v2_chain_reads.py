@@ -1382,5 +1382,239 @@ class HelperTests(unittest.TestCase):
         self.assertEqual(reads.endpoint_urls(reader), ('https://a.example.invalid/k',))
 
 
+def hype_chain(**options):
+    """v2_hype_chain's synthetic HYPE chain without Chainlink, loaded beside the live profiles."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import v2_hype_chain as hype
+    directory = tempfile.mkdtemp(prefix='domino-hype-')
+    try:
+        return hype, hype.registry(directory, **options).chain(hype.CHAIN_ID)
+    finally:
+        shutil.rmtree(directory)
+
+
+class NativePoolPriceTests(unittest.TestCase):
+    """A chain Chainlink does not serve (Elysium's HYPE; v2_hype_chain): HYPE and WHYPE at the pool its profile names,
+    qualified as any pool price is, and whatever only they value priced through them, with no feed's round anywhere."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.hype, cls.chain = hype_chain()
+        _, cls.v4_chain = hype_chain(v4=True)
+        cls.id = cls.chain.chainId
+        cls.usdc, cls.whype = cls.hype.USDC.lower(), cls.hype.WHYPE.lower()
+        cls.native, _, _ = reads.native_pool_of(cls.chain)
+        cls.token_pool = PoolRef(3, *sorted((TOKEN, cls.whype)), 3000, 60)
+
+    def native_answers(self, liquidity=10**18, *, usd=40, chain=None, ref=None, currency=None):
+        """The native pool at about `usd` a HYPE, no tick initialized within its band: (answers, its sqrt price, its
+        depth in USD)."""
+        chain, ref = chain or self.chain, ref or self.native
+        currency = currency or self.whype
+        raw = Fraction(usd * 10**6, 10**18)  # stable per native, raw
+        tick = tick_at_sqrt(isqrt_price(raw if ref.currency0 == currency else 1 / raw))
+        sqrt = sqrt_at_tick(tick)
+        answers = (v4_answers(ref, sqrt, tick, liquidity, chain=chain) if ref.dex == 4
+                   else v3_answers(chain, ref, sqrt, tick, liquidity))
+        answers.update(band_answers(chain, ref, sqrt, tick, currency))
+        depth = Fraction(featured_depth(ref, sqrt, tick, liquidity, currency), 10**6)
+        return answers, sqrt, depth
+
+    def pricer(self, answers, chain=None, **options):
+        chain = chain or self.chain
+        fake = FakeChain(answers, **options)
+        return reads.Pricer({chain.chainId: source(chain, fake)}, monotonic=Clock(0.0)), fake
+
+    def expected(self, sqrt, depth, ref=None, currency=None):
+        ref, currency = ref or self.native, currency or self.whype
+        usd = spot(ref, sqrt, currency, 18, 6)
+        return {'usd': reads.decimal_text(usd, reads.PRICE_SCALE), 'source': 'pool', 'snapshot': SNAPSHOT, 'ethUsd': None,
+                'pool': reads.pool_wire(ref), 'depthUsd': reads.decimal_text(depth, reads.USD_SCALE)}, usd
+
+    def test_hype_and_whype_are_the_profile_pools_spot_and_no_feed_is_read(self):
+        answers, sqrt, depth = self.native_answers()
+        pricer, fake = self.pricer(answers)
+        got = pricer.prices([(self.id, self.usdc, None), (self.id, ZERO, None), (self.id, self.whype, None)])
+        price, usd = self.expected(sqrt, depth)
+        self.assertEqual(got[(self.id, ZERO)], (price, None))
+        self.assertEqual(got[(self.id, self.whype)], (price, None))
+        self.assertEqual(got[(self.id, self.usdc)][0]['source'], 'chain_stable')
+        self.assertTrue(Fraction(39) < usd < Fraction(41) and depth >= reads.FLOOR_USD, (usd, depth))
+        # One call for the pool's state, one for its words within the band (no tick initialized there to read); no
+        # Chainlink round asked anywhere.
+        pool = self.hype.v3_pool(self.chain.uniswap.v3.factory, self.chain.uniswap.v3.poolInitCodeHash, self.whype,
+                                 self.usdc, 500).lower()
+        self.assertEqual(len(fake.batches), 2)
+        self.assertEqual(fake.subcalls[:2], [(pool, selector('slot0()'), b''), (pool, selector('liquidity()'), b'')])
+        self.assertEqual({call[:2] for call in fake.subcalls[2:]}, {(pool, selector('tickBitmap(int16)'))})
+        self.assertNotIn(selector('latestRoundData()'), {call[1] for call in fake.subcalls})
+
+    def test_a_token_against_whype_is_valued_through_that_price_and_carries_no_round(self):
+        answers, sqrt, depth = self.native_answers()
+        tick = -76_010  # about 0.0005 WHYPE a TOKEN: US$ 0.02
+        answers.update({**v3_answers(self.chain, self.token_pool, sqrt_at_tick(tick), tick, 2 * 10**25),
+                        **band_answers(self.chain, self.token_pool, sqrt_at_tick(tick), tick, TOKEN)})
+        price, reason = self.pricer(answers)[0].prices([(self.id, TOKEN, 18)])[(self.id, TOKEN)]
+        _, native_usd = self.expected(sqrt, depth)
+        self.assertIsNone(reason)
+        self.assertEqual((price['source'], price['ethUsd'], price['pool']), ('pool', None, reads.pool_wire(self.token_pool)))
+        self.assertEqual(price['usd'], reads.decimal_text(spot(self.token_pool, sqrt_at_tick(tick), TOKEN, 18, 18)
+                                                          * native_usd, reads.PRICE_SCALE))
+        token_depth = Fraction(featured_depth(self.token_pool, sqrt_at_tick(tick), tick, 2 * 10**25, TOKEN), 10**18)
+        self.assertEqual(price['depthUsd'], reads.decimal_text(token_depth * native_usd, reads.USD_SCALE))
+
+    def test_a_native_pool_short_of_the_floor_or_absent_says_why_and_what_needs_it_has_no_source(self):
+        tick = -76_010
+        token = {**v3_answers(self.chain, self.token_pool, sqrt_at_tick(tick), tick, 2 * 10**25),
+                 **band_answers(self.chain, self.token_pool, sqrt_at_tick(tick), tick, TOKEN)}
+        shallow, _, depth = self.native_answers(10**12)
+        self.assertLess(depth, reads.FLOOR_USD)
+        for case, answers, reason in (('shallow', {**shallow, **token}, 'pool_depth_below_floor'),
+                                      ('no pool', token, 'no_pool')):
+            with self.subTest(case=case):
+                got = self.pricer(answers)[0].prices([(self.id, ZERO, None), (self.id, self.whype, None),
+                                                      (self.id, TOKEN, 18), (self.id, self.usdc, None)])
+                self.assertEqual([got[(self.id, token)] for token in (ZERO, self.whype, TOKEN)],
+                                 [(None, reason), (None, reason), (None, 'no_qualified_price_source')])
+                self.assertEqual(got[(self.id, self.usdc)][0]['usd'], '1.000000000000000000')
+
+    def test_the_floor_is_the_one_every_pool_price_meets(self):
+        answers, _, depth = self.native_answers()
+        for floor, priced in ((depth, True), (depth + Fraction(1, 10**30), False)):
+            with self.subTest(floor=float(floor)), mock.patch.object(reads, 'FLOOR_USD', floor):
+                price, reason = self.pricer(answers)[0].prices([(self.id, ZERO, None)])[(self.id, ZERO)]
+                self.assertEqual((price is not None, reason), (priced, None if priced else 'pool_depth_below_floor'))
+
+    def test_a_failed_depth_round_is_a_failed_read_kept_for_no_one(self):
+        answers, _, _ = self.native_answers()
+        tick = -76_010
+        answers.update({**v3_answers(self.chain, self.token_pool, sqrt_at_tick(tick), tick, 2 * 10**25),
+                        **band_answers(self.chain, self.token_pool, sqrt_at_tick(tick), tick, TOKEN)})
+        pricer, fake = self.pricer(answers, fail_from=1)
+        got = pricer.prices([(self.id, ZERO, None), (self.id, TOKEN, 18)])
+        self.assertEqual(got[(self.id, ZERO)], (None, 'price_read_failed'))
+        self.assertEqual(got[(self.id, TOKEN)], (None, 'price_read_failed'))
+        fake.fail_from = None
+        self.assertEqual(pricer.prices([(self.id, ZERO, None)])[(self.id, ZERO)][0]['source'], 'pool')
+
+    def test_a_failed_tick_round_of_the_native_pool_is_a_failed_read_for_what_needs_it(self):
+        # The native pool has a tick to cross within its band, the token's pool none: the third round, the ticks, fails,
+        # so HYPE is unread while the token's own walk is complete. What only HYPE could value says the read failed, so
+        # a later pass tries again, never that it has no source.
+        answers, sqrt, _ = self.native_answers()
+        currency = self.whype
+        partner = self.native.currency1 if self.native.currency0 == currency else self.native.currency0
+        low, high = walk_ticks(sqrt, tick_at_sqrt(sqrt), self.native.tick_spacing, partner == self.native.currency1)
+        inside = (low + 1) * self.native.tick_spacing
+        answers.update(band_answers(self.chain, self.native, sqrt, tick_at_sqrt(sqrt), currency, {inside: 10**15}))
+        tick = -76_010
+        answers.update({**v3_answers(self.chain, self.token_pool, sqrt_at_tick(tick), tick, 2 * 10**25),
+                        **band_answers(self.chain, self.token_pool, sqrt_at_tick(tick), tick, TOKEN)})
+        found = reads.survey(self.chain, FakeChain(answers, fail_from=2), BLOCK, [self.token_pool],
+                             {self.token_pool: TOKEN})
+        self.assertEqual((found.native, found.depths[self.token_pool]), ((None, 'price_read_failed'),
+                                                                         (None, 'price_read_failed')))
+        self.assertEqual((found.price(TOKEN, 18), found.unread, found.skipped), ((None, 'price_read_failed'), set(), set()))
+        pricer, fake = self.pricer(answers, fail_from=2)
+        self.assertEqual(pricer.prices([(self.id, TOKEN, 18)])[(self.id, TOKEN)], (None, 'price_read_failed'))
+
+    def test_the_native_pools_walk_is_read_first_and_in_its_own_direction(self):
+        # Room for either pool's band words but not both: the native pool's are read, and the listed pool, however
+        # deep, waits for another pass. Its walk sells the native currency for the stable: its depth is that stable.
+        answers, sqrt, depth = self.native_answers()
+        tick = -76_010
+        answers.update({**v3_answers(self.chain, self.token_pool, sqrt_at_tick(tick), tick, 2 * 10**25),
+                        **band_answers(self.chain, self.token_pool, sqrt_at_tick(tick), tick, TOKEN)})
+
+        def words(sqrt, tick, ref, sold):
+            partner = ref.currency1 if ref.currency0 == sold else ref.currency0
+            return len(reads.band_words(*reads.band_ticks(sqrt, tick, ref.tick_spacing, partner == ref.currency1)))
+        native = words(sqrt, tick_at_sqrt(sqrt), self.native, self.whype)
+        token = words(sqrt_at_tick(tick), tick, self.token_pool, TOKEN)
+        self.assertLess(max(native, token), native + token)
+        with mock.patch.object(reads, 'DEPTH_WORDS', max(native, token)):
+            found = reads.survey(self.chain, FakeChain(answers), BLOCK, [self.token_pool], {self.token_pool: TOKEN})
+        self.assertEqual(found.native, self.expected(sqrt, depth)[:1] + (None,))
+        self.assertEqual((found.depths[self.token_pool], found.skipped), ((None, 'pool_depth_unmeasurable'),
+                                                                          {self.token_pool}))
+
+    def test_a_pools_market_against_whype_is_at_the_native_price_or_has_no_qualified_reference(self):
+        from v2_read_contract import MARKET_REASONS
+        tick = -76_010
+        token = {**v3_answers(self.chain, self.token_pool, sqrt_at_tick(tick), tick, 2 * 10**25),
+                 **band_answers(self.chain, self.token_pool, sqrt_at_tick(tick), tick, TOKEN)}
+        deep, sqrt, depth = self.native_answers()
+        shallow, _, _ = self.native_answers(10**12)
+        refs = [self.token_pool]
+        found = reads.survey(self.chain, FakeChain({**deep, **token}), BLOCK, refs, {self.token_pool: TOKEN})
+        _, native_usd = self.expected(sqrt, depth)
+        token_depth = Fraction(featured_depth(self.token_pool, sqrt_at_tick(tick), tick, 2 * 10**25, TOKEN), 10**18)
+        self.assertEqual(found.depths[self.token_pool], (token_depth * native_usd, None))
+        # The native pool's walk and the listed pool's share the two depth rounds: no call more.
+        fake = FakeChain({**shallow, **token})
+        found = reads.survey(self.chain, fake, BLOCK, refs, {self.token_pool: TOKEN})
+        self.assertEqual(found.depths[self.token_pool], (None, 'no_qualified_reference'))
+        self.assertIn('no_qualified_reference', MARKET_REASONS)
+        self.assertEqual(len(fake.requests), 2)
+        # No native pool at all: the same, its reason the native currency's own.
+        found = reads.survey(self.chain, FakeChain(token), BLOCK, refs, {self.token_pool: TOKEN})
+        self.assertEqual((found.depths[self.token_pool], found.native), ((None, 'no_qualified_reference'),
+                                                                         (None, 'no_pool')))
+
+    def test_a_v4_pool_of_native_hype_prices_hype_and_whype(self):
+        native, _, currency = reads.native_pool_of(self.v4_chain)
+        self.assertEqual((native.dex, native.currency0 if native.currency0 == ZERO else native.currency1, currency),
+                         (4, ZERO, ZERO))
+        answers, sqrt, depth = self.native_answers(chain=self.v4_chain, ref=native, currency=ZERO)
+        got = self.pricer(answers, chain=self.v4_chain)[0].prices([(self.id, ZERO, None), (self.id, self.whype, None)])
+        price, usd = self.expected(sqrt, depth, ref=native, currency=ZERO)
+        self.assertEqual((got[(self.id, ZERO)], got[(self.id, self.whype)]), ((price, None), (price, None)))
+        self.assertEqual(price['pool']['dex'], 4)
+        self.assertTrue(Fraction(39) < usd < Fraction(41))
+
+    def test_read_v6_admits_these_prices_under_the_chains_price_profile_and_nothing_at_a_feed(self):
+        import v2_read_contract as contract
+        profile = reads.price_profile(self.chain)
+        self.assertEqual(profile, {'stable': self.usdc, 'wrapped': self.whype, 'feed': None, 'heartbeatSeconds': None,
+                                   'nativePool': reads.pool_wire(self.native)})
+        answers, sqrt, depth = self.native_answers()
+        tick = -76_010
+        answers.update({**v3_answers(self.chain, self.token_pool, sqrt_at_tick(tick), tick, 2 * 10**25),
+                        **band_answers(self.chain, self.token_pool, sqrt_at_tick(tick), tick, TOKEN)})
+        got = self.pricer(answers)[0].prices([(self.id, t, 18 if t == TOKEN else None)
+                                              for t in (self.usdc, ZERO, self.whype, TOKEN)])
+
+        def admitted(token, price, reason):
+            contract.priced(self.id, token, None if price is None else contract.TokenPrice.model_validate(price), reason)
+        with mock.patch.dict(contract.PRICE_PROFILES, {self.id: profile}):
+            for (_, token), (price, reason) in got.items():
+                with self.subTest(token=token):
+                    admitted(token, price, reason)
+            native = got[(self.id, ZERO)][0]
+            for case, change in (('another pool', lambda p: p['pool'].update(fee=3000)),
+                                 ('a feed round', lambda p: p.update(ethUsd=eth_entry(usd=p['usd'], age=0))),
+                                 ('a feed source', lambda p: p.update(source='chainlink_eth_usd', pool=None, depthUsd=None,
+                                                                      ethUsd=eth_entry(usd=p['usd'], age=0)))):
+                with self.subTest(case=case), self.assertRaises(ValueError):
+                    defect = json.loads(json.dumps(native))
+                    change(defect)
+                    admitted(ZERO, defect, None)
+            with self.assertRaises(ValueError):
+                admitted(TOKEN, {**got[(self.id, TOKEN)][0], 'ethUsd': eth_entry(age=0)}, None)
+        # Every Domino chain read-v6 prices has its entry by the same rule, Chainlink's on the three live ones.
+        served = {chain_id: entry for chain_id, entry in contract.PRICE_PROFILES.items() if chain_id in REGISTRY_IDS}
+        self.assertEqual(served, {chain_id: reads.price_profile(REGISTRY.chain(chain_id)) for chain_id in served})
+        self.assertTrue(all(served[chain_id]['feed'] for chain_id in (4663, 8453, 42161)))
+
+
+REGISTRY_IDS = tuple(chain.chainId for chain in REGISTRY.chains)
+
+
+def isqrt_price(raw):
+    """sqrtPriceX96 of a raw currency1-per-currency0 price."""
+    from math import isqrt
+    return isqrt(raw.numerator * 2**192 // raw.denominator)
+
+
 if __name__ == '__main__':
     unittest.main()

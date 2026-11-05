@@ -10,7 +10,9 @@ is both in Python, rule for rule:
 
 - exact keys at every level; `schemaVersion` 1, `kind` domino-v2-deployment,
   `status` prepared or verified, `environment` public-chain-preparation,
-  fork-rehearsal or local-test (any chain id only for local-test);
+  fork-rehearsal or local-test (any chain id only for local-test; otherwise an
+  enabled profile's, which deploy.mjs, frozen with the V2 release, keeps as its
+  own ENABLED_CHAINS list);
 - the 13 contract names (F0's eleven components and the two vault executors)
   and the fixed policies;
 - six roles, none a placeholder (below 2^16 or one digit repeated; #302's
@@ -62,7 +64,7 @@ from eth_abi import encode
 from eth_hash.auto import keccak
 
 from discovery import DataError, parse_block, prefetched
-from v2_chains import ChainProfile
+from v2_chains import ChainProfile, default_registry
 from v2_rpc import CodeCache, batched_reads
 
 MAX_MANIFEST_BYTES = 262144
@@ -91,7 +93,6 @@ POLICIES = {
 DEPENDENCIES = ('v3Factory', 'v3PositionManager', 'v3Quoter', 'v3SwapRouter', 'v4PoolManager', 'v4PositionManager',
                 'v4StateView', 'v4Quoter', 'universalRouter', 'permit2', 'wrappedNative')
 ENVIRONMENTS = ('public-chain-preparation', 'local-test', 'fork-rehearsal')
-ENABLED_CHAINS = (4663, 8453, 42161)
 ADMISSIONS = ('production', 'fork-rehearsal', 'local-test')
 BUILD = {'version': '0.8.26+commit.8a97fa7a', 'optimizerRuns': 200, 'viaIR': True, 'evmVersion': 'cancun',
          'bytecodeHash': 'none'}
@@ -232,8 +233,14 @@ def _checked_at(value):
             and second <= 59 and (match.group(7) is None or (int(match.group(7)) <= 23 and int(match.group(8)) <= 59)))
 
 
-def checked_manifest(m):
-    """validateManifest (scripts/v2/deploy-schema.mjs) and the structural schema."""
+def enabled_chain_ids():
+    """The chains a deployment outside a local test may name: the enabled profiles' (v2_chains)."""
+    return tuple(profile.chainId for profile in default_registry().chains)
+
+
+def checked_manifest(m, *, enabled=None):
+    """validateManifest (scripts/v2/deploy-schema.mjs) and the structural schema. `enabled`: the chain ids a manifest
+    outside a local test may name, by default every enabled profile's."""
     _keys(m, TOP_LEVEL)
     _ensure(type(m['schemaVersion']) is int and m['schemaVersion'] == 1 and m['kind'] == 'domino-v2-deployment'
             and m['status'] in ('prepared', 'verified'))
@@ -242,7 +249,8 @@ def checked_manifest(m):
     _ensure(_integer(chain['chainId']) and chain['chainId'] > 0 and type(chain['name']) is str and chain['name']
             and type(chain['nativeCurrency']) is str and chain['nativeCurrency'])
     _ensure(m['environment'] in ENVIRONMENTS)
-    _ensure(m['environment'] == 'local-test' or chain['chainId'] in ENABLED_CHAINS)
+    _ensure(m['environment'] == 'local-test'
+            or chain['chainId'] in (enabled_chain_ids() if enabled is None else enabled))
     _ensure(type(m['sourceCommit']) is str and re.fullmatch(r'[0-9a-f]{40}', m['sourceCommit']) is not None
             and type(m['releaseTag']) is str
             and re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9._-]{0,100}', m['releaseTag']) is not None)
@@ -396,7 +404,9 @@ def checked_deployment(document, chain, *, admission='production'):
         raise DataError('v2_chain_profile_required')
     if admission not in ADMISSIONS:
         raise DataError('v2_deployment_admission_invalid')
-    m = checked_manifest(document)
+    # The chain served is an enabled profile, as a ChainProfile always is, whether or not this process's registry
+    # holds it (a test's).
+    m = checked_manifest(document, enabled=(*enabled_chain_ids(), chain.chainId))
     local = m['environment'] == 'local-test'
     if m['chain']['chainId'] != chain.chainId or (
             not local and (m['chain']['name'] != chain.name or m['chain']['nativeCurrency'] != chain.nativeSymbol)):

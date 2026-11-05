@@ -43,21 +43,24 @@ import time
 
 from eth_abi import decode
 
-from discovery import KEEPALIVE_OPENER, ZERO, DataError, address, rpc_http
+from discovery import CHAIN_ID, KEEPALIVE_OPENER, ZERO, DataError, address, rpc_http
 import hop_log
 from v2_abi import function
 from v2_chains import DEX_V3, DEX_V4, default_balance_registry, default_registry
 from v2_quotes import (AGGREGATE3, ERC20_BALANCE_OF, GET_ETH_BALANCE, MULTICALL_GAS, V4_STANDARD_KEYS, Abi, QuoteError,
                        multicall)
 from read_deadline import read_deadline, read_timeout
-from v2_read_contract import CONTRACT_VERSION, LIVE_LIMITATIONS, MAX_CHAIN_POOLS
+from v2_read_contract import (BALANCE_CHAIN_IDS, CHAIN_IDS, CONTRACT_VERSION, LIVE_LIMITATIONS, MAX_CHAIN_POOLS,
+                              SEARCH_CHAIN_IDS)
 from v2_uniswap import PIPS, PoolRef, v3_pool_address
 from v4_math import MAX_SQRT, MIN_SQRT, amount_delta, sqrt_at_tick, tick_at_sqrt
 
-POOL_CHAINS = (4663, 8453, 42161)
-SEARCH_CHAINS = (8453, 42161)
+# The chains read-v6 serves, its contract's lists (v2_read_contract): Domino's, and the search chains; a chain whose
+# profile is enabled reads here once the contract names it.
+POOL_CHAINS = CHAIN_IDS
+SEARCH_CHAINS = SEARCH_CHAIN_IDS
 # chain-balances' other chains, read only when asked (v2_read_contract.BALANCE_CHAIN_IDS has both kinds).
-BALANCE_CHAINS = (1, 10)
+BALANCE_CHAINS = tuple(chain_id for chain_id in BALANCE_CHAIN_IDS if chain_id not in CHAIN_IDS)
 # The v3 fee tiers Uniswap governance enabled on Base beyond the profile's standard four (the app's
 # BASE_EXTRA_V3_TIERS); each is listed only while the factory still returns this tick spacing for it.
 EXTRA_V3_TIERS = {8453: {200: 4, 300: 6, 400: 8}}
@@ -261,11 +264,18 @@ class TimedCache:
 # - ETH and its wrapped token: the profile's Chainlink ETH/USD (gasPrice.chainlinkEthUsd) while its round is no
 #   older than the feed's heartbeat at the block read and, where the profile names a sequencer uptime feed (Base,
 #   Arbitrum, OP Mainnet), the sequencer has been up for longer than SEQUENCER_GRACE_SECONDS;
+# - on a chain Chainlink does not serve (gasPrice.poolNativeUsd: Elysium's HYPE), the native currency and its wrapped
+#   token instead: the spot of the pool the profile names, against the stable, once that pool qualifies as any pool
+#   price does (below), its walk the native currency sold for the stable. Such a price is source `pool`, that pool,
+#   no `ethUsd`; and no price on that chain carries a feed's round;
 # - any other token: its deepest pool against one of those, among the app's candidates (pool_candidates), once that
 #   pool releases at least FLOOR_USD of the partner as the token is sold into it until its price falls by BAND:
 #   the featured pools' reference depth (featured_pools.reference_depth with featured_policy.json's floor, band
 #   and steps), its liquidity walked tick by tick and read in the same block as its price.
-# Anything else has no USD, with its reason. While a chain's sequencer is down, only its stable keeps a price.
+# Anything else has no USD, with its reason. While a chain's sequencer is down, only its stable keeps a price. Where
+# the native pool does not qualify, the native currency says why as a pool would (no_pool, pool_depth_below_floor,
+# pool_depth_unmeasurable, price_read_failed), and what only it could value has no qualified source
+# (no_qualified_price_source; a pool's market: no_qualified_reference), unless its read failed.
 CHAINLINK_ROUND = Abi('latestRoundData()', (), ('uint80', 'int256', 'uint256', 'uint256', 'uint80'))
 V4_TICK_BITMAP = Abi('getTickBitmap(bytes32,int16)', ('bytes32', 'int16'), ('uint256',))
 V4_TICK_LIQUIDITY = Abi('getTickLiquidity(bytes32,int24)', ('bytes32', 'int24'), ('uint128', 'int128'))
@@ -300,6 +310,38 @@ def stable_of(chain):
 
 def snapshot_of(block):
     return {'number': block.number, 'hash': block.hash, 'timestamp': block.timestamp}
+
+
+def native_pool_of(chain):
+    """(PoolRef, its v3 address or None, the native currency in it) of the pool that prices the chain's native currency
+    (gasPrice.poolNativeUsd), or None where Chainlink does (`native_feed`; every balance chain)."""
+    source = getattr(chain, 'native_pool', None)
+    if source is None:
+        return None
+    low, high = sorted((source.currency, source.stable))
+    if source.dex == DEX_V3:
+        return PoolRef(DEX_V3, low, high, source.fee, chain.v3_tick_spacing(source.fee)), source.pool, source.currency
+    return PoolRef(DEX_V4, low, high, source.fee, source.tickSpacing), None, source.currency
+
+
+def price_profile(chain):
+    """read-v6's PRICE_PROFILES entry of a chain (a Domino chain's or a balance chain's profile): its stable and wrapped
+    token, and the feed and heartbeat that price ETH or, on a chain without Chainlink, the pool that prices its native
+    currency (`nativePool`, a wire PoolRef). v2_read_contract keeps them as constants, held to this by its tests."""
+    entry = {'stable': stable_of(chain)[0], 'wrapped': chain.wrappedNative.address}
+    native = native_pool_of(chain)
+    if native is None:
+        feed = chain.gasPrice.chainlinkEthUsd
+        return {**entry, 'feed': feed.proxy, 'heartbeatSeconds': feed.heartbeatSeconds}
+    return {**entry, 'feed': None, 'heartbeatSeconds': None, 'nativePool': pool_wire(native[0])}
+
+
+def native_reasons(reason):
+    """What a currency only the native one could value says when the native pool did not qualify: its price's reason,
+    and a pool market's (MARKET_REASONS). A failed read is said as one, so a later pass tries again."""
+    if reason == 'price_read_failed':
+        return reason, reason
+    return 'no_qualified_price_source', 'no_qualified_reference'
 
 
 def eth_usd(chain, feed_row, uptime_row, block):
@@ -402,16 +444,22 @@ class PoolRead:
 
 @dataclass
 class Survey:
-    """One chain's pools at one block, with the feed and each listed pool's depth in USD."""
+    """One chain's pools at one block, with the native currency's USD and each listed pool's depth in USD."""
     chain: object
     block: object
     pools: list  # PoolRead, listed: existing, priced, holding liquidity, in shape
     subjects: dict  # PoolRef -> the token the pool is read for
     metadata: dict  # token -> (decimals, symbol, name) as read
-    eth: tuple  # eth_usd's
+    # The native currency's USD as the other prices see it: eth_usd's (usd, the feed's wire entry, reason); on a chain
+    # its pool prices, (usd, None, the reason a price that needs it has none).
+    eth: tuple
     depths: dict  # PoolRef -> (USD, None) or (None, reason), for each listed pool
     unread: set = field(default_factory=set)  # PoolRefs whose depth reads failed
     skipped: set = field(default_factory=set)  # PoolRefs left unmeasured: past the survey's depth reads
+    # A chain its pool prices: that pool as read (None if out of shape), then the native currency's own price,
+    # (wire entry, None) or (None, reason), once measured. Both None on a chain Chainlink prices.
+    native_pool: object = None
+    native: tuple = None
 
     def partner(self, pool):
         subject = self.subjects[pool.ref]
@@ -427,6 +475,11 @@ class Survey:
                 out[token] = (self.eth[0], decimals)
         return out
 
+    def reference_reason(self):
+        """Why a pool against the native currency or its wrapped token is not measured (MARKET_REASONS): the feed's
+        reason, or what the native pool's own says to a pool's market."""
+        return self.eth[2] if self.native is None else native_reasons(self.native[1])[1]
+
     def price(self, token, decimals):
         """(price wire entry, None) or (None, reason) for `token`, from this survey alone."""
         chain, wrapped = self.chain, self.chain.wrappedNative.address
@@ -435,6 +488,8 @@ class Survey:
                     'ethUsd': None, 'pool': None, 'depthUsd': None}, None
         usd, entry, reason = self.eth
         if token in (ZERO, wrapped):
+            if self.native is not None:
+                return self.native  # the profile's pool, never a feed
             if usd is None:
                 return None, reason
             return {'usd': entry['usd'], 'source': 'chainlink_eth_usd', 'snapshot': snapshot_of(self.block),
@@ -495,29 +550,57 @@ def aggregate(rpc, chain, block, calls):
     return results
 
 
+def pool_read(ref, pool, slot0_row, liquidity_row, spacing):
+    """A pool's state from its slot0 and liquidity rows, or None: no pool, out of shape, or empty. `spacing`: the
+    factory's tick spacing for a v3 pool's fee as read (None unread); unused on v4."""
+    if ref.dex == DEX_V4:
+        slot0, liquidity = word(*slot0_row, ('uint160', 'int24', 'uint24', 'uint24')), word(*liquidity_row, ('uint128',))
+        if slot0 is None or liquidity is None:
+            return None
+        sqrt_price, tick, protocol, lp_fee = slot0
+        if protocol & 0xfff > 1000 or protocol >> 12 > 1000 or lp_fee != ref.fee:
+            return None  # out of shape; a hookless key's LP fee is its own
+    else:
+        slot0 = word(*slot0_row, ('uint160', 'int24', 'uint16', 'uint16', 'uint16', 'uint8', 'bool'))
+        liquidity = word(*liquidity_row, ('uint128',))
+        if slot0 is None or liquidity is None or spacing != ref.tick_spacing:
+            return None  # no pool, a tier the factory does not enable, or another spacing
+        sqrt_price, tick, protocol, lp_fee = slot0[0], slot0[1], slot0[5], ref.fee
+    liquidity, = liquidity
+    if not MIN_SQRT <= sqrt_price < MAX_SQRT or not MIN_TICK <= tick <= MAX_TICK or liquidity == 0:
+        return None  # not initialized, out of shape, or empty
+    return PoolRead(ref, pool, sqrt_price, tick, liquidity, lp_fee, protocol)
+
+
 def survey(chain, rpc, block, refs, subjects, metadata=()):
     """The pools `refs` at `block` with what qualified USD needs, in three Multicall3 rounds: each pool's state, the
-    Chainlink feed (and its sequencer's) and the tokens' metadata; the listed pools' bitmap words within the band;
-    the initialized ticks there. `subjects`: PoolRef -> the token it is read for (its partner is the reference).
-    Only the first round can fail the survey: the depth rounds' failure leaves the depths unread."""
+    Chainlink feed (and its sequencer's) or, on a chain without Chainlink, the state of the pool that prices its
+    native currency, and the tokens' metadata; the bitmap words within the band of that pool (first) and of the listed
+    pools; the initialized ticks there. `subjects`: PoolRef -> the token it is read for (its partner is the
+    reference). Only the first round can fail the survey: the depth rounds' failure leaves the depths unread."""
     calls = []
 
     def add(target, abi, *args):
         calls.append((target, abi.calldata(*args)))
         return len(calls) - 1
-    feed = chain.gasPrice.chainlinkEthUsd
-    feed_at = add(feed.proxy, CHAINLINK_ROUND)
-    uptime_at = None if feed.sequencerUptimeFeed is None else add(feed.sequencerUptimeFeed, CHAINLINK_ROUND)
     state, factory = chain.uniswap.v4.stateView, chain.uniswap.v3.factory
-    slots = []
-    for ref in refs:
+
+    def slot(ref, pool):
         if ref.dex == DEX_V4:
             pool_id = bytes.fromhex(ref.pool_id[2:])
-            slots.append((ref, None, add(state, function(V4_STATE, 'getSlot0'), pool_id),
-                          add(state, function(V4_STATE, 'getLiquidity'), pool_id)))
-        else:
-            pool = v3_pool_address(chain, ref.currency0, ref.currency1, ref.fee)
-            slots.append((ref, pool, add(pool, function(V3_POOL, 'slot0')), add(pool, function(V3_POOL, 'liquidity'))))
+            return (ref, None, add(state, function(V4_STATE, 'getSlot0'), pool_id),
+                    add(state, function(V4_STATE, 'getLiquidity'), pool_id))
+        return ref, pool, add(pool, function(V3_POOL, 'slot0')), add(pool, function(V3_POOL, 'liquidity'))
+    native = native_pool_of(chain)
+    if native is None:
+        feed = chain.gasPrice.chainlinkEthUsd
+        feed_at = add(feed.proxy, CHAINLINK_ROUND)
+        uptime_at = None if feed.sequencerUptimeFeed is None else add(feed.sequencerUptimeFeed, CHAINLINK_ROUND)
+    else:
+        # The profile checked the pool's address or id, and its v3 tier against its own tiers.
+        native_slot = slot(*native[:2])
+    slots = [slot(ref, None if ref.dex == DEX_V4 else v3_pool_address(chain, ref.currency0, ref.currency1, ref.fee))
+             for ref in refs]
     spacing_of = {fee: add(factory, function(V3_FACTORY, 'feeAmountTickSpacing'), fee)
                   for fee in sorted({ref.fee for ref in refs if ref.dex == DEX_V3})}
     meta_at = {token: (add(token, DECIMALS), add(token, SYMBOL), add(token, NAME)) for token in metadata}
@@ -526,39 +609,71 @@ def survey(chain, rpc, block, refs, subjects, metadata=()):
     spacings = {fee: (word(*rows[index], ('int24',)) or (None,))[0] for fee, index in spacing_of.items()}
     pools = []
     for ref, pool, first, second in slots:
-        if ref.dex == DEX_V4:
-            slot0, liquidity = word(*rows[first], ('uint160', 'int24', 'uint24', 'uint24')), word(*rows[second], ('uint128',))
-            if slot0 is None or liquidity is None:
-                continue
-            sqrt_price, tick, protocol, lp_fee = slot0
-            if protocol & 0xfff > 1000 or protocol >> 12 > 1000 or lp_fee != ref.fee:
-                continue  # out of shape; a hookless key's LP fee is its own
-        else:
-            slot0 = word(*rows[first], ('uint160', 'int24', 'uint16', 'uint16', 'uint16', 'uint8', 'bool'))
-            liquidity = word(*rows[second], ('uint128',))
-            if slot0 is None or liquidity is None or spacings.get(ref.fee) != ref.tick_spacing:
-                continue  # no pool, a tier the factory does not enable, or another spacing
-            sqrt_price, tick, protocol, lp_fee = slot0[0], slot0[1], slot0[5], ref.fee
-        liquidity, = liquidity
-        if not MIN_SQRT <= sqrt_price < MAX_SQRT or not MIN_TICK <= tick <= MAX_TICK or liquidity == 0:
-            continue  # not initialized, out of shape, or empty
-        pools.append(PoolRead(ref, pool, sqrt_price, tick, liquidity, lp_fee, protocol))
+        read = pool_read(ref, pool, rows[first], rows[second], spacings.get(ref.fee))
+        if read is not None:
+            pools.append(read)
     metadata_read = {token: ((word(*rows[d], ('uint8',)) or (None,))[0], raw_text(*rows[s], MAX_SYMBOL),
                              raw_text(*rows[n], MAX_NAME)) for token, (d, s, n) in meta_at.items()}
-    found = Survey(chain, block, pools, dict(subjects), metadata_read,
-                   eth_usd(chain, rows[feed_at], None if uptime_at is None else rows[uptime_at], block), {})
+    if native is None:
+        found = Survey(chain, block, pools, dict(subjects), metadata_read,
+                       eth_usd(chain, rows[feed_at], None if uptime_at is None else rows[uptime_at], block), {})
+    else:
+        ref, pool, first, second = native_slot
+        found = Survey(chain, block, pools, dict(subjects), metadata_read, (None, None, None), {},
+                       native_pool=pool_read(ref, pool, rows[first], rows[second], ref.tick_spacing))
+        if found.native_pool is None:
+            settle_native(found, None, 'no_pool')
     found.depths = measure_depths(found, rpc)
     return found
+
+
+def settle_native(found, depth, reason):
+    """The native currency's price from its pool, once that pool's depth (raw stable, or None with `reason`) is known:
+    the pool's spot against the stable, if it qualifies as any pool price does."""
+    if depth is not None:
+        usd_depth, usd = Fraction(depth, 10 ** stable_of(found.chain)[2]), native_spot(found)
+        if usd_depth < FLOOR_USD:
+            reason = 'pool_depth_below_floor'
+        elif decimal_text(usd, PRICE_SCALE) == decimal_text(Fraction(0), PRICE_SCALE):
+            reason = 'price_below_precision'
+        else:
+            found.native = ({'usd': decimal_text(usd, PRICE_SCALE), 'source': 'pool',
+                             'snapshot': snapshot_of(found.block), 'ethUsd': None,
+                             'pool': pool_wire(found.native_pool.ref),
+                             'depthUsd': decimal_text(usd_depth, USD_SCALE)}, None)
+            found.eth = (usd, None, None)
+            return
+    found.native = (None, reason)
+    found.eth = (None, None, native_reasons(reason)[0])
+
+
+NATIVE = 'native'  # the key of the native pool's own walk, apart from any listed pool's
+
+
+def native_spot(found):
+    """The native currency's USD at its pool's spot: what orders the pools against it before that pool qualifies."""
+    pool, native = found.native_pool, native_pool_of(found.chain)[2]
+    ratio = Fraction(pool.sqrt * pool.sqrt, 1 << 192)  # currency1 per currency0, raw
+    return (ratio if pool.ref.currency0 == native else 1 / ratio) * Fraction(10 ** 18, 10 ** stable_of(found.chain)[2])
 
 
 def measure_depths(found, rpc):
     """Each listed pool's depth within the band, in USD, or why not, in at most three more calls: DEPTH_WORDS of the
     pools' bitmap words, then DEPTH_TICKS of their initialized ticks. The pools are taken deepest first by their
     active liquidity across the band, an estimate that only orders them: one past either bound is left unmeasured
-    (`found.skipped`), as is every pool of a round whose call fails (`found.unread`)."""
+    (`found.skipped`), as is every pool of a round whose call fails (`found.unread`). On a chain its pool prices, that
+    pool's own walk (the native currency sold for the stable) goes first and settles the native price
+    (settle_native); a pool against the native currency is read with the others, ordered at that pool's spot, and
+    valued only once it qualifies."""
     chain, block = found.chain, found.block
     base, references = {entry[0] for entry in base_currencies(chain)}, found.reference_prices()
     state = chain.uniswap.v4.stateView
+    native = found.native_pool if found.native is None and found.native_pool is not None else None
+    estimates = dict(references)
+    if native is not None:
+        spot = native_spot(found)
+        estimates.update({token: (spot, decimals) for token, _, decimals in base_currencies(chain)
+                          if token not in references})
     depths, ordered = {}, []
     for index, pool in enumerate(found.pools):
         partner = found.partner(pool)
@@ -566,68 +681,90 @@ def measure_depths(found, rpc):
             depths[pool.ref] = (None, 'no_qualified_reference')
         elif found.eth[2] == 'sequencer_down':
             depths[pool.ref] = (None, 'sequencer_down')
-        elif partner not in references:
-            depths[pool.ref] = (None, found.eth[2])
+        elif partner not in estimates:
+            depths[pool.ref] = (None, found.reference_reason())
         else:
             zero_for_one = partner == pool.ref.currency1  # the token, currency0, sold into the pool
-            usd, decimals = references[partner]
+            usd, decimals = estimates[partner]
             active = amount_delta(pool.sqrt, band_bound(pool.sqrt, zero_for_one), pool.liquidity,
                                   1 if zero_for_one else 0, False)
             ordered.append((-Fraction(active, 10 ** decimals) * usd, index, pool, partner, zero_for_one))
     ordered.sort(key=lambda item: item[:2])
+    plan = [(pool.ref, pool, partner, zero_for_one) for _, _, pool, partner, zero_for_one in ordered]
+    if native is not None:
+        stable = stable_of(chain)[0]
+        plan.insert(0, (NATIVE, native, stable, stable == native.ref.currency1))
+    out = {}  # key -> (raw partner amount, None) or (None, reason)
 
-    def leave(pool, noted, reason):
-        noted.add(pool.ref)
-        depths[pool.ref] = (None, reason)
+    def leave(key, noted, reason):
+        if key != NATIVE:
+            noted.add(key)
+        out[key] = (None, reason)
 
-    def read(calls, pools):
+    def read(calls, keys):
         """The round's rows, or None: its pools unread."""
         try:
             return aggregate(rpc, chain, block, calls) if calls else []
         except DataError:
-            for pool in pools:
-                leave(pool, found.unread, 'price_read_failed')
+            for key in keys:
+                leave(key, found.unread, 'price_read_failed')
             return None
 
     calls, walks = [], []
-    for _, _, pool, partner, zero_for_one in ordered:
+    for key, pool, partner, zero_for_one in plan:
         low, high = band_ticks(pool.sqrt, pool.tick, pool.ref.tick_spacing, zero_for_one)
         positions = band_words(low, high)
         if len(calls) + len(positions) > DEPTH_WORDS:
-            leave(pool, found.skipped, 'pool_depth_unmeasurable')
+            leave(key, found.skipped, 'pool_depth_unmeasurable')
             continue
         words = {}
         for position in positions:
             words[position] = len(calls)
             calls.append((state, V4_TICK_BITMAP.calldata(bytes.fromhex(pool.ref.pool_id[2:]), position))
                          if pool.ref.dex == DEX_V4 else (pool.address, V3_TICK_BITMAP.calldata(position)))
-        walks.append((pool, partner, zero_for_one, low, high, words))
+        walks.append((key, pool, zero_for_one, low, high, words))
+
+    def finish():
+        """The native price settled from its own walk, then every listed pool's depth valued in USD."""
+        if native is not None:
+            settle_native(found, *out.pop(NATIVE))
+        prices, partners = found.reference_prices(), {key: partner for key, _, partner, _ in plan}
+        for key, (raw, reason) in out.items():
+            if raw is None:
+                depths[key] = (None, reason)
+            elif partners[key] in prices:
+                usd, decimals = prices[partners[key]]
+                depths[key] = (Fraction(raw, 10 ** decimals) * usd, None)
+            else:
+                depths[key] = (None, found.reference_reason())  # against the native currency, whose pool did not qualify
+        return depths
+
     rows = read(calls, [walk[0] for walk in walks])
     if rows is None:
-        return depths
+        return finish()
     calls, scheduled = [], []
-    for pool, partner, zero_for_one, low, high, words in walks:
+    for key, pool, zero_for_one, low, high, words in walks:
         bitmap = {position: word(*rows[index], ('uint256',)) for position, index in words.items()}
         if any(value is None for value in bitmap.values()):
-            depths[pool.ref] = (None, 'pool_depth_unmeasurable')
+            out[key] = (None, 'pool_depth_unmeasurable')
             continue
         spacing = pool.ref.tick_spacing
         ticks = [(position * 256 + bit) * spacing for position, value in bitmap.items() for bit in range(256)
                  if value[0] >> bit & 1 and low <= position * 256 + bit <= high]
         if len(ticks) > MAX_STEPS:
-            depths[pool.ref] = (None, 'pool_depth_unmeasurable')
+            out[key] = (None, 'pool_depth_unmeasurable')
             continue
         if len(calls) + len(ticks) > DEPTH_TICKS:
-            leave(pool, found.skipped, 'pool_depth_unmeasurable')
+            leave(key, found.skipped, 'pool_depth_unmeasurable')
             continue
         nets = {}
         for tick in ticks:
             nets[tick] = len(calls)
             calls.append((state, V4_TICK_LIQUIDITY.calldata(bytes.fromhex(pool.ref.pool_id[2:]), tick))
                          if pool.ref.dex == DEX_V4 else (pool.address, V3_TICK.calldata(tick)))
-        scheduled.append((pool, partner, zero_for_one, {position: value[0] for position, value in bitmap.items()}, nets))
+        scheduled.append((key, pool, zero_for_one, {position: value[0] for position, value in bitmap.items()}, nets))
     rows = read(calls, [item[0] for item in scheduled if item[4]])
-    for pool, partner, zero_for_one, bitmap, nets in scheduled:
+    for key, pool, zero_for_one, bitmap, nets in scheduled:
         if rows is None and nets:
             continue  # unread; a pool with no tick to cross needs none of them
         read_nets = {tick: word(*rows[index], V4_TICK_LIQUIDITY.outputs if pool.ref.dex == DEX_V4 else V3_TICK.outputs)
@@ -640,12 +777,8 @@ def measure_depths(found, rpc):
                                   spacing=pool.ref.tick_spacing, zero_for_one=zero_for_one)
         except KeyError:
             raw = None  # the walk left the words read
-        if raw is None:
-            depths[pool.ref] = (None, 'pool_depth_unmeasurable')
-            continue
-        usd, decimals = references[partner]
-        depths[pool.ref] = (Fraction(raw, 10 ** decimals) * usd, None)
-    return depths
+        out[key] = (None, 'pool_depth_unmeasurable') if raw is None else (raw, None)
+    return finish()
 
 
 def usd_sum(values):
@@ -697,8 +830,9 @@ class Pricer:
             return {token: (None, 'no_qualified_price_source') for token in asked}
         chain = source.chain
         base = {entry[0] for entry in base_currencies(chain)}
-        # A pass reads its pools in one call: the feed, its sequencer's and the v3 tiers' spacings, then each token's
-        # pools (two reads each) and, decimals unknown, its metadata (three), while they fit.
+        # A pass reads its pools in one call: the feed and its sequencer's (or the native pool's two reads) and the v3
+        # tiers' spacings, then each token's pools (two reads each) and, decimals unknown, its metadata (three), while
+        # they fit.
         priced, refs, subjects, unknown, size = [], [], {}, [], 2 + len(v3_tiers(chain))
         for token in sorted(asked)[:MAX_PRICED]:
             own = [] if token in base else pool_candidates(chain, token)
@@ -1037,7 +1171,7 @@ def build_chain_reads(*, provider_config, chain_rpc_file, learned_path, index_to
         return ChainSource(chain, endpoints, follower)
     for chain_id in POOL_CHAINS:
         chain = registry.chain(chain_id)
-        if chain_id == 4663:
+        if chain_id == CHAIN_ID:  # the own node's chain: its routes are the reader's provider file (v2_rpc)
             if provider_config is None:
                 continue
             endpoints = configured_endpoints(chain, provider_config=provider_config, send=kept_rpc)

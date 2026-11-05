@@ -53,7 +53,9 @@ Classes: `rpc` is `robinhood-mainnet.g.alchemy.com` or the private
 exactly the pinned Access issuer; `edges` are the two `argotunnel.com` names,
 whose pins must be members of the official inventory the module carries;
 `chains` is Base's and Arbitrum's hosted RPC: Chainstack, Alchemy, and each
-chain's public endpoint as a last resort (`CHAIN_HOSTS`). It is granted only
+chain's public endpoint as a last resort (`CHAIN_HOSTS`, each hosted chain's
+`egressHosts` in `scripts/staging/v2-chains.json`, the list the V2 installers
+read too and a test holds to the enabled chain profiles). It is granted only
 by `v2Chains`, and only to the reader (read-v6's chain reads), the writer (its V2
 indexer instances), the plan listener, the V2 automation, the monitor and the
 crosschain listener. A host that serves Robinhood alone pins none of it.

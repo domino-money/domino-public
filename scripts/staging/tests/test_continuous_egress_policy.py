@@ -597,6 +597,45 @@ class ContinuousEgressTests(unittest.TestCase):
         self.reject({**granted, 'v2Chains': False}, 'unapproved_hostname')
         self.reject({key: value for key, value in granted.items() if key != 'v2Chains'}, 'unapproved_hostname')
 
+    def test_the_chain_list_is_the_enabled_profiles_each_hosted_one_with_its_names(self):
+        # v2-chains.json, the one list the V2 installers and this policy read (v2_release_chains), against the
+        # profiles themselves: enabling a chain without its hosts, or listing one not enabled, fails here.
+        import v2_release_chains as chains
+        profiles = Path(__file__).resolve().parents[3] / 'api-contracts/v2/chains'
+        documents = [json.loads(path.read_text()) for path in sorted(profiles.glob('*.json'))]
+        enabled = sorted(f"{d['slug']}-{d['chainId']}" for d in documents if d['enabled'])
+        self.assertEqual(sorted(chains.CHAINS), enabled)
+        # Robinhood's routes are the own node's and its fallback (RPC_HOSTS); every other chain is hosted.
+        self.assertEqual(chains.CHAINS['robinhood-4663'], ())
+        self.assertTrue(all(hosts for name, hosts in chains.CHAINS.items() if name != 'robinhood-4663'))
+        self.assertEqual(policy.CHAIN_HOSTS, frozenset(host for hosts in chains.CHAINS.values() for host in hosts))
+        self.assertFalse(policy.CHAIN_HOSTS & policy.RPC_HOSTS)
+
+    def test_a_malformed_chain_list_is_refused_whole_and_a_new_chain_with_its_hosts_loads(self):
+        import tempfile
+        import v2_release_chains as chains
+        good = json.loads(chains.PATH.read_text())
+        cases = {
+            'another kind': lambda d: d.update(kind='domino-v2-chains'),
+            'no chain': lambda d: d.update(chains={}),
+            'a name without its id': lambda d: d['chains'].update({'elysium': {'egressHosts': []}}),
+            'an extra key': lambda d: d['chains']['base-8453'].update(rpc='hosted'),
+            'a URL for a host': lambda d: d['chains']['base-8453'].update(egressHosts=['https://mainnet.base.org/']),
+            'one host for two chains': lambda d: d['chains']['arbitrum-42161']['egressHosts'].append('mainnet.base.org'),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'v2-chains.json'
+            for case, change in cases.items():
+                document = deepcopy(good)
+                change(document)
+                path.write_text(json.dumps(document))
+                with self.subTest(case=case), self.assertRaisesRegex(ValueError, '^invalid_v2_release_chains$'):
+                    chains.load(path)
+            document = deepcopy(good)
+            document['chains']['synthetic-424242'] = {'egressHosts': ['rpc.synthetic.example']}
+            path.write_text(json.dumps(document))
+            self.assertEqual(list(chains.load(path)), [*good['chains'], 'synthetic-424242'])
+
     def test_the_chains_class_is_every_host_the_provisioned_file_names(self):
         # /etc/domino/v2/chain-rpc.json since 3 Oct: Chainstack, then Alchemy, then each chain's public endpoint
         # (docs/v2/F6_BACKEND.md). A host the file names and the set lacks would be refused at the socket, and

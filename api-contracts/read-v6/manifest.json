@@ -1088,7 +1088,7 @@
     },
     {
       "path": "runtime.mjs",
-      "sha256": "566c50052a4f25cf338a9352484e99cd2f9915f41ff2cecd40ef278c178c9058"
+      "sha256": "fb8a770edbb3d4b9eaea1dbb4947e54bd9d77b30a4af9e775e3cfc93fc0a9edd"
     },
     {
       "path": "../shared/closed-schema.mjs",
@@ -1096,18 +1096,18 @@
     },
     {
       "path": "README.md",
-      "sha256": "2385b84e757ebce475f00816bcd58e3326f9e762760a3bd6f49844e3fdaf618d"
+      "sha256": "e8719de0708e54a87e813a7fe4960545e6517efc8abcebabc32e2e82b3a670e2"
     },
     {
       "path": "consumer.test.mjs",
-      "sha256": "553a4ef968e4d5ce8c83b7c948fec5e0485b5b41d04a5e5e1ec86f1ed4b6e890"
+      "sha256": "e58befa07af96693d5f4caa1570971c9434175003e8499829fea3afe1d33d3fd"
     }
   ],
   "generator": "scripts/export-read-v6-contract.py",
   "sources": [
     {
       "path": "backend/v2_read_contract.py",
-      "sha256": "393007a45c28da8a32c3fea926c0b64c817a034ae4584bd4f0233a055bd25dc0"
+      "sha256": "a1b7c0b0dea8b11140715ce55fe7307863159d5fe468fa727f087ed01f292a8c"
     },
     {
       "path": "backend/v2_read_service.py",
@@ -1119,7 +1119,7 @@
     },
     {
       "path": "backend/v2_chain_reads.py",
-      "sha256": "1f369f38732c50e089a2184fa9360007f4a87213c1a0e6c2324beb936343741b"
+      "sha256": "7c48991ac69b2384c02ea59540ff48b6d9cab8479868073295232808c1314c8e"
     },
     {
       "path": "backend/data/token-lists/uniswap-default.json",

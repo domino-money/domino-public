@@ -39,9 +39,9 @@ import re
 from eth_abi import decode, encode
 from eth_hash.auto import keccak
 
-from discovery import DataError, json_http, quantity
+from discovery import CHAIN_ID, DataError, json_http, quantity
 from crosschain_common import (APP_FEE_BPS, ZERO, Memo, address, bps_of, bytes32, chain_id, decode_call,
-                               hexdata, raw, selector, usd, word_address)
+                               hexdata, load_destinations, raw, selector, usd, word_address)
 from crosschain_http import ProviderError
 
 ACROSS_API = 'https://app.across.to/api'
@@ -457,9 +457,9 @@ class EndpointsChainRpc(ChainRpc):
         raise DataError('across_rpc_unavailable')
 
 
-# The destinations with hosted RPC in the V2 chain RPC file. Robinhood is the listener's own node (--rpc-config),
-# which that file can never name (v2_rpc).
-HOSTED_DESTINATIONS = (8453, 42161)
+# The destinations with hosted RPC in the V2 chain RPC file: every chain S2 serves (crosschain_common) but Robinhood,
+# the listener's own node (--rpc-config), which that file can never name (v2_rpc).
+HOSTED_DESTINATIONS = tuple(sorted(chain for chain in load_destinations() if chain != CHAIN_ID))
 
 
 def destination_endpoints(chain_rpc_file, registry=None):

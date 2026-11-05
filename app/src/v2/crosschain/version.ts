@@ -43,7 +43,10 @@ export const CROSSCHAIN_V1_PIN = Object.freeze({
   // crosschain_api.py: a session belongs to the origin it signed in on, and a listed preview origin rides its own
   // Access identity; a read-only route may take an account check up to a minute old, for the delegate the session was
   // admitted with; no route, schema, reason code or version moved.
-  manifestSha256: '44cd1260eeb75e42a86e4bd53c79ecfc3f78034525fb8aefb642542d7deebf7a',
+  // Changed on purpose (data) 2026-11-05: crosschain_common.py, crosschain_config.py, crosschain_across.py and
+  // crosschain_fees.py: a chain profile naming no bridge provider is no destination (S2 off there), and the fee
+  // proof's chains follow the destinations (still 4663, 8453, 42161); no route, schema, reason code or version moved.
+  manifestSha256: 'a31cda1129cd4aca8166ca209fdb25858c6e908a79d719ac2a1422151c5f4104',
   /** The manifest's own `status`: the service is built but off until the owner's keys and the Worker route exist. */
   status: 'candidate_disabled_pending_keys_and_worker',
 } as const)

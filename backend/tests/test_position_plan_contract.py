@@ -115,6 +115,16 @@ process.stdout.write(JSON.stringify(cases.map(c => (c.kind === 'request' ? valid
                                 text=True, capture_output=True, timeout=120)
         self.assertEqual(result.returncode, 0, result.stdout[-2000:] + result.stderr[-2000:])
 
+    def test_the_chains_are_the_enabled_profiles_as_the_packages_chains_are(self):
+        # Chain and CONSTANTS.chains both follow api-contracts/v2/chains: enabling a profile regenerates this package.
+        from typing import get_args
+        from v2_chains import default_registry
+        from v2_position_plan_models import Chain
+        enabled = tuple(profile.chainId for profile in default_registry().chains)
+        self.assertEqual(get_args(Chain), enabled)
+        request = json.loads((ROOT / 'api-contracts/position-plan-v1/schemas/plan.request.schema.json').read_text())
+        self.assertEqual(request['properties']['chainId']['enum'], list(enabled))
+
     def test_every_nested_response_object_is_closed(self):
         _, responses, _ = build_fixtures()
         body = responses['plan']

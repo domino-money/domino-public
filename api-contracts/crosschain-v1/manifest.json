@@ -147,7 +147,7 @@
     },
     {
       "path": "backend/crosschain_common.py",
-      "sha256": "28529d961bac8ae789481aea55034717e251a2545359a25508e9bdab5026088d"
+      "sha256": "5f26c496c67fa1bf874aef5cc23343670d20b5125fdfbf46b57889161924413e"
     },
     {
       "path": "backend/crosschain_relay.py",
@@ -155,7 +155,7 @@
     },
     {
       "path": "backend/crosschain_across.py",
-      "sha256": "e58223d4400dbdb444c2eb1fb7964fc898900ef841f5f8234581ce848e182fad"
+      "sha256": "4602a2c07443f409e861129d37f0abb09c74700030d07369d25f2a1bdaaa1144"
     },
     {
       "path": "backend/crosschain_http.py",
@@ -163,7 +163,7 @@
     },
     {
       "path": "backend/crosschain_config.py",
-      "sha256": "3735eea6a7c769e7a4afc22101993e350c8a50d2bba4ef36e346202e0e82152e"
+      "sha256": "0785ffc585cfb5def538c7ecfdd0a8db21dd96546c4c8fd2a62086dafd6d80f2"
     },
     {
       "path": "backend/crosschain_pins.json",

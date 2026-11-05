@@ -17,7 +17,8 @@ completed from the embedded list only.
 Per chain (launch round P3, 4 Nov 2026): a policy with a `chain` block selects
 on that chain (featured_policies/, Base and Arbitrum One), with its own stable,
 its provider DEX labels for Uniswap v3 and v4, and ETH priced by the chain
-profile's Chainlink feed. Robinhood's policy has no block and keeps its facts:
+profile's Chainlink feed (or, on a chain Chainlink does not serve, the native
+currency by the pool its profile names). Robinhood's policy has no block and keeps its facts:
 USDG is its dollar side, `uniswap-v4-robinhood` its only DEX label, and its file,
 hence its policy version, does not change.
 """
@@ -189,8 +190,8 @@ def _decimal_string(value):
 def _chain_valid(policy):
     """Robinhood's policy prices ETH from its ETH/USDG pool and names no chain. A chain's names its id, its profile,
     its stable among the reference tokens and its GeckoTerminal network with one label per Uniswap version, and
-    prices ETH from the profile's Chainlink feed, so it names no pool. featured_chains checks it against the
-    profile."""
+    prices its native currency as its profile says (the Chainlink feed, or the pool it names), so it names no pool.
+    featured_chains checks it against the profile."""
     chain = policy.get('chain')
     if chain is None:
         return bytes32(policy['ethUsdPricePool']) == policy['ethUsdPricePool']

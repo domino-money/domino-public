@@ -175,12 +175,19 @@ def load_pins(path=PINS_PATH):
 
 
 def load_destinations(path=PROFILES_PATH):
-    """Enabled V2 chains and the tokens a deposit may deliver there: the charge currencies (stable, ETH, WETH)."""
+    """Enabled V2 chains S2 serves and the tokens a deposit may deliver there: the charge currencies (stable, ETH,
+    WETH). A profile whose bridge names no provider is a chain S2 does not serve (Elysium until its bridges are known):
+    no destination, and nothing else here is read from it; one that names any must name both, at the app fee."""
     result = {}
     for file in sorted(Path(path).glob('*.json')):
         profile = json.loads(file.read_text())
         if not profile.get('enabled'):
             continue
+        bridge = profile.get('bridge')
+        if type(bridge) is not dict or bridge.get('appFeeBps') != APP_FEE_BPS:
+            raise DataError('invalid_chain_profile')
+        if bridge.get('providers') == []:
+            continue  # S2 is off on this chain
         cid = chain_id(profile['chainId'], 'invalid_chain_profile')
         tokens = {}
         for currency in profile['chargeCurrencies']:

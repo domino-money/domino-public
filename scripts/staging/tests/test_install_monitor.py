@@ -92,6 +92,16 @@ class HostTests(unittest.TestCase):
         self.assertEqual(planned['unit'], installer.unit_text(COMMIT).replace(
             '/opt/domino/financial/releases', str(self.root / 'releases')))
 
+    def test_the_release_carries_the_profile_of_every_chain_the_list_names(self):
+        # v2-chains.json (v2_release_chains), held to the enabled profiles: a fourth chain needs its profile too.
+        chains = {**installer.v2_release_chains.CHAINS, 'elysium-99801': ('rpc.elysium.example',)}
+        with patch.object(installer.v2_release_chains, 'CHAINS', chains):
+            with self.assertRaisesRegex(ValueError, '^v2_exports_missing$'):
+                installer.plan(archive(), COMMIT, 'f' * 64)
+            files = archive()
+            files['api-contracts/v2/chains/elysium-99801.json'] = (b'{}', False)
+            installer.plan(files, COMMIT, 'f' * 64)
+
     def test_a_plan_is_refused_for_what_would_not_run_or_would_overwrite(self):
         cases = {
             'v2_exports_missing': lambda files: files.pop('api-contracts/v2/abi/IDominoRegistry.json'),

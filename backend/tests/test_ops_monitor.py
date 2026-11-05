@@ -872,5 +872,24 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(json.loads(Path(directory, 'state.json').read_text())['telegramOffset'], 4)
 
 
+class NativeSymbolTests(unittest.TestCase):
+    """Balances and gas are said in the chain's own native currency: ETH on the live chains, HYPE on a chain whose
+    profile names it (v2_hype_chain's synthetic Elysium)."""
+
+    def test_each_chain_says_its_profiles_native_currency(self):
+        import shutil
+        import v2_hype_chain as hype
+        directory = tempfile.mkdtemp(prefix='domino-hype-')
+        try:
+            registry = hype.registry(directory)
+        finally:
+            shutil.rmtree(directory)
+        monitor.native_symbol.cache_clear()
+        self.addCleanup(monitor.native_symbol.cache_clear)
+        with unittest.mock.patch('v2_chains.default_registry', return_value=registry):
+            self.assertEqual([monitor.native_symbol(key) for key in ('base-8453', hype.KEY, 'nowhere-1')],
+                             ['ETH', 'HYPE', 'ETH'])
+
+
 if __name__ == '__main__':
     unittest.main()

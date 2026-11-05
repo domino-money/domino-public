@@ -110,6 +110,17 @@ class HostTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '^release_directory_exists$'):
             installer.plan(archive(), COMMIT, 'f' * 64)
 
+    def test_the_release_carries_the_profile_of_every_chain_the_list_names(self):
+        # v2-chains.json (v2_release_chains), held to the enabled profiles: a fourth chain needs its profile too.
+        chains = {**installer.v2_release_chains.CHAINS, 'elysium-99801': ('rpc.elysium.example',)}
+        with patch.object(installer.v2_release_chains, 'CHAINS', chains):
+            with self.assertRaisesRegex(ValueError, '^chain_profiles_missing$'):
+                installer.plan(archive(), COMMIT, 'f' * 64)
+            files = archive()
+            files['api-contracts/v2/chains/elysium-99801.json'] = (b'{}', False)
+            self.assertIn('api-contracts/v2/chains/elysium-99801.json', installer.selected(files))
+            installer.plan(files, COMMIT, 'f' * 64)
+
     def test_a_running_release_is_judged_by_its_receipt_and_a_hand_edit_is_refused(self):
         unit = self.root / 'units' / installer.UNIT
         unit.write_text(installer.unit_text(COMMIT))

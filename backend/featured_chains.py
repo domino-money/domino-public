@@ -6,7 +6,8 @@ US$ 1M of 24 h volume, US$ 100k of TVL and US$ 10k of reference depth; the APR a
 Robinhood's are. Its own facts sit in featured_policies/<profile>.json, which a load refuses whole unless they are
 the chain profile's (api-contracts/v2/chains), so a file cannot drift from the chain it names:
 - the reference tokens are the profile's base currencies, by address: its stable (USDC), ETH and WETH;
-- the stable counts a depth or a major pair at US$ 1; ETH is priced by the profile's Chainlink ETH/USD feed;
+- the stable counts a depth or a major pair at US$ 1; ETH is priced by the profile's Chainlink ETH/USD feed or, on a
+  chain Chainlink does not serve, the native currency by the pool its profile names (featured_chain_evidence);
 - the canonical USDC, USDT, cbBTC and WBTC are real on these chains, unlike their look-alikes on Robinhood: USDC
   is the stable, and the others are reviewed by address (reviewedTokens), each an address the chain's registry
   names (the profile, or the pinned Uniswap Labs Default token list v2_chain_reads reads), so their protected
@@ -24,8 +25,9 @@ from v2_chain_reads import base_currencies, load_token_list
 from v2_chains import default_registry
 
 POLICY_DIRECTORY = Path(__file__).resolve().parent / 'featured_policies'
-# The chains that select in shadow; Robinhood's selection is manage_featured.py's, with featured_policy.json.
-CHAINS = ('base-8453', 'arbitrum-42161')
+# The chains that select in shadow: those with a policy in featured_policies/, named by their profile, each checked
+# against it when loaded. Robinhood's selection is manage_featured.py's, with featured_policy.json.
+CHAINS = tuple(sorted(path.stem for path in POLICY_DIRECTORY.glob('*.json')))
 
 
 def policy_path(key):
