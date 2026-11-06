@@ -98,7 +98,8 @@ role that is a component or CreateX, and, for a public deployment, any of the te
 ```
 
 These are the owner's addresses of 2 Oct 2026; governance is the owner's Safe (1.5.0, 2-of-3, the same address on
-the three chains). Keep the RPC URL in a private file (mode 0600, one URL) and pass it with `--rpc-file`, so a key
+the three chains). A chain without Safe 1.5.0 gets a Safe 1.3.0 with the same owners and threshold, the owner's
+decision of 5 Nov 2026 ([GOVERNANCE_SAFE.md](GOVERNANCE_SAFE.md)). Keep the RPC URL in a private file (mode 0600, one URL) and pass it with `--rpc-file`, so a key
 in the URL never reaches the command line or shell history; `--rpc` is for URLs without secrets. The file rules are
 V1's (`prepare-financial-release.mjs verificationRpcEndpoint`). No command overwrites an output file.
 

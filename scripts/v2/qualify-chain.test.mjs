@@ -283,7 +283,7 @@ test('a complete chain qualifies, and deploy.mjs\'s own dependency check accepts
 
   // The draft: the profile's shape, verified values, enabled false.
   const robinhood = readJson(join(repoRoot, 'api-contracts/v2/chains/robinhood-4663.json'));
-  const filled = { ...draft, gasPrice: robinhood.gasPrice, bridge: { ...draft.bridge, providers: [] } };
+  const filled = { ...draft, gasPrice: robinhood.gasPrice };
   assert.deepEqual(keyTree(filled), keyTree(robinhood));
   const g = viem.getAddress;
   assert.equal(draft.enabled, false); assert.equal(draft.chainId, CHAIN); assert.equal(draft.slug, 'elysium'); assert.equal(draft.nativeSymbol, 'HYPE');
@@ -297,7 +297,9 @@ test('a complete chain qualifies, and deploy.mjs\'s own dependency check accepts
   assert.deepEqual(draft.wrappedNative, { symbol: 'WHYPE', address: g(c.wrapped), decimals: 18 });
   assert.deepEqual(draft.chargeCurrencies, [{ rank: 1, symbol: 'USDC', address: g(c.stable), decimals: 6 },
     { rank: 2, symbol: 'HYPE', address: ZERO, decimals: 18, native: true }, { rank: 2, symbol: 'WHYPE', address: g(c.wrapped), decimals: 18 }]);
-  assert.equal(draft.gasPrice, null); assert.deepEqual(draft.bridge, { providers: null, appFeeBps: 35 });
+  // HYPE's USD: the liquid WHYPE/USDC pool with the most in-range liquidity (the fee-500 v3 pool, against v4's 7).
+  assert.deepEqual(draft.gasPrice, { poolNativeUsd: { dex: 3, pool: g(fake.pool), currency: g(c.wrapped), stable: g(c.stable), fee: 500 } });
+  assert.deepEqual(draft.bridge, { providers: [], appFeeBps: 35 });
   assert.equal(draft.verification.block, 5_000_000); assert.equal(draft.verification.checkedAt, '2027-01-15');
   const rows = Object.fromEntries(draft.verification.contracts.map(row => [row.name, row]));
   for (const [name, address] of [['UniswapV3Factory', c.v3Factory], ['PoolManager', c.poolManager], ['Permit2', PERMIT2], ['CreateX', CREATE_X],
@@ -316,7 +318,9 @@ test('a complete chain qualifies, and deploy.mjs\'s own dependency check accepts
   }
   assert.ok(!unverified.some(path => path.startsWith('verification')));
   const gaps = report.schemaGaps.map(gap => gap.field);
-  for (const field of ['gasPrice.chainlinkEthUsd', 'uniswap.universalRouter.version', 'enabled', 'bridge.providers', 'slug', 'chainId']) assert.ok(gaps.includes(field), field);
+  for (const field of ['uniswap.universalRouter.version', 'enabled', 'bridge.providers', 'slug', 'chainId']) assert.ok(gaps.includes(field), field);
+  assert.ok(!gaps.some(field => field.startsWith('gasPrice')), 'the profile expresses a chain Chainlink does not serve (gasPrice.poolNativeUsd)');
+  assert.match(report.unverifiedFields.find(f => f.path === 'gasPrice').reason, /^the owner's choice of pool/);
   assert.match(report.schemaGaps.find(gap => gap.where.includes('ENABLED_CHAINS')).gap, new RegExp(ENABLED_CHAINS.join(', ')));
   assert.doesNotThrow(() => JSON.stringify(report));
 });
@@ -458,6 +462,8 @@ test('Uniswap wiring that does not hold fails the check that reads it, and leave
   const notCreate2 = label('not a CREATE2 pool');
   const pool = await qualify({ poolAddress: notCreate2 });
   assert.equal(pool.status['uniswap.v3.poolInitCodeHash'], 'fail'); assert.equal(pool.draft.uniswap.v3.poolInitCodeHash, null);
+  // A pool off its CREATE2 address never prices the native currency: the backend would refuse it.
+  assert.equal(pool.draft.gasPrice.poolNativeUsd.dex, 4);
   const weth = await qualify({}, { wrappedNative: label('another wrapper') });
   assert.equal(weth.status['uniswap.v3.positionManager'], 'fail');
   assert.equal(weth.check('uniswap.v3.positionManager').evidence.wiring.find(w => w.getter === 'WETH9()').status, 'fail');
@@ -472,6 +478,15 @@ test('liquidity: pools without liquidity, no pool, and what a missing input leav
   for (const id of ['uniswap.v3.factory', 'uniswap.universalRouter', 'tokens.wrappedNative', 'tokens.stable', 'liquidity.v3', 'liquidity.v4', 'deployTool.dependencies']) {
     assert.equal(bare.status[id], 'unknown', id);
   }
+  // HYPE's USD (gasPrice.poolNativeUsd): the liquid pool with the most in-range liquidity, v3 or hookless v4 (here native/USDC).
+  const { c } = chain();
+  const v4 = { dex: 4, poolId: viem.keccak256(ret(['address', 'address', 'uint24', 'int24', 'address'], [ZERO, c.stable, 500, 10, ZERO])), currency: ZERO,
+    stable: viem.getAddress(c.stable), fee: 500, tickSpacing: 10 };
+  assert.deepEqual(dry.draft.gasPrice, { poolNativeUsd: v4 });
+  assert.deepEqual(none.draft.gasPrice, { poolNativeUsd: v4 });
+  assert.deepEqual((await qualify({ liquidity: 3n })).draft.gasPrice, { poolNativeUsd: v4 }); // v3's 3 against v4's 7
+  assert.equal(bare.draft.gasPrice, null);
+  assert.match(bare.report.unverifiedFields.find(f => f.path === 'gasPrice').reason, /^no liquid wrapped-native\/stable pool/);
   // A wrapped native given without a periphery to confirm it: read, but not written into the draft.
   const given = await qualify({}, { uniswap: null, stable: null, wrappedNative: chain().c.wrapped });
   assert.equal(given.status['tokens.wrappedNative'], 'pass'); assert.equal(given.draft.wrappedNative, null);

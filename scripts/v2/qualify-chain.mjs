@@ -881,6 +881,9 @@ export async function qualifyChain({ rpc, now = Math.floor(Date.now() / 1000), e
 
   // ------------------------------------------------------------ liquidity
   let initCodeHash = null;
+  /** The pools gasPrice.poolNativeUsd could name (backend/v2_chains.py): a liquid v3 pool at its CREATE2 address, or a
+   * liquid hookless v4 pool, of the wrapped native (or, on v4, the native) and the stable. */
+  const nativeUsdPools = [];
   if (u.v3.factory && verified.v3Factory && wrapped && stable && Number.isInteger(tokens.wrapped?.decimals) && Number.isInteger(tokens.stable?.decimals)) {
     const fees = Object.entries(tiers).filter(([, s]) => typeof s === 'number' && s > 0).map(([fee]) => Number(fee));
     const pools = await Promise.all(fees.map(async fee => {
@@ -908,6 +911,8 @@ export async function qualifyChain({ rpc, now = Math.floor(Date.now() / 1000), e
     add('uniswap.v3.poolInitCodeHash', 'uniswap', initCodeHash, proof ? `${proof.create2Matches ? '' : 'NOT '}CREATE2(factory, ${V3_POOL_INIT_CODE_HASH.slice(0, 10)}...) for the fee-${proof.fee} pool getPool names`
       : 'no wrapped-native/stable pool to prove it with', { poolInitCodeHash: V3_POOL_INIT_CODE_HASH, pools: found.map(p => ({ fee: p.fee, pool: p.pool, create2Matches: p.create2Matches })) });
     const liquid = found.filter(p => p.liquidity > 0n && p.sqrtPriceX96 > 0n);
+    for (const p of liquid) if (p.create2Matches && present(p.code)) nativeUsdPools.push({ liquidity: p.liquidity,
+      entry: { dex: 3, pool: p.pool, currency: checksummed(wrapped), stable: checksummed(stable), fee: p.fee } });
     add('liquidity.v3', 'liquidity', liquid.length ? 'pass' : pools.some(p => p.failure) ? 'unknown' : 'fail',
       liquid.length ? liquid.map(p => `fee ${p.fee}: ${p.price} ${tokens.stable.symbol ?? 'stable'} per ${tokens.wrapped.symbol ?? 'wrapped'}, liquidity ${p.liquidity}`).join('; ')
         : found.length ? 'pools exist but none holds liquidity' : 'no wrapped-native/stable v3 pool',
@@ -931,6 +936,8 @@ export async function qualifyChain({ rpc, now = Math.floor(Date.now() / 1000), e
       return { ...key, initialized: true, liquidity: liquidity.value?.[0] ?? null, price: stablePerBase(slot0.value[0], key.base, key.decimals, tokens.stable.decimals, stable) };
     }));
     const liquid = pools.filter(p => p.liquidity > 0n);
+    for (const p of liquid) nativeUsdPools.push({ liquidity: p.liquidity,
+      entry: { dex: 4, poolId: p.id, currency: p.base === ZERO ? ZERO : checksummed(p.base), stable: checksummed(stable), fee: p.fee, tickSpacing: p.tickSpacing } });
     add('liquidity.v4', 'liquidity', liquid.length ? 'pass' : pools.some(p => p.failure) ? 'unknown' : 'fail',
       liquid.length ? liquid.map(p => `${p.base === ZERO ? 'native' : 'wrapped'} fee ${p.fee}: ${p.price}`).join('; ') : 'no hookless standard-tier v4 pool with liquidity',
       { pools: pools.map(p => ({ currency: p.base === ZERO ? 'native' : checksummed(p.base), fee: p.fee, tickSpacing: p.tickSpacing, poolId: p.id, initialized: p.initialized,
@@ -966,8 +973,11 @@ export async function qualifyChain({ rpc, now = Math.floor(Date.now() / 1000), e
     wrappedNative: wrappedEntry,
     chargeCurrencies: [stableEntry, nativeSymbol ? { rank: 2, symbol: nativeSymbol, address: ZERO, decimals: 18, native: true } : null,
       wrappedEntry ? { rank: 2, symbol: wrappedEntry.symbol, address: wrappedEntry.address, decimals: wrappedEntry.decimals } : null],
-    gasPrice: null,
-    bridge: { providers: null, appFeeBps: POLICIES.bridgeAppFeeBps },
+    // The owner's decision (5 Nov 2026): a chain without Chainlink prices its native currency at one pool's spot, used
+    // only while its depth reaches the floor. The draft names the pool with the most in-range liquidity.
+    gasPrice: nativeUsdPools.length ? { poolNativeUsd: nativeUsdPools.reduce((a, b) => (b.liquidity > a.liquidity ? b : a)).entry } : null,
+    // No provider: S2 does not serve the chain until Relay or Across do (backend/v2_chains.py Bridge).
+    bridge: { providers: [], appFeeBps: POLICIES.bridgeAppFeeBps },
     finality,
     verification: { block: Number(head.number), checkedAt: new Date(now * 1000).toISOString().slice(0, 10), contracts: [...rows.values()] },
     notes: [`DRAFT by scripts/v2/qualify-chain.mjs at block ${head.number}: enabled stays false and every null is unverified (the qualification report lists why).`, ...notes],
@@ -1008,7 +1018,7 @@ export async function qualifyChain({ rpc, now = Math.floor(Date.now() / 1000), e
     const blocking = checks.filter(c => ids.includes(c.id) && c.status !== 'pass').map(c => `${c.id} (${c.status})`);
     return { status: combine(checks.filter(c => ids.includes(c.id)).map(c => c.status)), blocking };
   };
-  const gaps = schemaGaps({ chainId, nativeSymbol, pending, draft, v3Verified, v4Verified, tiers: enabledTiers, apiSchemas: apiSchemas ?? chainEnumSchemas(chainId) });
+  const gaps = schemaGaps({ chainId, pending, draft, v3Verified, v4Verified, tiers: enabledTiers, apiSchemas: apiSchemas ?? chainEnumSchemas(chainId) });
   const report = {
     schemaVersion: 1, kind: 'domino-v2-chain-qualification', generatedAt: new Date(now * 1000).toISOString(),
     tool: { path: 'scripts/v2/qualify-chain.mjs', commit: tool?.commit ?? null },
@@ -1035,8 +1045,7 @@ const stringifyBigints = value => JSON.parse(JSON.stringify(value, (_, x) => typ
 /** The draft's fields the tool could not verify on chain: every null, and what came from an input instead. */
 export function unverifiedFields(draft, { pending, claimedVersion, wrappedCrossChecked }) {
   const reasons = {
-    gasPrice: 'schema gap: the profile needs gasPrice.chainlinkEthUsd; this tool reads no Chainlink feed, and an ETH/USD feed does not price a non-ETH gas coin',
-    'bridge.providers': 'not on chain: whether Relay and Across serve the chain is theirs to say',
+    gasPrice: 'no liquid wrapped-native/stable pool to name as gasPrice.poolNativeUsd (this tool reads no Chainlink feed, and an ETH/USD feed does not price a non-ETH gas coin)',
     'uniswap.universalRouter.version': `not readable on chain${claimedVersion ? ` (the input claims ${claimedVersion}; the schema admits only 2.1.2)` : ''}: Uniswap's deployment list or SDK names it`,
     slug: 'no pending profile given (--pending)', name: 'no pending profile given (--pending)', nativeSymbol: 'no pending profile given (--pending)',
     stack: 'not an Arbitrum Nitro chain, or ArbSys unreadable', blockTimeSeconds: 'no block sample', finality: "no 'finalized' block",
@@ -1058,16 +1067,16 @@ export function unverifiedFields(draft, { pending, claimedVersion, wrappedCrossC
   walk(draft, '');
   if (pending) for (const path of ['slug', 'name', 'nativeSymbol']) out.push({ path, reason: `from the pending profile ${pending.slug}.json: the owner's naming, not a chain fact` });
   if (draft.chargeCurrencies[0]) out.push({ path: 'chargeCurrencies[0]', reason: 'the owner\'s choice of rank-1 stable (its code, symbol and decimals are verified)' });
+  if (draft.gasPrice) out.push({ path: 'gasPrice', reason: 'the owner\'s choice of pool: the draft names the liquid wrapped-native/stable pool with the most in-range liquidity at its block (liquidity.v3 and liquidity.v4 list them all); the backend prices the native currency from it only while its depth within the band reaches the floor' });
+  out.push({ path: 'bridge.providers', reason: 'not on chain: none until Relay or Across say they serve the chain, so S2 starts off there' });
   if (draft.bridge.appFeeBps !== null) out.push({ path: 'bridge.appFeeBps', reason: 'policy: deploy.mjs POLICIES.bridgeAppFeeBps, not a chain fact' });
   out.push({ path: 'notes', reason: 'generated text' }, { path: 'sources', reason: 'generated: add the chain\'s and Uniswap\'s documents' });
   return out;
 }
 
 /** Where today's profile schema (backend/v2_chains.py) and tooling cannot express the chain. Nothing here changes them. */
-export function schemaGaps({ chainId, nativeSymbol, pending, draft, v3Verified, v4Verified, tiers, apiSchemas }) {
+export function schemaGaps({ chainId, pending, draft, v3Verified, v4Verified, tiers, apiSchemas }) {
   const gaps = [
-    { field: 'gasPrice.chainlinkEthUsd', where: 'backend/v2_chains.py GasPrice/ChainlinkFeed (required)',
-      gap: `the profile must name a Chainlink ETH/USD feed${nativeSymbol && nativeSymbol !== 'ETH' ? `; gas is paid in ${nativeSymbol}, so ETH/USD would not price it, and the chain has no Chainlink feed to name` : ''}` },
     { field: 'uniswap.universalRouter.version', where: "backend/v2_chains.py UniversalRouter.version: Literal['2.1.2']",
       gap: 'only 2.1.2 is admitted and no chain read shows a router\'s version; another version (2.0, 2.2.0) cannot be expressed' },
     { field: 'enabled', where: 'backend/v2_chains.py ChainProfile (enabled: Literal[True]) and PendingChain (chainId: None, no profile fields)',

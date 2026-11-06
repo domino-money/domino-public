@@ -43,7 +43,28 @@ It works for any Nitro chain.
    (`schemaGaps`).
    - Never put the draft in `api-contracts/v2/chains/`. No profile shape is complete and disabled, so the backend's
      registry would refuse the whole directory.
+   - `gasPrice.poolNativeUsd` names the liquid wrapped-native/stable pool with the most in-range liquidity. Which pool
+     prices HYPE is the owner's choice: confirm it against `liquidity.v3` and `liquidity.v4`.
+   - `bridge.providers` starts empty, so S2 stays off on the chain until Relay or Across serve it.
    - The enabled profile also replaces `elysium.json` in the same change.
+
+## After the qualification, in order
+
+1. **Bootstrap**, if the report needs one: CreateX, the Arachnid proxy or Multicall3 from their presigned transactions,
+   or Safe 1.3.0 through the Arachnid proxy. Rehearse each on a fork first.
+2. **The profile and the release candidate, in one pull request:**
+   - `elysium-<id>.json` from the draft: enabled, the router's version, the pool that prices HYPE and no bridge
+     provider. It replaces `elysium.json`.
+   - `<id>` in `deploy.mjs`'s `ENABLED_CHAINS`, with the manifest rewritten (`release-manifest.mjs --write`).
+   - What `schemaGaps` names: the profile tests, and the API schemas that list the chain ids (a contract change the
+     app sees).
+
+   After main's own CI passes on the merge, the owner tags `v2-release-YYYY-MM-DD` ([FREEZE.md](FREEZE.md)).
+3. **Governance:** the Safe 1.3.0 ([GOVERNANCE_SAFE.md](GOVERNANCE_SAFE.md)), then the chain's roles file.
+4. **Funding, in HYPE:** the preflight's worst case for the deployer, and gas for the guardian, the operator and the
+   publisher.
+5. **Deployment:** [DEPLOYMENT.md](DEPLOYMENT.md), from `prepare` to `verify` at `finalized`, then Sourcify.
+6. **Services:** the backend's units, egress and Workers, and the app (0xdecimal's), come after the contracts.
 
 ## What it checks
 
@@ -71,14 +92,17 @@ On Nitro the L1 component counts inside the gas limit. A variant that runs out o
 can then never be at its address there, so rehearse on a fork first.
 
 Safe 1.3.0 is permissionless through the Arachnid proxy. Safe 1.4.1 and 1.5.0 need the Safe Singleton Factory, which
-only the Safe team deploys, on request. The report also bounds Domino's own eleven transactions:
+only the Safe team deploys, on request. So Elysium's governance is a new Safe 1.3.0 with the production owners, the
+owner's decision of 5 Nov 2026 ([GOVERNANCE_SAFE.md](GOVERNANCE_SAFE.md)). The report also bounds Domino's own eleven transactions:
 11 × 16,777,216 gas at 3 × the base fee.
 
 ## What it cannot verify
 
-- **Gas pricing.** The profile requires a Chainlink ETH/USD feed. Elysium has none, and gas is paid in HYPE.
+- **Which pool prices HYPE.** Elysium has no Chainlink feed, so the profile names a WHYPE/stable pool
+  (`gasPrice.poolNativeUsd`). The owner decided this on 5 Nov 2026: a pool's spot, used only while its depth reaches the
+  floor, until the HyperCore precompile. The draft proposes the deepest pool; the choice is the owner's.
 - **The Universal Router's version.** The schema admits only 2.1.2.
-- **The bridge providers.**
+- **The bridge providers.** The draft names none, so S2 starts off there.
 - **That the given addresses are Uniswap's official deployment.** It verifies their bytes and wiring, not who deployed
   them.
 - **The stable.** It is the owner's choice: its code, symbol and decimals are read.
@@ -103,3 +127,6 @@ and Safe 1.3.0 (singleton, SafeL2 and proxy factory).
 **Absent:** the Safe Singleton Factory, and with it Safe 1.4.1 and 1.5.0.
 
 **Unprotected transactions:** the keyless senders' nonces (1) show that the chain accepted them.
+
+**Governance:** the Safe 1.3.0 with the production owners was planned on the testnet and created on a fork
+([GOVERNANCE_SAFE.md](GOVERNANCE_SAFE.md)).
