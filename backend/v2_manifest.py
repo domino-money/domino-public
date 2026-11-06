@@ -92,6 +92,42 @@ POLICIES = {
 }
 DEPENDENCIES = ('v3Factory', 'v3PositionManager', 'v3Quoter', 'v3SwapRouter', 'v4PoolManager', 'v4PositionManager',
                 'v4StateView', 'v4Quoter', 'universalRouter', 'permit2', 'wrappedNative')
+# A chain may have one Uniswap version only (6 Nov 2026, Elysium: v4); deploy.mjs then deploys only the common four
+# and that version's components, and records only its dependencies (DEX_COMPONENTS, DEX_DEPENDENCIES there).
+DEXES = ('v3', 'v4')
+DEX_COMPONENTS = {'v3': ('vault.v3', 'vaultFactory.v3', 'zap.v3', 'vaultExecutor.v3'),
+                  'v4': ('vault.v4', 'vaultFactory.v4', 'zap.v4.steps', 'zap.v4', 'vaultExecutor.v4')}
+DEX_DEPENDENCIES = {'v3': ('v3Factory', 'v3PositionManager', 'v3Quoter', 'v3SwapRouter'),
+                    'v4': ('v4PoolManager', 'v4PositionManager', 'v4StateView', 'v4Quoter')}
+
+
+def _served_by(dexes):
+    def served(component):
+        owner = next((dex for dex in DEXES if component in DEX_COMPONENTS[dex]), None)
+        return owner is None or owner in dexes
+    return served
+
+
+def components_for(dexes):
+    """deploy.mjs `componentsFor`: the components of a chain with these versions, executors included."""
+    return tuple(filter(_served_by(dexes), COMPONENTS))
+
+
+def deploy_order_for(dexes):
+    """deploy.mjs `deployOrderFor`: what the deployer sends for these versions, in DEPLOY_ORDER."""
+    return tuple(filter(_served_by(dexes), DEPLOY_ORDER))
+
+
+def dependencies_for(dexes):
+    """deploy.mjs `dependenciesFor`: the dependency keys of these versions, in the recorded order."""
+    return (*(key for dex in DEXES if dex in dexes for key in DEX_DEPENDENCIES[dex]),
+            'universalRouter', 'permit2', 'wrappedNative')
+
+
+def manifest_dexes(m):
+    """deploy.mjs `manifestDexes`: the versions whose vault a manifest records."""
+    contracts = m.get('contracts') if type(m) is dict else None
+    return tuple(dex for dex in DEXES if type(contracts) is dict and f'vault.{dex}' in contracts)
 ENVIRONMENTS = ('public-chain-preparation', 'local-test', 'fork-rehearsal')
 ADMISSIONS = ('production', 'fork-rehearsal', 'local-test')
 BUILD = {'version': '0.8.26+commit.8a97fa7a', 'optimizerRuns': 200, 'viaIR': True, 'evmVersion': 'cancun',
@@ -257,17 +293,22 @@ def checked_manifest(m, *, enabled=None):
     _ensure(canonical(m['contractNames']) == canonical(CONTRACT_NAMES)
             and canonical(m['policies']) == canonical(POLICIES))
     _roles(m['roles'])
+    # The components and dependencies of the versions whose vault the manifest records, never a part of one.
+    dexes = manifest_dexes(m)
+    _ensure(len(dexes) > 0)
+    components, order, dependencies = components_for(dexes), deploy_order_for(dexes), dependencies_for(dexes)
     contracts, salts, guarded = predict(m['roles']['deployer'])
+    contracts = {name: contracts[name] for name in components}
     _ensure(canonical(m['contracts']) == canonical(contracts))
     _ensure(all(role not in contracts.values() and role != CREATE_X for role in m['roles'].values()))
     createx = m['createx']
     _keys(createx, ('address', 'runtimeCodeHash', 'salts', 'guardedSalts'))
     _ensure(createx['address'] == CREATE_X and createx['runtimeCodeHash'] == CREATE_X_CODE_HASH
-            and canonical(createx['salts']) == canonical(salts)
-            and canonical(createx['guardedSalts']) == canonical(guarded))
-    _keys(m['dependencies'], DEPENDENCIES)
+            and canonical(createx['salts']) == canonical({name: salts[name] for name in order})
+            and canonical(createx['guardedSalts']) == canonical({name: guarded[name] for name in order}))
+    _keys(m['dependencies'], dependencies)
     _ensure(all(_address(value) and int(value, 16) > 0 for value in m['dependencies'].values()))
-    _keys(m['runtimeCodeHashes'], (*COMPONENTS, *DEPENDENCIES))
+    _keys(m['runtimeCodeHashes'], (*components, *dependencies))
     _ensure(all(_hash(value) and int(value, 16) > 0 for value in m['runtimeCodeHashes'].values()))
     charge = m['chargeCurrencies']
     _ensure(type(charge) is list and len(charge) >= 2)
@@ -292,7 +333,7 @@ def checked_manifest(m, *, enabled=None):
     if m['status'] == 'prepared':
         _ensure(verification is None and not receipts)
         return m
-    _keys(receipts, DEPLOY_ORDER)
+    _keys(receipts, order)
     blocks = {}
     for receipt in receipts.values():
         _keys(receipt, RECEIPT_KEYS)
@@ -304,7 +345,7 @@ def checked_manifest(m, *, enabled=None):
         _ensure(receipt['blockNumber'] >= 1 and int(receipt['transactionHash'], 16) != 0
                 and int(receipt['blockHash'], 16) != 0
                 and blocks.setdefault(receipt['blockNumber'], receipt['blockHash']) == receipt['blockHash'])
-    _ensure(len({receipt['transactionHash'] for receipt in receipts.values()}) == len(DEPLOY_ORDER))
+    _ensure(len({receipt['transactionHash'] for receipt in receipts.values()}) == len(order))
     _keys(verification, VERIFICATION_KEYS)
     _ensure(_integer(verification['blockNumber']) and _hash(verification['blockHash'])
             and type(verification['blockTag']) is str
@@ -318,12 +359,17 @@ def checked_manifest(m, *, enabled=None):
 
 
 def profile_dependencies(chain):
-    """deploy.mjs `dependencyMap`: the dependencies a deployment on `chain` is built against."""
+    """deploy.mjs `dependencyMap`: the dependencies a deployment on `chain` is built against, those of the Uniswap
+    versions the profile has (a manifest of other versions then differs from them)."""
     u = chain.uniswap
-    return {'v3Factory': u.v3.factory, 'v3PositionManager': u.v3.positionManager, 'v3Quoter': u.v3.quoterV2,
-            'v3SwapRouter': u.v3.swapRouter02, 'v4PoolManager': u.v4.poolManager,
-            'v4PositionManager': u.v4.positionManager, 'v4StateView': u.v4.stateView, 'v4Quoter': u.v4.quoter,
-            'universalRouter': u.universalRouter.address, 'permit2': chain.permit2,
+    dependencies = {}
+    if u.v3 is not None:
+        dependencies.update({'v3Factory': u.v3.factory, 'v3PositionManager': u.v3.positionManager,
+                             'v3Quoter': u.v3.quoterV2, 'v3SwapRouter': u.v3.swapRouter02})
+    if u.v4 is not None:
+        dependencies.update({'v4PoolManager': u.v4.poolManager, 'v4PositionManager': u.v4.positionManager,
+                             'v4StateView': u.v4.stateView, 'v4Quoter': u.v4.quoter})
+    return {**dependencies, 'universalRouter': u.universalRouter.address, 'permit2': chain.permit2,
             'wrappedNative': chain.wrappedNative.address}
 
 
@@ -333,9 +379,16 @@ class Deployment:
     chain: ChainProfile
     manifest: dict
 
+    @property
+    def dexes(self):
+        """The Uniswap versions deployed on this chain, as ChainProfile.dexes names them: (3, 4), or (4,) on Elysium."""
+        return tuple(int(dex[1:]) for dex in manifest_dexes(self.manifest))
+
     def address(self, component):
         if component not in COMPONENTS:
             raise DataError('v2_deployment_component_unknown')
+        if component not in self.manifest['contracts']:
+            raise DataError('v2_dex_not_on_chain')
         return self.manifest['contracts'][component]
 
     @property
@@ -361,6 +414,10 @@ class Deployment:
     def publisher(self):
         return self.manifest['roles']['publisher']
 
+    def _known(self, component):
+        self.address(component)  # an unknown component, or one of a version this chain lacks, is refused
+        return component
+
     @cached_property
     def receipts(self):
         return dict(self.manifest['deploymentReceipts'])
@@ -369,15 +426,18 @@ class Deployment:
         """The block a log scan for `component`'s events starts at: its deployment's."""
         if component not in DEPLOY_ORDER:
             raise DataError('v2_deployment_component_unknown')
+        if component not in self.receipts:
+            raise DataError('v2_dex_not_on_chain')
         return self.receipts[component]['blockNumber']
 
-    def verify_code(self, rpc, block, *, components=COMPONENTS, cache=None):
+    def verify_code(self, rpc, block, *, components=None, cache=None):
         """The on-chain half of admission at `block` (a Block the client pinned):
         each recorded runtime code hash, and the verification block still
         canonical (deploy.mjs re-reads it against a reorganization). Once per
         process: the chain's code cache keeps what one eth_getCode proved."""
         cache = cache or getattr(rpc, 'code_cache', None) or CodeCache()
-        expected = {name: self.manifest['runtimeCodeHashes'][name] for name in components}
+        components = components_for(manifest_dexes(self.manifest)) if components is None else components
+        expected = {name: self.manifest['runtimeCodeHashes'][name] for name in map(self._known, components)}
         pending = [name for name in components
                    if not cache.proven(self.address(name), expected[name], block.number)]
         if not pending:

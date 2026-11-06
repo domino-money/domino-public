@@ -130,16 +130,7 @@
         "registry",
         "priceAnchor",
         "autoExit",
-        "vaultSwap",
-        "vault.v3",
-        "vault.v4",
-        "vaultFactory.v3",
-        "vaultFactory.v4",
-        "zap.v4.steps",
-        "zap.v3",
-        "zap.v4",
-        "vaultExecutor.v3",
-        "vaultExecutor.v4"
+        "vaultSwap"
       ]
     },
     "dependencies": {
@@ -192,14 +183,6 @@
         }
       },
       "required": [
-        "v3Factory",
-        "v3PositionManager",
-        "v3Quoter",
-        "v3SwapRouter",
-        "v4PoolManager",
-        "v4PositionManager",
-        "v4StateView",
-        "v4Quoter",
         "universalRouter",
         "permit2",
         "wrappedNative"
@@ -389,23 +372,6 @@
         "priceAnchor",
         "autoExit",
         "vaultSwap",
-        "vault.v3",
-        "vault.v4",
-        "vaultFactory.v3",
-        "vaultFactory.v4",
-        "zap.v4.steps",
-        "zap.v3",
-        "zap.v4",
-        "vaultExecutor.v3",
-        "vaultExecutor.v4",
-        "v3Factory",
-        "v3PositionManager",
-        "v3Quoter",
-        "v3SwapRouter",
-        "v4PoolManager",
-        "v4PositionManager",
-        "v4StateView",
-        "v4Quoter",
         "universalRouter",
         "permit2",
         "wrappedNative"
@@ -476,14 +442,7 @@
             "registry",
             "priceAnchor",
             "autoExit",
-            "vaultSwap",
-            "vault.v3",
-            "vault.v4",
-            "vaultFactory.v3",
-            "vaultFactory.v4",
-            "zap.v4.steps",
-            "zap.v3",
-            "zap.v4"
+            "vaultSwap"
           ]
         },
         "guardedSalts": {
@@ -539,14 +498,7 @@
             "registry",
             "priceAnchor",
             "autoExit",
-            "vaultSwap",
-            "vault.v3",
-            "vault.v4",
-            "vaultFactory.v3",
-            "vaultFactory.v4",
-            "zap.v4.steps",
-            "zap.v3",
-            "zap.v4"
+            "vaultSwap"
           ]
         }
       },

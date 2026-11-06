@@ -115,6 +115,9 @@ def base_currencies(chain):
 
 
 def v3_tiers(chain):
+    """The v3 fee tiers a pool may have on `chain`: none on a chain without v3."""
+    if DEX_V3 not in chain.dexes:
+        return {}
     tiers = {int(fee): spacing for fee, spacing in chain.uniswap.v3.tickSpacingByFee.items()}
     return {**tiers, **EXTRA_V3_TIERS.get(chain.chainId, {})}
 
@@ -122,15 +125,15 @@ def v3_tiers(chain):
 def pool_candidates(chain, token, paired=None):
     """The pools to read for `token`, as the app reads them through the wallet: v4's standard hookless keys with
     each partner, native ETH as itself; then v3's tiers, ETH becoming WETH, none for native ETH itself. A pair of
-    the same token, or of ETH and WETH, is no pool."""
+    the same token, or of ETH and WETH, is no pool. Only the Uniswap versions the chain has."""
     wrapped = chain.wrappedNative.address
     partners = [paired] if paired is not None else [entry[0] for entry in base_currencies(chain)]
     partners = [p for p in partners if p != token and {p, token} != {ZERO, wrapped}]
     refs = []
-    for partner in partners:
+    for partner in partners if DEX_V4 in chain.dexes else ():
         low, high = sorted((token, partner))
         refs.extend(PoolRef(DEX_V4, low, high, fee, spacing) for fee, spacing in V4_STANDARD_KEYS)
-    if token != ZERO:
+    if token != ZERO:  # v3_tiers: none on a chain without v3
         seen = []
         for partner in partners:
             partner = wrapped if partner == ZERO else partner
@@ -583,11 +586,13 @@ def survey(chain, rpc, block, refs, subjects, metadata=()):
     def add(target, abi, *args):
         calls.append((target, abi.calldata(*args)))
         return len(calls) - 1
-    state, factory = chain.uniswap.v4.stateView, chain.uniswap.v3.factory
+    # A pool of a Uniswap version the chain lacks is no pool of the chain: refused, never read at a missing contract.
+    if any(ref.dex not in chain.dexes for ref in refs):
+        raise DataError('v2_dex_not_on_chain')
 
     def slot(ref, pool):
         if ref.dex == DEX_V4:
-            pool_id = bytes.fromhex(ref.pool_id[2:])
+            pool_id, state = bytes.fromhex(ref.pool_id[2:]), chain.uniswap.v4.stateView
             return (ref, None, add(state, function(V4_STATE, 'getSlot0'), pool_id),
                     add(state, function(V4_STATE, 'getLiquidity'), pool_id))
         return ref, pool, add(pool, function(V3_POOL, 'slot0')), add(pool, function(V3_POOL, 'liquidity'))
@@ -601,7 +606,7 @@ def survey(chain, rpc, block, refs, subjects, metadata=()):
         native_slot = slot(*native[:2])
     slots = [slot(ref, None if ref.dex == DEX_V4 else v3_pool_address(chain, ref.currency0, ref.currency1, ref.fee))
              for ref in refs]
-    spacing_of = {fee: add(factory, function(V3_FACTORY, 'feeAmountTickSpacing'), fee)
+    spacing_of = {fee: add(chain.uniswap.v3.factory, function(V3_FACTORY, 'feeAmountTickSpacing'), fee)
                   for fee in sorted({ref.fee for ref in refs if ref.dex == DEX_V3})}
     meta_at = {token: (add(token, DECIMALS), add(token, SYMBOL), add(token, NAME)) for token in metadata}
     rows = aggregate(rpc, chain, block, calls)
@@ -667,7 +672,6 @@ def measure_depths(found, rpc):
     valued only once it qualifies."""
     chain, block = found.chain, found.block
     base, references = {entry[0] for entry in base_currencies(chain)}, found.reference_prices()
-    state = chain.uniswap.v4.stateView
     native = found.native_pool if found.native is None and found.native_pool is not None else None
     estimates = dict(references)
     if native is not None:
@@ -720,7 +724,8 @@ def measure_depths(found, rpc):
         words = {}
         for position in positions:
             words[position] = len(calls)
-            calls.append((state, V4_TICK_BITMAP.calldata(bytes.fromhex(pool.ref.pool_id[2:]), position))
+            calls.append((chain.uniswap.v4.stateView,
+                          V4_TICK_BITMAP.calldata(bytes.fromhex(pool.ref.pool_id[2:]), position))
                          if pool.ref.dex == DEX_V4 else (pool.address, V3_TICK_BITMAP.calldata(position)))
         walks.append((key, pool, zero_for_one, low, high, words))
 
@@ -760,7 +765,8 @@ def measure_depths(found, rpc):
         nets = {}
         for tick in ticks:
             nets[tick] = len(calls)
-            calls.append((state, V4_TICK_LIQUIDITY.calldata(bytes.fromhex(pool.ref.pool_id[2:]), tick))
+            calls.append((chain.uniswap.v4.stateView,
+                          V4_TICK_LIQUIDITY.calldata(bytes.fromhex(pool.ref.pool_id[2:]), tick))
                          if pool.ref.dex == DEX_V4 else (pool.address, V3_TICK.calldata(tick)))
         scheduled.append((key, pool, zero_for_one, {position: value[0] for position, value in bitmap.items()}, nets))
     rows = read(calls, [item[0] for item in scheduled if item[4]])

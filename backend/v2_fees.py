@@ -184,8 +184,8 @@ def decode_fee_log(chain, raw, followed):
     position's: a token id this manager does not follow, or a v4 position whose salt is not followed."""
     block, index, block_hash, tx, topics, data = _envelope(raw)
     emitter = str(raw.get('address', '')).lower()
-    v3, v4 = chain.uniswap.v3, chain.uniswap.v4
-    managers = {v3.positionManager: DEX_V3, v4.positionManager: DEX_V4}
+    v3, v4 = chain.uniswap.v3, chain.uniswap.v4  # either is None on a chain without that version
+    managers = {chain.position_manager(dex): dex for dex in chain.dexes}
     common = {'block_number': block, 'block_hash': block_hash, 'log_index': index, 'tx_hash': tx}
     if topics and topics[0] == TRANSFER and emitter in managers:
         if len(topics) != 4 or data:
@@ -195,7 +195,7 @@ def decode_fee_log(chain, raw, followed):
             return None
         return FeeLog(key, 'transfer', sender=_indexed_address(topics[1]), recipient=_indexed_address(topics[2]),
                       **common)
-    if topics and topics[0] in V3_EVENTS and emitter == v3.positionManager:
+    if topics and topics[0] in V3_EVENTS and v3 is not None and emitter == v3.positionManager:
         if len(topics) != 2:
             raise DataError('v2_fee_log_invalid')
         key = (DEX_V3, _indexed_uint(topics[1]))
@@ -209,7 +209,7 @@ def decode_fee_log(chain, raw, followed):
         if key not in followed:
             return None
         return FeeLog(key, kind, delta=delta, amounts=(amount0, amount1), **common)
-    if topics and topics[0] == MODIFY_LIQUIDITY and emitter == v4.poolManager:
+    if topics and topics[0] == MODIFY_LIQUIDITY and v4 is not None and emitter == v4.poolManager:
         if len(topics) != 3 or _indexed_address(topics[2]) != v4.positionManager:
             raise DataError('v2_fee_log_invalid')
         lower, upper, delta, salt = _strict(('int24', 'int24', 'int256', 'bytes32'), data)
@@ -343,8 +343,10 @@ class StateReader:
         self.chain, self.rpc = chain, rpc
         self.code = rpc.code_cache
         uniswap = chain.uniswap
-        self.contracts = (chain.multicall3, uniswap.v3.positionManager, uniswap.v3.factory,
-                          uniswap.v4.positionManager, uniswap.v4.stateView)
+        # The contracts of the Uniswap versions the chain has, in this order.
+        self.contracts = (chain.multicall3,
+                          *((uniswap.v3.positionManager, uniswap.v3.factory) if uniswap.v3 is not None else ()),
+                          *((uniswap.v4.positionManager, uniswap.v4.stateView) if uniswap.v4 is not None else ()))
 
     def _prove(self, block):
         unproven = [c for c in self.contracts if not self.code.proven(c, self.chain.verified_codehash(c), block.number)]
@@ -380,6 +382,8 @@ class StateReader:
     # -- who a token is
     def identify(self, block, keys):
         """{(dex, token id): Identity, or None when the token does not exist at `block`}."""
+        for dex, _ in keys:
+            self.chain.require_dex(dex)  # v2_dex_not_on_chain
         uniswap = self.chain.uniswap
         calls = [(uniswap.v3.positionManager, function(V3_MANAGER, 'positions'), (token,)) if dex == DEX_V3 else
                  (uniswap.v4.positionManager, function(V4_MANAGER, 'getPoolAndPositionInfo'), (token,))
@@ -426,6 +430,8 @@ class StateReader:
         """{key: state or None (not readable at `block`)} for `positions` (FeePosition) at `block`. `level`:
         'settle' (liquidity, last, v3 owed), 'growth' (and the growth inside now), 'now' (and the owner, the
         price and the pool's fees)."""
+        for p in positions:
+            self.chain.require_dex(p.dex)  # v2_dex_not_on_chain
         uniswap = self.chain.uniswap
         calls, plan, pools = [], [], {}
 
@@ -1025,8 +1031,7 @@ class V2FeeFollower:
         uniswap = self.chain.uniswap
         v3 = sorted(token for dex, token in followed if dex == DEX_V3)
         v4_pools = sorted({p.pool_key for p in followed.values() if p.dex == DEX_V4})
-        managers = sorted({uniswap.v3.positionManager if dex == DEX_V3 else uniswap.v4.positionManager
-                           for dex, _ in followed})
+        managers = sorted({self.chain.position_manager(dex) for dex, _ in followed})  # v2_dex_not_on_chain
         tokens = sorted({token for _, token in followed})
         filters = []
         for low in range(0, len(v3), MAX_FILTER_IDS):

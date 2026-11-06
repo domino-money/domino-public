@@ -5,8 +5,8 @@ import { spawn, execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { repoRoot, viem, CREATE_X, CREATE_X_CODE_HASH, DEPLOY_ORDER, MAX_TRANSACTION_GAS, PRODUCTION_DEPLOYER, ROLE_NAMES,
-  ensure, makeRpc, dependencyMap, readJson, quantity } from './deploy.mjs';
+import { repoRoot, viem, CREATE_X, CREATE_X_CODE_HASH, MAX_TRANSACTION_GAS, PRODUCTION_DEPLOYER, ROLE_NAMES,
+  ensure, makeRpc, dependencyMap, readJson, quantity, deployOrderFor, manifestDexes, DEXES } from './deploy.mjs';
 
 const LOOPBACK = ['127.0.0.1', 'localhost', '[::1]'];
 const validated = new WeakSet();
@@ -106,7 +106,8 @@ export function dependencyStub() {
 /** The stub's runtime answering for `profile`'s dependency addresses. */
 export function stubRuntime(profile) {
   const stub = dependencyStub(), deps = dependencyMap(profile), code = Buffer.from(stub.object, 'hex');
-  const values = { V3_FACTORY: deps.v3Factory, V4_POOL_MANAGER: deps.v4PoolManager, WRAPPED_NATIVE: deps.wrappedNative, PERMIT2: deps.permit2 };
+  const zero = '0x' + '0'.repeat(40); // an absent Uniswap version
+  const values = { V3_FACTORY: deps.v3Factory ?? zero, V4_POOL_MANAGER: deps.v4PoolManager ?? zero, WRAPPED_NATIVE: deps.wrappedNative, PERMIT2: deps.permit2 };
   for (const [id, ranges] of Object.entries(stub.references)) {
     ensure(Object.hasOwn(values, stub.names[id]), 'dependency_stub_immutable_unknown');
     const word = Buffer.from(values[stub.names[id]].slice(2).padStart(64, '0'), 'hex');
@@ -131,11 +132,14 @@ export async function installStubs(rpc, profile) {
 }
 
 /** The `local-test` profile of a plain Anvil: Base's addresses at the Anvil's chain id, the stub's code
- * hash for every dependency. Synthetic, never a Uniswap or Permit2 qualification. */
-export async function installOfflineDependencies(rpc) {
+ * hash for every dependency. Synthetic, never a Uniswap or Permit2 qualification. `dexes` leaves a Uniswap
+ * version out (`uniswap.v3: null`), as a chain with one version only has it (6 Nov 2026, Elysium). */
+export async function installOfflineDependencies(rpc, { dexes = DEXES } = {}) {
   requireValidatedRpc(rpc);
+  ensure(Array.isArray(dexes) && dexes.length > 0 && dexes.every(dex => DEXES.includes(dex)), 'invalid_offline_dexes');
   const template = readJson(join(repoRoot, 'api-contracts/v2/chains/base-8453.json'));
-  const profile = { ...template, chainId: Number(BigInt(await rpc('eth_chainId', []))), name: 'Offline V2 deployment fixtures', slug: 'local' };
+  const uniswap = { ...template.uniswap, ...Object.fromEntries(DEXES.filter(dex => !dexes.includes(dex)).map(dex => [dex, null])) };
+  const profile = { ...template, uniswap, chainId: Number(BigInt(await rpc('eth_chainId', []))), name: 'Offline V2 deployment fixtures', slug: 'local' };
   const { addresses, codehash } = await installStubs(rpc, profile);
   profile.verification = { block: Number(BigInt(await rpc('eth_blockNumber', []))), checkedAt: new Date().toISOString(),
     contracts: addresses.map(address => ({ name: 'DeploymentDependencyFixture', address, codehash })) };
@@ -148,7 +152,7 @@ export async function installOfflineDependencies(rpc) {
  * package's deployer impersonated. Each step may use at most EIP-7825's per-transaction cap, so a step that
  * needs more reverts here. L1 costs are added separately. */
 export async function simulateGas(full) {
-  ensure(full.steps.length === DEPLOY_ORDER.length && full.parameters.resumeOf === null, 'simulation_requires_all_steps');
+  ensure(full.steps.length === deployOrderFor(manifestDexes(full.manifest)).length && full.parameters.resumeOf === null, 'simulation_requires_all_steps');
   const profile = full.parameters.profile, deployer = full.manifest.roles.deployer;
   const anvil = await startAnvil({ args: ['--chain-id', String(profile.chainId), '--hardfork', 'prague', '--gas-limit', '60000000'] });
   try {

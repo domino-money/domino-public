@@ -28,6 +28,40 @@ export const CONTRACT_NAMES = Object.freeze({
   'vaultExecutor.v3': 'DominoV2VaultExecutorV3', 'vaultExecutor.v4': 'DominoV2VaultExecutorV4',
 });
 export const DEPLOY_ORDER = Object.freeze(Object.keys(CONTRACT_NAMES).filter(k => !k.startsWith('vaultExecutor.')));
+/** A chain may have one Uniswap version only (6 Nov 2026, Elysium: v4). The contracts read a zero v3 factory or v4
+ * PoolManager as that version being absent (DominoPriceAnchor, DominoSwapExecutor.RouteConfig); the vault, its
+ * factory and executor and the zap of an absent version are not deployed. The common four serve every chain. */
+export const DEXES = Object.freeze(['v3', 'v4']);
+export const DEX_COMPONENTS = Object.freeze({
+  v3: Object.freeze(['vault.v3', 'vaultFactory.v3', 'zap.v3', 'vaultExecutor.v3']),
+  v4: Object.freeze(['vault.v4', 'vaultFactory.v4', 'zap.v4.steps', 'zap.v4', 'vaultExecutor.v4']),
+});
+export const DEX_DEPENDENCIES = Object.freeze({
+  v3: Object.freeze(['v3Factory', 'v3PositionManager', 'v3Quoter', 'v3SwapRouter']),
+  v4: Object.freeze(['v4PoolManager', 'v4PositionManager', 'v4StateView', 'v4Quoter']),
+});
+const dexOf = component => DEXES.find(dex => DEX_COMPONENTS[dex].includes(component)) ?? null;
+const servedBy = dexes => component => { const dex = dexOf(component); return dex === null || dexes.includes(dex); };
+/** The components of a chain with these versions, in CONTRACT_NAMES order (executors included). */
+export const componentsFor = dexes => Object.keys(CONTRACT_NAMES).filter(servedBy(dexes));
+/** What the deployer sends for those versions, in DEPLOY_ORDER. */
+export const deployOrderFor = dexes => DEPLOY_ORDER.filter(servedBy(dexes));
+/** The dependency keys of those versions, in the order every manifest has recorded them. */
+export const dependenciesFor = dexes => [...DEXES.filter(dex => dexes.includes(dex)).flatMap(dex => DEX_DEPENDENCIES[dex]),
+  'universalRouter', 'permit2', 'wrappedNative'];
+const plainObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+/** A profile's Uniswap versions: `uniswap.v3` or `uniswap.v4` null means the chain has none of it; one at least. */
+export function profileDexes(profile) {
+  const uniswap = profile?.uniswap;
+  ensure(plainObject(uniswap) && DEXES.every(dex => uniswap[dex] === null || plainObject(uniswap[dex])), 'invalid_profile_uniswap');
+  const dexes = DEXES.filter(dex => uniswap[dex] !== null);
+  ensure(dexes.length > 0, 'profile_has_no_uniswap_version');
+  return dexes;
+}
+/** A manifest's versions: the ones whose vault it records. */
+export const manifestDexes = manifest => DEXES.filter(dex => plainObject(manifest?.contracts) && Object.hasOwn(manifest.contracts, 'vault.' + dex));
+/** Keeps a component-keyed map to the given components, in their order. */
+const only = (map, components) => Object.fromEntries(components.map(c => [c, map[c]]));
 export const ROLE_NAMES = Object.freeze(['deployer', 'governance', 'guardian', 'feeRecipient', 'operator', 'publisher']);
 export const POLICIES = Object.freeze({
   assistedSwapFeeBps: 65, bridgeAppFeeBps: 35, simpleCompoundFeeBps: 200, dominoCompoundFeeBps: 400,
@@ -44,7 +78,9 @@ const POLICY_CONSTANTS = Object.freeze({
 });
 export const PRODUCTION = 'public-chain-preparation';
 export const ENVIRONMENTS = Object.freeze([PRODUCTION, 'fork-rehearsal', 'local-test']);
-export const ENABLED_CHAINS = Object.freeze([4663, 8453, 42161]);
+/** Robinhood, Base, Arbitrum One and Elysium (99901: the chain id Conduit deployed and Elysium's launch partners use,
+ * 6 Nov 2026; a public preparation still needs its committed, verified profile). */
+export const ENABLED_CHAINS = Object.freeze([4663, 8453, 42161, 99901]);
 /** The owner's deployer (issue #301). With the 0x00 flag its CREATE3 addresses are the same on every chain. */
 export const PRODUCTION_DEPLOYER = '0x706627e3e75b0603c4b6f9a1ebbfc635da712747';
 /** The first ten accounts of the public test mnemonic ("test test ... junk"), whose keys every Anvil and
@@ -84,6 +120,7 @@ const NODE_INTERFACE = '0x00000000000000000000000000000000000000c8';
 const GAS_PRICE_ORACLE = '0x420000000000000000000000000000000000000f';
 const COMPILER = Object.freeze({ version: '0.8.26+commit.8a97fa7a', optimizerRuns: 200, viaIR: true, evmVersion: 'cancun', bytecodeHash: 'none' });
 const ZERO = '0x' + '0'.repeat(40);
+const ZERO32 = '0x' + '0'.repeat(64);
 const HEX32 = /^0x[0-9a-f]{64}$/;
 const PARAMETER_KEYS = Object.freeze(['profile', 'roles', 'environment', 'sourceCommit', 'releaseTag', 'nonce', 'gasLimits',
   'maxFeePerGas', 'maxPriorityFeePerGas', 'expiresAt', 'steps', 'resumeOf']);
@@ -256,16 +293,21 @@ export function checkPolicyConstants(constants) {
 
 // --------------------------------------------------------------- profiles
 
+/** The addresses deploy.mjs reads from a profile: those of its Uniswap versions, the router, Permit2 and the wrapped
+ * native, in the order every manifest has recorded them. */
 export function dependencyMap(profile) {
+  const dexes = profileDexes(profile), u = profile.uniswap;
   return Object.fromEntries(Object.entries({
-    v3Factory: profile.uniswap.v3.factory, v3PositionManager: profile.uniswap.v3.positionManager,
-    v3Quoter: profile.uniswap.v3.quoterV2, v3SwapRouter: profile.uniswap.v3.swapRouter02,
-    v4PoolManager: profile.uniswap.v4.poolManager, v4PositionManager: profile.uniswap.v4.positionManager,
-    v4StateView: profile.uniswap.v4.stateView, v4Quoter: profile.uniswap.v4.quoter,
-    universalRouter: profile.uniswap.universalRouter.address, permit2: profile.permit2,
+    ...(dexes.includes('v3') ? { v3Factory: u.v3.factory, v3PositionManager: u.v3.positionManager,
+      v3Quoter: u.v3.quoterV2, v3SwapRouter: u.v3.swapRouter02 } : {}),
+    ...(dexes.includes('v4') ? { v4PoolManager: u.v4.poolManager, v4PositionManager: u.v4.positionManager,
+      v4StateView: u.v4.stateView, v4Quoter: u.v4.quoter } : {}),
+    universalRouter: u.universalRouter.address, permit2: profile.permit2,
     wrappedNative: profile.wrappedNative.address,
   }).map(([k, v]) => [k, lowerAddress(v)]));
 }
+/** The v3 pool init code hash, zero on a chain without v3 (the anchor and the route take zero as "no v3"). */
+const v3InitCodeHash = profile => profile.uniswap.v3 === null ? ZERO32 : profile.uniswap.v3.poolInitCodeHash;
 function profileHashes(profile, deps, environment) {
   ensure(profile.enabled === true && Number.isSafeInteger(profile.chainId) && profile.chainId > 0
     && (ENABLED_CHAINS.includes(profile.chainId) || environment === 'local-test'), 'unsupported_chain_profile');
@@ -273,7 +315,7 @@ function profileHashes(profile, deps, environment) {
   const version = profile.uniswap.universalRouter.version.split('.').map(Number);
   ensure(version.length === 3 && version.every(Number.isSafeInteger)
     && (version[0] > 2 || (version[0] === 2 && (version[1] > 1 || (version[1] === 1 && version[2] >= 2)))), 'universal_router_version_too_old');
-  ensure(HEX32.test(profile.uniswap.v3.poolInitCodeHash), 'invalid_pool_init_code_hash');
+  if (profileDexes(profile).includes('v3')) ensure(HEX32.test(profile.uniswap.v3.poolInitCodeHash), 'invalid_pool_init_code_hash');
   ensure(profile.bridge?.appFeeBps === POLICIES.bridgeAppFeeBps, 'policy_bridge_fee_mismatch');
   const expected = {};
   for (const [name, addr] of Object.entries(deps)) {
@@ -295,17 +337,19 @@ export function expectedRuntime(component, artifacts, manifest, profile) {
   const c = manifest.contracts, d = manifest.dependencies, dex = component.endsWith('.v3') ? 3 : 4;
   const pm = dex === 3 ? d.v3PositionManager : d.v4PositionManager;
   const addr = c[component];
+  // An absent Uniswap version is zero in every immutable that names it, as its constructor arguments are.
+  const v3Factory = d.v3Factory ?? ZERO, v3Hash = v3InitCodeHash(profile), v4PoolManager = d.v4PoolManager ?? ZERO;
   const values = {
     registry: c.registry, FEE_REGISTRY: c.registry, ROUTE_REGISTRY: c.registry, REGISTRY: c.registry,
-    v3Factory: d.v3Factory, V3_FACTORY: d.v3Factory, v3PoolInitCodeHash: profile.uniswap.v3.poolInitCodeHash,
-    V3_POOL_INIT_CODE_HASH: profile.uniswap.v3.poolInitCodeHash, v4StateView: d.v4StateView,
+    v3Factory, V3_FACTORY: v3Factory, v3PoolInitCodeHash: v3Hash,
+    V3_POOL_INIT_CODE_HASH: v3Hash, v4StateView: d.v4StateView ?? ZERO,
     minTwapSeconds: component === 'autoExit' ? POLICIES.autoExitMinTwapSeconds : POLICIES.minTwapSeconds,
     maxObservationAgeSeconds: POLICIES.autoExitMaxObservationAgeSeconds,
     _cachedChainId: manifest.chain.chainId, _cachedThis: addr, _cachedDomainSeparator: domainHash(manifest.chain.chainId, addr),
-    priceAnchor: c.priceAnchor, PRICE_ANCHOR: c.priceAnchor, PERMIT2: d.permit2, V4_POOL_MANAGER: d.v4PoolManager,
+    priceAnchor: c.priceAnchor, PRICE_ANCHOR: c.priceAnchor, PERMIT2: d.permit2, V4_POOL_MANAGER: v4PoolManager,
     DEX: dex, dex, FACTORY: c['vaultFactory.v' + dex], factory: c['vaultFactory.v' + dex],
     POSITION_MANAGER: pm, positionManager: pm, SWAP_MODULE: c.vaultSwap, AUTO_EXIT: c.autoExit,
-    EXECUTOR: c['vaultExecutor.v' + dex], SELF: addr, POOL_MANAGER: d.v4PoolManager,
+    EXECUTOR: c['vaultExecutor.v' + dex], SELF: addr, POOL_MANAGER: v4PoolManager,
     WRAPPED_NATIVE: d.wrappedNative, STEPS: c['zap.v4.steps'], implementation: c['vault.v' + dex],
   };
   const occupied = new Set();
@@ -313,6 +357,7 @@ export function expectedRuntime(component, artifacts, manifest, profile) {
     const name = artifacts.immutables[id];
     ensure(Object.hasOwn(values, name), 'unknown_immutable: ' + component + ':' + name);
     const value = values[name];
+    ensure(value !== undefined, 'immutable_value_missing: ' + component + ':' + name);
     const hex = typeof value === 'string' ? value.slice(2) : BigInt(value).toString(16);
     ensure(hex.length <= 64, 'immutable_overflow');
     const word = Buffer.from(hex.padStart(64, '0'), 'hex');
@@ -339,11 +384,12 @@ export function prepareDeployment(parameters, artifacts) {
   const dependencyHashes = profileHashes(profile, deps, environment);
   ensure(parameters.sourceCommit === artifacts.sourceCommit && /^[0-9a-f]{40}$/.test(parameters.sourceCommit), 'source_commit_mismatch');
   ensure(typeof parameters.releaseTag === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,100}$/.test(parameters.releaseTag), 'invalid_release_tag');
+  const dexes = profileDexes(profile), order = deployOrderFor(dexes);
   const steps = parameters.steps;
-  ensure(Array.isArray(steps) && steps.length > 0 && steps.every(s => DEPLOY_ORDER.includes(s))
-    && steps.every((s, i) => i === 0 || DEPLOY_ORDER.indexOf(steps[i - 1]) < DEPLOY_ORDER.indexOf(s)), 'invalid_step_selection');
+  ensure(Array.isArray(steps) && steps.length > 0 && steps.every(s => order.includes(s))
+    && steps.every((s, i) => i === 0 || order.indexOf(steps[i - 1]) < order.indexOf(s)), 'invalid_step_selection');
   // A package that leaves components out continues an earlier one (resume) and names it.
-  ensure(steps.length === DEPLOY_ORDER.length ? parameters.resumeOf === null
+  ensure(steps.length === order.length ? parameters.resumeOf === null
     : typeof parameters.resumeOf === 'string' && /^[0-9a-f]{64}$/.test(parameters.resumeOf), 'invalid_resume_reference');
   keys(parameters.gasLimits, steps, 'gas_limits_must_cover_each_step');
   const gasLimits = Object.fromEntries(steps.map(s => [s, integer(parameters.gasLimits[s], 'invalid_gas_limit')]));
@@ -351,24 +397,28 @@ export function prepareDeployment(parameters, artifacts) {
   const nonce = integer(parameters.nonce), fee = integer(parameters.maxFeePerGas), tip = integer(parameters.maxPriorityFeePerGas);
   ensure(nonce + BigInt(steps.length) < 2n ** 64n - 1n && fee > 0n && fee < 2n ** 128n && tip <= fee, 'invalid_transaction_budget');
   ensure(Number.isSafeInteger(parameters.expiresAt) && parameters.expiresAt > 0, 'invalid_expiry');
-  const { contracts, salts, guardedSalts, proxies } = precomputeAddresses(roles.deployer);
+  // The addresses do not depend on which components a chain gets: CREATE3 takes the deployer and each one's salt.
+  const all = precomputeAddresses(roles.deployer), chainComponents = componentsFor(dexes);
+  const contracts = only(all.contracts, chainComponents), salts = only(all.salts, order), guardedSalts = only(all.guardedSalts, order),
+    proxies = only(all.proxies, order);
   ensure(Object.values(roles).every(addr => !Object.values(contracts).includes(addr) && addr !== CREATE_X), 'role_component_conflict');
   const charge = profile.chargeCurrencies.map(x => ({ token: lowerAddress(x.address, true), rank: x.rank }));
   ensure(charge.length >= 2 && charge.every(x => Number.isInteger(x.rank) && x.rank > 0 && x.rank < 256)
     && new Set(charge.map(x => x.token)).size === charge.length, 'invalid_charge_currencies');
-  const route = { registry: contracts.registry, permit2: deps.permit2, v3Factory: deps.v3Factory,
-    v3PoolInitCodeHash: profile.uniswap.v3.poolInitCodeHash, v4PoolManager: deps.v4PoolManager };
+  // An absent version is zero here: the route and the anchor then leave its legs out.
+  const route = { registry: contracts.registry, permit2: deps.permit2, v3Factory: deps.v3Factory ?? ZERO,
+    v3PoolInitCodeHash: v3InitCodeHash(profile), v4PoolManager: deps.v4PoolManager ?? ZERO };
   const vaultDeployment = dex => ({ factory: contracts['vaultFactory.' + dex], registry: contracts.registry,
     priceAnchor: contracts.priceAnchor, positionManager: deps[dex === 'v3' ? 'v3PositionManager' : 'v4PositionManager'], swapModule: contracts.vaultSwap, autoExit: contracts.autoExit });
-  const args = {
+  const args = only({
     registry: [{ governance: roles.governance, guardian: roles.guardian, timelockSeconds: POLICIES.timelockSeconds, feeRecipient: roles.feeRecipient,
       operators: [roles.operator], publishers: [roles.publisher], routers: [deps.universalRouter], chargeCurrencies: charge }],
-    priceAnchor: [contracts.registry, deps.v3Factory, profile.uniswap.v3.poolInitCodeHash, deps.v4StateView, POLICIES.minTwapSeconds],
+    priceAnchor: [contracts.registry, deps.v3Factory ?? ZERO, v3InitCodeHash(profile), deps.v4StateView ?? ZERO, POLICIES.minTwapSeconds],
     autoExit: [route, contracts.priceAnchor, POLICIES.autoExitMaxObservationAgeSeconds, POLICIES.autoExitMinTwapSeconds], vaultSwap: [route],
-    'vault.v3': [vaultDeployment('v3')], 'vault.v4': [vaultDeployment('v4')],
-    'vaultFactory.v3': [contracts['vault.v3']], 'vaultFactory.v4': [contracts['vault.v4']],
-    'zap.v4.steps': [], 'zap.v3': [route, deps.v3PositionManager], 'zap.v4': [route, deps.v4PositionManager, contracts['zap.v4.steps']],
-  };
+    ...(dexes.includes('v3') ? { 'vault.v3': [vaultDeployment('v3')], 'vaultFactory.v3': [contracts['vault.v3']], 'zap.v3': [route, deps.v3PositionManager] } : {}),
+    ...(dexes.includes('v4') ? { 'vault.v4': [vaultDeployment('v4')], 'vaultFactory.v4': [contracts['vault.v4']], 'zap.v4.steps': [],
+      'zap.v4': [route, deps.v4PositionManager, contracts['zap.v4.steps']] } : {}),
+  }, order);
   const p = structuredClone(parameters);
   const manifest = {
     schemaVersion: 1, kind: 'domino-v2-deployment', status: 'prepared', environment,
@@ -381,9 +431,9 @@ export function prepareDeployment(parameters, artifacts) {
       chainProfileSha256: sha256Hex(canonical(profile)) },
     deploymentReceipts: {}, verification: null,
   };
-  for (const component of Object.keys(CONTRACT_NAMES)) manifest.runtimeCodeHashes[component] = viem.keccak256(expectedRuntime(component, artifacts, manifest, profile));
+  for (const component of chainComponents) manifest.runtimeCodeHashes[component] = viem.keccak256(expectedRuntime(component, artifacts, manifest, profile));
   const components = {}, calldata = {};
-  for (const component of DEPLOY_ORDER) {
+  for (const component of order) {
     const artifact = artifacts.contracts[CONTRACT_NAMES[component]];
     const init = viem.encodeDeployData({ abi: artifact.abi, bytecode: '0x' + artifact.evm.bytecode.object, args: args[component] });
     ensure((init.length - 2) / 2 <= 49152, 'initcode_size_limit: ' + component);
@@ -404,12 +454,13 @@ export function prepareDeployment(parameters, artifacts) {
 
 export const packageDigest = bundle => sha256Hex(canonical(bundle));
 
-/** All eleven steps of a package's deployment (gas and fees aside, a resume package's steps are a subset of
- * these): what the gas simulation replays in order, and what explorers verify. */
+/** Every step of a package's deployment, eleven on a chain with both Uniswap versions (gas and fees aside, a resume
+ * package's steps are a subset of these): what the gas simulation replays in order, and what explorers verify. */
 export function fullPackage(bundle, artifacts) {
   ensure(prepared.has(bundle), 'full_package_requires_fresh_authenticated_preparation');
-  return prepareDeployment({ ...bundle.parameters, steps: [...DEPLOY_ORDER], resumeOf: null,
-    gasLimits: Object.fromEntries(DEPLOY_ORDER.map(c => [c, MAX_TRANSACTION_GAS.toString()])) }, artifacts);
+  const order = deployOrderFor(profileDexes(bundle.parameters.profile));
+  return prepareDeployment({ ...bundle.parameters, steps: [...order], resumeOf: null,
+    gasLimits: Object.fromEntries(order.map(c => [c, MAX_TRANSACTION_GAS.toString()])) }, artifacts);
 }
 
 /** Rebuilds a package read from disk from its own parameters and the current compile; any edit is refused. */
@@ -537,16 +588,21 @@ export async function checkDependencies(profile, rpc, block = 'latest') {
     ensure(hashes.size === 1, 'charge_currency_hash_missing');
     ensure(viem.keccak256(await rpc('eth_getCode', [addr, block])) === [...hashes][0], 'charge_currency_codehash_mismatch');
   }
-  // The dependencies point at each other as the profile says.
+  // The dependencies point at each other as the profile says. The wrapped native is v3's position manager's
+  // WETH9(), or v4's on a chain without v3.
+  const dexes = profileDexes(profile);
   for (const [contract, signature, expected, code] of [
-    [deps.v3PositionManager, 'factory()', deps.v3Factory, 'v3_manager_factory_mismatch'],
-    [deps.v3PositionManager, 'WETH9()', deps.wrappedNative, 'wrapped_native_mismatch'],
-    [deps.v3Quoter, 'factory()', deps.v3Factory, 'v3_quoter_factory_mismatch'],
-    [deps.v3SwapRouter, 'factory()', deps.v3Factory, 'v3_router_factory_mismatch'],
-    [deps.v4PositionManager, 'poolManager()', deps.v4PoolManager, 'v4_manager_pool_mismatch'],
-    [deps.v4PositionManager, 'permit2()', deps.permit2, 'v4_manager_permit2_mismatch'],
-    [deps.v4StateView, 'poolManager()', deps.v4PoolManager, 'v4_state_view_pool_mismatch'],
-    [deps.v4Quoter, 'poolManager()', deps.v4PoolManager, 'v4_quoter_pool_mismatch'],
+    ...(dexes.includes('v3') ? [
+      [deps.v3PositionManager, 'factory()', deps.v3Factory, 'v3_manager_factory_mismatch'],
+      [deps.v3PositionManager, 'WETH9()', deps.wrappedNative, 'wrapped_native_mismatch'],
+      [deps.v3Quoter, 'factory()', deps.v3Factory, 'v3_quoter_factory_mismatch'],
+      [deps.v3SwapRouter, 'factory()', deps.v3Factory, 'v3_router_factory_mismatch']] : []),
+    ...(dexes.includes('v4') ? [
+      [deps.v4PositionManager, 'poolManager()', deps.v4PoolManager, 'v4_manager_pool_mismatch'],
+      [deps.v4PositionManager, 'permit2()', deps.permit2, 'v4_manager_permit2_mismatch'],
+      [deps.v4StateView, 'poolManager()', deps.v4PoolManager, 'v4_state_view_pool_mismatch'],
+      [deps.v4Quoter, 'poolManager()', deps.v4PoolManager, 'v4_quoter_pool_mismatch']] : []),
+    ...(dexes.includes('v3') ? [] : [[deps.v4PositionManager, 'WETH9()', deps.wrappedNative, 'wrapped_native_mismatch']]),
   ]) {
     const [value] = await call(rpc, contract, signature, [], ['address'], block);
     ensure(lowerAddress(value, true) === expected, code);
@@ -620,8 +676,8 @@ export async function l1Costs(profile, steps, rpc, { required = true, from } = {
 /** What the chain holds at each predicted address: `empty` (component and its CREATE3 proxy have no code)
  * or `deployed` (the exact expected runtime, and CreateX's spent proxy). Anything else is refused. */
 export async function deploymentState(bundle, rpc, tag) {
-  const state = {}, m = bundle.manifest;
-  for (const component of DEPLOY_ORDER) {
+  const state = {}, m = bundle.manifest, dexes = manifestDexes(m);
+  for (const component of deployOrderFor(dexes)) {
     const entry = bundle.components[component];
     const code = await rpc('eth_getCode', [entry.expectedAddress, tag]), proxyCode = await rpc('eth_getCode', [entry.create3Proxy, tag]);
     if (code === '0x' && proxyCode === '0x') { state[component] = 'empty'; continue; }
@@ -629,7 +685,7 @@ export async function deploymentState(bundle, rpc, tag) {
       'component_address_conflict: ' + component);
     state[component] = 'deployed';
   }
-  for (const dex of ['v3', 'v4']) {
+  for (const dex of dexes) {
     const executor = 'vaultExecutor.' + dex, code = await rpc('eth_getCode', [m.contracts[executor], tag]);
     ensure(state['vault.' + dex] === 'deployed' ? code !== '0x' && viem.keccak256(code) === m.runtimeCodeHashes[executor] : code === '0x',
       'component_address_conflict: ' + executor);
@@ -657,7 +713,7 @@ export async function preflightDeployment(bundle, { rpc, l1Rpc = rpc, simulatedG
   ensure(nonce === BigInt(p.nonce), 'deployer_nonce_mismatch');
   ensure(quantity(await rpc('eth_getTransactionCount', [roles.deployer, 'pending'])) === nonce, 'deployer_has_pending_transactions');
   const state = await deploymentState(bundle, rpc, tag), sending = new Set(p.steps);
-  for (const component of DEPLOY_ORDER) {
+  for (const component of deployOrderFor(manifestDexes(m))) {
     ensure(!sending.has(component) || state[component] === 'empty', 'component_already_deployed: ' + component);
     ensure(sending.has(component) || state[component] === 'deployed', 'resume_prerequisite_missing: ' + component);
   }
@@ -712,16 +768,17 @@ export async function planDeployment({ profile, roles, environment, releaseTag, 
   ensure(quantity(await rpc('eth_getTransactionCount', [lower.deployer, 'pending'])) === nonce, 'deployer_has_pending_transactions');
   const base = { profile, roles, environment, sourceCommit: artifacts.sourceCommit, releaseTag, nonce: nonce.toString(),
     maxFeePerGas: '1', maxPriorityFeePerGas: '0', expiresAt: now + validitySeconds };
-  const probe = prepareDeployment({ ...base, gasLimits: Object.fromEntries(DEPLOY_ORDER.map(c => [c, MAX_TRANSACTION_GAS.toString()])),
-    steps: [...DEPLOY_ORDER], resumeOf: null }, artifacts);
+  const order = deployOrderFor(profileDexes(profile));
+  const probe = prepareDeployment({ ...base, gasLimits: Object.fromEntries(order.map(c => [c, MAX_TRANSACTION_GAS.toString()])),
+    steps: [...order], resumeOf: null }, artifacts);
   const state = await deploymentState(resumeFrom ?? probe, rpc, block.tag);
-  const steps = DEPLOY_ORDER.filter(c => state[c] === 'empty');
+  const steps = order.filter(c => state[c] === 'empty');
   if (resumeFrom) ensure(steps.length > 0, 'nothing_to_resume');
-  else ensure(steps.length === DEPLOY_ORDER.length, 'deployment_already_started_use_resume');
+  else ensure(steps.length === order.length, 'deployment_already_started_use_resume');
   const resumeOf = resumeFrom ? packageDigest(resumeFrom) : null;
   const provisional = prepareDeployment({ ...base, steps, resumeOf,
     gasLimits: Object.fromEntries(steps.map(c => [c, MAX_TRANSACTION_GAS.toString()])) }, artifacts);
-  // The simulation replays all eleven steps in order: a constructor reads the components before it.
+  // The simulation replays every step in order (eleven with both versions): a constructor reads the components before it.
   const simulatedGas = await simulate(probe);
   const l1 = await l1Costs(profile, provisional.steps, l1Rpc, { required: production, from: lower.deployer });
   const gasLimits = {};
@@ -747,14 +804,15 @@ export async function planDeployment({ profile, roles, environment, releaseTag, 
 export async function verifyDeployment(bundle, { rpc, transactionHashes, blockTag = 'latest' }) {
   ensure(prepared.has(bundle), 'verify_requires_fresh_authenticated_preparation');
   const m = bundle.manifest, c = m.contracts, d = m.dependencies, r = m.roles, profile = bundle.parameters.profile;
-  keys(transactionHashes, DEPLOY_ORDER, 'deployment_receipts_required');
+  const dexes = manifestDexes(m), order = deployOrderFor(dexes);
+  keys(transactionHashes, order, 'deployment_receipts_required');
   ensure(Object.values(transactionHashes).every(h => typeof h === 'string' && HEX32.test(h))
-    && new Set(Object.values(transactionHashes)).size === DEPLOY_ORDER.length, 'deployment_receipts_required');
+    && new Set(Object.values(transactionHashes)).size === order.length, 'deployment_receipts_required');
   if (bundle.parameters.environment === PRODUCTION) await refuseDevelopmentChain(rpc);
   const block = await pinBlock(rpc, blockTag), tag = block.tag;
   // The transactions first: a deployment newer than the verification block is not final yet, not wrong.
   const receipts = {};
-  for (const component of DEPLOY_ORDER) {
+  for (const component of order) {
     const entry = bundle.components[component], hash = transactionHashes[component];
     const receipt = await rpc('eth_getTransactionReceipt', [hash]), tx = await rpc('eth_getTransactionByHash', [hash]);
     ensure(receipt && tx && receipt.transactionHash === hash && tx.hash === hash, 'deployment_receipt_missing: ' + component);
@@ -794,9 +852,9 @@ export async function verifyDeployment(bundle, { rpc, transactionHashes, blockTa
   await expect('registry', 'isPublisher(address)', [{ type: 'address', value: r.operator }], ['bool'], [false]);
   await expect('registry', 'routerVersion(address)', [{ type: 'address', value: d.universalRouter }], ['uint16'], [POLICIES.minimumUniversalRouterVersion]);
   for (const currency of m.chargeCurrencies) await expect('registry', 'chargeCurrencyRank(address)', [{ type: 'address', value: currency.token }], ['uint8'], [currency.rank]);
-  for (const [fn, type, value] of [['registry', 'address', c.registry], ['v3Factory', 'address', d.v3Factory], ['v3PoolInitCodeHash', 'bytes32', profile.uniswap.v3.poolInitCodeHash], ['v4StateView', 'address', d.v4StateView], ['minTwapSeconds', 'uint32', POLICIES.minTwapSeconds], ['domainSeparator', 'bytes32', domainHash(m.chain.chainId, c.priceAnchor)]]) await expect('priceAnchor', fn + '()', [], [type], [value]);
+  for (const [fn, type, value] of [['registry', 'address', c.registry], ['v3Factory', 'address', d.v3Factory ?? ZERO], ['v3PoolInitCodeHash', 'bytes32', v3InitCodeHash(profile)], ['v4StateView', 'address', d.v4StateView ?? ZERO], ['minTwapSeconds', 'uint32', POLICIES.minTwapSeconds], ['domainSeparator', 'bytes32', domainHash(m.chain.chainId, c.priceAnchor)]]) await expect('priceAnchor', fn + '()', [], [type], [value]);
   for (const [fn, type, value] of [['registry', 'address', c.registry], ['priceAnchor', 'address', c.priceAnchor], ['maxObservationAgeSeconds', 'uint32', POLICIES.autoExitMaxObservationAgeSeconds], ['minTwapSeconds', 'uint32', POLICIES.autoExitMinTwapSeconds]]) await expect('autoExit', fn + '()', [], [type], [value]);
-  for (const dex of ['v3', 'v4']) {
+  for (const dex of dexes) {
     const pm = d[dex === 'v3' ? 'v3PositionManager' : 'v4PositionManager'];
     const vault = 'vault.' + dex, factory = 'vaultFactory.' + dex, zap = 'zap.' + dex;
     await expect(vault, 'wiring()', [], ['address', 'address', 'address', 'address', 'address', 'address'], [c[factory], c.registry, c.priceAnchor, pm, c.vaultSwap, c.autoExit]);
@@ -851,7 +909,7 @@ export function explorerInput(bundle, artifacts) {
     return abi && abi.inputs.length ? viem.encodeAbiParameters(abi.inputs, args) : '0x';
   };
   const deployment = Object.fromEntries(fullPackage(bundle, artifacts).steps.map(s => [s.component, s.constructorArguments]));
-  for (const component of Object.keys(CONTRACT_NAMES)) {
+  for (const component of componentsFor(manifestDexes(m))) {
     const artifact = artifacts.contracts[CONTRACT_NAMES[component]];
     const args = component.startsWith('vaultExecutor.') ? deployment['vault.' + component.slice(-2)] : deployment[component];
     components[component] = { contract: artifact.source + ':' + CONTRACT_NAMES[component], address: m.contracts[component],

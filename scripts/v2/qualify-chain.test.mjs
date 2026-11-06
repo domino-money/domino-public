@@ -13,7 +13,7 @@ import { repoRoot, viem, readJson, CREATE_X, CREATE_X_CODE_HASH, SAFE_SINGLETONS
 import { ARB_SYS, NODE_INTERFACE, PERMIT2, MULTICALL3, ARACHNID_PROXY, SAFE_SINGLETON_FACTORY, SAFE_FACTORY_DEPLOYER, KEYLESS,
   SAFE_PROXY_FACTORIES, SAFE_SINGLETON_ROUTES, V3_POOL_INIT_CODE_HASH, CANCUN_PROBE, OPCODE_PROBES, READ_METHODS, RpcError, checkedUrl,
   rpcUrlFrom, jsonRpc, readOnly, substituteImmutables, sameBuild, permit2Domain, defaultReferences, loadProfiles, checkUniswapInput,
-  qualifyChain, cli } from './qualify-chain.mjs';
+  qualifyChain, cli, inputVersions, requiredChecks } from './qualify-chain.mjs';
 
 const ZERO = '0x' + '0'.repeat(40);
 const NOW = 1_800_000_000, CHAIN = 777001;
@@ -323,6 +323,39 @@ test('a complete chain qualifies, and deploy.mjs\'s own dependency check accepts
   assert.match(report.unverifiedFields.find(f => f.path === 'gasPrice').reason, /^the owner's choice of pool/);
   assert.match(report.schemaGaps.find(gap => gap.where.includes('ENABLED_CHAINS')).gap, new RegExp(ENABLED_CHAINS.join(', ')));
   assert.doesNotThrow(() => JSON.stringify(report));
+});
+
+test('a chain with Uniswap v4 only qualifies on v4: v3 leaves the verdicts, the draft and the funding', async () => {
+  const c = chain().c;
+  const v4Only = { v4: uniswapOf(c).v4, universalRouter: uniswapOf(c).universalRouter, sources: uniswapOf(c).sources };
+  assert.deepEqual(inputVersions(checkUniswapInput(v4Only)), ['v4']);
+  assert.deepEqual(inputVersions(checkUniswapInput({})), ['v3', 'v4']);
+  assert.deepEqual(inputVersions(checkUniswapInput(uniswapOf(c))), ['v3', 'v4']);
+  const { report, draft, check } = await qualify({}, { uniswap: v4Only });
+  assert.deepEqual(report.verdict.versions, ['v4']);
+  assert.equal(report.verdict.deploy.status, 'pass', JSON.stringify(report.verdict.deploy.blocking));
+  assert.equal(report.verdict.run.status, 'pass', JSON.stringify(report.verdict.run.blocking));
+  assert.match(check('uniswap.v3.factory').summary, /^absent: the input names no Uniswap v3/);
+  assert.equal(check('liquidity.v4').status, 'pass');
+  // deploy.mjs's own dependency check passes on the v4-only draft: WHYPE through v4's PositionManager.WETH9().
+  assert.equal(check('deployTool.dependencies').status, 'pass');
+  assert.deepEqual(check('deployTool.dependencies').evidence.versions, ['v4']);
+  assert.match(check('tokens.wrappedNative').summary, /from v4 PositionManager\.WETH9\(\)/);
+  assert.equal(draft.uniswap.v3, null);
+  assert.equal(draft.gasPrice.poolNativeUsd.dex, 4);
+  assert.ok(!report.unverifiedFields.some(f => f.path.startsWith('uniswap.v3')));
+  assert.equal(report.funding.dominoDeployment.transactions, 8);
+  assert.ok(!report.schemaGaps.some(gap => gap.field.startsWith('uniswap.v3')), JSON.stringify(report.schemaGaps.map(g => g.field)));
+  // The required checks: v3's leave, and v4's liquidity stands in for v3's in the run.
+  assert.deepEqual(requiredChecks(['chain.id', 'uniswap.v3.factory', 'liquidity.v3', 'uniswap.v4.quoter'], ['v4']), ['chain.id', 'uniswap.v4.quoter', 'liquidity.v4']);
+  assert.deepEqual(requiredChecks(['chain.id', 'uniswap.v3.factory', 'liquidity.v3', 'uniswap.v4.quoter'], ['v3', 'v4']),
+    ['chain.id', 'uniswap.v3.factory', 'liquidity.v3', 'uniswap.v4.quoter']);
+  assert.deepEqual(requiredChecks(['chain.id', 'uniswap.v3.factory', 'uniswap.v4.quoter'], ['v3']), ['chain.id', 'uniswap.v3.factory']);
+  // Both versions: today's verdicts and funding.
+  const both = await qualify();
+  assert.deepEqual(both.report.verdict.versions, ['v3', 'v4']);
+  assert.equal(both.report.funding.dominoDeployment.transactions, 11);
+  assert.notEqual(both.draft.uniswap.v3, null);
 });
 
 test('deploy.mjs\'s check is its own: a CreateX the tool was told to accept is still refused there', async () => {

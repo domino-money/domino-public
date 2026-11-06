@@ -19,14 +19,18 @@ from discovery import Block, DataError
 from v2_chains import chain
 from v2_manifest import (BUILD, COMPONENTS, CONTRACT_NAMES, CREATE_X, CREATE_X_CODE_HASH, DEPLOY_ORDER,
                          MAX_MANIFEST_BYTES, POLICIES, PUBLIC_TEST_ACCOUNTS, PUBLIC_TEST_ACCOUNTS_FILE, canonical,
-                         checked_deployment, checked_manifest, component_salt, create3_address, create_address,
-                         load_deployment,
+                         checked_deployment, checked_manifest, component_salt, components_for, create3_address,
+                         create_address, dependencies_for, deploy_order_for, load_deployment, manifest_dexes,
                          parse_manifest, predict, profile_dependencies)
 from v2_rpc import CodeCache
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).resolve().parent / 'fixtures'
 BASE = chain('base-8453')
+# Base's facts with one Uniswap version only, as Elysium has v4 (6 Nov 2026): synthetic profiles for the manifest's
+# one-version rules (model_copy, so no other rule of the registry applies here).
+V4_ONLY = BASE.model_copy(update={'uniswap': BASE.uniswap.model_copy(update={'v3': None})})
+V3_ONLY = BASE.model_copy(update={'uniswap': BASE.uniswap.model_copy(update={'v4': None})})
 DEPLOYER = '0x' + '7d' * 20
 SOURCES = {'src/v2/registry/DominoRegistry.sol': hashlib.sha256(b'registry').hexdigest(),
            'src/v2/autoexit/DominoAutoExit.sol': hashlib.sha256(b'autoExit').hexdigest()}
@@ -41,9 +45,18 @@ def role(name):
     return '0x' + keccak(b'role:' + name.encode())[12:].hex()
 
 
+def profile_versions(profile):
+    return tuple(dex for dex in ('v3', 'v4') if getattr(profile.uniswap, dex) is not None)
+
+
 def manifest_document(profile=BASE, *, deployer=DEPLOYER, status='verified', environment='public-chain-preparation'):
-    """A manifest as deploy.mjs prepares and verifies it on `profile` (synthetic roles, receipts and code)."""
+    """A manifest as deploy.mjs prepares and verifies it on `profile` (synthetic roles, receipts and code): the
+    components of the Uniswap versions the profile has."""
+    dexes = profile_versions(profile)
+    components, order = components_for(dexes), deploy_order_for(dexes)
     contracts, salts, guarded = predict(deployer)
+    contracts = {name: contracts[name] for name in components}
+    salts, guarded = ({name: values[name] for name in order} for values in (salts, guarded))
     dependencies = profile_dependencies(profile)
     verified = status == 'verified'
     return {
@@ -55,7 +68,7 @@ def manifest_document(profile=BASE, *, deployer=DEPLOYER, status='verified', env
                                            ('governance', 'guardian', 'feeRecipient', 'operator', 'publisher')}},
         'policies': dict(POLICIES),
         'chargeCurrencies': [{'token': c.address, 'rank': c.rank} for c in profile.chargeCurrencies],
-        'runtimeCodeHashes': {**{name: '0x' + keccak(name.encode()).hex() for name in COMPONENTS},
+        'runtimeCodeHashes': {**{name: '0x' + keccak(name.encode()).hex() for name in components},
                               **{name: profile.verified_codehash(address) for name, address in dependencies.items()}},
         'createx': {'address': CREATE_X, 'runtimeCodeHash': CREATE_X_CODE_HASH, 'salts': salts,
                     'guardedSalts': guarded},
@@ -66,7 +79,7 @@ def manifest_document(profile=BASE, *, deployer=DEPLOYER, status='verified', env
                                       'blockNumber': 1000 + index,
                                       'blockHash': '0x' + keccak(b'block' + name.encode()).hex(),
                                       'gasUsed': str(1_000_000 + index), 'effectiveGasPrice': '1000000000'}
-                               for index, name in enumerate(DEPLOY_ORDER)} if verified else {},
+                               for index, name in enumerate(order)} if verified else {},
         'verification': {'blockNumber': 1011, 'blockHash': '0x' + keccak(b'verified').hex(), 'blockTag': 'finalized',
                          'codeHashes': 'exact_precomputed_immutable_runtime', 'wiring': 'checked',
                          'checkedAt': '2026-10-02T12:00:00.000Z'} if verified else None,
@@ -81,6 +94,32 @@ def mutated(change, document=None):
     document = copy.deepcopy(document or manifest_document())
     change(document)
     return document
+
+
+def one_version_breaks():
+    """Changes that leave a v4-only manifest with part of a version, or with another version's parts: each refused
+    by both validators."""
+    v3 = predict(DEPLOYER)
+    receipt = {'transactionHash': '0x' + keccak(b'tx v3').hex(), 'blockNumber': 1000,
+               'blockHash': '0x' + keccak(b'blockregistry').hex(), 'gasUsed': '1', 'effectiveGasPrice': '1'}
+    return {
+        'a v3 component beside v4 only': lambda d: d['contracts'].update({'zap.v3': v3[0]['zap.v3']}),
+        "v3's vault beside v4 only": lambda d: d['contracts'].update({'vault.v3': v3[0]['vault.v3']}),
+        'v4 without its zap': lambda d: d['contracts'].pop('zap.v4'),
+        'v4 without its executor': lambda d: d['contracts'].pop('vaultExecutor.v4'),
+        # Consistent in every map, so that only the rule "one version at least" refuses it.
+        'no version at all': lambda d: [[section.pop(name, None) for name in (*components_for(('v4',))[4:], *dependencies_for(('v4',))[:4])]
+                                        for section in (d['contracts'], d['dependencies'], d['runtimeCodeHashes'],
+                                                        d['createx']['salts'], d['createx']['guardedSalts'],
+                                                        d['deploymentReceipts'])],
+        'a v3 dependency on a v4-only chain': lambda d: d['dependencies'].update({'v3Factory': BASE.uniswap.v3.factory}),
+        'a v4 dependency missing': lambda d: d['dependencies'].pop('v4Quoter'),
+        'a v3 code hash on a v4-only chain': lambda d: d['runtimeCodeHashes'].update({'vault.v3': '0x' + '11' * 32}),
+        'a v3 salt on a v4-only chain': lambda d: d['createx']['salts'].update({'vault.v3': v3[1]['vault.v3']}),
+        'a v3 guarded salt on a v4-only chain': lambda d: d['createx']['guardedSalts'].update({'vault.v3': v3[2]['vault.v3']}),
+        'a v3 receipt on a v4-only chain': lambda d: d['deploymentReceipts'].update({'vault.v3': receipt}),
+        'a v4 receipt missing': lambda d: d['deploymentReceipts'].pop('zap.v4'),
+    }
 
 
 def rule_breaks():
@@ -457,6 +496,67 @@ class ManifestTests(unittest.TestCase):
             load_deployment(directory / 'absent.json', BASE)
 
 
+class OneVersionTests(unittest.TestCase):
+    """A chain with one Uniswap version (Elysium: v4): its manifest records the common four and that version's
+    components and dependencies, at the addresses every chain gets for them, and nothing of the other version."""
+
+    def test_a_manifest_records_its_versions_components_and_nothing_else(self):
+        for profile, dexes in ((V4_ONLY, ('v4',)), (V3_ONLY, ('v3',)), (BASE, ('v3', 'v4'))):
+            with self.subTest(dexes):
+                document = checked_manifest(manifest_document(profile))
+                self.assertEqual(manifest_dexes(document), dexes)
+                self.assertEqual(tuple(document['contracts']), components_for(dexes))
+                self.assertEqual(tuple(document['dependencies']), dependencies_for(dexes))
+                self.assertEqual(sorted(document['deploymentReceipts']), sorted(deploy_order_for(dexes)))
+        both = manifest_document(BASE)['contracts']
+        self.assertEqual({k: both[k] for k in components_for(('v4',))}, manifest_document(V4_ONLY)['contracts'])
+        self.assertEqual(components_for(('v3', 'v4')), COMPONENTS)
+        self.assertEqual(deploy_order_for(('v3', 'v4')), DEPLOY_ORDER)
+
+    def test_part_of_a_version_or_the_other_versions_parts_are_refused(self):
+        for name, change in one_version_breaks().items():
+            with self.subTest(name), self.assertRaises(DataError):
+                checked_manifest(mutated(change, manifest_document(V4_ONLY)))
+
+    def test_a_manifest_binds_only_to_a_profile_of_its_versions(self):
+        self.assertEqual(checked_deployment(manifest_document(V4_ONLY), V4_ONLY).dexes, (4,))
+        for document, profile in ((manifest_document(V4_ONLY), BASE), (manifest_document(BASE), V4_ONLY),
+                                  (manifest_document(V3_ONLY), V4_ONLY)):
+            with self.subTest(profile_versions(profile)), self.assertRaisesRegex(DataError, '^v2_deployment_dependency_mismatch$'):
+                checked_deployment(document, profile)
+
+    def test_the_other_versions_components_are_not_on_the_chain(self):
+        deployment = checked_deployment(manifest_document(V4_ONLY), V4_ONLY)
+        self.assertEqual(deployment.address('vault.v4'), predict(DEPLOYER)[0]['vault.v4'])
+        self.assertEqual(deployment.factory(4), predict(DEPLOYER)[0]['vaultFactory.v4'])
+        self.assertEqual(deployment.start_block('zap.v4'), deployment.receipts['zap.v4']['blockNumber'])
+        for call in (lambda: deployment.address('vault.v3'), lambda: deployment.factory(3),
+                     lambda: deployment.start_block('zap.v3'), lambda: deployment.address('vaultExecutor.v3')):
+            with self.assertRaisesRegex(DataError, '^v2_dex_not_on_chain$'):
+                call()
+        with self.assertRaisesRegex(DataError, '^v2_deployment_component_unknown$'):
+            deployment.address('zap.v5')
+        # Both versions keep every component.
+        self.assertEqual(checked_deployment(manifest_document(), BASE).dexes, (3, 4))
+        # The same type as the profile's: a consumer may pass either to factory() or a component name.
+        self.assertEqual(checked_deployment(manifest_document(V4_ONLY), V4_ONLY).dexes, V4_ONLY.dexes)
+
+    def test_its_code_proof_reads_its_own_components_only(self):
+        document = manifest_document(V4_ONLY)
+        codes = {}
+        for name in components_for(('v4',)):
+            code = '0x60' + keccak(name.encode())[:1].hex() + '00'
+            codes[document['contracts'][name]] = code
+            document['runtimeCodeHashes'][name] = '0x' + keccak(bytes.fromhex(code[2:])).hex()
+        deployment = checked_deployment(document, V4_ONLY)
+        rpc = CodeProofTests.Rpc(codes, document['verification']['blockHash'])
+        deployment.verify_code(rpc, Block(2000, '0x' + 'ab' * 32, 1), cache=CodeCache())
+        read = [params[0] for method, params in rpc.calls if method == 'eth_getCode']
+        self.assertEqual(sorted(read), sorted(document['contracts'][name] for name in components_for(('v4',))))
+        with self.assertRaisesRegex(DataError, '^v2_dex_not_on_chain$'):
+            deployment.verify_code(rpc, Block(2000, '0x' + 'ab' * 32, 1), components=('vault.v3',), cache=CodeCache())
+
+
 class JavaScriptAgreementTests(unittest.TestCase):
     """One definition of a valid manifest: deploy-schema.mjs `validateManifest` (the schema file, then the
     semantic rules) and this loader return the same verdict for every document, each parsing the same file text."""
@@ -469,8 +569,10 @@ class JavaScriptAgreementTests(unittest.TestCase):
 
     def test_the_javascript_validator_agrees_rule_for_rule(self):
         valid = [manifest_document(), manifest_document(status='prepared'), manifest_document(environment='local-test'),
-                 manifest_document(environment='fork-rehearsal'), *(fixture(name) for name in PR302)]
+                 manifest_document(environment='fork-rehearsal'), *(fixture(name) for name in PR302),
+                 manifest_document(V4_ONLY), manifest_document(V4_ONLY, status='prepared'), manifest_document(V3_ONLY)]
         documents = valid + [mutated(change) for change in rule_breaks().values()]
+        documents += [mutated(change, manifest_document(V4_ONLY)) for change in one_version_breaks().values()]
         documents += [mutated(change, manifest_document(status='prepared')) for change in prepared_breaks().values()]
         documents += [mutated(lambda d, value=value: d['verification'].update(checkedAt=value))
                       for values in CHECK_TIMES.values() for value in values]

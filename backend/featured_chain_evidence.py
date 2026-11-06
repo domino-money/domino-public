@@ -216,13 +216,18 @@ def pools(chain, rpc, pool_ids, *, now):
         feed_at = add(first, feed.proxy, CHAINLINK_ROUND.calldata())
         uptime_at = (None if feed.sequencerUptimeFeed is None
                      else add(first, feed.sequencerUptimeFeed, CHAINLINK_ROUND.calldata()))
-    slots = {pool_id: _identity_calls(chain, pool_id, first) for pool_id in sorted(set(pool_ids))}
+    ids = sorted(set(pool_ids))
+    # A pool of a Uniswap version the chain lacks (a v3 address on a v4-only chain) is no pool of the chain: never read.
+    slots = {pool_id: _identity_calls(chain, pool_id, first) for pool_id in ids
+             if (rules.DEX_V3 if len(pool_id) == 42 else rules.DEX_V4) in chain.dexes}
     rows = aggregate(rpc, chain, block, first)
     if feed is not None:
         eth = eth_usd(chain, rows[feed_at], None if uptime_at is None else rows[uptime_at], block)
     found = ChainEvidence(block, eth)
-    for pool_id, at in slots.items():
-        found.pools[pool_id] = (_v3_pool(chain, pool_id, rows, at) if len(pool_id) == 42
+    for pool_id in ids:
+        at = slots.get(pool_id)
+        found.pools[pool_id] = ({'error': 'identity_unresolved'} if at is None
+                                else _v3_pool(chain, pool_id, rows, at) if len(pool_id) == 42
                                 else _v4_pool(pool_id, rows, at))
     return found
 

@@ -2,7 +2,7 @@ import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { repoRoot, readJson, viem, CREATE_X, DEPLOY_ORDER, PRODUCTION, MAX_TRANSACTION_GAS, ROLE_NAMES, prepareDeployment, planDeployment, preflightDeployment,
-  verifyDeployment, inspectGovernance, checkDependencies, deploymentState, l1Costs, dependencyMap, quantity, pinBlock } from './deploy.mjs';
+  verifyDeployment, inspectGovernance, checkDependencies, deploymentState, l1Costs, dependencyMap, quantity, pinBlock, precomputeAddresses } from './deploy.mjs';
 import { simulateGas, stubRuntime, installStubs, rehearsalAccount } from './deploy-anvil.mjs';
 import { executeSteps } from './deploy-local.mjs';
 import { validateManifest } from './deploy-schema.mjs';
@@ -290,7 +290,9 @@ describe('preflight on a disposable EVM with a real Safe', () => {
 });
 
 test('the gas simulation refuses an incomplete package and a reverted step', async () => {
-  const full = { parameters: { resumeOf: null, profile: { chainId: 31337 } }, manifest: { roles: { deployer: roles.deployer.toLowerCase() } } };
+  // A package's manifest records its components: the versions, and so the steps, a full package has.
+  const full = { parameters: { resumeOf: null, profile: { chainId: 31337 } },
+    manifest: { roles: { deployer: roles.deployer.toLowerCase() }, contracts: precomputeAddresses(roles.deployer).contracts } };
   await assert.rejects(simulateGas({ ...full, steps: [] }), /simulation_requires_all_steps/);
   await assert.rejects(simulateGas({ ...full, parameters: { ...full.parameters, resumeOf: 'a'.repeat(64) }, steps: DEPLOY_ORDER.map(component => ({ component })) }), /simulation_requires_all_steps/);
   const failing = viem.encodeFunctionData({ abi: viem.parseAbi(['function deployCreate3(bytes32,bytes) payable returns (address)']), functionName: 'deployCreate3',

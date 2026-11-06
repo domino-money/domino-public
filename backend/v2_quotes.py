@@ -167,7 +167,9 @@ def _pool(dex, a, b, fee, spacing, hooks=ZERO):
 
 def candidate_paths(chain, token_in, token_out, *, named=(), exclude=(), v3=True, v4=True):
     """Single-hop paths between two tokens: the profile's v3 tiers (ERC-20s
-    only), v4's standard hookless keys, and every named pool of that pair."""
+    only), v4's standard hookless keys, and every named pool of that pair.
+    Only the Uniswap versions the chain has."""
+    v3, v4 = v3 and DEX_V3 in chain.dexes, v4 and DEX_V4 in chain.dexes
     token_in, token_out = address(token_in), address(token_out)
     if token_in == token_out:
         raise QuoteError('quote_path_invalid')
@@ -235,6 +237,7 @@ class Quote:
 
 def quote_call(chain, path, amount_in):
     """(target, calldata) of the quoter call for one path."""
+    chain.require_dex(path.dex)  # v2_dex_not_on_chain: no quoter of a version the chain lacks
     if path.dex == DEX_V3:
         return chain.uniswap.v3.quoterV2, QUOTER_V2_EXACT_INPUT.calldata(bytes.fromhex(path.leg_data()[2:]), amount_in)
     if amount_in >= 1 << 128:
@@ -375,7 +378,7 @@ class V4Ticks(_ChainTicks):
         super().__init__(chain, rpc, block, pool.tick_spacing)
         self.state_slot = int.from_bytes(keccak(encode(['bytes32', 'uint256'],
                                                        [bytes.fromhex(pool.pool_id[2:]), V4_POOLS_SLOT])), 'big')
-        self.manager = chain.uniswap.v4.poolManager
+        self.manager = chain.require_dex(DEX_V4).poolManager
         self.extsload = function('IV4PoolManagerMinimal', 'extsload')
 
     def _word_calls(self, positions):

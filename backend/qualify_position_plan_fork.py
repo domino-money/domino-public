@@ -56,7 +56,7 @@ import v2_fee_rule as fee_rule  # noqa: E402
 import v2_l1_fee as l1_fee  # noqa: E402
 import v2_plan_codec as codec  # noqa: E402
 from discovery import DataError, parse_block  # noqa: E402
-from v2_chains import default_registry  # noqa: E402
+from v2_chains import DEX_V3, DEX_V4, default_registry  # noqa: E402
 from v2_head import Head  # noqa: E402
 from v2_manifest import load_deployment  # noqa: E402
 from v2_position_plan import PlanError, PositionPlanner  # noqa: E402
@@ -459,6 +459,9 @@ class Qualification:
 
     # -------------------------------------------------------------- journeys
     def journeys_v4(self):
+        if DEX_V4 not in self.profile.dexes:
+            self.journeys.append({'name': 'v4 journeys', 'ok': True, 'skipped': 'the chain has no Uniswap v4'})
+            return
         pools = self.pools
         stable, weth_usdg, eth_usdg = pools.stable, pools.weth_pool, pools.eth_pool
         spacing, eth_spacing = weth_usdg['tickSpacing'], eth_usdg['tickSpacing']
@@ -564,6 +567,9 @@ class Qualification:
         self.journeys.append(entry)
 
     def journeys_v3(self):
+        if DEX_V3 not in self.profile.dexes:
+            self.journeys.append({'name': 'v3 journeys', 'ok': True, 'skipped': 'the chain has no Uniswap v3'})
+            return
         stable, name = self.pools.stable, self.pools.stable_name
         found = self.v3_pool(self.pools.wrapped, stable)
         if found is None:

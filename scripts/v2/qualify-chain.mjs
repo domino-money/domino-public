@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { CREATE_X, CREATE_X_CODE_HASH, SAFE_SINGLETONS, SAFE_PROXY_RUNTIME_HASHES, POLICIES, MAX_TRANSACTION_GAS,
   GAS_HEADROOM_PERCENT, CONTRACT_NAMES, DEPLOY_ORDER, ENABLED_CHAINS, RELEASE_MANIFEST_PATH, RPC_REPLY_MAX_BYTES, repoRoot,
-  viem, ensure, quantity, flags, writeJson, dependencyMap, checkDependencies } from './deploy.mjs';
+  viem, ensure, quantity, flags, writeJson, dependencyMap, checkDependencies, DEXES, deployOrderFor } from './deploy.mjs';
 import { readBounded } from '../prepare-financial-release.mjs';
 
 export const PROFILE_DIRECTORY = 'api-contracts/v2/chains';
@@ -475,6 +475,26 @@ const RUN_REQUIRED = ['chain.id', 'chain.head', 'chain.finalized', 'chain.baseFe
   'infra.permit2', 'infra.multicall3', 'uniswap.v3.factory', 'uniswap.v3.positionManager', 'uniswap.v3.quoterV2', 'uniswap.v3.swapRouter02',
   'uniswap.v3.poolInitCodeHash', 'uniswap.v4.poolManager', 'uniswap.v4.positionManager', 'uniswap.v4.stateView', 'uniswap.v4.quoter',
   'uniswap.universalRouter', 'tokens.wrappedNative', 'tokens.stable', 'liquidity.v3'];
+/** The Uniswap checks of each version, which the verdicts leave out for a version the chain does not have. */
+const VERSION_CHECKS = Object.freeze({
+  v3: Object.freeze(['uniswap.v3.factory', 'uniswap.v3.positionManager', 'uniswap.v3.quoterV2', 'uniswap.v3.swapRouter02',
+    'uniswap.v3.poolInitCodeHash', 'liquidity.v3']),
+  v4: Object.freeze(['uniswap.v4.poolManager', 'uniswap.v4.positionManager', 'uniswap.v4.stateView', 'uniswap.v4.quoter', 'liquidity.v4']),
+});
+const INPUT_KEYS = Object.freeze({ v3: ['factory', 'positionManager', 'quoterV2', 'swapRouter02'], v4: ['poolManager', 'positionManager', 'stateView', 'quoter'] });
+/** The versions a chain has: those the input names an address of (6 Nov 2026: a chain may have one, as Elysium has v4);
+ * both when it names none, which leaves every Uniswap check unknown. */
+export function inputVersions(uniswap) {
+  const given = DEXES.filter(dex => INPUT_KEYS[dex].some(key => uniswap[dex]?.[key]));
+  return given.length ? given : [...DEXES];
+}
+/** The checks a verdict counts for these versions; with v3 absent, the run takes v4's liquidity instead of v3's. */
+export function requiredChecks(ids, versions) {
+  const absent = DEXES.filter(dex => !versions.includes(dex)).flatMap(dex => VERSION_CHECKS[dex]);
+  const kept = ids.filter(id => !absent.includes(id));
+  return ids.includes('liquidity.v3') && !versions.includes('v3') ? [...kept, 'liquidity.v4'] : kept;
+}
+
 /** What each Uniswap contract's runtime embeds, which makes its bytes differ from chain to chain. */
 const IMMUTABLES = Object.freeze({
   v3Factory: 'its own address (NoDelegateCall)', v3PositionManager: 'the factory, WETH9 and its token descriptor',
@@ -489,6 +509,7 @@ const IMMUTABLES = Object.freeze({
 export async function qualifyChain({ rpc, now = Math.floor(Date.now() / 1000), expectChainId = null, pending = null, uniswap = null,
   stable = null, wrappedNative = null, references = defaultReferences(), release = releaseSizes(), apiSchemas = null, tool = null }) {
   uniswap = checkUniswapInput(uniswap) ?? { v3: {}, v4: {}, universalRouter: {}, sources: [] };
+  const versions = inputVersions(uniswap);
   stable = optionalAddress(stable, 'stable'); wrappedNative = optionalAddress(wrappedNative, 'wrapped-native');
   const checks = [], bootstrap = [], rows = new Map(), notes = [];
   const add = (id, section, status, summary, evidence = {}) => { checks.push({ id, section, status, summary, evidence }); return status; };
@@ -791,7 +812,8 @@ export async function qualifyChain({ rpc, now = Math.floor(Date.now() / 1000), e
   const profileValues = key => references.profiles.map(p => ({ slug: p.slug, values: [p[key]?.address], codehash: p[key]?.codehash ?? null }));
   const uniswapCheck = (id, key, label, subs, extra = {}) => {
     const address = candidates[key];
-    if (!address) return add(id, 'uniswap', 'unknown', 'no candidate address given');
+    if (!address) return add(id, 'uniswap', 'unknown', versions.includes(id.split('.')[1]) ? 'no candidate address given'
+      : `absent: the input names no Uniswap ${id.split('.')[1]}, so the chain has none (left out of the verdicts)`);
     const answer = uniCodes[key];
     if (answer.failure) return add(id, 'uniswap', statusOf(answer.failure), 'code unreadable', contractFacts(address, answer));
     if (!present(answer)) return add(id, 'uniswap', 'fail', 'no code at the candidate address', contractFacts(address, answer));
@@ -945,8 +967,6 @@ export async function qualifyChain({ rpc, now = Math.floor(Date.now() / 1000), e
   } else add('liquidity.v4', 'liquidity', 'unknown', 'needs a verified StateView and the stable');
 
   // ---------------------------------------------------------------- draft
-  const v3Verified = ['v3Factory', 'v3PositionManager', 'quoterV2', 'swapRouter02'].every(k => verified[k]) && initCodeHash === 'pass';
-  const v4Verified = ['poolManager', 'v4PositionManager', 'stateView', 'v4Quoter'].every(k => verified[k]);
   const enabledTiers = Object.fromEntries(Object.entries(tiers).filter(([, s]) => typeof s === 'number' && s > 0));
   const at = (key, address) => verified[key] ? checksummed(address) : null;
   const wrappedEntry = tokens.wrapped?.verified ? { symbol: isSymbol(tokens.wrapped.symbol) ? tokens.wrapped.symbol : null, address: checksummed(wrapped), decimals: tokens.wrapped.decimals } : null;
@@ -961,10 +981,10 @@ export async function qualifyChain({ rpc, now = Math.floor(Date.now() / 1000), e
   const draft = {
     schemaVersion: 1, chainId, slug: pending?.slug ?? null, name: pending?.name ?? null, enabled: false, nativeSymbol, stack, blockTimeSeconds,
     uniswap: {
-      v3: { factory: at('v3Factory', u.v3.factory), positionManager: at('v3PositionManager', u.v3.positionManager), quoterV2: at('quoterV2', u.v3.quoterV2),
+      v3: !versions.includes('v3') ? null : { factory: at('v3Factory', u.v3.factory), positionManager: at('v3PositionManager', u.v3.positionManager), quoterV2: at('quoterV2', u.v3.quoterV2),
         swapRouter02: at('swapRouter02', u.v3.swapRouter02), poolInitCodeHash: initCodeHash === 'pass' ? V3_POOL_INIT_CODE_HASH : null,
         tickSpacingByFee: verified.v3Factory && Object.keys(enabledTiers).length ? enabledTiers : null },
-      v4: { poolManager: at('poolManager', u.v4.poolManager), positionManager: at('v4PositionManager', u.v4.positionManager), stateView: at('stateView', u.v4.stateView),
+      v4: !versions.includes('v4') ? null : { poolManager: at('poolManager', u.v4.poolManager), positionManager: at('v4PositionManager', u.v4.positionManager), stateView: at('stateView', u.v4.stateView),
         quoter: at('v4Quoter', u.v4.quoter) },
       universalRouter: { address: at('universalRouter', u.universalRouter.address), version: null },
     },
@@ -994,13 +1014,13 @@ export async function qualifyChain({ rpc, now = Math.floor(Date.now() / 1000), e
     let shape = null;
     try { dependencyMap(candidate); } catch (error) { shape = error.message; }
     const missing = [shape && 'a verified address for every dependency deploy.mjs reads', !draft.deployer && 'CreateX', !claimed && 'a claimed Universal Router version',
-      draft.chargeCurrencies.some(c => !c) && 'every charge currency', !draft.uniswap.v3.poolInitCodeHash && 'the pool init code hash'].filter(Boolean);
+      draft.chargeCurrencies.some(c => !c) && 'every charge currency', draft.uniswap.v3 && !draft.uniswap.v3.poolInitCodeHash && 'the pool init code hash'].filter(Boolean);
     if (missing.length) add('deployTool.dependencies', 'deployTool', 'unknown', `deploy.mjs's dependency check needs ${missing.join(', ')}`, { missing });
     else {
       const outcome = await settle(checkDependencies(candidate, rpc, tag));
       add('deployTool.dependencies', 'deployTool', outcome.failure ? (outcome.failure.kind === 'error' ? 'fail' : statusOf(outcome.failure)) : 'pass',
         outcome.failure ? `deploy.mjs refused the draft: ${outcome.failure.detail}` : 'deploy.mjs\'s checkDependencies accepts the draft: code hashes and cross-references',
-        { environment: 'local-test semantics (any chain id); a public preparation also needs this chain in ENABLED_CHAINS', universalRouterVersion: claimed,
+        { environment: 'local-test semantics (any chain id); a public preparation also needs this chain in ENABLED_CHAINS', universalRouterVersion: claimed, versions,
           failure: outcome.failure ?? null });
     }
   }
@@ -1018,23 +1038,23 @@ export async function qualifyChain({ rpc, now = Math.floor(Date.now() / 1000), e
     const blocking = checks.filter(c => ids.includes(c.id) && c.status !== 'pass').map(c => `${c.id} (${c.status})`);
     return { status: combine(checks.filter(c => ids.includes(c.id)).map(c => c.status)), blocking };
   };
-  const gaps = schemaGaps({ chainId, pending, draft, v3Verified, v4Verified, tiers: enabledTiers, apiSchemas: apiSchemas ?? chainEnumSchemas(chainId) });
+  const gaps = schemaGaps({ chainId, pending, draft, tiers: enabledTiers, apiSchemas: apiSchemas ?? chainEnumSchemas(chainId) });
   const report = {
     schemaVersion: 1, kind: 'domino-v2-chain-qualification', generatedAt: new Date(now * 1000).toISOString(),
     tool: { path: 'scripts/v2/qualify-chain.mjs', commit: tool?.commit ?? null },
     chain: { chainId, stack, client: checks[0].evidence.client, block: { number: Number(head.number), hash: head.hash, timestamp: Number(head.timestamp) } },
     inputs: { pending: pending?.slug ?? null, expectChainId, stable: stable ? checksummed(stable) : null, wrappedNative: wrappedNative ? checksummed(wrappedNative) : null,
       uniswap: Object.fromEntries(Object.entries(candidates).filter(([, a]) => a).map(([k, a]) => [k, checksummed(a)])), universalRouterVersion: u.universalRouter.version ?? null },
-    verdict: { deploy: verdictOf(DEPLOY_REQUIRED), run: verdictOf(RUN_REQUIRED),
-      note: 'what the chain allows; enabling it also takes the repository changes in schemaGaps (deploy.mjs, frozen, knows only 4663, 8453 and 42161)' },
+    verdict: { deploy: verdictOf(requiredChecks(DEPLOY_REQUIRED, versions)), run: verdictOf(requiredChecks(RUN_REQUIRED, versions)), versions,
+      note: `what the chain allows with Uniswap ${versions.join(' and ')}; enabling it also takes the repository changes in schemaGaps` },
     summary: { pass: checks.filter(c => c.status === 'pass').length, fail: checks.filter(c => c.status === 'fail').length, unknown: checks.filter(c => c.status === 'unknown').length },
     checks, bootstrap,
-    funding: { dominoDeployment: { transactions: DEPLOY_ORDER.length, gasCapPerTransaction: MAX_TRANSACTION_GAS.toString(),
+    funding: { dominoDeployment: { transactions: deployOrderFor(versions).length, gasCapPerTransaction: MAX_TRANSACTION_GAS.toString(),
       maxFeePerGasWei: head.baseFeePerGas === null ? null : (3n * head.baseFeePerGas).toString(),
-      upperBoundWei: head.baseFeePerGas === null ? null : (BigInt(DEPLOY_ORDER.length) * MAX_TRANSACTION_GAS * 3n * head.baseFeePerGas).toString(),
+      upperBoundWei: head.baseFeePerGas === null ? null : (BigInt(deployOrderFor(versions).length) * MAX_TRANSACTION_GAS * 3n * head.baseFeePerGas).toString(),
       note: 'deploy.mjs\'s default maxFeePerGas is 3 x the base fee; each step\'s limit, L1 component included, is at most the cap' } },
     schemaGaps: gaps,
-    unverifiedFields: unverifiedFields(draft, { pending, claimedVersion: u.universalRouter.version ?? null, wrappedCrossChecked: tokens.wrapped?.crossChecked ?? false }),
+    unverifiedFields: unverifiedFields(draft, { pending, claimedVersion: u.universalRouter.version ?? null, wrappedCrossChecked: tokens.wrapped?.crossChecked ?? false, versions }),
     rpc: rpc.stats ? rpc.stats() : null,
   };
   return { report: stringifyBigints(report), draft: stringifyBigints(draft) };
@@ -1043,7 +1063,7 @@ export async function qualifyChain({ rpc, now = Math.floor(Date.now() / 1000), e
 const stringifyBigints = value => JSON.parse(JSON.stringify(value, (_, x) => typeof x === 'bigint' ? x.toString() : x));
 
 /** The draft's fields the tool could not verify on chain: every null, and what came from an input instead. */
-export function unverifiedFields(draft, { pending, claimedVersion, wrappedCrossChecked }) {
+export function unverifiedFields(draft, { pending, claimedVersion, wrappedCrossChecked, versions = DEXES }) {
   const reasons = {
     gasPrice: 'no liquid wrapped-native/stable pool to name as gasPrice.poolNativeUsd (this tool reads no Chainlink feed, and an ETH/USD feed does not price a non-ETH gas coin)',
     'uniswap.universalRouter.version': `not readable on chain${claimedVersion ? ` (the input claims ${claimedVersion}; the schema admits only 2.1.2)` : ''}: Uniswap's deployment list or SDK names it`,
@@ -1060,6 +1080,7 @@ export function unverifiedFields(draft, { pending, claimedVersion, wrappedCrossC
   const out = [];
   const walk = (value, path) => {
     if (path === 'verification') return; // its rows are evidence; a null code hash there is a checked absence
+    if (value === null && DEXES.some(dex => path === 'uniswap.' + dex && !versions.includes(dex))) return; // a version the chain has not
     if (value === null) out.push({ path, reason: reasons[path] ?? (path.startsWith('uniswap.') ? `the check of ${path} did not pass or no candidate was given` : 'unverified') });
     else if (Array.isArray(value)) value.forEach((item, i) => walk(item, `${path}[${i}]`));
     else if (typeof value === 'object') for (const [k, v] of Object.entries(value)) walk(v, path ? `${path}.${k}` : k);
@@ -1075,7 +1096,7 @@ export function unverifiedFields(draft, { pending, claimedVersion, wrappedCrossC
 }
 
 /** Where today's profile schema (backend/v2_chains.py) and tooling cannot express the chain. Nothing here changes them. */
-export function schemaGaps({ chainId, pending, draft, v3Verified, v4Verified, tiers, apiSchemas }) {
+export function schemaGaps({ chainId, pending, draft, tiers, apiSchemas }) {
   const gaps = [
     { field: 'uniswap.universalRouter.version', where: "backend/v2_chains.py UniversalRouter.version: Literal['2.1.2']",
       gap: 'only 2.1.2 is admitted and no chain read shows a router\'s version; another version (2.0, 2.2.0) cannot be expressed' },
@@ -1087,8 +1108,6 @@ export function schemaGaps({ chainId, pending, draft, v3Verified, v4Verified, ti
     gap: `an enabled ${pending.slug}-${chainId}.json beside the pending ${pending.slug}.json fails v2_chain_profile_duplicate: replace the placeholder in the same change` });
   if (!draft.deployer) gaps.push({ field: 'deployer', where: "backend/v2_chains.py Deployer.kind: Literal['createx'] and deploy.mjs (CREATE3 through CreateX only)",
     gap: 'without canonical CreateX no deployer can be expressed: CreateX must be bootstrapped first' });
-  if (!v3Verified || !v4Verified) gaps.push({ field: 'uniswap.v3 / uniswap.v4', where: 'backend/v2_chains.py Uniswap (both required) and deploy.mjs dependencyMap',
-    gap: 'both a v3 and a v4 deployment are required; a chain with one of them only cannot be expressed' });
   if (Object.keys(tiers).length && Object.keys(tiers).length !== 4) gaps.push({ field: 'uniswap.v3.tickSpacingByFee', where: 'backend/tests/test_v2_chain_profiles.py',
     gap: 'the tests pin the four standard tiers on every enabled profile' });
   if (!ENABLED_CHAINS.includes(chainId)) {

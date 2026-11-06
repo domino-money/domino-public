@@ -10,7 +10,7 @@ import json
 import time
 
 from discovery import DataError
-from v2_chains import DEX_V3, default_registry
+from v2_chains import default_registry
 from v2_read_contract import (BLOCKERS, CHAIN_IDS, CONTRACT_VERSION, DISARM_REASONS, FEE_FRESH_SECONDS,
                               FEE_LIMITATIONS, HEAD_MAX_AGE_SECONDS, LIMITATIONS, MAX_CREDITS, MAX_FEE_EVENTS,
                               MAX_FEE_POINTS, MAX_FEE_TRANSFERS, MAX_ITEMS, MAX_MANDATES, MAX_POSITIONS, MAX_TOKENS,
@@ -64,7 +64,7 @@ def _limits(value):
 
 def _manager(chain_id, dex):
     chain = default_registry().chain(chain_id)
-    return chain.uniswap.v3.positionManager if dex == DEX_V3 else chain.uniswap.v4.positionManager
+    return chain.position_manager(dex)
 
 
 def _freshness(now, block_timestamp, read_at, block_number, last_event_block):
@@ -790,7 +790,15 @@ class V2ReadService:
                                    waiting=reader.waiting(waiting_keys(vaults, mandates)), prices=self.prices)
 
     def position_fees(self, chain_id, positions):
-        """read-v6 1.2.0-rc.1: what the chain's fee follower stored for each (dex, token id), one snapshot."""
+        """read-v6 1.2.0-rc.1: what the chain's fee follower stored for each (dex, token id), one snapshot. A position
+        of a Uniswap version the chain lacks (v2_dex_not_on_chain) is a request the chain cannot answer, refused
+        before any read."""
+        chain = default_registry().chain(chain_id)
+        for dex, _ in positions:
+            try:
+                chain.require_dex(dex)
+            except DataError:
+                raise DataError('invalid_request') from None
         with self.store.reader() as reader:
             now = int(self.clock())
             follower = fee_follower(*reader.fee_follower(chain_id))

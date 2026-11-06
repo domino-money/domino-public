@@ -263,7 +263,7 @@ def twap_exit_evidence(parameters, preferred_window):
 
 
 def position_ref(chain, pool, token_id):
-    manager = chain.uniswap.v4.positionManager if pool.dex == DEX_V4 else chain.uniswap.v3.positionManager
+    manager = chain.position_manager(pool.dex)
     return PositionRef(pool.dex, manager, token_id)
 
 

@@ -46,7 +46,10 @@ export const READ_V6_PIN = {
   // native currency at the pool its profile names: runtime.mjs's price rule (a PRICE_PROFILES entry with `nativePool`,
   // which no chain of this version has), the README and the consumer test, and the producer's v2_chain_reads.py and
   // v2_read_contract.py; same version, same schemas, CONSTANTS and fixtures.
-  manifestSha256: '64597e63fc85362aea8379855b9190618b867e839d1a9de276c4460e6599fdd1',
+  // Changed on purpose (data) 2026-11-06: a chain with one Uniswap version (Elysium: v4 only, not yet in read-v6): the
+  // producer's v2_chain_reads.py and v2_read_service.py read only the versions a chain has, and position-fees answers
+  // invalid_request for a position of a version it lacks; no route, schema, reason code or version moved.
+  manifestSha256: '059d880b38f5a0d36a255a353dba5873332df6ca6f137ec83727c72635a006b6',
 } as const
 
 export const POSITION_PLAN_V1_PIN = {
@@ -70,5 +73,8 @@ export const POSITION_PLAN_V1_PIN = {
   // Changed on purpose (data) 2026-11-05: v2_position_plan_models.py takes its chain ids from the enabled chain
   // profiles, as the package's CONSTANTS.chains already did (still 4663, 8453, 42161); no route, schema, reason code or
   // version moved.
-  manifestSha256: 'c93feedc0608c5e1b2758034b0e7101c39ba6aa82f633c616ead551b72fa4b6a',
+  // Changed on purpose (data) 2026-11-06: v2_position_plan.py, v2_position_plan_service.py and v2_quotes.py serve a
+  // chain with one Uniswap version (Elysium: v4 only) and refuse a plan of a version the chain lacks as
+  // invalid_request; no route, schema, reason code or version moved.
+  manifestSha256: '28449bbdfcd51d42dff8006c4865944c4f93514b3fec042e8e9509f0d33d866c',
 } as const

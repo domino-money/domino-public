@@ -88,10 +88,27 @@ def first_block(deployment):
     return min(receipt['blockNumber'] for receipt in deployment.receipts.values())
 
 
+def deployed_components(deployment):
+    """The components the manifest deployed, in COMPONENTS order: all 13 where the chain has Uniswap v3 and v4, the
+    common four and one version's own on a chain with that version alone."""
+    return [component for component in COMPONENTS if component in deployment.manifest['contracts']]
+
+
+def proven_contracts(deployment):
+    """{name: address} of what a registration proves the code of: the deployed components and, outside a local
+    test, the dependencies the manifest names (none of a Uniswap version the chain lacks)."""
+    manifest = deployment.manifest
+    proven = {component: deployment.address(component) for component in deployed_components(deployment)}
+    if manifest['environment'] != 'local-test':
+        proven.update({name: manifest['dependencies'][name] for name in DEPENDENCIES
+                       if name in manifest['dependencies']})
+    return proven
+
+
 def contract_rows(deployment):
-    """(address, component, emitter kind, dex) of the 13 components."""
+    """(address, component, emitter kind, dex) of the deployed components."""
     return [(deployment.address(component), component, COMPONENT_EMITTERS[component],
-             FACTORY_DEX.get(component, ZAP_DEX.get(component))) for component in COMPONENTS]
+             FACTORY_DEX.get(component, ZAP_DEX.get(component))) for component in deployed_components(deployment)]
 
 
 class V2IndexRpc(ChainIndexRpc):
@@ -164,9 +181,7 @@ class V2Indexer:
         anchor = parse_block(rpc.request('eth_getBlockByNumber', [head.tag, False]))
         if anchor != head:
             raise DataError('index_snapshot_reorganized')
-        proven = {component: deployment.address(component) for component in COMPONENTS}
-        if manifest['environment'] != 'local-test':
-            proven.update({name: manifest['dependencies'][name] for name in DEPENDENCIES})
+        proven = proven_contracts(deployment)
         names = sorted(proven)
         codes = batched_reads(rpc, [('eth_getCode', [proven[name], head.tag]) for name in names])
         for name, raw in zip(names, codes):

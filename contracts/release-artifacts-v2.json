@@ -81,9 +81,9 @@
   "releaseInputs": {
     "scripts/solc-compile.cjs": "139440bd5ba3dfd777ca8f6b8bd4d0367a1f67718b720adad9aeb133f4cba2d3",
     "scripts/prepare-financial-release.mjs": "8a5890f302f0f77038d07a89715a49484c1e365b97fd81a99ed59bf323b59049",
-    "scripts/v2/deploy.mjs": "feae2e8725659662de0fa6b53b1283c9d0363965a7ba3204f9a3738d1b13cea5",
-    "scripts/v2/deploy-schema.mjs": "7bfca0f4793ca31cf9c320c952c06534f8f754bc69467e78b2f77b9189b6db23",
-    "scripts/v2/deploy-manifest.schema.json": "e0199d41fdcea33105fbce23087c3bf5463900919ff82870b6796ba6edf1b132",
+    "scripts/v2/deploy.mjs": "c35d9d5c67a75664679f206784aea7af5e99eec8046a13e73273594feb2aede7",
+    "scripts/v2/deploy-schema.mjs": "a596db60153c9aa5e53b17a7925b74ff58a5d121c30551148e329f5e427d6c30",
+    "scripts/v2/deploy-manifest.schema.json": "d4b5b84178ff67e8fd0d5f66d0586191ed5798887cd169f671bd2aeb503b69f2",
     "scripts/v2/release-manifest.mjs": "32dd43ddb4a2388acf9dcc48fe34d2ff4312dfbd520d035904849668a0cc91ad"
   },
   "contracts": {

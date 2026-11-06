@@ -25,7 +25,6 @@ from eth_hash.auto import keccak
 from discovery import (ZERO, DataError, RpcIntrinsicGas, address, bytes32, decode_result, decode_symbol,
                        prefetched, quantity)
 from v2_abi import function
-from v2_chains import DEX_V3
 from v2_rpc import MAX_LOG_WINDOWS, batched_reads
 from v2_uniswap import PositionRef, UniswapReader
 
@@ -112,7 +111,7 @@ def _burn_proven(rpc, chain, dex, token_id, since_block, block):
     between its last indexed event and `block` (no Domino event can name a
     burned token, so the burn is after it): a burn is proven, never inferred.
     One bloom-indexed getLogs, split to the endpoint's window by the transport."""
-    manager = chain.uniswap.v3.positionManager if dex == DEX_V3 else chain.uniswap.v4.positionManager
+    manager = chain.position_manager(dex)
     # More windows than an endpoint serves in one read would fail the client
     # for the rest of the pass: decide before asking.
     limits = [e.max_log_blocks for e in rpc.endpoints.endpoints if e.max_log_blocks]
@@ -133,7 +132,7 @@ def _burn_proven(rpc, chain, dex, token_id, since_block, block):
 def read_position(rpc, chain, block, dex, token_id, last_event_block):
     """(status, owner, state, reason) for one position at `block`;
     `last_event_block` is the last block an indexed event named it."""
-    manager = chain.uniswap.v3.positionManager if dex == DEX_V3 else chain.uniswap.v4.positionManager
+    manager = chain.position_manager(dex)
     try:
         position = UniswapReader(chain, rpc).position(PositionRef(dex, manager, token_id), block)
     except DataError as error:

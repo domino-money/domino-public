@@ -9,6 +9,8 @@ from Arbitrum One's profile (Uniswap, CreateX: synthetic stand-ins), with:
 - no Chainlink feed: `gasPrice.poolNativeUsd` names the WHYPE/USDC pool HYPE is priced in (v3 at its factory's
   CREATE2 address, or a hookless v4 pool of native HYPE by its id);
 - no bridge provider: S2 is off on it.
+`dexes=(4,)` gives the chain v4 alone (`uniswap.v3` null, as Elysium's mainnet shows on 6 Nov 2026: Uniswap v4 only,
+priced by a hookless native HYPE/USDC v4 pool), and `dexes=(3,)` v3 alone.
 Nothing here is a fact about Elysium's mainnet; the file name, slug and id only rehearse the shape of the day it is.
 """
 import copy
@@ -56,14 +58,22 @@ def v4_pool_id(currency_a, currency_b, fee, spacing):
                                 [low, high, fee, spacing, ZERO])).hex()
 
 
-def document(*, v4=False):
+V3_CONTRACTS = ('factory', 'positionManager', 'quoterV2', 'swapRouter02')
+V4_CONTRACTS = ('poolManager', 'positionManager', 'stateView', 'quoter')
+
+
+def document(*, v4=False, dexes=(3, 4)):
     """The synthetic enabled profile: HYPE native, WHYPE wrapped, USDC at rank 1, priced by its WHYPE/USDC pool (v3) or
-    its native HYPE/USDC pool (v4), no bridge."""
+    its native HYPE/USDC pool (v4), no bridge. `dexes` are the Uniswap versions it has; a chain with v4 alone is
+    priced by its v4 pool."""
+    if dexes not in ((3, 4), (3,), (4,)) or (v4 and dexes == (3,)):
+        raise ValueError('fixture_dexes_invalid')
+    v4 = v4 or dexes == (4,)
     arbitrum = copy.deepcopy(documents()['arbitrum-42161.json'])
     testnet = TESTNET
     uniswap = arbitrum['uniswap']
-    keep = {uniswap['v3'][name] for name in ('factory', 'positionManager', 'quoterV2', 'swapRouter02')} | {
-        uniswap['v4'][name] for name in ('poolManager', 'positionManager', 'stateView', 'quoter')} | {
+    keep = {uniswap['v3'][name] for name in V3_CONTRACTS if 3 in dexes} | {
+        uniswap['v4'][name] for name in V4_CONTRACTS if 4 in dexes} | {
         uniswap['universalRouter']['address'], testnet['permit2'], testnet['multicall3'],
         arbitrum['deployer']['address']}
     records = [record for record in arbitrum['verification']['contracts'] if record['address'] in keep]
@@ -77,6 +87,9 @@ def document(*, v4=False):
         records.append({'name': 'v3 pool WHYPE/USDC fee 500 (synthetic)', 'address': pool,
                         'codehash': code_hash('pool')})
         source = {'dex': 3, 'pool': pool, 'currency': WHYPE, 'stable': USDC, 'fee': POOL_FEE}
+    for dex in (3, 4):
+        if dex not in dexes:
+            uniswap[f'v{dex}'] = None
     return {
         'schemaVersion': 1, 'chainId': CHAIN_ID, 'slug': 'elysium', 'name': 'Elysium (synthetic test fixture)',
         'enabled': True, 'nativeSymbol': 'HYPE', 'stack': TESTNET['stack'], 'blockTimeSeconds': 0.25,
@@ -94,11 +107,11 @@ def document(*, v4=False):
     }
 
 
-def docs(*, v4=False, change=None):
+def docs(*, v4=False, dexes=(3, 4), change=None):
     """The repository's profiles with Elysium enabled as on its first day: its file (pending today, enabled once its
     mainnet is) gives way to this one."""
     out = {name: document for name, document in documents().items() if document.get('slug') != 'elysium'}
-    out[FILE] = document(v4=v4)
+    out[FILE] = document(v4=v4, dexes=dexes)
     if change is not None:
         change(out[FILE])
     return out

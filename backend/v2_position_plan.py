@@ -222,6 +222,8 @@ class PositionPlanner:
     # ------------------------------------------------------------------ entry
     def plan(self, request, owner):
         owner = address(owner)
+        # A pool or position of a Uniswap version the chain lacks is refused before any read (v2_dex_not_on_chain).
+        self.chain.require_dex(request['pool']['dex'] if request['action'] == 'create' else request['position']['dex'])
         started = self.clock()
         requested = int(started)
         head = self.follower.head()
@@ -354,10 +356,10 @@ class _Context:
 
     def _load_position(self):
         raw = self.request['position']
-        managers = {DEX_V3: self.chain.uniswap.v3.positionManager, DEX_V4: self.chain.uniswap.v4.positionManager}
         token_id = int(raw['tokenId'])
         try:
-            position = self.reader.position(PositionRef(raw['dex'], managers[raw['dex']], token_id), self.block)
+            position = self.reader.position(PositionRef(raw['dex'], self.chain.position_manager(raw['dex']), token_id),
+                                            self.block)
         except DataError as error:
             if str(error) in ('v2_position_not_found', 'rpc_call_reverted', 'v2_position_has_no_owner'):
                 raise PlanError('position_plan_position_not_found') from None

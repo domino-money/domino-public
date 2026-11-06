@@ -14,7 +14,7 @@
  * code hash and sends only the rest. */
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { repoRoot, viem, CONTRACT_NAMES, CREATE_X, CREATEX_EVENTS, DEPLOY_ORDER, ENABLED_CHAINS, PRODUCTION_DEPLOYER, ensure, quantity,
+import { repoRoot, viem, CONTRACT_NAMES, CREATE_X, CREATEX_EVENTS, ENABLED_CHAINS, PRODUCTION_DEPLOYER, ensure, quantity, deployOrderFor, profileDexes,
   compileV2, readJson, writeJson, flags, prepareDeployment, planDeployment, preflightDeployment, verifyDeployment, deploymentState,
   makeRpc, pinBlock } from './deploy.mjs';
 import { requireAnvil, requireValidatedRpc, forkedNetwork, installCreateX, installOfflineDependencies, simulateGas, waitReceipt,
@@ -70,9 +70,10 @@ async function fundLocally(bundle, rpc) {
   return { synthetic: true, balanceBeforeWei: before.toString(), balanceWei: need.toString() };
 }
 
-/** `forkProfile` (tests only) stands in for the committed profile in fork mode, for a fork of an offline chain. */
+/** `forkProfile` (tests only) stands in for the committed profile in fork mode, for a fork of an offline chain.
+ * `dexes` (offline mode) deploys for a chain with those Uniswap versions only, as Elysium's v4. */
 export async function deployLocal({ rpcUrl, out, mode = 'fork', roles, productionDeployer = false, releaseTag = 'v2-local',
-  sourceRoot = repoRoot, artifacts, now = Math.floor(Date.now() / 1000), forkProfile }) {
+  sourceRoot = repoRoot, artifacts, now = Math.floor(Date.now() / 1000), forkProfile, dexes }) {
   ensure(['fork', 'offline'].includes(mode), 'invalid_local_mode');
   const rpc = makeRpc(rpcUrl); await requireAnvil(rpcUrl, rpc);
   const fork = await forkedNetwork(rpc);
@@ -86,21 +87,21 @@ export async function deployLocal({ rpcUrl, out, mode = 'fork', roles, productio
   } else {
     ensure(!fork, 'offline_mode_requires_a_plain_anvil');
     await installCreateX(rpc);
-    profile = await installOfflineDependencies(rpc); environment = 'local-test';
+    profile = await installOfflineDependencies(rpc, dexes ? { dexes } : {}); environment = 'local-test';
   }
   artifacts ??= compileV2({ sourceRoot });
   roles ??= localRoles({ productionDeployer });
   ensure(!productionDeployer || roles.deployer.toLowerCase() === PRODUCTION_DEPLOYER, 'production_deployer_conflicts_with_roles');
-  const deployer = roles.deployer.toLowerCase();
-  const reference = prepareDeployment({ profile, roles, environment, sourceCommit: artifacts.sourceCommit, releaseTag, steps: [...DEPLOY_ORDER],
+  const deployer = roles.deployer.toLowerCase(), order = deployOrderFor(profileDexes(profile));
+  const reference = prepareDeployment({ profile, roles, environment, sourceCommit: artifacts.sourceCommit, releaseTag, steps: [...order],
     resumeOf: null, nonce: quantity(await rpc('eth_getTransactionCount', [deployer, 'latest'])).toString(), maxFeePerGas: '1',
-    maxPriorityFeePerGas: '0', expiresAt: now + 3600, gasLimits: Object.fromEntries(DEPLOY_ORDER.map(c => [c, '16777216'])) }, artifacts);
+    maxPriorityFeePerGas: '0', expiresAt: now + 3600, gasLimits: Object.fromEntries(order.map(c => [c, '16777216'])) }, artifacts);
   const block = await pinBlock(rpc, 'latest');
   const before = await deploymentState(reference, rpc, block.tag);
-  const deployed = DEPLOY_ORDER.filter(c => before[c] === 'deployed');
+  const deployed = order.filter(c => before[c] === 'deployed');
   const earlier = deployed.length ? await creationTransactions(reference, rpc, deployed, fork ? Number(fork.forkBlockNumber) + 1 : 0) : {};
   let bundle = reference, preflight = null, funding = null, sent = {};
-  if (deployed.length < DEPLOY_ORDER.length) {
+  if (deployed.length < order.length) {
     const planned = await planDeployment({ profile, roles, environment, releaseTag, artifacts, rpc, simulate: simulateGas, now,
       resumeFrom: deployed.length ? reference : undefined });
     bundle = planned.bundle;

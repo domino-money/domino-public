@@ -700,7 +700,8 @@ def check_endpoint(endpoints, endpoint, *, clock=None):
               'headAgeSeconds': int((clock or time.time)()) - head.timestamp, 'contracts': contracts}
     if endpoint.archive:
         history = ChainHistoryRpc(endpoints, only=endpoint.name, max_requests=8)
-        probe = chain.uniswap.v4.poolManager
+        # v4's PoolManager, or v3's factory on a chain without v4: a contract the profile verified at its block.
+        probe = chain.uniswap.v4.poolManager if chain.uniswap.v4 is not None else chain.uniswap.v3.factory
         observed = _codehash(history.request('eth_getCode', [probe, hex(chain.verification.block)]))
         report['archiveProbe'] = 'match' if observed == chain.verified_codehash(probe) else 'mismatch'
     report['ok'] = (all(status == 'match' for status in contracts.values())

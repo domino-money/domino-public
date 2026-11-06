@@ -38,6 +38,9 @@ It works for any Nitro chain.
      wrapped native and `deploy.mjs`'s own `checkDependencies` run on the draft.
    - The **run** verdict counts the chain facts, `eth_simulateV1`, Permit2, Multicall3, Uniswap, both tokens and a
      WHYPE/stable v3 pool with liquidity.
+   - **A chain with one Uniswap version** (Elysium: v4). An input that names no address of a version means the chain
+     has none of it. The verdicts leave that version's checks out, and the run takes v4's liquidity in place of v3's.
+     The draft names it `null`, and the funding counts that version's steps (8 for v4).
 5. **Do not commit the draft as it is.** `profile-draft.json` keeps `"enabled": false`, and every field it could not
    verify is `null`. `report.json` lists those fields (`unverifiedFields`) and what today's schema cannot express
    (`schemaGaps`).
@@ -55,7 +58,8 @@ It works for any Nitro chain.
 2. **The profile and the release candidate, in one pull request:**
    - `elysium-<id>.json` from the draft: enabled, the router's version, the pool that prices HYPE and no bridge
      provider. It replaces `elysium.json`.
-   - `<id>` in `deploy.mjs`'s `ENABLED_CHAINS`, with the manifest rewritten (`release-manifest.mjs --write`).
+   - `<id>` in `deploy.mjs`'s `ENABLED_CHAINS`, with the manifest rewritten (`release-manifest.mjs --write`). It is
+     already there for 99901 (6 Nov 2026), so for Elysium this release input is unchanged.
    - What `schemaGaps` names: the profile tests, and the API schemas that list the chain ids (a contract change the
      app sees).
 
@@ -107,9 +111,9 @@ owner's decision of 5 Nov 2026 ([GOVERNANCE_SAFE.md](GOVERNANCE_SAFE.md)). The r
   them.
 - **The stable.** It is the owner's choice: its code, symbol and decimals are read.
 - **The names.** Slug, name and native symbol come from the placeholder.
-- **Enabling the chain.** That needs `deploy.mjs`, which is frozen and admits only 4663, 8453 and 42161, so a new
-  release candidate. It also touches the profile tests and the API schemas that list the enabled chain ids
-  (`schemaGaps` names them).
+- **Enabling the chain.** `deploy.mjs` is frozen. It admits 4663, 8453, 42161 and Elysium's 99901; any other chain
+  needs a new release candidate. Enabling also touches the profile tests and the API schemas that list the enabled
+  chain ids (`schemaGaps` names them).
 
 ## Rehearsal on the testnet (5 Nov 2026)
 

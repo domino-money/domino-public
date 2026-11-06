@@ -29,6 +29,9 @@ def plan_failure(error):
     code = str(error)
     if code == 'read_deadline_exceeded':
         return PositionPlanError('request_timeout')
+    # A pool or position of a Uniswap version the chain lacks: the request is not one this chain can answer.
+    if code == 'v2_dex_not_on_chain':
+        return PositionPlanError('invalid_request')
     # A call that never ran for its intrinsic gas (an L1 price spike on Nitro) is a provider not answering now.
     if code.startswith('http_') or code in UNAVAILABLE or isinstance(error, RpcIntrinsicGas):
         return PositionPlanError('upstream_unavailable')

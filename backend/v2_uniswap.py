@@ -171,8 +171,8 @@ class PositionState:
 
 
 def v3_pool_address(chain, token0, token1, fee):
-    """The pool the v3 factory deployed for this pair and fee (CREATE2)."""
-    v3 = chain.uniswap.v3
+    """The pool the v3 factory deployed for this pair and fee (CREATE2); `v2_dex_not_on_chain` on a chain without v3."""
+    v3 = chain.require_dex(DEX_V3)
     salt = keccak(encode(['address', 'address', 'uint24'], [token0, token1, fee]))
     digest = keccak(b'\xff' + bytes.fromhex(v3.factory[2:]) + salt + bytes.fromhex(v3.poolInitCodeHash[2:]))
     return '0x' + digest[12:].hex()
@@ -237,12 +237,13 @@ class UniswapReader:
         the chain's cache already proved it at this block or an earlier one."""
         if not isinstance(block, Block):
             raise DataError('block_unavailable')
+        # A version the chain lacks is refused before any read (v2_dex_not_on_chain).
+        deployment = self.chain.require_dex(dex)
         anchors = getattr(self.rpc, 'anchors', None)
         if not isinstance(anchors, dict) or anchors.get(block.tag) != block:
             self.assert_canonical(block)
-        uniswap = self.chain.uniswap
-        contracts = ((uniswap.v3.factory, uniswap.v3.positionManager) if dex == DEX_V3 else
-                     (uniswap.v4.positionManager, uniswap.v4.stateView))
+        contracts = ((deployment.factory, deployment.positionManager) if dex == DEX_V3 else
+                     (deployment.positionManager, deployment.stateView))
         expected = {contract: self.chain.verified_codehash(contract) for contract in contracts}
         unproven = [c for c in contracts if not self.code.proven(c, expected[c], block.number)]
         if not unproven:
@@ -314,8 +315,7 @@ class UniswapReader:
     def _position_ref(self, ref, block):
         if not isinstance(ref, PositionRef):
             raise DataError('v2_invalid_position_ref')
-        managers = {DEX_V3: self.chain.uniswap.v3.positionManager, DEX_V4: self.chain.uniswap.v4.positionManager}
-        if ref.position_manager != managers[ref.dex]:
+        if ref.position_manager != self.chain.position_manager(ref.dex):
             raise DataError('v2_position_manager_unknown')
         self._prepare(block, ref.dex)
 

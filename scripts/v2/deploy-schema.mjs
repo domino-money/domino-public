@@ -3,12 +3,10 @@
  * one; backend/tests/test_v2_manifest.py runs both over the same documents and requires the same verdicts. */
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { CONTRACT_NAMES, DEPLOY_ORDER, POLICIES, ROLE_NAMES, CREATE_X, CREATE_X_CODE_HASH, ENVIRONMENTS, ENABLED_CHAINS,
-  precomputeAddresses, checkRoleAddresses, ensure, canonical } from './deploy.mjs';
+import { CONTRACT_NAMES, POLICIES, ROLE_NAMES, CREATE_X, CREATE_X_CODE_HASH, ENVIRONMENTS, ENABLED_CHAINS,
+  precomputeAddresses, checkRoleAddresses, ensure, canonical, componentsFor, deployOrderFor, dependenciesFor, manifestDexes } from './deploy.mjs';
 
 export const MANIFEST_SCHEMA = JSON.parse(readFileSync(new URL('./deploy-manifest.schema.json', import.meta.url), 'utf8'));
-const DEPENDENCIES = ['v3Factory', 'v3PositionManager', 'v3Quoter', 'v3SwapRouter', 'v4PoolManager', 'v4PositionManager',
-  'v4StateView', 'v4Quoter', 'universalRouter', 'permit2', 'wrappedNative'];
 const BUILD = { version: '0.8.26+commit.8a97fa7a', optimizerRuns: 200, viaIR: true, evmVersion: 'cancun', bytecodeHash: 'none' };
 const TOP_LEVEL = ['schemaVersion', 'kind', 'status', 'environment', 'chain', 'sourceCommit', 'releaseTag', 'contractNames',
   'contracts', 'dependencies', 'roles', 'policies', 'chargeCurrencies', 'runtimeCodeHashes', 'createx', 'build',
@@ -24,6 +22,7 @@ const integer = x => Number.isSafeInteger(x) && x >= 0;
 const plain = x => x !== null && typeof x === 'object' && !Array.isArray(x);
 const sameKeys = (v, expected) => { const a = Object.keys(v).sort(), b = [...expected].sort(); return a.length === b.length && a.every((k, i) => k === b[i]); };
 function keys(v, expected, error) { ensure(plain(v) && sameKeys(v, expected), error); }
+const pick = (map, names) => Object.fromEntries(names.map(name => [name, map[name]]));
 
 /** RFC 3339 date-time with a zone, checked field by field (no library parser: JavaScript's and Python's
  * accept different extensions). Upper-case T and Z, 1 to 9 fraction digits, a real calendar day. */
@@ -102,15 +101,21 @@ export function checkSemantics(m) {
   keys(m.roles, ROLE_NAMES, 'manifest_roles_invalid');
   ensure(Object.values(m.roles).every(address), 'manifest_roles_invalid');
   checkRoleAddresses(m.roles);
+  // The components and dependencies are those of the Uniswap versions whose vault the manifest records: both on
+  // Robinhood, Base and Arbitrum, v4 only on Elysium (6 Nov 2026). Never a part of a version.
+  const dexes = manifestDexes(m);
+  ensure(dexes.length > 0, 'manifest_addresses_changed');
+  const components = componentsFor(dexes), order = deployOrderFor(dexes), dependencies = dependenciesFor(dexes);
   const predicted = precomputeAddresses(m.roles.deployer);
-  ensure(canonical(m.contracts) === canonical(predicted.contracts), 'manifest_addresses_changed');
+  ensure(canonical(m.contracts) === canonical(pick(predicted.contracts, components)), 'manifest_addresses_changed');
   ensure(Object.values(m.roles).every(addr => !Object.values(m.contracts).includes(addr) && addr !== CREATE_X), 'manifest_role_component_conflict');
   keys(m.createx, ['address', 'runtimeCodeHash', 'salts', 'guardedSalts'], 'manifest_createx_invalid');
   ensure(m.createx.address === CREATE_X && m.createx.runtimeCodeHash === CREATE_X_CODE_HASH
-    && canonical(m.createx.salts) === canonical(predicted.salts) && canonical(m.createx.guardedSalts) === canonical(predicted.guardedSalts), 'manifest_createx_changed');
-  keys(m.dependencies, DEPENDENCIES, 'manifest_dependencies_invalid');
+    && canonical(m.createx.salts) === canonical(pick(predicted.salts, order))
+    && canonical(m.createx.guardedSalts) === canonical(pick(predicted.guardedSalts, order)), 'manifest_createx_changed');
+  keys(m.dependencies, dependencies, 'manifest_dependencies_invalid');
   ensure(Object.values(m.dependencies).every(v => address(v) && BigInt(v) > 0n), 'manifest_dependency_address_invalid');
-  keys(m.runtimeCodeHashes, [...Object.keys(CONTRACT_NAMES), ...DEPENDENCIES], 'manifest_codehash_keys_invalid');
+  keys(m.runtimeCodeHashes, [...components, ...dependencies], 'manifest_codehash_keys_invalid');
   ensure(Object.values(m.runtimeCodeHashes).every(v => hash(v) && BigInt(v) > 0n), 'manifest_codehash_invalid');
   ensure(Array.isArray(m.chargeCurrencies) && m.chargeCurrencies.length >= 2, 'manifest_currencies_invalid');
   for (const currency of m.chargeCurrencies) {
@@ -127,7 +132,7 @@ export function checkSemantics(m) {
     && m.build.sourceTreeSha256 === createHash('sha256').update(canonical(m.build.sourceHashes)).digest('hex'), 'manifest_build_invalid');
   ensure(plain(m.deploymentReceipts), 'manifest_receipts_invalid');
   if (m.status === 'prepared') { ensure(m.verification === null && Object.keys(m.deploymentReceipts).length === 0, 'manifest_prepared_has_receipts'); return m; }
-  keys(m.deploymentReceipts, DEPLOY_ORDER, 'manifest_receipts_incomplete');
+  keys(m.deploymentReceipts, order, 'manifest_receipts_incomplete');
   const blocks = new Map();
   for (const receipt of Object.values(m.deploymentReceipts)) {
     keys(receipt, RECEIPT_KEYS, 'manifest_receipt_invalid');
@@ -138,7 +143,7 @@ export function checkSemantics(m) {
       && (blocks.get(receipt.blockNumber) ?? receipt.blockHash) === receipt.blockHash, 'manifest_receipt_invalid');
     blocks.set(receipt.blockNumber, receipt.blockHash);
   }
-  ensure(new Set(Object.values(m.deploymentReceipts).map(r => r.transactionHash)).size === DEPLOY_ORDER.length, 'manifest_receipt_invalid');
+  ensure(new Set(Object.values(m.deploymentReceipts).map(r => r.transactionHash)).size === order.length, 'manifest_receipt_invalid');
   const v = m.verification;
   keys(v, VERIFICATION_KEYS, 'manifest_verification_invalid');
   ensure(integer(v.blockNumber) && hash(v.blockHash) && typeof v.blockTag === 'string'

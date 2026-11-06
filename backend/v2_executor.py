@@ -602,7 +602,7 @@ class ChainExecutor:
             raise DataError('v2_target_not_admitted')
         if kind in ('compound', 'return') and not any(
                 self._view(self.deployment.factory(dex), 'isVault(address)', ['address'], [target], head)
-                for dex in (3, 4)):
+                for dex in self.deployment.chain.dexes):
             raise DataError('v2_target_not_admitted')
         max_fee, priority = self.policy.fees(base_fee)
         if gas > self.policy.max_gas or gas * max_fee > self.policy.max_cost_wei:

@@ -75,6 +75,27 @@ dependency must have exactly one verified code hash there, and Universal Router 
 
 RouteConfig is `(registry, permit2, v3Factory, v3PoolInitCodeHash, v4PoolManager)`. The implementation stores its
 future factory's precomputed address; the factory, deployed after it, checks the implementation's wiring.
+
+### A chain with one Uniswap version
+
+Elysium launches with Uniswap v4 only (6 Nov 2026). A profile then names the absent version as null
+(`"uniswap": {"v3": null, ...}`), and nothing in the contracts changes:
+- **What the contracts already take.** `DominoPriceAnchor` and `DominoSwapExecutor`'s RouteConfig read a zero v3
+  factory (with a zero init-code hash) or a zero v4 PoolManager/StateView as that version being absent, and leave its
+  legs out.
+- **What `deploy.mjs` sends.** The common four, then that version's components only: 8 steps and 9 runtimes for v4
+  (`vault.v4`, `vaultFactory.v4`, `zap.v4.steps`, `zap.v4` and its executor), 7 and 8 for v3. The absent version's
+  arguments are zero; its components are never deployed.
+- **The addresses are the same.** CREATE3 takes only the deployer and each component's salt, so the deployed
+  components are at the addresses in the table above.
+- **The manifest.** It records only those components, salts, receipts and dependencies. The versions are the ones
+  whose vault it records, and both validators refuse part of a version or the other version's parts. Its
+  `contractNames` stays the full name map.
+- **The checks.** `preflight` and `verify` check that version's wiring only. The wrapped native is still cross-checked:
+  v3's NonfungiblePositionManager `WETH9()`, or v4's PositionManager `WETH9()` on a chain without v3.
+
+`ENABLED_CHAINS` admits Elysium's 99901: the chain id Conduit deployed and the launch partners use. A public
+preparation there still needs its committed, verified profile.
 `governance` is the owner's Safe from the registry's constructor on: the deployer never holds governance, and
 there is no post-deployment transaction. The tariffs recorded as policies are checked against the compiled
 constants (`DominoV2Types` fees, `MIN_UNIVERSAL_ROUTER_VERSION`) and the profile's bridge fee.

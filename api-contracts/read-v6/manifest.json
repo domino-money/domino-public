@@ -1111,7 +1111,7 @@
     },
     {
       "path": "backend/v2_read_service.py",
-      "sha256": "d68eaeb889bdfb8d6198f56e87902a63834b5a96f9278a4ef8fff5065839d137"
+      "sha256": "8f402a83276b460c330672d334a36a2bb49c555467f3fe19ce5ad8f0ec80aa99"
     },
     {
       "path": "backend/v2_index_store.py",
@@ -1119,7 +1119,7 @@
     },
     {
       "path": "backend/v2_chain_reads.py",
-      "sha256": "7c48991ac69b2384c02ea59540ff48b6d9cab8479868073295232808c1314c8e"
+      "sha256": "347b36b631adf1aca2ff912c7a8b325a20a2d26b320d364cb4e8c8f547e09778"
     },
     {
       "path": "backend/data/token-lists/uniswap-default.json",

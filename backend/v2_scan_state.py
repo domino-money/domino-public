@@ -29,9 +29,11 @@ HASH = re.compile(r'^0x[0-9a-f]{64}$')
 
 
 def identity(deployment):
-    """What the scans depend on: the chain and the three contracts whose logs they read."""
-    return {'chainId': deployment.chain.chainId, 'vaultFactory.v3': deployment.factory(3),
-            'vaultFactory.v4': deployment.factory(4), 'autoExit': deployment.auto_exit}
+    """What the scans depend on: the chain and the contracts whose logs they read (its vault factories, one on a chain
+    with one Uniswap version, and the auto-exit module)."""
+    return {'chainId': deployment.chain.chainId,
+            **{f'vaultFactory.v{dex}': deployment.factory(dex) for dex in deployment.chain.dexes},
+            'autoExit': deployment.auto_exit}
 
 
 class ScanState:

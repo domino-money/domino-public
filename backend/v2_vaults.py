@@ -34,7 +34,7 @@ from eth_hash.auto import keccak
 
 from discovery import ZERO, Block, DataError, address, parse_block, prefetched
 from v2_abi import event, function
-from v2_chains import DEX_V3, DEX_V4
+from v2_chains import DEX_V4
 from v2_planner import Limits, MemberState, Policy, PoolState as PlannerPool, VaultState
 from v2_rpc import batched_reads
 from v2_scan_state import valid_address
@@ -85,16 +85,19 @@ class VaultRecord:
 
 
 class VaultDiscovery:
-    """VaultCreated logs of both factories, read once from each factory's deployment block and then incrementally.
+    """VaultCreated logs of the chain's factories (both, or the one of the only Uniswap version it has), read once from
+    each factory's deployment block and then incrementally.
 
     Each window read moves the scan on at once, so a pass that stops on its request budget keeps what it read.
     With a `state` (v2_scan_state.ScanState) the position and the vaults found outlive the process."""
 
     def __init__(self, deployment, *, max_blocks_per_read=50_000, state=None):
         self.deployment, self.max_blocks, self.state = deployment, max_blocks_per_read, state
-        self.next_block = {dex: deployment.start_block(f'vaultFactory.v{dex}') for dex in (DEX_V3, DEX_V4)}
+        # A chain with one Uniswap version has that version's factory alone.
+        self.dexes = deployment.chain.dexes
+        self.next_block = {dex: deployment.start_block(f'vaultFactory.v{dex}') for dex in self.dexes}
         self.records = {}
-        for dex in (DEX_V3, DEX_V4):
+        for dex in self.dexes:
             saved = state.get(f'vaultFactory.v{dex}') if state is not None else None
             if saved is None:
                 continue
@@ -109,7 +112,7 @@ class VaultDiscovery:
         created = event(FACTORY, 'VaultCreated')
         end = head.number - lag_blocks
         try:
-            for dex in (DEX_V3, DEX_V4):
+            for dex in self.dexes:
                 factory = self.deployment.factory(dex)
                 while self.next_block[dex] <= end:
                     start = self.next_block[dex]
@@ -136,7 +139,7 @@ class VaultDiscovery:
     def _keep(self, end):
         if self.state is None:
             return
-        for dex in (DEX_V3, DEX_V4):
+        for dex in self.dexes:
             items = {r.vault: [r.owner, r.root_token_id, r.block_number] for r in self.records.values() if r.dex == dex}
             self.state.put(f'vaultFactory.v{dex}', self.next_block[dex], end, items)
         self.state.save()
@@ -155,6 +158,7 @@ class VaultReader:
         vault = address(vault)
         if (vault, dex) in self._proven:
             return
+        # A version the chain lacks has no vault: Deployment.address refuses it (v2_dex_not_on_chain) before any read.
         implementation = self.deployment.address(f'vault.v{dex}')
         code = self.rpc.request('eth_getCode', [vault, block.tag])
         if type(code) is not str or code.lower() != clone_code(implementation):
@@ -167,7 +171,7 @@ class VaultReader:
         except Exception:
             raise DataError('v2_vault_wiring_mismatch') from None
         expected = (self.deployment.factory(dex), self.deployment.registry, self.deployment.price_anchor,
-                    {DEX_V3: self.chain.uniswap.v3.positionManager, DEX_V4: self.chain.uniswap.v4.positionManager}[dex],
+                    self.chain.position_manager(dex),
                     self.deployment.address('vaultSwap'), self.deployment.auto_exit)
         if not is_vault or wiring != expected:
             raise DataError('v2_vault_wiring_mismatch')
@@ -194,8 +198,7 @@ class VaultReader:
                        (v, function(LEDGER, 'lot'), (token_id, pool.currency0)),
                        (v, function(LEDGER, 'lot'), (token_id, pool.currency1))]
         rows = calls(self.rpc, block, ledger) if ledger else []
-        manager = {DEX_V3: self.chain.uniswap.v3.positionManager, DEX_V4: self.chain.uniswap.v4.positionManager}[
-            record.dex]
+        manager = self.chain.position_manager(record.dex)
         states, pool_state = [], None
         for index, token_id in enumerate(members):
             (member,), (lot0,), (lot1,) = rows[3 * index: 3 * index + 3]
@@ -249,7 +252,7 @@ class VaultReader:
         """The root's liquidity at `block` from its position manager alone (one call): the closure returnReserves
         reads live. A root the owner burned has none, as in read(): v4 reads it as zero, v3's manager refuses it."""
         dex = vault.pool.pool.dex
-        manager = {DEX_V3: self.chain.uniswap.v3.positionManager, DEX_V4: self.chain.uniswap.v4.positionManager}[dex]
+        manager = self.chain.position_manager(dex)
         try:
             return self.uniswap.position_liquidity(PositionRef(dex, manager, vault.root_token_id), block)
         except DataError as error:
@@ -286,7 +289,8 @@ def anchor_min_twap(rpc, deployment, block):
 def fee_growth_inside(chain, rpc, pool, tick_lower, tick_upper, block):
     """Fee growth inside a range per unit of liquidity (Q128), per token, at `block`."""
     if pool.dex == DEX_V4:
-        (growth0, growth1), = calls(rpc, block, [(chain.uniswap.v4.stateView, function(V4_STATE, 'getFeeGrowthInside'),
+        view = chain.require_dex(DEX_V4).stateView
+        (growth0, growth1), = calls(rpc, block, [(view, function(V4_STATE, 'getFeeGrowthInside'),
                                                   (bytes.fromhex(pool.pool_id[2:]), tick_lower, tick_upper))])
         return growth0, growth1
     target = v3_pool_address(chain, pool.currency0, pool.currency1, pool.fee)

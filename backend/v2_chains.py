@@ -21,6 +21,12 @@ The native currency's USD (`gasPrice`) is one of two sources, never both:
 A profile with no bridge provider is a chain S2 does not serve
 (crosschain_common); one that names any names both.
 
+A chain may have one Uniswap version only (Elysium's mainnet shows v4 alone,
+6 Nov 2026): the other is `null` in its profile, `dexes` names the versions it
+has, its native pool must be of one of them, and every V2 service skips the
+paths of the version it lacks. A request that names that version is refused
+(`v2_dex_not_on_chain`), never answered empty.
+
 Loading checks the whole directory and refuses a profile whole, never
 defaulting a field: exact keys and types, EIP-55 checksums, the file name, the
 rank order the fee rule depends on, the native and wrapped currencies, and
@@ -143,9 +149,17 @@ class UniversalRouter(Frozen):
 
 
 class Uniswap(Frozen):
-    v3: V3Deployment
-    v4: V4Deployment
+    """A chain's Uniswap: v3, v4 or both (a chain may have one only: `null` for the other, the key still present), and
+    the Universal Router either way."""
+    v3: V3Deployment | None
+    v4: V4Deployment | None
     universalRouter: UniversalRouter
+
+    @model_validator(mode='after')
+    def checked(self):
+        if self.v3 is None and self.v4 is None:
+            raise ValueError('uniswap_deployment_missing')
+        return self
 
 
 class Deployer(Frozen):
@@ -322,9 +336,12 @@ class ChainProfile(Frozen):
         _checked_currencies(self)
         records = {contract.address: contract for contract in self.verification.contracts}
         uniswap = self.uniswap
-        contracts = [uniswap.v3.factory, uniswap.v3.positionManager, uniswap.v3.quoterV2,
-                     uniswap.v3.swapRouter02, uniswap.v4.poolManager, uniswap.v4.positionManager,
-                     uniswap.v4.stateView, uniswap.v4.quoter, uniswap.universalRouter.address]
+        # Only the versions the chain has: a v4-only chain records no v3 contract, and is asked for none.
+        contracts = [*((uniswap.v3.factory, uniswap.v3.positionManager, uniswap.v3.quoterV2, uniswap.v3.swapRouter02)
+                       if uniswap.v3 is not None else ()),
+                     *((uniswap.v4.poolManager, uniswap.v4.positionManager, uniswap.v4.stateView, uniswap.v4.quoter)
+                       if uniswap.v4 is not None else ()),
+                     uniswap.universalRouter.address]
         if len(set(contracts)) != len(contracts):
             raise ValueError('uniswap_contracts_not_distinct')
         feed, pool = self.native_feed, self.native_pool
@@ -344,6 +361,9 @@ class ChainProfile(Frozen):
     def _checked_native_pool(self, pool):
         """The pool pairs the native currency with the stable the chain reads price at US$ 1, and is the one its address
         or id names."""
+        # The pool is read through its own version's contracts, so that version must be the chain's.
+        if pool.dex not in self.dexes:
+            raise ValueError('native_usd_pool_dex_not_on_chain')
         stable = min(self.chargeCurrencies, key=lambda currency: (currency.rank, currency.address))
         wrapped = self.wrappedNative.address
         currencies = (wrapped, ZERO) if pool.dex == DEX_V4 else (wrapped,)
@@ -362,6 +382,21 @@ class ChainProfile(Frozen):
     def key(self):
         """The profile's file stem and the name a service is started with."""
         return f'{self.slug}-{self.chainId}'
+
+    @property
+    def dexes(self):
+        """The Uniswap versions the chain has, ascending: (3, 4), or one of them alone."""
+        return tuple(dex for dex, deployment in ((DEX_V3, self.uniswap.v3), (DEX_V4, self.uniswap.v4))
+                     if deployment is not None)
+
+    def require_dex(self, dex):
+        """The chain's deployment of Uniswap `dex` (3 or 4); `v2_dex_not_on_chain` for a version the chain lacks."""
+        return _required_dex(self.uniswap, dex)
+
+    def position_manager(self, dex):
+        """The position manager of Uniswap `dex` on this chain: v3's NonfungiblePositionManager or v4's
+        PositionManager."""
+        return self.require_dex(dex).positionManager
 
     @property
     def native_feed(self):
@@ -387,8 +422,15 @@ class ChainProfile(Frozen):
         return _verified_codehash(self.verification, contract)
 
     def v3_tick_spacing(self, fee):
-        """The standard tiers the profile lists; None means ask the factory (F0)."""
-        return self.uniswap.v3.tickSpacingByFee.get(str(fee))
+        """The standard tiers the profile lists; None means ask the factory (F0). A chain without v3 has no tier."""
+        return self.require_dex(DEX_V3).tickSpacingByFee.get(str(fee))
+
+
+def _required_dex(uniswap, dex):
+    deployment = {DEX_V3: uniswap.v3, DEX_V4: uniswap.v4}.get(dex)
+    if deployment is None:
+        raise DataError('v2_dex_not_on_chain')
+    return deployment
 
 
 def _verified_codehash(verification, contract):
@@ -494,6 +536,15 @@ class BalanceChainProfile(Frozen):
     def key(self):
         """The profile's file stem, and the chain's name in the balance chain RPC file and its credentials."""
         return f'{self.slug}-{self.chainId}'
+
+    @property
+    def dexes(self):
+        """A balance chain always has both versions read (its pools are priced through either)."""
+        return (DEX_V3, DEX_V4)
+
+    def require_dex(self, dex):
+        """Its deployment of Uniswap `dex`, as a Domino chain's (ChainProfile.require_dex)."""
+        return _required_dex(self.uniswap, dex)
 
     def verified_codehash(self, contract):
         """The code hash the profile recorded on chain; None for a checked absence."""
