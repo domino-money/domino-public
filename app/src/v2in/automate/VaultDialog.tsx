@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Button, KeyValue, KeyValueList, Skeleton } from '../../components/ui'
 import { automationFeeText, VAULT_TEXT, type VaultAction, type VaultActionReview, type VaultSnapshot, type VaultStepKind, type VaultWithdrawBatch } from '../../finance/v2/vault'
 import { v2ContractUrl } from '../../v2/explorers'
-import { v2Chain } from '../../v2/chains'
+import { positionManagerOrNull, v2Chain } from '../../v2/chains'
 import type { V2Gate } from '../../v2/gate'
 import type { Hex, V2ChainId, V2Contracts } from '../../v2/types'
 import type { ExitTriggers } from '../autoexit/card'
@@ -472,7 +472,7 @@ export function VaultDialog({ kind, view, tokens: receivedTokens, gate, subject 
     steps: liveSteps,
     context: 'vault',
     labels,
-    affected: { positionManager: (view.dex === 3 ? v2Chain(view.chainId).uniswap.v3 : v2Chain(view.chainId).uniswap.v4).positionManager, tokenIds: [view.rootTokenId.toString(), ...(subject ? [subject.tokenId.toString()] : [])], vault: view.vault },
+    affected: { positionManager: positionManagerOrNull(v2Chain(view.chainId), view.dex) ?? undefined, tokenIds: [view.rootTokenId.toString(), ...(subject ? [subject.tokenId.toString()] : [])], vault: view.vault },
     onStepDone: (outcome: StepOutcome) => {
       if (outcome.receipt) recordVaultEvents(view.chainId, view.vault, outcome.receipt.events)
       if (outcome.receipt && outcome.step.key === 'approve-root') approvedIn.current = outcome.receipt.blockNumber

@@ -23,7 +23,8 @@
  *
  * Placeholders:
  * - `{token}`: only through the caller's labeler (a token's symbol is untrusted text; the labeler hands back a safe label
- *   or a short address). Without one, native ETH is "ETH" and any other token its short address. The label is stripped
+ *   or a short address). Without one, the chain's native currency (address(0)) is its symbol, "ETH" (HYPE on a HYPE-native
+ *   chain, src/v2/chains.ts nativeSymbolOf), and any other token its short address. The label is stripped
  *   of control and bidirectional characters and bounded. Substitution is one pass: a label is never read as a template.
  * - `{chain}`: the V2 chain's name from its profile (src/v2/chains.ts).
  * - `{reason}`: `InvalidMandate`'s local reason, which the app works out before signing (§4.9).
@@ -35,7 +36,7 @@
  * Plain functions: no viem, no wallet, no browser storage (tests/session.source-guard.test.mjs). The ABI words are read
  * by hand.
  */
-import { V2_CHAINS } from './chains'
+import { V2_CHAINS, nativeSymbolOf } from './chains'
 import type { Address, Hex, V2ChainId } from './types'
 
 export type ErrorContext = 'zap' | 'vault' | 'autoExit' | 'autoExitWaiting'
@@ -358,8 +359,12 @@ export function safeText(text: unknown, max: number): string | null {
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/
 const ZERO = '0x0000000000000000000000000000000000000000'
 
-/** Without a labeler: native ETH (address(0) on every V2 chain) is "ETH", any other token its short address. */
-export const shortTokenLabel = (address: Address): string => (address.toLowerCase() === ZERO ? 'ETH' : `${address.slice(0, 6)}…${address.slice(-4)}`)
+/**
+ * Without a labeler: the chain's native currency (address(0) on every V2 chain) is its symbol, "ETH" (changed on purpose
+ * 2026-11-06, Elysium readiness: HYPE on a HYPE-native chain; it was "ETH" whatever the chain), any other token its short
+ * address.
+ */
+export const shortTokenLabel = (address: Address, chainId?: number): string => (address.toLowerCase() === ZERO ? nativeSymbolOf(chainId ?? 0) : `${address.slice(0, 6)}…${address.slice(-4)}`)
 
 function tokenLabel(address: Address | undefined, labels: ErrorLabels): string | null {
   if (!address || !ADDRESS.test(address)) return null
@@ -371,7 +376,7 @@ function tokenLabel(address: Address | undefined, labels: ErrorLabels): string |
       label = null
     }
   }
-  return label ?? shortTokenLabel(address)
+  return label ?? shortTokenLabel(address, labels.chainId)
 }
 
 const chainName = (chainId: number): string | null => V2_CHAINS.find((chain) => chain.chainId === chainId)?.name ?? null

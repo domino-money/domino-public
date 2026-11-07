@@ -57,6 +57,9 @@ const PositionLab = __DOMINO_TEST_HOOKS__ ? lazy(recovering(() => import('./scre
 const screenFailed = () => ({ default: ScreenFailed })
 const Explore = deferred<object>(recovering(() => import('./screens/Explore').then((module) => ({ default: module.Explore })), screenFailed))
 const PoolDetail = deferred<{ poolId: string }>(recovering(() => import('./screens/PoolDetail').then((module) => ({ default: module.PoolDetail })), screenFailed))
+// Added 2026-11-06 (the owner's replica rule): a Base or Arbitrum One pool's page, Robinhood Chain's pool page fed from the
+// network's own reads, in the same chunk (screens/PoolDetail.tsx), and only in a build that carries V2.
+const NetworkPoolDetail = __DOMINO_V2__ ? deferred<object>(recovering(() => import('./screens/PoolDetail').then((module) => ({ default: module.NetworkPoolDetail })), screenFailed)) : null
 const Positions = deferred<{ param?: string }>(recovering(() => import('./screens/Positions').then((module) => ({ default: module.Positions })), screenFailed))
 const NewPosition = deferred<{ poolId: string }>(recovering(() => import('./screens/NewPosition').then((module) => ({ default: module.NewPosition })), screenFailed))
 const Automate = deferred<object>(recovering(() => import('./screens/Automate').then((module) => ({ default: module.Automate })), screenFailed))
@@ -179,6 +182,11 @@ export function parseHash(hash: string): HashLocation {
     const qualified = __DOMINO_V2__ && (page === 'markets' ? parseMarketsNetworkHash(hash) : parseNewNetworkHash(hash))
     return { page: qualified ? page : 'not-found', param: '', section }
   }
+  // Added 2026-11-06: a Base or Arbitrum One pool, `#/pool/network/<chain>/<pool>/<token>`, in a build that carries V2;
+  // `network` is the param the pool screen takes it by (Screen, below), and that screen reads the rest of the link itself,
+  // as Robinhood Chain's pool page reads its id (a malformed one is "That isn’t a pool id" there too). Kept out of the
+  // entry every visitor downloads. Every Robinhood Chain pool link reads as before.
+  if (second === 'network' && page === 'pool') return { page: __DOMINO_V2__ ? page : 'not-found', param: 'network', section }
   return { page: page === 'markets' && second !== '' && !MARKETS_TOKEN.test(second) ? 'not-found' : page, param: second, section }
 }
 
@@ -250,7 +258,7 @@ function Screen({ page, param }: { page: Page; param: string }) {
     case 'markets':
       return <Explore fallback={pending} />
     case 'pool':
-      return <PoolDetail poolId={param} fallback={pending} />
+      return param === 'network' && NetworkPoolDetail ? <NetworkPoolDetail fallback={pending} /> : <PoolDetail poolId={param} fallback={pending} />
     case 'positions':
       return <Positions param={param} fallback={pending} />
     case 'new':

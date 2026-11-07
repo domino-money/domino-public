@@ -1,5 +1,9 @@
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { PortfolioResponse } from 'api-contracts/read-v6/types'
+import type { FeesCardBody as FeesCardBodyShape } from '../../components/positions/visual/FeesCard'
+import { recovering } from '../../lib/staleRelease'
+import type { FeeHistoryView } from '../../lib/fees/types'
+import { compoundingKind, qualifiedUsdOf, storedRecord } from './positionFees'
 import { ChartFrame, type Plot } from '../../components/charts/ChartFrame'
 import { XAxis, YAxis } from '../../components/charts/Axis'
 import { ChartTooltip, ChartTooltipRow } from '../../components/charts/ChartTooltip'
@@ -25,9 +29,18 @@ let storage: Storage | null = null
 try { storage = typeof sessionStorage === 'undefined' ? null : sessionStorage } catch { /* Private browsing. */ }
 const readings = createPositionReadings(storage)
 
-/** Base/Arbitrum observations use the existing portfolio read. They never masquerade as a lifetime fee ledger. */
-export default function RecordedInsights({ answer, position, card, price, book, fresh }: {
-  answer: PortfolioResponse; position: LiveV6Position; card: LiveCard; price: CardPrice; book: TokenBook; fresh: boolean
+// Robinhood Chain's own card, asked for only when this position has a stored history to draw in it.
+const FeesCardBody = lazy(recovering(() => import('../../components/positions/visual/FeesCard').then((module) => ({ default: module.FeesCardBody })), () => ({ default: (() => null) as unknown as typeof FeesCardBodyShape })))
+
+/**
+ * Base/Arbitrum observations use the existing portfolio read. They never masquerade as a lifetime fee ledger. Changed on
+ * purpose 2026-11-04 (the owner: every chain the same as Robinhood Chain): `fees`, the stored history of read-v6's
+ * `position-fees`, draws Robinhood Chain's own card; null while that read has nothing to say, and the observations stay.
+ * Changed on purpose 2026-11-06 (O-06): with the automation's lines and chart marks, from the stored settlements of a
+ * position the portfolio lists under Auto-compound or Domino-compound (./positionFees.ts storedRecord).
+ */
+export default function RecordedInsights({ answer, position, card, price, book, fresh, fees }: {
+  answer: PortfolioResponse; position: LiveV6Position; card: LiveCard; price: CardPrice; book: TokenBook; fresh: boolean; fees: FeeHistoryView | null
 }) {
   const key = `${answer.wallet.toLowerCase()}:${position.chainId}:${position.manager}:${position.tokenId}:${card.poolId}`
   const subscribe = useCallback((listener: () => void) => readings.subscribe(key, listener), [key])
@@ -47,8 +60,12 @@ export default function RecordedInsights({ answer, position, card, price, book, 
   const facts = useMemo(() => rangeFacts(card, price.state.phase === 'ready' ? price.state.price : null), [card, price])
   const recorded = useMemo(() => facts ? recordedPriceHistory(rows, [decimalsOf(book, position.pool.currency0), decimalsOf(book, position.pool.currency1)], priceInverted(position.pool.currency0, position.pool.currency1), facts) : null,
     [rows, book, position.pool.currency0, position.pool.currency1, facts])
+  const usd = useMemo(() => qualifiedUsdOf([position.pool.currency0, position.pool.currency1], book), [position.pool.currency0, position.pool.currency1, book])
+  const id = `${position.chainId}:${position.dex}:${position.tokenId}`
+  const kind = compoundingKind(answer, position)
+  const stored = useMemo(() => (kind && fees?.phase === 'verified' ? { kind, record: storedRecord(fees.history.events, id) } : null), [kind, fees, id])
   return <PositionInsights
-    fees={<RecordedFees rows={rows} position={position} book={book} stale={!fresh} />}
+    fees={fees ? <Suspense fallback={<PendingPlot label="Fees earned chart" busy />}><FeesCardBody id={id} first={fees} usd={usd} stored={stored} bandPresent activity={false} workspace /></Suspense> : <RecordedFees rows={rows} position={position} book={book} stale={!fresh} />}
     range={<section className="dm-position-range-panel" aria-label="Price range"><PositionRange card={card} price={price} variant="page" recorded={recorded} /></section>}
   />
 }

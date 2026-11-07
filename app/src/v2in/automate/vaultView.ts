@@ -1,6 +1,6 @@
 import type { PortfolioResponse, Vault } from 'api-contracts/read-v6/types'
 import { liveCustody, type VaultSnapshot } from '../../finance/v2/vault'
-import { v2Chain } from '../../v2/chains'
+import { positionManagerOrNull, v2Chain } from '../../v2/chains'
 import type { Address, Dex, V2ChainId, VaultLimits, VaultPolicy } from '../../v2/types'
 import { AUTO_EXIT_WAITING_TEXT, DISARM_5_ADDED, DISARM_TEXT, DISARM_UNKNOWN } from './copy'
 import { exitStandingOf, exitVaultOf, protectionStanding, type ProtectionStanding } from '../autoexit/standing'
@@ -410,7 +410,7 @@ export function restartsAfterLeave(view: Pick<VaultView, 'exit' | 'disarm' | 'pa
 /** NFT identity, independent of the number of vaults created for it. */
 export function automationPositionKey(view: Pick<VaultView, 'chainId' | 'dex' | 'rootTokenId'>): string {
   const chain = v2Chain(view.chainId)
-  const manager = view.dex === 3 ? chain.uniswap.v3.positionManager : chain.uniswap.v4.positionManager
+  const manager = positionManagerOrNull(chain, view.dex) ?? 'none'
   return `${view.chainId}|${manager.toLowerCase()}|${view.rootTokenId}`
 }
 

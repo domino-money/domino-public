@@ -1,4 +1,5 @@
 /** One presentation collection, including historical NFTs already proved by the existing inventory. */
+import { V2_CHAIN_IDS } from '../../config/chainIdentity'
 import { POSITION_MANAGER } from '../../lib/fees/constants'
 import type { WalletAnswer } from '../../lib/walletPositions'
 import { positionOfState } from '../../lib/walletCards'
@@ -131,8 +132,12 @@ function joined(old: PositionRowView, row: PositionRowView): PositionRowView {
   return { ...next, tokens, reading: { ...reading, quotedAt: quotedAt === null || !reading.local ? quotedAt : quotedSeen === null ? null : Math.floor(quotedSeen / 1000), quotedSeen, missing: listed.map((index) => row.reading!.missing?.[index] ?? null) } }
 }
 
-/** Where each network's rows stand in the list: Robinhood Chain, then Base, then Arbitrum One (any other after them). */
-const NETWORK_ORDER: Readonly<Record<number, number>> = { 4663: 0, 8453: 1, 42161: 2 }
+/**
+ * Where each network's rows stand in the list: the V2 chains' order (config/chainIdentity.ts V2_CHAIN_IDS: Robinhood Chain,
+ * Base, Arbitrum One, then Elysium where the build serves it; Changed on purpose 2026-11-07, the three were written out),
+ * any other after them.
+ */
+const NETWORK_ORDER: Readonly<Record<number, number>> = Object.freeze(Object.fromEntries(V2_CHAIN_IDS.map((chainId, index) => [chainId, index])))
 /** An NFT id as a number to compare; one that is not a whole number sorts after every one that is. */
 const idOf = (tokenId: string): bigint => (/^\d+$/.test(tokenId) ? BigInt(tokenId) : -1n)
 
@@ -145,7 +150,7 @@ const idOf = (tokenId: string): bigint => (/^\d+$/.test(tokenId) ? BigInt(tokenI
  */
 export function newestFirst(rows: readonly PositionRowView[]): PositionRowView[] {
   return rows
-    .map((row) => ({ row, network: NETWORK_ORDER[row.chainId] ?? 3, id: idOf(row.tokenId) }))
+    .map((row) => ({ row, network: NETWORK_ORDER[row.chainId] ?? V2_CHAIN_IDS.length, id: idOf(row.tokenId) }))
     .sort((a, b) => a.network - b.network || b.row.dex - a.row.dex || (a.id === b.id ? 0 : a.id < b.id ? 1 : -1))
     .map(({ row }) => row)
 }

@@ -1,23 +1,18 @@
-import { useEffect, useMemo, type ReactNode } from 'react'
-import { LiveFigure, StackedBar, UsdText } from '../figures'
-import { RangeBar, Skeleton, Stat, StatStrip, cx } from '../ui'
-import { TokenLabel } from '../read/TokenLabel'
+import { useEffect } from 'react'
+import { LiveFigure, UsdText } from '../figures'
+import { Stat, StatStrip, cx } from '../ui'
 import { useFeeHistory } from '../../lib/fees/useFeeHistory'
 import { usePastReads } from '../../lib/fees/usePastReads'
 import { useLoadMilestone } from '../../lib/useLoadMilestone'
-import { historyLoadQuality } from '../../lib/fees/freshness'
 import { visibleAmountQuality } from './valueReadiness'
 import type { PositionState } from '../../lib/fees/types'
 import { formatUsdFloor } from '../../lib/format/usd'
-import { shortDate, shortTime } from '../../lib/format/time'
-import { rangeFacts, readablePrice, statusWords } from '../../lib/chart/priceFacts'
-import { APR_MISSING, aprText, positionApr, spanText } from '../../lib/positionApr'
-import { shownCardRange, shownCardTick, type RangeEnd } from '../../lib/read/screens/positions'
 import type { LiveCard } from '../../lib/walletCards'
-import { Amount } from './PositionFigures'
-import { rangeWords, type CardPrice } from './PositionRange'
+import { YourAprStat } from './YourAprStat'
+import type { CardPrice } from './PositionRange'
+import { Amounts, FigureDetail, KEY_FIGURES_COPY as COPY, PriceNow, RangeLine, ValueSplit } from './keyFigureParts'
 import { cardUsd } from './visual/PortfolioSummary'
-import { basisOf, positive, rawPair, unitsText, usdgSide, valueShares } from './visual/value'
+import { basisOf, positive, rawPair, unitsText, valueShares } from './visual/value'
 
 /*
  * A position's key figures (the owner, 2026-09-27: "Domino is for people who know nothing of liquidity pools"): four
@@ -27,153 +22,14 @@ import { basisOf, positive, rawPair, unitsText, usdgSide, valueShares } from './
  * one chain read, at its block (the strip's title); Your APR is from the fees history the Fees earned card draws.
  */
 
-/**
- * A price or range end without its "≈": the page writes plain figures (six significant digits, every one in a title).
- * Changed on purpose 2026-10-03 (the owner's point 10: tokens from $0.001 to $1,000,000): a tiny or huge one as DEX
- * screens write it ("0.0₆7101", "2.5B"), the same way the Price range chart writes it (lib/chart/priceRange.ts).
- */
-const plain = (text: string) => readablePrice(text.startsWith('≈') ? text.slice(1) : text)
 /** Whether a decimal string is above zero (the fees figure's ink). */
 const aboveZero = (value: string) => /[1-9]/.test(value)
-const endText = (end: RangeEnd, tick: number) => (end.kind === 'tick' ? `Tick ${tick}` : plain(end.text))
 
-/** Both amounts of the principal or the fees, one line each. */
-function Amounts({ card, which }: { card: LiveCard; which: 'principal' | 'unsettledFees' }) {
-  return (
-    <span className="dm-pos-amounts" data-stat={which === 'principal' ? 'principal' : 'fees'}>
-      <Amount amount={card[which][0]} />
-      <Amount amount={card[which][1]} />
-    </span>
-  )
-}
-
-function FigureDetail({ active, label, children }: { active: boolean; label: string; children: ReactNode }) {
-  return active ? <details className="dm-position-figure-detail"><summary>{label}</summary>{children}</details> : children
-}
-
-/**
- * Your APR: the rate since the position opened, at today's prices, and over the last 24 hours when its chart has a
- * measured point about a day old (lib/positionApr.ts). A skeleton while its history is read; a dash with a few plain
- * words when no rate can be said. Changed on purpose 2026-10-02 (RPC-SPEC §11.4): no estimate any more, and the last
- * 24 hours only from a measured point. Since the chart's periods came back (the same day), that point is the card's 24H
- * start, read at a past block when the history has none a day old (lib/fees/pastReads.ts); the line's title says from
- * when and which block.
- */
+/** Your APR (./YourAprStat.tsx) over this position's ledger. Asks for the 24H start while the tile is shown (no read when the history has one, or for a saved copy); no fills. */
 function YourApr({ tokenId, compact = false, closed = false }: { tokenId: string; compact?: boolean; closed?: boolean }) {
   const fees = useFeeHistory(tokenId)
-  // Asks for the 24H start while the tile is shown (no read when the history has one, or for a saved copy); no fills.
   usePastReads(tokenId, '24h', false)
-  const drawn = fees.phase === 'verified' || fees.phase === 'cached' ? fees : null
-  const rates = useMemo(() => {
-    if (!drawn) return null
-    const into = usdgSide(drawn.state.currencies) ?? 1
-    return { all: positionApr(drawn.history, drawn.state, into, 'all'), day: positionApr(drawn.history, drawn.state, into, '24h') }
-  }, [drawn])
-  const saved = fees.phase === 'cached' ? fees : null
-  useLoadMilestone('position', 'apr', rates?.all.ok ? historyLoadQuality(fees) : null)
-  let figure: ReactNode = <span className="text-fg-subtle">—</span>
-  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a dash with nothing under it while there is no
-  // rate; it said "Couldn’t load yet", "Not measured for this position", "Not measured yet" or lib/positionApr.ts
-  // APR_MISSING ("Waiting for the first reading", "No price to measure it", "Not measured a day ago"), except "Nothing in
-  // the position", which is the position's own state. A saved copy's rate said "Last available history" and "Through …
-  // · not current" to a screen reader, and its title that it was not a current rate.
-  let sub: ReactNode = null
-  // (QA round 2, N45) Never a skeleton for a closed position: its history may never settle (a close the ledger does not
-  // hold), and the grey bar stayed forever. The dash until a rate can be said; the rate itself is unchanged (D9).
-  if ((fees.phase === 'idle' || fees.phase === 'loading') && !closed) {
-    figure = <Skeleton className="dm-pos-skel-fig" />
-  } else if (rates && !rates.all.ok) sub = rates.all.reason === 'empty' ? APR_MISSING.empty : null
-  else if (rates?.all.ok) {
-    const { all, day } = rates
-    figure = aprText(all.rate)
-    sub = (
-      <span className="dm-pos-lines">
-        <span title={`Measured from ${shortDate(all.from.t)} ${shortTime(all.from.t)}, block ${all.from.block}, over ${spanText(all.seconds)}`}>Since opened ({spanText(all.seconds)})</span>
-        {day.ok && (
-          <span data-apr-day="" title={`Measured from ${shortDate(day.from.t)} ${shortTime(day.from.t)}, block ${day.from.block}, to now (${spanText(day.seconds)})`}>
-            Last 24 hours: {aprText(day.rate)}
-          </span>
-        )}
-      </span>
-    )
-  }
-  return (
-    <Stat
-      label="Your APR"
-      info="This position’s own fees so far, annualized at today’s prices over the money in it. Short periods can change quickly. Not a forecast of future earnings."
-      className="dm-pos-stat"
-      data-cell="apr"
-      data-apr={rates ? (rates.all.ok ? 'ready' : rates.all.reason) : fees.phase}
-      data-apr-source={saved ? 'saved-public-history' : undefined}
-      sub={compact && rates?.all.ok ? <details className="dm-position-figure-detail"><summary>Period details</summary>{sub}</details> : sub}
-    >
-      <span className="dm-fig-lg dm-pos-apr">{figure}</span>
-    </Stat>
-  )
-}
-
-/**
- * The current price leads; its quote unit directly below keeps the orientation explicit without crowding the figure.
- * The app's one way round is unchanged. A dash whose reason is its title remains when a price cannot be written.
- */
-function PriceNow({ price, card }: { price: CardPrice; card: LiveCard }) {
-  const { base, quote } = shownCardRange(card)
-  const { state } = price
-  if (state.phase === 'ready' && state.price.state === 'usable') {
-    return (
-      <span className="dm-pos-price" data-current-price="usable" title={`Pool price at block ${state.price.block}: ${state.price.text}`}>
-        <span className="dm-fig-lg">{plain(state.price.text)}</span>{' '}
-        <span className="dm-pos-price-side dm-pos-price-unit">
-          <TokenLabel token={quote} /> per <TokenLabel token={base} />
-        </span>
-      </span>
-    )
-  }
-  const code = state.phase === 'ready' ? state.price.state : state.phase === 'failed' ? state.code : state.phase
-  return (
-    // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the dash has no title ("The pool’s price could not be written with this position’s tokens.").
-    <span className="dm-fig-lg text-fg-subtle" data-current-price={code}>
-      —
-    </span>
-  )
-}
-
-/**
- * The position's range as one bar from its lower end to its upper end, the price now a dot on it (outside its end when
- * the price is beyond it), the two ends under it and, while it holds liquidity, whether it earns fees now.
- */
-function RangeLine({ price, card, cached = false }: { price: CardPrice; card: LiveCard; cached?: boolean }) {
-  const { fullRange } = card.range
-  // The app's one way round (2026-09-28): the lowest price of the priced token at the bar's left.
-  const { low, high, ticks } = shownCardRange(card)
-  const usable = price.state.phase === 'ready' && price.state.price.state === 'usable' ? price.state.price : null
-  // The band from 5% to 95% of the bar; a price beyond it sits in the room outside its end.
-  const share = usable ? (shownCardTick(usable) - ticks.lower) / Math.max(1, ticks.upper - ticks.lower) : null
-  const at = share === null ? null : share < 0 ? 0.015 : share > 1 ? 0.985 : 0.05 + 0.9 * share
-  const live = !cached && card.hasLiquidity ? card.inRange : null
-  // (QA round 2, N68) In range, the Price range card's own status words say when the price is close to an end and what
-  // happens past it (lib/chart/priceFacts.ts statusWords `move`); the bar's state line says the same to a screen reader.
-  const facts = live ? rangeFacts(card, usable) : null
-  const near = facts && facts.where === 'inside' ? statusWords(facts).move : null
-  return (
-    <div className="dm-pos-span" data-stat="range" data-full-range={fullRange ? '' : undefined} data-ember-rest={at !== null && live !== null ? undefined : ''}>
-      {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a kept read is drawn as it is, never "Last known range". */}
-      <RangeBar lower={0.05} upper={0.95} current={at} inRange={live} label={rangeWords(card, price)} />
-      {/* Where the light rests (EmberLight reads [data-ember-rest], here its centre): on the price now, as the approved page
-          puts it, the bar being drawn wider than the tile's text by its 5% margins (v4-position.css). Decoration only. */}
-      {at !== null && live !== null && <span aria-hidden="true" className="dm-pos-span-rest" data-ember-rest="0,0" style={{ left: `${(at * 100 - 5) / 0.9}%` }} />}
-      <span className="dm-pos-span-ends" data-range-kept={cached ? '' : undefined}>
-        <span>{endText(low.end, low.tick)}</span>
-        <span className="dm-pos-span-word">{card.hasLiquidity ? 'Your range' : 'Closed range'}</span>
-        <span>{endText(high.end, high.tick)}</span>
-      </span>
-      {live !== null && (
-        <span className="sr-only" data-in={String(live)}>
-          {live ? `In range: earning fees${near ? `. ${near}` : ''}` : 'Out of range: not earning fees'}
-        </span>
-      )}
-    </div>
-  )
+  return <YourAprStat fees={fees} compact={compact} closed={closed} />
 }
 
 /**
@@ -239,8 +95,8 @@ export function KeyFigures({ card, state, price, cached = false, workspace = fal
   return (
     <StatStrip layout="tiles" className="dm-pos-stats" data-position-stats="" data-position-overview={workspace ? '' : undefined} data-valued={principal ? '' : undefined}>
       <Stat
-        label="Position value"
-        info="What your position is worth now, at the pool’s price. Fees not included."
+        label={COPY.value}
+        info={COPY.valueInfo}
         className="dm-pos-stat"
         data-cell="principal"
         data-long-value={longPrincipal ? '' : undefined}
@@ -248,10 +104,8 @@ export function KeyFigures({ card, state, price, cached = false, workspace = fal
         sub={
           principal ? (
             <>
-              <FigureDetail active={workspace} label="Token amounts">
-                {/* Neutral inks: on this page Tangerine means the fees series, so the tokens' split never borrows it. A
-                    position all in one token has nothing to split: no bar. */}
-                {shares && shares[0] > 0 && shares[1] > 0 && <StackedBar className="dm-pos-split" height={4} parts={[{ share: shares[0], tone: 'neutral' }, { share: shares[1], tone: 'muted' }]} />}
+              <FigureDetail active={workspace} label={COPY.tokenAmounts}>
+                <ValueSplit shares={shares} />
                 <Amounts card={card} which="principal" />
               </FigureDetail>
             </>
@@ -269,13 +123,13 @@ export function KeyFigures({ card, state, price, cached = false, workspace = fal
         )}
       </Stat>
       <Stat
-        label="Fees to collect"
-        info="Fees this position earned and has not collected yet."
+        label={COPY.fees}
+        info={COPY.feesInfo}
         className="dm-pos-stat"
         data-cell="fees"
         sub={fees ? (
           <>
-            {workspace ? <details className="dm-position-figure-detail"><summary>Token amounts</summary><Amounts card={card} which="unsettledFees" /></details> : <Amounts card={card} which="unsettledFees" />}
+            <FigureDetail active={workspace} label={COPY.tokenAmounts}><Amounts card={card} which="unsettledFees" /></FigureDetail>
           </>
         ) : null}
       >
@@ -292,8 +146,8 @@ export function KeyFigures({ card, state, price, cached = false, workspace = fal
       <YourApr tokenId={card.tokenId} compact={workspace} closed={!card.hasLiquidity} />
       <Stat
         // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): never "Last known price".
-        label="Current price"
-        info="The position earns fees while this price is inside its range."
+        label={COPY.price}
+        info={COPY.priceInfo}
         className={cx('dm-pos-stat', workspace && 'dm-lit')}
         data-cell="price"
         sub={<RangeLine price={price} card={card} cached={cached} />}

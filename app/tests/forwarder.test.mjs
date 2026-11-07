@@ -21,6 +21,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { beforeEach, test } from 'node:test';
+import { CONSTANTS as V6_CONSTANTS } from '../../api-contracts/read-v6/schema-data.mjs';
 
 const upstream = [];
 globalThis.fetch = async (input) => {
@@ -397,7 +398,12 @@ test('preview capabilities in every public read version reach the real Worker wi
     assert.ok(response.headers.get('x-domino-read-contract'), path);
     const body = await response.json();
     assert.equal(body.dataMode, 'disabled');
-    if (version === 6) assert.deepEqual(body.chainIds, [4663, 8453, 42161]);
+    // Changed on purpose 2026-11-07 (review finding B): the read Worker names read-v6's own chains (bridge/src/worker.mjs),
+    // which name Elysium (99901) from rugged97's day-9 version; Domino's three come first, in this order, either way.
+    if (version === 6) {
+      assert.deepEqual(body.chainIds, [...V6_CONSTANTS.chainIds]);
+      assert.deepEqual(body.chainIds.slice(0, 3), [4663, 8453, 42161]);
+    }
     else assert.equal(body.chainId, 4663);
     assert.deepEqual(body.enabledReads, []);
     assert.equal(body.walletAuthentication, false);
@@ -1925,8 +1931,9 @@ test('read-v6 through the whole chain: the real read Worker, disabled, says so o
   assert.equal(capability.status, 200);
   assert.equal(capability.headers.get('x-domino-read-contract'), V6_RUNTIME.CONTRACT_VERSION);
   assert.equal(capability.headers.get('cache-control'), 'no-store', 'a public read');
+  // Changed on purpose 2026-11-07 (review finding B): read-v6's own chains, as the Worker names them (bridge/src/worker.mjs).
   assert.deepEqual(await capability.json(), {
-    contractVersion: V6_RUNTIME.CONTRACT_VERSION, dataMode: 'disabled', chainIds: [4663, 8453, 42161], enabledReads: [],
+    contractVersion: V6_RUNTIME.CONTRACT_VERSION, dataMode: 'disabled', chainIds: [...V6_CONSTANTS.chainIds], enabledReads: [],
     walletAuthentication: false, privateAccounts: false, ownerTransactions: false, automation: false,
   });
   for (const route of ['portfolio', 'activity']) {

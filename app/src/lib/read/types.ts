@@ -272,8 +272,10 @@ export type ArtworkKey = 'ETH' | 'WETH' | 'USDG' | 'USDC' | 'MARLIN' | 'UNI'
 /**
  * The networks a token on screen can be on: Robinhood Chain, and since 2026-10-05 (the owner: New position across the
  * three networks Domino V2 serves, spec F7 §1.2) Base and Arbitrum One. Read-service tokens are always Robinhood Chain's.
+ * Changed on purpose 2026-11-07 (Elysium as a fourth V2 chain): and Elysium (99901), as src/v2/types.ts V2ChainId names
+ * it; a token of it reaches a screen only where the build serves Elysium (config/chainIdentity.ts V2_CHAIN_IDS).
  */
-export type TokenChainId = 4663 | 8453 | 42161
+export type TokenChainId = 4663 | 8453 | 42161 | 99901
 
 /**
  * A token as a screen may show it. Identity is chain plus address. `symbol` on

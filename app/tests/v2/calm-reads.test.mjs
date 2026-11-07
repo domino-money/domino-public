@@ -49,10 +49,13 @@ const reply = (route, body) => ({ kind: 'reply', reply: { status: 200, opaqueRed
 function probeOn(answers = {}) {
   let now = 0;
   const gets = [];
-  const probe = routes.createV2RouteProbe({ now: () => now, get: async (path) => {
+  // Changed on purpose 2026-11-06 (read-v6 1.2.0-rc.1's window): each route's Worker answers in the version asked.
+  const probe = routes.createV2RouteProbe({ now: () => now, get: async (path, options) => {
     const route = Object.keys(routes.V2_ROUTE_SPECS).find((name) => routes.V2_ROUTE_SPECS[name].path === path);
     gets.push([route, now]);
-    return reply(route, (answers[route] ?? (() => CAPS[route]))());
+    const version = options.headers[routes.V2_ROUTE_SPECS[route].header];
+    const answer = reply(route, { ...(answers[route] ?? (() => CAPS[route]))(), contractVersion: version });
+    return { ...answer, reply: { ...answer.reply, contractHeader: version } };
   } });
   return { probe, gets, at: (ms) => { now = ms; }, now: () => now };
 }

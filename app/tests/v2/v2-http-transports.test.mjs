@@ -54,7 +54,7 @@ test('read-v6 over HTTP: each route\'s path, the JSON body, the contract\'s head
   assert.deepEqual(sent.map((request) => request.url), [READ_V6_PATHS.portfolio, READ_V6_PATHS.activity]);
   assert.deepEqual(READ_V6_PATHS, { portfolio: '/api/read/v6/portfolio', activity: '/api/read/v6/activity',
     'chain-pools': '/api/read/v6/chain-pools', 'chain-balances': '/api/read/v6/chain-balances',
-    'chain-tokens': '/api/read/v6/chain-tokens' });
+    'chain-tokens': '/api/read/v6/chain-tokens', 'position-fees': '/api/read/v6/position-fees' });
   for (const request of sent) {
     assert.deepEqual(request.init.headers, { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Domino-Read-Contract': '1.1.0-rc.1' });
     assert.deepEqual(request.options, { contractHeader: 'X-Domino-Read-Contract', maxBytes: READ_V6_MAX_RESPONSE_BYTES, timeoutMs: READ_V6_TIMEOUT_MS });

@@ -23,7 +23,7 @@ import { useJourneyNetwork } from './context'
 import { JOURNEY } from './copy'
 import { balancesUnread, inputsFromV1, requestFromV1, unreadRereadAfter, zapStateFromV1 } from './model/fromV1'
 import { journeyPrice } from './model/state'
-import { FinalControl, ReviewStage } from './ReviewStage'
+import { CreatedOnNetwork, FinalControl, ReviewStage } from './ReviewStage'
 import { testPlannerOn } from './source'
 import { useJourneyRun, type RunView } from './run'
 import { labelOf, tokenBook } from './tokens'
@@ -44,6 +44,9 @@ import { labelOf, tokenBook } from './tokens'
  * never handed back to today's control (Domino V1 is Robinhood Chain's): where that gate is not live, Create position
  * stays disabled and says so. Once made, such a position is shown by the zap path's own created view (its receipt and
  * its link on its network), not today's, whose lists are Robinhood Chain's.
+ * Changed on purpose 2026-11-06 (the replica rule, O-18): once its receipt names the position, today's created view
+ * (components/create/CreatedNext.tsx) with that network's links and only the automations it takes now (./ReviewStage.tsx
+ * CreatedOnNetwork).
  */
 
 type Gate = Extract<V2Gate, { mode: 'preview' | 'live' }>
@@ -307,6 +310,26 @@ function LiveCreate({ state, balances, pay, onBusy, onReadAgain, onFreshPool, ga
       </>
     )
   }
+  // Changed on purpose 2026-11-06 (the replica rule, O-18: Base and Arbitrum One are Robinhood Chain's screens, only the
+  // network changes): another network's position gets Robinhood Chain's success above, "What should Domino do with it?"
+  // and its choices, its links by that network's routes and only the automations it takes now (./ReviewStage.tsx
+  // CreatedOnNetwork). It was the zap path's created view (the receipt first, then View position and the choices), which
+  // still stands, as on Robinhood Chain, while the receipt names no position (pending, reverted, not included,
+  // unreadable). The receipt is a row of Receipts as before (./run.ts). Its review (2026-11-06): read-v6's word on the
+  // network is asked about the wallet that made the position (the review's owner), never the one connected now, so a
+  // wallet disconnected or switched under the success (test (t)) never draws a choice the network refuses.
+  const reviewed = view.reviewed
+  if (!home && tokenId !== null && reviewed !== null && view.receipt !== null) {
+    return (
+      <>
+        <Button type="button" variant="primary" size="xl" className="w-full" disabled data-create-position="done" aria-describedby="created-title">
+          {JOURNEY.final.created}
+        </Button>
+        <CreatedOnNetwork chainId={chainId} dex={reviewed.review.plan.plan.intent.pool.dex} tokenId={tokenId} owner={reviewed.review.owner} state={state} receipt={view.receipt.state} />
+        <NewPositionAgain />
+      </>
+    )
+  }
   if (!made && !connected) {
     // Changed on purpose 2026-10-06 (the final check's F4): with no wallet, Create position's place asks for one, as today's
     // control does: the header's wallet dialog, as Sign in below opens it.
@@ -369,7 +392,7 @@ function LiveCreate({ state, balances, pay, onBusy, onReadAgain, onFreshPool, ga
   }
   // Changed on purpose 2026-10-06 (the final check's F5): nothing to quote yet says why, never "Your wallet will ask you to
   // confirm each step." under a disabled button: the balances still being read, else a choice Review cannot plan.
-  const waiting = funding.kind === 'gas' ? 'Add ETH for the network fee to continue.' : funding.kind !== 'wait' ? null : state.payWith || balances.status !== 'ready' ? CREATE.amount.pairReading : CREATE.review.notReady
+  const waiting = funding.kind === 'gas' ? `Add ${v2Chain(chainId).nativeSymbol} for the network fee to continue.` : funding.kind !== 'wait' ? null : state.payWith || balances.status !== 'ready' ? CREATE.amount.pairReading : CREATE.review.notReady
   // Changed on purpose 2026-10-06 (the final check's F5, a second look): a quote that failed before any review is asked
   // again from Review itself (FinalControl's Review again), for these same choices: nothing else asks it again (a wallet
   // switched to the pool's network by hand changes none of them), so only Back then Continue did.

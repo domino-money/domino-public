@@ -1,0 +1,167 @@
+{
+  "schemaVersion": 1,
+  "chainId": 99801,
+  "slug": "elysium",
+  "name": "Elysium (synthetic test fixture)",
+  "enabled": true,
+  "nativeSymbol": "HYPE",
+  "stack": "arbitrum-nitro",
+  "blockTimeSeconds": 0.25,
+  "uniswap": {
+    "v3": {
+      "factory": "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+      "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+      "quoterV2": "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+      "swapRouter02": "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+      "poolInitCodeHash": "0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54",
+      "tickSpacingByFee": {
+        "100": 1,
+        "500": 10,
+        "3000": 60,
+        "10000": 200
+      }
+    },
+    "v4": {
+      "poolManager": "0x360E68faCcca8cA495c1B759Fd9EEe466db9FB32",
+      "positionManager": "0xd88F38F930b7952f2DB2432Cb002E7abbF3dD869",
+      "stateView": "0x76Fd297e2D437cd7f76d50F01AfE6160f86e9990",
+      "quoter": "0x3972C00f7ed4885e145823eb7C655375d275A1C5"
+    },
+    "universalRouter": {
+      "address": "0x2d01411773c8C24805306E89A41F7855C3c4Fe65",
+      "version": "2.1.2"
+    }
+  },
+  "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+  "multicall3": "0xcA11bde05977b3631167028862bE2a173976CA11",
+  "deployer": {
+    "kind": "createx",
+    "address": "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed",
+    "codehash": "0xbd8a7ea8cfca7b4e5f5041d7d4b17bc317c5ce42cfbc42066a00cf26b43eb53f"
+  },
+  "wrappedNative": {
+    "symbol": "WHYPE",
+    "address": "0xCD57F65c2B0e5881CFC2E609F7CD53b746E1F234",
+    "decimals": 18
+  },
+  "chargeCurrencies": [
+    {
+      "rank": 1,
+      "symbol": "USDC",
+      "address": "0x598b40933060C2E1B6ca8C875BD1Afc12D9493d8",
+      "decimals": 6
+    },
+    {
+      "rank": 2,
+      "symbol": "HYPE",
+      "address": "0x0000000000000000000000000000000000000000",
+      "decimals": 18,
+      "native": true
+    },
+    {
+      "rank": 2,
+      "symbol": "WHYPE",
+      "address": "0xCD57F65c2B0e5881CFC2E609F7CD53b746E1F234",
+      "decimals": 18
+    }
+  ],
+  "gasPrice": {
+    "poolNativeUsd": {
+      "dex": 3,
+      "pool": "0xf7C78755C3375B81EcB11330e9243877b6bd0Bfa",
+      "currency": "0xCD57F65c2B0e5881CFC2E609F7CD53b746E1F234",
+      "stable": "0x598b40933060C2E1B6ca8C875BD1Afc12D9493d8",
+      "fee": 500
+    }
+  },
+  "bridge": {
+    "providers": [],
+    "appFeeBps": 35
+  },
+  "finality": "Synthetic: Nitro soft confirmation; finalized follows the parent chain batch.",
+  "verification": {
+    "block": 1,
+    "checkedAt": "2026-10-01",
+    "contracts": [
+      {
+        "name": "UniswapV3Factory",
+        "address": "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        "codehash": "0x4d7b8525cd5d14343fa67a732fba5b24cddba11620ca88392f4ec6c52f91fd69"
+      },
+      {
+        "name": "NonfungiblePositionManager",
+        "address": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+        "codehash": "0x45b4bff8136324d175c01151fd0fb715c82bcc8923019a4faba3eafb0cc3a20b"
+      },
+      {
+        "name": "QuoterV2",
+        "address": "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+        "codehash": "0xd8162b13ba57ce21a146063b10658bda0a3fd15c99f768c86283fce6640858a5"
+      },
+      {
+        "name": "SwapRouter02",
+        "address": "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+        "codehash": "0x209f9820ed7257d51c2f96ee837e8ec057b44774899f4be16fc45bd30cbb16f6"
+      },
+      {
+        "name": "PoolManager",
+        "address": "0x360E68faCcca8cA495c1B759Fd9EEe466db9FB32",
+        "codehash": "0xe4b2759e456c9c4ef763e3b4e257c5105e1ba283d7de8b131dd321197de794a4"
+      },
+      {
+        "name": "PositionManager",
+        "address": "0xd88F38F930b7952f2DB2432Cb002E7abbF3dD869",
+        "codehash": "0x6156ddaa1c8cd2c26d37455a5dc57b1761dc2848856426c0ac261ae0c7fecd68"
+      },
+      {
+        "name": "StateView",
+        "address": "0x76Fd297e2D437cd7f76d50F01AfE6160f86e9990",
+        "codehash": "0x4c0e823a0cd44b6b2d9485e774c421cf929db3996096d9b84ee6b23525184b9e"
+      },
+      {
+        "name": "V4Quoter",
+        "address": "0x3972C00f7ed4885e145823eb7C655375d275A1C5",
+        "codehash": "0x98305ebcd33e8989a8e941072ffe9bc6dac7912ccb9d097befa2d17696da37ff"
+      },
+      {
+        "name": "UniversalRouter 2.1.2",
+        "address": "0x2d01411773c8C24805306E89A41F7855C3c4Fe65",
+        "codehash": "0x51536ca9d25ebbc535351834b75115ba1843fb402c003d65ead6c760be6cc1c0"
+      },
+      {
+        "name": "Permit2",
+        "address": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+        "codehash": "0x9e51dcb64cf56fc09a82cb41edbc17c6a2250f18dbd1b91e884c0aca02acd57c"
+      },
+      {
+        "name": "Multicall3",
+        "address": "0xcA11bde05977b3631167028862bE2a173976CA11",
+        "codehash": "0xd5c15df687b16f2ff992fc8d767b4216323184a2bbc6ee2f9c398c318e770891"
+      },
+      {
+        "name": "CreateX",
+        "address": "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed",
+        "codehash": "0xbd8a7ea8cfca7b4e5f5041d7d4b17bc317c5ce42cfbc42066a00cf26b43eb53f"
+      },
+      {
+        "name": "WHYPE (testnet address)",
+        "address": "0xCD57F65c2B0e5881CFC2E609F7CD53b746E1F234",
+        "codehash": "0x738271140bf363a72d201b41f66a474340d88587597d0cab7706317148b3bcba"
+      },
+      {
+        "name": "USDC (synthetic)",
+        "address": "0x598b40933060C2E1B6ca8C875BD1Afc12D9493d8",
+        "codehash": "0x693075ff19602044da7e61873317730cef16359f7d0a3a2b67ce19b86cfc8956"
+      },
+      {
+        "name": "v3 pool WHYPE/USDC fee 500 (synthetic)",
+        "address": "0xf7C78755C3375B81EcB11330e9243877b6bd0Bfa",
+        "codehash": "0x6b893f78909fd66d884192c0af2cefdf344752d41812e79a6d02913d8df75f3d"
+      }
+    ]
+  },
+  "notes": [
+    "Synthetic test fixture from Elysium testnet facts (chain id 99801, Permit2, Multicall3, WHYPE) and Arbitrum One's Uniswap; not a profile. The shape of rugged97's backend/tests/v2_hype_chain.py document()."
+  ],
+  "sources": []
+}

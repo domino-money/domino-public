@@ -40,7 +40,10 @@ test('wallet-test-v2 is wallet-test with V2 compiled in: the same row and define
   const { scripts } = JSON.parse(readFileSync(join(APP, 'package.json'), 'utf8'));
   assert.equal(scripts['build:wallet-test-v2'], 'vite build --mode wallet-test-v2');
   assert.equal(scripts['test:v1-on-v2'], 'npm run build:wallet-test-v2 && node scripts/v1-on-v2.mjs');
-  assert.equal(scripts['test:v2in'], 'npm run build:wallet-test-v2 && node --test --test-force-exit "tests/v2in-browser/*.test.mjs"');
+  // Changed on purpose 2026-11-06 (the Elysium surface): with the two builds that force Elysium on, beside the usual one
+  // (scripts/build-elysium-test.mjs), for tests/v2in-browser/elysium-surface.test.mjs.
+  assert.equal(scripts['test:v2in'], 'npm run build:wallet-test-v2 && npm run build:wallet-test-v2-elysium && node --test --test-force-exit "tests/v2in-browser/*.test.mjs"');
+  assert.equal(scripts['build:wallet-test-v2-elysium'], 'node scripts/build-elysium-test.mjs && node scripts/build-elysium-test.mjs --funds-from');
 });
 
 test('scripts/v1-on-v2.mjs runs test:session\'s and test:finance\'s own browser suites on the V2 build, with the gate-open preload', async () => {

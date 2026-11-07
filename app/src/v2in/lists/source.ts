@@ -1,10 +1,12 @@
-import type { ActivityResponse, PortfolioResponse } from 'api-contracts/read-v6/types'
+import type { ActivityResponse, FeePositionRef, PortfolioResponse, PositionFeesResponse } from 'api-contracts/read-v6/types'
 import { V2_CHAINS } from '../../v2/chains'
 import { v2Gate, v2OriginOpen } from '../../v2/gate'
 import type { V2ChainId } from '../../v2/types'
-import { v2PageProbe, v2ReadTransports } from '../transports'
+import { readPositionFees } from '../../v2/read/v6'
+import { routeServes } from '../../v2/routes'
+import { positionFeesServedNow, v2PageProbe, v2ReadTransports } from '../transports'
 import { chainPoolsOn } from '../journey/served'
-import { createKeyedReader, createListsReads, readAgainAfter, type ListsReply, type ListsTransports } from './read'
+import { OFF_NETWORK, createKeyedReader, createListsReads, offNetwork, offNetworkReply, readAgainAfter, type ListsReply, type ListsTransports } from './read'
 import { createPortfolioCatchup, reconcilePortfolio, subscribePositionChanges } from './positionSync'
 import { CREATED_POSITIONS } from './createdPositions'
 import { createPriceRecovery } from './priceRecovery'
@@ -89,6 +91,30 @@ export const OWN_PORTFOLIO = createKeyedReader<ListsReply<PortfolioResponse>>(as
 }, { next: (reply, failures) => reply.kind === 'ok' && REFRESH ? catchup.delay(reply.body) ?? 30_000 : again(reply, failures), failed })
 /** The first page of the person's own receipts, by wallet (lowercase). */
 export const OWN_ACTIVITY = createKeyedReader<ListsReply<ActivityResponse>>((wallet) => LISTS_SOURCE.ownActivity(wallet, { limit: ACTIVITY_PAGE }), { next: again, failed })
+
+/** One `position-fees` read's key: its chain and up to 8 positions, in the order asked. */
+export const positionFeesKey = (chainId: number, positions: readonly FeePositionRef[]): string => `${chainId}|${positions.map((position) => `${position.dex}:${position.tokenId}`).join(',')}`
+export const routeOpensPositionFees = positionFeesServedNow
+
+/**
+ * Added 2026-11-04 (read-v6 1.2.0-rc.1, docs/v2/V2_FEES.md): up to 8 positions' stored fee history, by `positionFeesKey`, a
+ * minute apart like the follower's own pass. Asked only while the route's capabilities name it: until then nothing is sent.
+ */
+export const POSITION_FEES = createKeyedReader<ListsReply<PositionFeesResponse>>(async (key) => {
+  if (!readsOpen()) return { kind: 'unavailable', reason: 'gate_off' }
+  const [chainId, list] = key.split('|')
+  const positions = list.split(',').map((item) => {
+    const [dex, tokenId] = item.split(':')
+    return { dex: Number(dex) as FeePositionRef['dex'], tokenId }
+  })
+  // Changed on purpose 2026-11-06 (Elysium readiness; rugged97's #459): never asked for a position of a version its chain
+  // lacks (v3 on a chain with v4 alone), which the service refuses with invalid_request. Said as not available there
+  // (./read.ts OFF_NETWORK), which the page draws as a chain with no history (nothing new on screen), never asked again.
+  if (offNetwork(Number(chainId), positions)) return OFF_NETWORK
+  const transports = v2ReadTransports()
+  if (!routeServes(await transports.routeState('readV6'), 'position-fees')) return { kind: 'unavailable', reason: 'route_not_available' }
+  return readPositionFees(transports.read, transports.readRuntime, Number(chainId), positions)
+}, { next: (reply, failures) => (offNetworkReply(reply) ? null : again(reply, failures)), failed })
 
 subscribePositionChanges((change) => {
   if (change.kind === 'state') OWN_PORTFOLIO.update((value) => value.kind === 'ok' ? { ...value, body: reconcilePortfolio(value.body) } : value)

@@ -1,7 +1,7 @@
 import { decodeEventLog, decodeFunctionResult, encodeAbiParameters, encodeErrorResult, encodeEventTopics, encodeFunctionData, getContractAddress, keccak256, numberToHex, type Abi } from 'viem'
 import priceAnchorAbi from '../../../../api-contracts/v2/abi/IDominoPriceAnchor.json'
 import v3PoolAbi from '../../../../api-contracts/v2/abi/IUniswapV3PoolMinimal.json'
-import { isV2ChainId, v3TickSpacing, type V2Chain } from '../../v2/chains'
+import { hasDex, isV2ChainId, positionManagerOf, v3Of, v3TickSpacing, type V2Chain } from '../../v2/chains'
 import { V2_FIXTURE_SETS_TAKEN } from '../../v2/flag'
 import { V2_FEES, ZERO_ADDRESS, type Address, type Dex, type Hex, type PoolRef, type PositionRef, type V2ChainId, type V2Component, type V2Contracts, type VaultInit, type VaultLimits, type VaultPolicy } from '../../v2/types'
 import { BATCH_FRAME_GAS, atomicStatus, batchCallsState, offerBatch, simulateBatch, type AtomicStatus, type BatchCall, type BatchSimulator } from '../batch'
@@ -68,6 +68,12 @@ export const UNEXPECTED_NONCE_SELECTOR = implementationErrorSelector('vaultFacto
  */
 const V3_NO_SUCH_TOKEN = encodeErrorResult({ abi: [{ type: 'error', name: 'Error', inputs: [{ name: 'message', type: 'string' }] }], errorName: 'Error', args: ['Invalid token ID'] })
 const COMPONENTS: readonly V2Component[] = ['registry', 'autoExit', 'zapV3', 'zapV4', 'vaultFactoryV3', 'vaultFactoryV4']
+/**
+ * The components a chain's set must hold (changed on purpose 2026-11-06, Elysium readiness): all six on a chain with
+ * both Uniswap versions (Robinhood Chain, Base and Arbitrum One, as before: one missing is `deployment_invalid`); without
+ * the v3 zap and factory on a chain with v4 alone, which has none.
+ */
+const componentsOn = (chain: V2Chain): readonly V2Component[] => (hasDex(chain, 3) ? COMPONENTS : COMPONENTS.filter((name) => name !== 'zapV3' && name !== 'vaultFactoryV3'))
 
 const fail = (code: string): never => { throw new Error(code) }
 const isAddress = (value: unknown): value is Address => typeof value === 'string' && ADDRESS.test(value)
@@ -91,8 +97,8 @@ export function v2ContractsFor(chain: V2Chain, contracts: V2Contracts): V2Contra
   if (contracts.fixture !== false && DEPLOYABLE) return fail('deployment_fixture_refused')
   // The app's own chain profile, and in a deployable build exactly the chain's PINNED manifest set (./deployment.ts).
   admitV2Contracts(chain, contracts)
-  const addresses = {} as Record<V2Component, Address>
-  const codeHashes = {} as Record<V2Component, Hex>
+  const addresses = {} as Partial<Record<V2Component, Address>>
+  const codeHashes = {} as Partial<Record<V2Component, Hex>>
   const take = (name: V2Component) => {
     const address = contracts.addresses?.[name]
     const hash = contracts.codeHashes?.[name]
@@ -101,7 +107,7 @@ export function v2ContractsFor(chain: V2Chain, contracts: V2Contracts): V2Contra
     addresses[name] = address.toLowerCase() as Address
     codeHashes[name] = hash.toLowerCase() as Hex
   }
-  for (const name of COMPONENTS) take(name)
+  for (const name of componentsOn(chain)) take(name)
   // Changed on purpose (data) 2026-10-02 (Domino V2 rev2 §5.2 and the manifest loader to #302): the price anchor (§5.2's
   // v3 TWAP, read only after its code is checked) and the manifest's facts (the code checks of the vault
   // implementations, executors and swap module) are carried through when the set has them; a set built without them
@@ -109,8 +115,8 @@ export function v2ContractsFor(chain: V2Chain, contracts: V2Contracts): V2Contra
   if (contracts.addresses?.priceAnchor !== undefined || contracts.codeHashes?.priceAnchor !== undefined) take('priceAnchor')
   return Object.freeze({
     chainId: contracts.chainId,
-    addresses: Object.freeze(addresses),
-    codeHashes: Object.freeze(codeHashes),
+    addresses: Object.freeze(addresses) as V2Contracts['addresses'],
+    codeHashes: Object.freeze(codeHashes) as V2Contracts['codeHashes'],
     fixture: contracts.fixture !== false,
     ...(contracts.deployment ? { deployment: contracts.deployment } : {}),
   })
@@ -123,7 +129,8 @@ const V3_POOL_ABI = (v3PoolAbi as unknown as { abi: Abi }).abi
 /** A v3 pool's address: CREATE2 from the chain's v3 factory and init code hash, salt keccak256(abi.encode(token0, token1, fee)). */
 function v3PoolOf(chain: V2Chain, pool: PoolRef): Address {
   const salt = keccak256(encodeAbiParameters([{ type: 'address' }, { type: 'address' }, { type: 'uint24' }], [pool.currency0, pool.currency1, pool.fee]))
-  return getContractAddress({ opcode: 'CREATE2', from: chain.uniswap.v3.factory, salt, bytecodeHash: chain.uniswap.v3.poolInitCodeHash }).toLowerCase() as Address
+  const v3 = v3Of(chain)
+  return getContractAddress({ opcode: 'CREATE2', from: v3.factory, salt, bytecodeHash: v3.poolInitCodeHash }).toLowerCase() as Address
 }
 
 /**
@@ -175,12 +182,15 @@ export async function viewAt<T>(t: Transactor, at: ReadAt, to: Address, abi: Abi
   return decodeFunctionResult({ abi, functionName, data }) as T
 }
 
-/** The chain profile's position manager for a DEX: Uniswap v4's PositionManager, or v3's NonfungiblePositionManager. */
-export const managerOf = (chain: V2Chain, dex: Dex): Address => (dex === 4 ? chain.uniswap.v4.positionManager : chain.uniswap.v3.positionManager)
+/**
+ * The chain profile's position manager for a DEX: Uniswap v4's PositionManager, or v3's NonfungiblePositionManager;
+ * `vault_invalid_dex` for a version the chain lacks (v3 on a chain with v4 alone), before any read.
+ */
+export const managerOf = (chain: V2Chain, dex: Dex): Address => (hasDex(chain, dex) ? positionManagerOf(chain, dex) : fail('vault_invalid_dex'))
 /** The ABI of that manager, with ERC-721's individual approve. */
 export const managerAbi = (dex: Dex): Abi => (dex === 4 ? V4_POSITION_MANAGER_ABI : V3_POSITION_MANAGER_ABI)
-/** The vault factory of a DEX, from the manifest. */
-export const factoryOf = (contracts: V2Contracts, dex: Dex): Address => (dex === 4 ? contracts.addresses.vaultFactoryV4 : contracts.addresses.vaultFactoryV3)
+/** The vault factory of a DEX, from the manifest; `vault_invalid_dex` for a version whose factory the set does not hold. */
+export const factoryOf = (contracts: V2Contracts, dex: Dex): Address => (dex === 4 ? contracts.addresses.vaultFactoryV4 : contracts.addresses.vaultFactoryV3) ?? fail('vault_invalid_dex')
 export const factoryComponent = (dex: Dex): V2Component => (dex === 4 ? 'vaultFactoryV4' : 'vaultFactoryV3')
 
 interface RawPool { dex: number; currency0: string; currency1: string; fee: number; tickSpacing: number; hooks: string }
@@ -206,7 +216,8 @@ export async function readVaultIdentity(t: Transactor, chain: V2Chain, contracts
   if (!isAddress(vault) || same(vault, ZERO_ADDRESS)) return fail('vault_invalid_address')
   const address = vault.toLowerCase() as Address
   let dex: Dex | null = null
-  for (const candidate of [4, 3] as const) {
+  // Only the factories of the chain's versions are asked (both on Robinhood Chain, Base and Arbitrum One).
+  for (const candidate of ([4, 3] as const).filter((dex) => hasDex(chain, dex))) {
     if (await viewAt<boolean>(t, at, factoryOf(contracts, candidate), VAULT_FACTORY_ABI, 'isVault', [address])) {
       dex = candidate
       break
@@ -715,7 +726,8 @@ export interface NewVaultRoot {
 }
 
 export async function newVaultRoot(t: Transactor, chain: V2Chain, contracts: V2Contracts, at: ReadAt, dex: Dex, tokenId: bigint): Promise<NewVaultRoot> {
-  if (dex !== 3 && dex !== 4) return fail('vault_invalid_dex')
+  // A version the chain lacks (v3 on a chain with v4 alone) is refused as an unknown one, before any read.
+  if (!hasDex(chain, dex)) return fail('vault_invalid_dex')
   if (typeof tokenId !== 'bigint' || tokenId <= 0n || tokenId > MAX_ROOT_TOKEN_ID) return fail('vault_invalid_token_id')
   const manager = managerOf(chain, dex)
   const factory = factoryOf(contracts, dex)
@@ -758,7 +770,7 @@ export interface VaultCreation extends NewVaultRoot {
 /** Everything spec §5.1 requires of a creation, read at `at` through `t`, and the steps it needs (the vault client's own review). @internal */
 export async function vaultCreation(t: Transactor, chain: V2Chain, contracts: V2Contracts, at: ReadAt, request: VaultCreateRequest): Promise<VaultCreation> {
   const { dex, tokenId } = request
-  if (dex !== 3 && dex !== 4) return fail('vault_invalid_dex')
+  if (!hasDex(chain, dex)) return fail('vault_invalid_dex')
   if (typeof tokenId !== 'bigint' || tokenId <= 0n || tokenId > MAX_ROOT_TOKEN_ID) return fail('vault_invalid_token_id')
   if (request.consentToUncollectedFees !== true) return fail('vault_consent_required')
   if (typeof request.startPaused !== 'boolean') return fail('vault_invalid_request')
@@ -1388,7 +1400,7 @@ export function createVaultClient(wallet: V2Wallet, chain: V2Chain, supplied: V2
       const vault = origin.review.vault
       // Decoded with what each contract itself declares (./implementations.ts), so every event a step emits is said.
       const events = decodeEvents(receipt.logs, [
-        { address: contracts.addresses.vaultFactoryV3, abi: VAULT_FACTORY_EVENTS_ABI },
+        ...(contracts.addresses.vaultFactoryV3 ? [{ address: contracts.addresses.vaultFactoryV3, abi: VAULT_FACTORY_EVENTS_ABI }] : []),
         { address: contracts.addresses.vaultFactoryV4, abi: VAULT_FACTORY_EVENTS_ABI },
         { address: vault, abi: VAULT_EVENTS_ABI },
         { address: contracts.addresses.autoExit, abi: AUTO_EXIT_EVENTS_ABI },

@@ -8,12 +8,22 @@ import { shortDate, shortTime } from '../../lib/format/time'
  * Added 2026-10-14 (the incident of 2026-10-13, package V1; the owner: "USD unavailable" must not appear on a position).
  * Where a row or a tile has no dollar figure it shows the position's two token amounts and this one short line for why
  * (the long sentence above stays for a title and for Details). A beginner's words, no jargon.
+ *
+ * Changed on purpose 2026-11-06 (Elysium readiness): `nativeUsd`, how the position's chain prices its native currency
+ * (v2/chains.ts V2Chain.nativeUsd). On a chain without Chainlink (`pool`: Elysium's HYPE, priced from the one pool its
+ * profile names) read-v6 says no_qualified_price_source for a token only the native currency could value, and
+ * no_qualified_reference for a pool against it, while that pool does not qualify: the same moment as a stale ETH feed
+ * (eth_usd_stale) on the other chains, so the same words. On a chain with Chainlink they keep theirs: there they mean the
+ * price source has no reads for the chain.
  */
-export function usdMissingShort(reason?: string | null): string {
+const PASSING_REFERENCE = ['eth_usd_stale', 'price_read_failed', 'pricing_limit_reached', 'sequencer_down']
+const PASSING_POOL_REFERENCE = [...PASSING_REFERENCE, 'no_qualified_price_source', 'no_qualified_reference']
+export function usdMissingShort(reason?: string | null, nativeUsd: 'chainlink' | 'pool' = 'chainlink'): string {
   const reasons = reason?.split(',') ?? []
   if (reasons.includes('awaiting_receipt_block')) return 'Updating after your transaction'
   if (reasons.includes('stale_position_or_chain')) return 'Waiting for a fresh reading'
-  if (reasons.some(value => ['eth_usd_stale', 'price_read_failed', 'pricing_limit_reached', 'sequencer_down'].includes(value))) return 'USD price is updating'
+  const passing = nativeUsd === 'pool' ? PASSING_POOL_REFERENCE : PASSING_REFERENCE
+  if (reasons.some(value => passing.includes(value))) return 'USD price is updating'
   // The price source said nothing of the token (it does not list this position): no judgement of the token is implied.
   if (reasons.length > 0 && reasons.every(value => value === 'token_price_unavailable')) return 'No USD price yet'
   return 'No reliable USD price'

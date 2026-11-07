@@ -1,5 +1,6 @@
 import SignClient from '@walletconnect/sign-client'
 import { encode } from 'uqr'
+import { ELYSIUM_LIVE, ELYSIUM_V2_ID } from '../lib/elysiumIdentity'
 import { FORWARDED } from './walletConnectMethods'
 
 /**
@@ -27,9 +28,10 @@ const ROBINHOOD = 4663
  * Robinhood Chain yet still pairs and is then asked to add it (the dialog's "Switch to Robinhood Chain").
  * Changed on purpose 2026-10-04 (Domino V2 live on Base and Arbitrum One, #327): those two as well. A WalletConnect
  * request names its chain, and the session must hold it, so V2's switch to Base or Arbitrum One and what follows there
- * need them in the session.
+ * need them in the session. Changed on purpose 2026-11-07 (Elysium as a fourth V2 chain): and Elysium (99901), last,
+ * where the build serves it (lib/elysiumIdentity.ts ELYSIUM_LIVE), for the same reason.
  */
-const CHAINS = [`eip155:${ROBINHOOD}`, 'eip155:1', 'eip155:8453', 'eip155:42161']
+const CHAINS = ELYSIUM_LIVE ? [`eip155:${ROBINHOOD}`, 'eip155:1', 'eip155:8453', 'eip155:42161', `eip155:${ELYSIUM_V2_ID}`] : [`eip155:${ROBINHOOD}`, 'eip155:1', 'eip155:8453', 'eip155:42161']
 
 export interface WalletConnectOptions {
   projectId: string

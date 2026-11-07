@@ -1,3 +1,4 @@
+import { chainMarkProps } from '../../lib/chainMarks'
 import { formatUsdFloor } from '../../lib/format/usd'
 import type { ReactNode } from 'react'
 import { Figure } from '../../components/positions/Figure'
@@ -227,7 +228,7 @@ export function V2PositionRow({ row, apr = null, late = false }: { row: Position
               </span>
             </span>
             <span className="dm-own-state flex-wrap gap-1.5">
-              <span className="dm-collection-network" data-v2-chain={row.chainId} title={`${row.chain} · ${row.dexName}`}>{row.chain}</span>
+              <span className="dm-collection-network" data-v2-chain={row.chainId} {...chainMarkProps(row.chainId)} title={`${row.chain} · ${row.dexName}`}>{row.chain}</span>
               <RowStatus row={row} />
               <VaultColumn row={row} />
               {closed && <span className="dm-collection-id" aria-hidden="true">#{row.tokenId}</span>}

@@ -1,4 +1,5 @@
 import { keccak256, stringToHex, type Address } from 'viem'
+import { V2_CHAIN_IDS } from '../../config/chainIdentity'
 import type { V2ChainId } from '../../v2/types'
 import type { SignatureJournal, SignedNonce } from './transact'
 
@@ -29,7 +30,8 @@ const PREFIX = 'domino.signed-nonce.v1.'
 const MAX_ENTRIES = 512
 const ADDRESS = /^0x[0-9a-f]{40}$/
 const SPACES: readonly SignedNonce['space'][] = ['permit2', 'zap', 'autoExit']
-const CHAINS: readonly number[] = [4663, 8453, 42161]
+/** Every V2 chain the build serves (config/chainIdentity.ts V2_CHAIN_IDS; Changed on purpose 2026-11-07: the three were written out). */
+const CHAINS: readonly number[] = V2_CHAIN_IDS
 const MAX_UINT256 = (1n << 256n) - 1n
 
 const fail = (code: string): never => { throw new Error(code) }

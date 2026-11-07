@@ -13,7 +13,10 @@ interface Subject {
   wire: string
   key: AddressKey
   source: 'wallet' | 'link'
-  /** The wallet's own network, when the address came from one. Reads are on Robinhood Chain regardless. */
+  /**
+   * The wallet's own network, when the address came from one. Reads are Robinhood Chain's regardless, and since 2026-11-06
+   * (R-07) also Base's and Arbitrum One's in a build with V2 (PortfolioTokens.tsx), whatever network the wallet is on.
+   */
   walletChainId: number | null
 }
 
@@ -81,7 +84,8 @@ function AddressForm({ id, onView, className, inert }: { id: string; onView: (wi
 
 /**
  * The Wallet card on Positions: the public tokens an address holds on
- * Robinhood Chain, read at one block.
+ * Robinhood Chain, read at one block, and in a build with V2 its tokens on Base
+ * and Arbitrum One that Domino's service reads (R-07, PortfolioTokens.tsx).
  *
  * Its subject is, in this order: the address in a `#/portfolio/<address>`
  * link (an unusable one shows the problem and nothing else, never the

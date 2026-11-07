@@ -4,10 +4,10 @@ import { TokenMark } from '../../components/TokenIcon'
 import { Button } from '../../components/ui'
 import { unreadToken } from '../../lib/read/project'
 import { rem } from '../../lib/rootScale'
-import { v2Chain } from '../../v2/chains'
+import { nativeArtwork, nativeSymbolOf, v2Chain, wrappedArtwork } from '../../v2/chains'
 import { ZERO_ADDRESS, type Address, type Dex, type V2ChainId } from '../../v2/types'
 import { REJECTED_IN_WALLET, type JourneyError } from './errors'
-import { dexName, feePercent } from './model/pools'
+import { dexChipShown, dexName, feePercent } from './model/pools'
 import type { JourneyToken } from './tokens'
 
 /**
@@ -17,24 +17,26 @@ import type { JourneyToken } from './tokens'
 
 /**
  * A token's symbol as untrusted text (the read layer's SymbolText look): isolated, cut at 24 characters, its short address
- * when it has none.
+ * when it has none. The native currency (address(0)) is the chain's own symbol, never a list's: "ETH" (changed on purpose
+ * 2026-11-06, Elysium readiness: HYPE on a HYPE-native chain, `chainId`).
  */
-export function TokenName({ token }: { token: Pick<JourneyToken, 'address' | 'symbol'> }) {
-  if (token.address.toLowerCase() === ZERO_ADDRESS) return <bdi className="inline-block max-w-[24ch] truncate align-bottom">ETH</bdi>
+export function TokenName({ token, chainId }: { token: Pick<JourneyToken, 'address' | 'symbol'>; chainId?: number }) {
+  if (token.address.toLowerCase() === ZERO_ADDRESS) return <bdi className="inline-block max-w-[24ch] truncate align-bottom">{nativeSymbolOf(chainId ?? 0)}</bdi>
   if (token.symbol === null) return <span className="text-fg-subtle">{`${token.address.slice(0, 6)}…${token.address.slice(-4)}`}</span>
   return <bdi className="inline-block max-w-[24ch] truncate align-bottom">{token.symbol}</bdi>
 }
 
 /**
  * A token's mark on any of the three networks: the bundled artwork for native ETH, the chain's WETH and Robinhood Chain's
- * USDG (matched by ADDRESS against the chain profile, never by symbol). Other tokens reuse the same bounded artwork
+ * USDG (matched by ADDRESS against the chain profile, never by symbol; on a HYPE-native chain none for HYPE and WHYPE,
+ * v2/chains.ts nativeArtwork, 2026-11-06). Other tokens reuse the same bounded artwork
  * resolver as search and positions, keyed by chain plus address, with its neutral fallback when no image is known.
  */
 export function TokenDisc({ chainId, token, size = 24, ring, style }: { chainId: V2ChainId; token: Pick<JourneyToken, 'address'>; size?: number; ring?: string; style?: CSSProperties }) {
   const chain = v2Chain(chainId)
   const address = token.address.toLowerCase()
   const base = unreadToken(address)
-  const artwork = address === ZERO_ADDRESS ? 'ETH' : address === chain.wrappedNative.address ? 'WETH' : chainId === 4663 ? base.artwork : null
+  const artwork = address === ZERO_ADDRESS ? nativeArtwork(chain) : address === chain.wrappedNative.address ? wrappedArtwork(chain) : chainId === 4663 ? base.artwork : null
   return <TokenMark token={{ ...base, chainId, artwork }} size={size} ring={ring} style={style} />
 }
 
@@ -52,10 +54,14 @@ export function TokenDiscPair({ chainId, first, second, size = 32, ring = 'var(-
  * The chips a V2 pool carries on its row, in the journey's chip style: its network, the DEX and its fee. The lists' rule
  * (lists/parts.tsx DEX_BADGE_SHOWS_VERSION; the owner, 2026-09-13: nothing on screen says "v4"): the DEX chip says
  * "Uniswap", the version only in its title and data attribute. On Robinhood Chain, where every pool is Uniswap v4, a v4
- * pool carries no DEX chip at all; a v3 pool found there, or any pool on another network, says "Uniswap".
+ * pool carries no DEX chip at all; a v3 pool found there says "Uniswap".
+ * Changed on purpose 2026-11-06 (the replica rule, O-17: Base and Arbitrum One are Robinhood Chain's screens, only the
+ * network changes): a pool on Base or Arbitrum One carries no DEX chip either, v3 or v4 (their lists show one row for a
+ * pair and fee, whichever version: lib/create/otherChains.ts networkRows), so New position's Review there reads as
+ * Robinhood Chain's does: the network and the fee. It said "Uniswap" on every pool there.
  */
 export function PoolChips({ chainId, dex, fee }: { chainId: V2ChainId; dex: Dex; fee: number }) {
-  const dexChip = !(chainId === 4663 && dex === 4)
+  const dexChip = dexChipShown(chainId, dex)
   return (
     <span className="flex flex-wrap items-center gap-1.5" data-pool-chips="" data-pool-dex={dex}>
       <span className="dm-chip shrink-0" data-chain-chip={chainId}>{v2Chain(chainId).name}</span>

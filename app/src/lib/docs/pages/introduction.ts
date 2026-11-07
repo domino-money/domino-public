@@ -1,6 +1,8 @@
 import { CAPABILITIES } from '../../capabilities'
 import { WALLETCONNECT_PROJECT_ID } from '../../../config/walletConnect'
 import { b, diagram, doc, list, p } from '../blocks'
+// 2026-11-06: Elysium's words where it is live (../elysium.ts).
+import { ELYSIUM_LIVE, ELYSIUM_V2_ID, GAS_IN, NETWORKS, NETWORKS_OR, OTHERS } from '../elysium'
 import type { Block, DocPage } from '../types'
 
 /**
@@ -15,7 +17,7 @@ import type { Block, DocPage } from '../types'
 export const WHAT_IS_DOMINO: DocPage = {
   slug: 'what-is-domino',
   title: 'What Domino is',
-  summary: 'Domino helps you earn trading fees with Uniswap positions on Robinhood Chain, Base and Arbitrum One, and can put those fees to work.',
+  summary: `Domino helps you earn trading fees with Uniswap positions on ${NETWORKS}, and can put ${ELYSIUM_LIVE ? 'them' : 'those fees'} to work.`,
   sections: [
     {
       id: 'what-it-does',
@@ -45,9 +47,10 @@ export const WHAT_IS_DOMINO: DocPage = {
       title: 'Where things are',
       blocks: [
         list(
-          [doc('Markets', 'markets'), ': today’s Robinhood Chain pools, a search that also finds Base and Arbitrum One tokens, and a page for each pool.'],
-          [doc('New position', 'new-position'), ': four steps on Robinhood Chain, Base or Arbitrum One, then your wallet creates the position. Tokens on another network can be ', doc('brought over first', 'bring-funds'), '.'],
-          [doc('Positions', 'positions'), ': your positions on Robinhood Chain, Base and Arbitrum One, each with a page where you ', doc('manage it', 'manage-position'), '.'],
+          [doc('Markets', 'markets'), `: today’s Robinhood Chain pools, a search that also finds ${OTHERS} tokens, and a page for each pool.`],
+          // 2026-11-07 (review P8): no funds are brought to Elysium.
+          [doc('New position', 'new-position'), `: four steps on ${NETWORKS_OR}, then your wallet creates the position. Tokens on another network can be `, doc('brought over first', 'bring-funds'), ELYSIUM_LIVE ? ', except to Elysium.' : '.'],
+          [doc('Positions', 'positions'), `: your positions on ${NETWORKS}, each with a page where you `, doc('manage it', 'manage-position'), '.'],
           [b('Automate'), ': the three ways side by side, each with its set-up button.'],
         ),
       ],
@@ -67,8 +70,8 @@ export const WHAT_IS_DOMINO: DocPage = {
       id: 'built-on-uniswap',
       title: 'Built on Uniswap',
       blocks: [
-        p('Uniswap is an exchange made of smart contracts: programs on the chain that anyone can read. Every Domino position is a standard Uniswap position NFT, a token in your wallet that stands for your position. Domino works with Uniswap v3 and v4 pools.'),
-        p('Domino’s own contracts run beside them on each of its three networks: one acts on your positions, one runs your automation, one carries out Auto-exit. See ', doc('Contracts', 'contracts'), '.'),
+        p(`Uniswap is an exchange made of smart contracts: programs on the chain that anyone can read. Every Domino position is a standard Uniswap position NFT, a token in your wallet that stands for your position. Domino works with Uniswap v3 and v4 pools${ELYSIUM_LIVE ? '; Elysium has Uniswap v4 only' : ''}.`),
+        p(`Domino’s own contracts run beside them on each of its ${ELYSIUM_LIVE ? 'four' : 'three'} networks: one acts on your positions, one runs your automation, one carries out Auto-exit. See `, doc('Contracts', 'contracts'), '.'),
       ],
     },
   ],
@@ -88,7 +91,7 @@ const PHONE: Block = p(
 export const WALLET: DocPage = {
   slug: 'wallet',
   title: 'Wallet and sign-in',
-  summary: 'Connect a wallet from a computer, phone or tablet, use Domino’s three networks, and sign in for quotes.',
+  summary: `Connect a wallet from a computer, phone or tablet, use Domino’s ${ELYSIUM_LIVE ? 'four' : 'three'} networks, and sign in for quotes.`,
   sections: [
     {
       id: 'connect',
@@ -111,7 +114,7 @@ export const WALLET: DocPage = {
         // tests/wallet-compat.test.mjs holds these rows to); they are here too for a wallet that must be told by hand.
         // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): Base and Arbitrum One too, which Domino asks
         // the wallet to switch to and never adds itself ("Add {chain} to your wallet, then try again.").
-        p(`Domino works on Robinhood Chain, chain ID ${CAPABILITIES.chainId}, Base, 8453, and Arbitrum One, 42161, and asks your wallet to switch networks when a step needs it. `, b('Switch to Robinhood Chain'), ' also asks it to add that network if it lacks it; to add it by hand:'),
+        p(`Domino works on Robinhood Chain, chain ID ${CAPABILITIES.chainId}, Base, 8453, ${ELYSIUM_LIVE ? `Arbitrum One, 42161, and Elysium, ${ELYSIUM_V2_ID}` : 'and Arbitrum One, 42161'}, and asks your wallet to switch networks when a step needs it. `, b('Switch to Robinhood Chain'), ' also asks it to add that network if it lacks it; to add it by hand:'),
         {
           kind: 'facts',
           rows: [
@@ -122,7 +125,7 @@ export const WALLET: DocPage = {
             { label: 'Block explorer', value: 'https://robinhoodchain.blockscout.com' },
           ],
         },
-        p('If your wallet lacks Base or Arbitrum One, add it there, then try again. Each transaction pays a small network fee, called gas, in ETH: keep a little on each network you use.'),
+        p(`If your wallet lacks ${ELYSIUM_LIVE ? 'Base, Arbitrum One or Elysium' : 'Base or Arbitrum One'}, add it there, then try again. Each transaction pays a small network fee, called gas, ${GAS_IN}: keep a little on each network you use.`),
       ],
     },
     {
@@ -172,7 +175,8 @@ export const WALLET_REQUESTS: DocPage = {
       id: 'before-you-sign',
       title: 'Before you sign',
       blocks: [
-        p('Each step Domino asks for opens in your wallet, which shows what the transaction does and its network fee, paid in ETH. Nothing is sent until you confirm it there, and a step you reject sends nothing.'),
+        // 2026-11-07 (review P7): the fee's currency, as every gas sentence names it.
+        p(`Each step Domino asks for opens in your wallet, which shows what the transaction does and its network fee, paid ${GAS_IN}. Nothing is sent until you confirm it there, and a step you reject sends nothing.`),
         // 2026-10-01 (audit C14). Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): the new contracts'
         // steps say the same in their own words ("Nothing more will be sent from here: check your wallet’s activity").
         p('A step is never sent twice. If you press ', b('Speed up'), ' or ', b('Cancel'), ' in your wallet while Domino waits for a step, or its answer goes missing, Domino reads the network again and sends nothing more on its own: it tells you what happened, or asks you to check your wallet’s activity.'),

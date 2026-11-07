@@ -1,3 +1,4 @@
+import { V2_CHAIN_IDS } from '../../config/chainIdentity'
 import type { Address, V2ChainId } from '../../v2/types'
 
 /**
@@ -31,7 +32,8 @@ const listeners = new Set<(handoff: VaultHandoff) => void>()
 
 /** Offers the automation panel a vault at a step; a later offer replaces one that was not taken. Anything malformed is ignored. */
 export function offerVault(handoff: VaultHandoff): void {
-  if (!handoff || (handoff.chainId !== 4663 && handoff.chainId !== 8453 && handoff.chainId !== 42161)) return
+  // Any V2 chain the build serves (config/chainIdentity.ts V2_CHAIN_IDS; Changed on purpose 2026-11-07: the three were written out).
+  if (!handoff || !V2_CHAIN_IDS.includes(handoff.chainId)) return
   if (typeof handoff.vault !== 'string' || !ADDRESS.test(handoff.vault) || !FOCUS.includes(handoff.focus)) return
   pending = Object.freeze({ chainId: handoff.chainId, vault: handoff.vault.toLowerCase() as Address, focus: handoff.focus })
   for (const listener of listeners) listener(pending)

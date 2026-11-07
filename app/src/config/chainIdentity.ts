@@ -1,7 +1,9 @@
 /**
  * The chains' identities in the registry (2026-10-01, the chain2 workstream, part B, audit item G3): the one place each
  * chain's id, name and public addresses are written. Literals only, and no import, so that what every page carries can
- * read them without bringing a chain's whole record along.
+ * read them without bringing a chain's whole record along. Changed on purpose 2026-11-07 (Elysium as a fourth V2 chain):
+ * one import, Elysium's literals (lib/elysiumIdentity.ts, which imports nothing: its id's one literal and its build-time
+ * switch), so V2's chain list follows the switch.
  *
  * Why: Robinhood Chain's id was declared in six places (session/machine.ts, read/screens/identity.ts, read/project.ts,
  * functions/_lib/owned.ts, wallet/chain.ts, lib/capabilities.ts) and its addresses copied into more, so a change made in
@@ -19,6 +21,8 @@
  * (chains/robinhood-4663.json, chains/deployments/robinhood-v4.json, chains/elysium-99801.json, copies in
  * tests/fixtures/elysium/) and to the records built from them.
  */
+
+import { ELYSIUM_LIVE, ELYSIUM_V2_ID } from '../lib/elysiumIdentity'
 
 /** Multicall3 at its canonical address, the same on every chain it is deployed on (both of the registry's). */
 export const MULTICALL3_CANONICAL = '0xca11bde05977b3631167028862be2a173976ca11'
@@ -87,8 +91,38 @@ export const BASE_NAME = 'Base'
 export const ARBITRUM_ID = 42161
 export const ARBITRUM_NAME = 'Arbitrum One'
 
-/** The chains Domino V2 serves, in the picker's order (spec §1.2; open point 23 leaves the launch order to the owner). */
-export const V2_CHAIN_IDS: readonly number[] = Object.freeze([ROBINHOOD_ID, BASE_ID, ARBITRUM_ID])
+/**
+ * Every chain Domino V2 may serve, as a type: Robinhood Chain, Base, Arbitrum One and Elysium (src/v2/types.ts V2ChainId).
+ * Changed on purpose 2026-11-07 (Elysium as a fourth V2 chain): Elysium's mainnet id is always in the type, so every
+ * table typed per chain (`Record<V2ChainId, ...>`) says what it holds for it; which chains a build serves is the list
+ * below. A table's Elysium row is written behind ELYSIUM_LIVE, so a build where Elysium is off carries none.
+ */
+export type V2ChainIdOf = typeof ROBINHOOD_ID | typeof BASE_ID | typeof ARBITRUM_ID | typeof ELYSIUM_V2_ID
+
+/**
+ * The chains Domino V2 serves, in the picker's order (spec §1.2; open point 23 leaves the launch order to the owner).
+ * Changed on purpose 2026-11-06 (Elysium readiness): the app's one list of them. src/v2/chains.ts serves these and no
+ * other (a profile of a chain id not here is ignored). Changed on purpose 2026-11-07 (Elysium as a fourth V2 chain,
+ * switched on by itself): Elysium, last, exactly when the build's switch says it is live (lib/elysiumIdentity.ts
+ * ELYSIUM_LIVE: rugged97's enabled profile and deployment record, our pin of the record, read-v6 and position-plan naming
+ * it; scripts/elysium-switch.mjs); the three otherwise, as before. The list follows the switch, never the reverse, so
+ * isV2ChainId, the chain list, the wallet's switching (wallet/port.ts) and the session's networks (session/machine.ts)
+ * take Elysium on with no edit here.
+ */
+const V2_CHAIN_ID_LIST: readonly V2ChainIdOf[] = Object.freeze(ELYSIUM_LIVE ? [ROBINHOOD_ID, BASE_ID, ARBITRUM_ID, ELYSIUM_V2_ID] : [ROBINHOOD_ID, BASE_ID, ARBITRUM_ID])
+export const V2_CHAIN_IDS: readonly number[] = V2_CHAIN_ID_LIST
+
+/**
+ * The V2 chains beside Robinhood Chain, as a type and as the list (added 2026-11-07, Elysium's screens): Base, Arbitrum
+ * One, and Elysium where the build serves it, in the picker's order. Robinhood Chain is the chain whose pools, Top pools
+ * and search Domino's own read service lists; these are the networks every screen reads through read-v6's chain reads
+ * (a network token page, a network pool page, New position's network rows, the Wallet card's other networks). Every such
+ * list takes this one, so a further chain is one row of V2_CHAIN_ID_LIST.
+ */
+export type OtherV2ChainIdOf = Exclude<V2ChainIdOf, typeof ROBINHOOD_ID>
+export const OTHER_V2_CHAIN_IDS: readonly OtherV2ChainIdOf[] = Object.freeze(V2_CHAIN_ID_LIST.filter((chainId): chainId is OtherV2ChainIdOf => chainId !== ROBINHOOD_ID))
+/** Whether `value` is one of OTHER_V2_CHAIN_IDS (a number, never its text). */
+export const isOtherV2ChainId = (value: unknown): value is OtherV2ChainIdOf => (OTHER_V2_CHAIN_IDS as readonly unknown[]).includes(value)
 
 // ---------------------------------------------------------------------------------------------------------------------
 

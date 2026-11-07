@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { test } from 'node:test';
+import { CONSTANTS as V6_CONSTANTS } from '../../api-contracts/read-v6/schema-data.mjs';
 import { createWorker, LIMITS } from '../src/worker.mjs';
 import { CONTRACT_VERSION as V5_VERSION } from '../../api-contracts/read-v5/runtime.mjs';
 import { CONTRACT_VERSION, ERROR_STATUS_BY_CODE, ROUTES, validateError } from '../../api-contracts/read-v6/runtime.mjs';
@@ -87,8 +88,10 @@ async function expectError(response, status, error) {
   assert.equal(response.headers.get('Set-Cookie'), null);
 }
 
+// Changed on purpose 2026-11-07 (Elysium, day 9; review finding B): the Worker names read-v6's own chains (CONSTANTS.chainIds),
+// which name Elysium (99901) from rugged97's day-9 version; Domino's three come first, in this order, either way.
 const DISABLED_CAPABILITIES = {
-  contractVersion: CONTRACT_VERSION, dataMode: 'disabled', chainIds: [4663, 8453, 42161], enabledReads: [],
+  contractVersion: CONTRACT_VERSION, dataMode: 'disabled', chainIds: [...V6_CONSTANTS.chainIds], enabledReads: [],
   walletAuthentication: false, privateAccounts: false, ownerTransactions: false, automation: false,
 };
 
@@ -188,7 +191,7 @@ test('on, each route goes to its one upstream path with the service identity, an
   assert.deepEqual(await two.json(), { ...DISABLED_CAPABILITIES, dataMode: 'live_read_only', enabledReads: ['portfolio', 'activity'] });
 });
 
-test('the capabilities name the three chains every stored answer carries, in the answers\' own order', () => {
+test('the capabilities name the chains every stored answer carries, in the answers\' own order', () => {
   for (const [name, body] of VALID.filter(([name]) => !name.startsWith('chain-'))) {
     assert.deepEqual(JSON.parse(body).chains.map((chain) => chain.chainId), DISABLED_CAPABILITIES.chainIds, name);
     assert.equal(JSON.parse(body).schemaVersion, 1, name);

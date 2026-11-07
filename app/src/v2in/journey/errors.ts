@@ -1,5 +1,6 @@
 import { ZapRefusal } from '../../finance/v2/zap'
 import { v2Chain } from '../../v2/chains'
+import { versionOffChain } from '../../v2/plan/client'
 import { CONTRACTS_NOT_LIVE, contractsNotLiveCopy } from '../../finance/v2/liveLock'
 import { GENERIC_COPY, decodeRevertData, decodeV2Error, type ErrorLabels, type Recovery } from '../../v2/errors'
 import type { S1PlanResult } from '../../v2/plan/types'
@@ -88,7 +89,7 @@ function clientCopy(code: string, chainId: V2ChainId): { copy: string; recovery:
     // Domino V2 rev2 review, F3: an earlier action of this wallet on this chain is not settled yet ("I rejected it in my wallet" below).
     case 'zap_action_unsettled': return { copy: UNSETTLED(chain), recovery: 'none' }
     case 'wallet_result_unknown': return { copy: SENT_UNKNOWN, recovery: 'none' }
-    case 'native_gas_reserve_insufficient': return { copy: 'Not enough ETH for the network fee.', recovery: 'none' }
+    case 'native_gas_reserve_insufficient': return { copy: `Not enough ${v2Chain(chainId).nativeSymbol} for the network fee.`, recovery: 'none' }
     case 'gas_budget_exceeded': return { copy: 'This would cost more network fee than allowed. Review again.', recovery: 'requote' }
     case 'pool_not_initialized': return { copy: 'This pool has no price yet.', recovery: 'other-pool' }
     case 'batch_simulation_reverted': return { copy: GENERIC_COPY, recovery: 'requote' }
@@ -99,10 +100,19 @@ function clientCopy(code: string, chainId: V2ChainId): { copy: string; recovery:
   }
 }
 
-/** A plan answer that is not a plan, said (rev2 §2.4's table; the server's simulation's revert through the §2.12 decoder). */
-export function planFailure(result: Exclude<S1PlanResult, { kind: 'ok' }>, chainId: V2ChainId, token?: (address: Address) => string): JourneyError {
+/**
+ * A plan answer that is not a plan, said (rev2 §2.4's table; the server's simulation's revert through the §2.12 decoder).
+ * `dex`: the Uniswap version the request was about. Changed on purpose 2026-11-06 (Elysium readiness): the service's
+ * `invalid_request` for a version the chain lacks (v3 on a chain with v4 alone; ../../v2/plan/client.ts gives it without
+ * asking) is "Not available on {chain} right now.", as a chain the planner does not serve, never asked again; any other
+ * `invalid_request` is said as before.
+ */
+export function planFailure(result: Exclude<S1PlanResult, { kind: 'ok' }>, chainId: V2ChainId, token?: (address: Address) => string, dex?: number): JourneyError {
   const chain = v2Chain(chainId).name
   const E = PLAN_ERRORS
+  if (result.kind === 'refused' && result.code === 'invalid_request' && versionOffChain(chainId, dex)) {
+    return { copy: E.not_available(chain), code: 'position_plan_dex_not_on_chain', recovery: 'none' }
+  }
   const codeOf = (text: string) => text.replace(/[^a-z0-9_]/gi, '_').toLowerCase().slice(0, 64)
   switch (result.kind) {
     case 'expired': return { copy: EXPIRED_COPY, code: 'plan_answer_expired', recovery: 'quiet-requote' }

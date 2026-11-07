@@ -28,6 +28,30 @@ const REPO = resolve(APP, '..');
 /** The verified record of Domino V1 on Robinhood Chain (docs/V1_MAINNET_FRONTEND_HANDOFF_0XDECIMAL.md §3): the pages name its contracts and its state. */
 const DEPLOYMENT = JSON.parse(readText(join(REPO, 'docs/deployments/v1-robinhood-mainnet-2026-09-21/deployment.json')));
 const { DOC_GROUPS, DOC_PAGES } = docs;
+
+/**
+ * Added 2026-11-06 (the Elysium surface): the docs as a build with Elysium live has them (lib/docs/elysium.ts): the
+ * compiled modules loaded again with the build's Elysium defines on globalThis, as a compile outside Vite reads them, its
+ * Uniswap addresses from the synthetic day-9 profile; then the cache restored. `funds`: funds can come from it too.
+ */
+const ELYSIUM_PROFILE = JSON.parse(readText(join(APP, 'tests/fixtures/v2-chains/elysium-99901.json')));
+const ELYSIUM_UNISWAP = { positionManager: ELYSIUM_PROFILE.uniswap.v4.positionManager.toLowerCase(), permit2: ELYSIUM_PROFILE.permit2.toLowerCase() };
+function docsWithElysium({ funds = false } = {}) {
+  const flags = { __DOMINO_ELYSIUM_LIVE__: true, __DOMINO_ELYSIUM_FUNDS_FROM__: funds, __DOMINO_ELYSIUM_UNISWAP__: ELYSIUM_UNISWAP };
+  const ours = (key) => key.includes('.test-build');
+  const saved = Object.entries(require.cache).filter(([key]) => ours(key));
+  for (const [key] of saved) delete require.cache[key];
+  Object.assign(globalThis, flags);
+  try {
+    return require('../.test-build/app/src/lib/docs/registry.js');
+  } finally {
+    for (const name of Object.keys(flags)) delete globalThis[name];
+    for (const key of Object.keys(require.cache)) if (ours(key)) delete require.cache[key];
+    for (const [key, value] of saved) require.cache[key] = value;
+  }
+}
+const ELYSIUM_DOCS = docsWithElysium();
+const ELYSIUM_FUNDS_DOCS = docsWithElysium({ funds: true });
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const KINDS = new Set(['p', 'list', 'steps', 'note', 'facts', 'addresses', 'split', 'terms', 'shot', 'diagram']);
 
@@ -207,7 +231,8 @@ test('every link stays inside this app, and names a docs page and a section of i
 });
 
 test('the words: no build marker, no URL, no self-description, no dollar figure, no wallet method or API path, no promise, no provider, no token', () => {
-  const all = strings([DOC_GROUPS, docs.DOCS_HOME, SHOTS]);
+  // Changed on purpose 2026-11-06 (the Elysium surface): Elysium's words too, as a build where it is live has them.
+  const all = strings([DOC_GROUPS, docs.DOCS_HOME, SHOTS, ELYSIUM_DOCS.DOC_GROUPS, ELYSIUM_FUNDS_DOCS.DOC_GROUPS]);
   assert.ok(all.length > 300, `${all.length} strings`);
   // Changed on purpose 2026-10-01 (audit C1, the owner's OK): the one place a URL is written out, as text and never as a
   // link: Robinhood Chain's details for adding it to a wallet by hand, in Wallet and sign-in. The chain's RPC and the
@@ -483,7 +508,8 @@ test('the wallet, pools, fees, markets, new position, positions, risks and what 
   assert.match(find, /The search at the top finds tokens on Robinhood Chain, Base and Arbitrum One\./);
   assert.match(find, /Search a known token by name, or paste its contract address\. Check the network label before choosing\./);
   assert.match(find, /High-fee or unsupported pools stay behind Show all\./);
-  assert.match(find, /New position keeps the token and network; choose the pool in the next screen\./);
+  // Changed on purpose 2026-11-06 (the replica rule): Base's and Arbitrum One's token page is Robinhood Chain's.
+  assert.match(find, /On Base and Arbitrum One, the token’s page lists the pools Domino’s reader finds on that network\. Each pool opens its own page, as on Robinhood Chain\./);
   assert.match(find, /An unavailable lookup does not mean the token does not exist\./);
   assert.match(find, /one posing as USDG, WETH or ETH is called out; a pool holding one shows a warning instead of Create a position\./);
   assert.doesNotMatch(textOf(markets), /Search the pool catalogue, under the table|from the selected pools/);
@@ -582,7 +608,9 @@ test('the docs use the product’s words for a position’s figures, say what au
   // components/positions/visual/PriceVsRange.tsx).
   const chart = sectionText(positions, 'price-range');
   assert.match(chart, /Earning fees while the price is inside your range, Not earning outside it, with how far the price must move to come back, or Closed\./);
-  assert.match(chart, /History starts when this position opened, up to 7 days: green inside the range, red outside\. Unread history is not filled in\./);
+  // Changed on purpose 2026-11-06 (O-19): the pool's stored price history is Robinhood Chain's Uniswap v4 pools', so the
+  // sentence says where it is kept rather than claim it for Base and Arbitrum One.
+  assert.match(chart, /Where Domino keeps the pool’s price history, it starts when this position opened, up to 7 days: green inside the range, red outside\. Unread history is not filled in\./);
   assert.match(chart, /Fees earned offers 24H, 7D and All/);
   const facts = readText(join(APP, 'src/lib/chart/priceFacts.ts'));
   for (const words of ["title: 'Earning fees'", "title: 'Not earning'"]) assert.ok(facts.includes(words), words);
@@ -854,6 +882,22 @@ test('the Uniswap addresses are the ones the backend is configured with and the 
   for (const entry of DOC_PAGES) for (const row of rowsOf(entry, 'addresses')) assert.match(row.address, /^0x[0-9a-f]{40}$/, `${entry.slug}: ${row.label}`);
 });
 
+// Added 2026-11-06 (review of the v4-only build, F2): a Domino contract's row links exactly the networks whose pinned
+// deployment record holds it. Today all 13 are on Robinhood Chain, Base and Arbitrum One; a network with Uniswap v4 alone
+// (Elysium's nine-contract record, docs/ELYSIUM_DAY9.md) must never be named for a v3 contract that has no code there.
+test('each Domino contract row names exactly the networks whose pinned deployment record holds it', () => {
+  const manifest = require('../.test-build/app/src/v2/manifest.js');
+  const { V2_CHAIN_IDS } = require('../.test-build/app/src/config/chainIdentity.js');
+  const contracts = page('contracts');
+  const rows = contracts.sections.find((section) => section.id === 'new-contracts').blocks.filter((block) => block.kind === 'addresses').flatMap((block) => block.rows);
+  assert.equal(rows.length, 13);
+  const holds = (chainId, address) => Object.values(manifest.V2_DEPLOYMENTS[chainId]?.contracts ?? {}).includes(address);
+  for (const row of rows) {
+    assert.equal(row.domino, true, row.label);
+    assert.deepEqual([...row.chains], V2_CHAIN_IDS.filter((chainId) => holds(chainId, row.address)), `${row.label} (${row.role})`);
+  }
+});
+
 // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): Domino V1 is deployed and stays so; its automation,
 // with its paused start, its readiness check and its Turn on, ends when the new automation starts, which starts at once.
 test('Domino V1 is deployed; the docs describe the new automation, which starts at once, and V1’s, which ends with no migration', () => {
@@ -952,9 +996,11 @@ test('previous and next walk the pages in sidebar order: nothing before the firs
   assert.deepEqual(docs.docNeighbours('constructor'), { previous: null, next: null });
 });
 
+// Changed on purpose 2026-11-06 (the Elysium surface): held in both states, Elysium off (today) and live, with and
+// without funds from it.
 test('titles are short, a summary is one line ending in a period, and every page stays short', (t) => {
   assert.ok(docs.DOCS_HOME.summary.length <= 140 && docs.DOCS_HOME.summary.endsWith('.'));
-  for (const entry of DOC_PAGES) {
+  for (const entry of [...DOC_PAGES, ...ELYSIUM_DOCS.DOC_PAGES, ...ELYSIUM_FUNDS_DOCS.DOC_PAGES]) {
     assert.ok(entry.title.length <= 40, `${entry.slug}: title`);
     assert.ok(entry.summary.length <= 140, `${entry.slug}: summary is ${entry.summary.length} characters`);
     assert.ok(entry.summary.endsWith('.'), `${entry.slug}: summary`);
@@ -992,7 +1038,21 @@ test('titles are short, a summary is one line ending in a period, and every page
     // token only when short of one); measured at 484 after its review (Fill in for me "works out the second amount again").
     // Changed on purpose 2026-11-02 (the owner: who leaves automation can turn it back on): 490 for Your automation, whose
     // Leave automation section now says how to start again; measured at 485.
-    const budget = entry.slug === 'glossary' ? 720 : entry.slug === 'non-custodial' ? 580 : entry.slug === 'manage-position' ? 470 : entry.slug === 'your-automation' ? 490 : entry.slug === 'new-position' ? 485 : entry.slug === 'domino-compound' || entry.slug === 'positions' ? 480 : 450;
+    // Changed on purpose 2026-11-06 (O-19 and R-07 of the comparison of 4 Nov, the owner: Base and Arbitrum One the same as
+    // Robinhood Chain): 505 for Positions, whose Wallet card now lists those networks' tokens and says which, and whose price
+    // chart says where Domino keeps its history; measured at 500.
+    // Changed on purpose 2026-11-06 (O-19): 475 for Figures, which says where Base's and Arbitrum One's dollars, Fees earned
+    // and APR come from in place of "no dollar value or APR"; measured at 472.
+    // Changed on purpose 2026-11-06 (the Elysium surface): 455 for Wallet and sign-in and for Fees, and 725 for the
+    // Glossary, where Elysium is live, for its chain id beside the others' and its gas in HYPE; measured at 455, 454 and
+    // 723 (447, 449 and 717 with Elysium off, inside the budgets they had).
+    // Changed on purpose 2026-11-07 (Elysium's screens): 460 for What is Domino and 515 for Positions where Elysium is live,
+    // for "Elysium has Uniswap v4 only" beside "Uniswap v3 and v4 pools" and the Wallet card's tokens there; measured at 455
+    // and 512 (447 and 500 with Elysium off, inside the budgets they had).
+    // Changed on purpose 2026-11-07 (review finding P8): 490 for New position where Elysium is live, whose amount step no
+    // longer promises bringing funds to a position on Elysium ("except on Elysium"); measured at 488 (484 with Elysium off,
+    // inside the budget it had).
+    const budget = entry.slug === 'what-is-domino' ? 460 : entry.slug === 'positions' ? 515 : entry.slug === 'wallet' || entry.slug === 'fees' ? 455 : entry.slug === 'figures' ? 475 : entry.slug === 'glossary' ? 725 : entry.slug === 'non-custodial' ? 580 : entry.slug === 'manage-position' ? 470 : entry.slug === 'your-automation' ? 490 : entry.slug === 'new-position' ? 490 : entry.slug === 'positions' ? 505 : entry.slug === 'domino-compound' ? 480 : 450;
     assert.ok(words <= budget, `${entry.slug} has ${words} words`);
   }
 });
@@ -1026,9 +1086,20 @@ test('the docs source stays inside its budget in the entry bundle', (t) => {
   // Changed on purpose 2026-10-31 (QA round 2 follow-ups: N26, N49, R48, and New position's amount step with both
   // amounts typed and Fill in for me, free-amounts and R9): 32,300 -> 32,500 for the corrected sentences and the comments
   // that date them; measured at 32,464 bytes.
-  t.diagnostic(`src/lib/docs: ${files.length} files, ${Buffer.byteLength(text)} bytes, ${size} bytes gzip (budget 32600)`);
+  t.diagnostic(`src/lib/docs: ${files.length} files, ${Buffer.byteLength(text)} bytes, ${size} bytes gzip (budget 34450)`);
   // Changed on purpose 2026-11-02: 32,600 with Turn back on after Leave automation; measured at 32,533.
-  assert.ok(size <= 32_600, `the docs source is ${size} bytes gzip, over the 32,600 byte budget`);
+  // Changed on purpose 2026-11-06 (O-19, R-07): 33,100 for the sentences on Base's and Arbitrum One's dollars, Fees earned
+  // and APR, the Wallet card there and who reads its balances; measured at 32,939.
+  // Changed on purpose 2026-11-06 (the Elysium surface): 34,000 for Elysium's words on the pages that name the networks,
+  // shown only where it is live (lib/docs/elysium.ts, its Uniswap row and its chain id); measured at 33,960.
+  // Changed on purpose 2026-11-07 (ely/surface merged into integ/replica-elysium): 34,100 for those words beside integ's
+  // V3_NETWORKS (the v3 contracts' own networks on Contracts, which a v4-only network never joins); measured at 34,022.
+  // Changed on purpose 2026-11-07 (Elysium's screens): 34,300 for the sentences that stay true with a v4-only network (Uniswap
+  // v3 and v4, the Wallet card's tokens and who reads them) and Elysium's explorer links once known; measured at 34,248.
+  // Changed on purpose 2026-11-07 (review findings P7 and P8, Elysium's screens): 34,450 for the sentences that no longer
+  // promise bringing funds to a position on Elysium (New position, What is Domino, Bring funds) and Wallet requests' fee in
+  // HYPE there; measured at 34,404.
+  assert.ok(size <= 34_450, `the docs source is ${size} bytes gzip, over the 34,450 byte budget`);
 });
 
 // ---------------------------------------------------------------------------
@@ -1295,4 +1366,92 @@ test('Missing figures: the info button where a row has one; a listed pool’s na
   assert.match(catalogue, /title="Listed on Uniswap\.">/);
   assert.doesNotMatch(catalogue, /'Listed on Uniswap\. (Its live figures are not in yet|Pool figures are unavailable)/);
   assert.doesNotMatch(catalogue, /data-pool-figures/, 'no info button there, as the docs now say');
+});
+
+// ---------------------------------------------------------------------------
+// 2026-11-06 (the Elysium surface): each page that names Robinhood Chain, Base
+// and Arbitrum One says Elysium's equivalent words in a build where Elysium is
+// live (lib/docs/elysium.ts), and only there.
+// ---------------------------------------------------------------------------
+
+test('Elysium off (today): no page names it', () => {
+  for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /Elysium|HYPE|99901/, entry.slug);
+});
+
+test('Elysium live: every page that names the networks names it last, with its chain id, its HYPE gas, its Uniswap v4 alone and its PositionManager from its profile', () => {
+  const on = (slug) => ELYSIUM_DOCS.findDocPage(slug);
+  const text = (slug) => textOf(on(slug));
+  assert.equal(on('what-is-domino').summary, 'Domino helps you earn trading fees with Uniswap positions on Robinhood Chain, Base, Arbitrum One and Elysium, and can put them to work.');
+  assert.match(text('what-is-domino'), /a search that also finds Base, Arbitrum One and Elysium tokens/);
+  assert.match(text('what-is-domino'), /four steps on Robinhood Chain, Base, Arbitrum One or Elysium, then your wallet creates the position/);
+  assert.match(text('what-is-domino'), /your positions on Robinhood Chain, Base, Arbitrum One and Elysium, each with a page/);
+  assert.match(text('wallet'), /Domino works on Robinhood Chain, chain ID 4663, Base, 8453, Arbitrum One, 42161, and Elysium, 99901, and asks your wallet to switch networks/);
+  assert.match(text('wallet'), /If your wallet lacks Base, Arbitrum One or Elysium, add it there, then try again\. Each transaction pays a small network fee, called gas, in ETH, or in HYPE on Elysium: keep a little on each network you use\./);
+  assert.equal(on('wallet').summary, 'Connect a wallet from a computer, phone or tablet, use Domino’s four networks, and sign in for quotes.');
+  assert.match(text('what-is-domino'), /Domino’s own contracts run beside them on each of its four networks/);
+  for (const entry of ELYSIUM_DOCS.DOC_PAGES) assert.doesNotMatch(textOf(entry), /three networks/, entry.slug);
+  assert.equal(on('markets').summary, 'Browse today’s Robinhood Chain pools, search tokens on Base, Arbitrum One and Elysium, and understand their figures.');
+  assert.match(text('markets'), /The search at the top finds tokens on Robinhood Chain, Base, Arbitrum One and Elysium\./);
+  assert.match(text('markets'), /On Base, Arbitrum One and Elysium, the token’s page lists the pools Domino’s reader finds on that network\./);
+  assert.match(text('new-position'), /New position works on Robinhood Chain, Base, Arbitrum One and Elysium\. From a pool’s page/);
+  assert.match(text('fees'), /Gas is paid in ETH, or in HYPE on Elysium, on the network of the transaction/);
+  assert.match(text('figures'), /Positions on Base, Arbitrum One and Elysium, and in Uniswap v3 pools, come from Domino’s record/);
+  assert.match(text('earned-fees'), /On Base, Arbitrum One and Elysium, Fees earned and Your APR come from Domino’s own record/);
+  assert.match(text('non-custodial'), /Robin Etherscan on Robinhood Chain, Basescan, Arbiscan or Elysium’s explorer\. The transaction that set it up/);
+  assert.match(text('privacy'), /Your positions on Base, Arbitrum One and Elysium, your automation and your Auto-exit come from Domino’s read service/);
+  assert.match(termText(on('glossary'), 'network'), /^A blockchain Domino works on: Robinhood Chain, Base, Arbitrum One or Elysium\.$/);
+  assert.match(termText(on('glossary'), 'gas'), /^The network fee every transaction pays, in ETH, or in HYPE on Elysium\.$/);
+  // Contracts: four networks, the v3 contracts not on Elysium, its PositionManager as its profile names it, its chain id.
+  const contracts = on('contracts');
+  assert.equal(contracts.summary, 'Domino’s contracts on its four networks, Domino V1 on Robinhood Chain, and the Uniswap contracts behind every position.');
+  assert.match(sectionText(contracts, 'new-contracts'), /Domino’s contracts run on Robinhood Chain, Base, Arbitrum One and Elysium, each at one address on every network, so check the network as well as the address\. Elysium has Uniswap v4 only, so the Uniswap v3 ones are not on it\./);
+  const nfts = contracts.sections.find((section) => section.id === 'position-nfts').blocks.filter((block) => block.kind === 'addresses').flatMap((block) => block.rows);
+  assert.deepEqual(nfts.at(-1), { label: 'PositionManager', role: 'Elysium, Uniswap v4', address: ELYSIUM_UNISWAP.positionManager });
+  assert.equal(nfts.length, 6);
+  assert.match(sectionText(contracts, 'position-nfts'), /Permit2 has the same address on all four networks\./);
+  assert.deepEqual(Object.fromEntries(rowsOf(contracts, 'facts').map((row) => [row.label, row.value])), { 'Robinhood Chain': 'Chain ID 4663', Base: 'Chain ID 8453', 'Arbitrum One': 'Chain ID 42161', Elysium: 'Chain ID 99901', 'Gas token': 'ETH, and HYPE on Elysium' });
+  // Changed on purpose 2026-11-07 (Elysium's screens): the sentences that said "v3 and v4" for every network, the Wallet
+  // card's tokens and who reads its balances, true with a v4-only network beside the others; today's words where it is off.
+  assert.match(sectionText(on('pools'), 'versions'), /Domino works with two kinds of Uniswap pools, v3 and v4; Elysium has Uniswap v4 only. For you they work the same/);
+  assert.match(sectionText(on('what-is-domino'), 'built-on-uniswap'), /Domino works with Uniswap v3 and v4 pools; Elysium has Uniswap v4 only./);
+  assert.match(text('positions'), /On Base and Arbitrum One it lists ETH, WETH, USDC and its positions’ tokens, and on Elysium HYPE, WHYPE, Elysium’s dollar token and its positions’ tokens, naming each token’s network./);
+  assert.match(text('privacy'), /On Base, Arbitrum One and Elysium, that service reads them through a network provider outside Domino, which is given the address./);
+  assert.match(sectionText(docs.findDocPage('pools'), 'versions'), /Domino works with two kinds of Uniswap pools, v3 and v4. For you they work the same/);
+  assert.match(sectionText(docs.findDocPage('what-is-domino'), 'built-on-uniswap'), /Domino works with Uniswap v3 and v4 pools.$/m);
+  assert.match(textOf(docs.findDocPage('positions')), /On Base and Arbitrum One it lists ETH, WETH, USDC and its positions’ tokens, naming each token’s network./);
+  assert.match(textOf(docs.findDocPage('privacy')), /On Base and Arbitrum One, that service reads them through a network provider outside Domino, which is given the address./);
+  // No explorer is known for Elysium yet (lib/elysiumIdentity.ts ELYSIUM_EXPLORER): no address row names it as a network to
+  // link, so no link is drawn to it, and never another network's in its place.
+  for (const entry of ELYSIUM_DOCS.DOC_PAGES) for (const row of rowsOf(entry, 'addresses')) assert.ok(!(row.chains ?? []).includes(99901), `${entry.slug}: ${row.label}`);
+  // Every page that names Arbitrum One names Elysium beside it, but Bring funds (below: Elysium there only once funds can come
+  // from it).
+  for (const entry of ELYSIUM_DOCS.DOC_PAGES) {
+    if (entry.slug === 'bring-funds') continue;
+    if (/Arbitrum One/.test(textOf(entry))) assert.match(textOf(entry), /Elysium/, entry.slug);
+  }
+});
+
+test('Bring funds names Elysium only once funds can come from it; until then a position there starts from the wallet\'s own tokens on Elysium', () => {
+  const where = (registry) => sectionText(registry.findDocPage('bring-funds'), 'where');
+  assert.doesNotMatch(where(docs), /Elysium/);
+  assert.match(where(ELYSIUM_DOCS), /Domino checks supported balances on Robinhood Chain, Ethereum, Base, Arbitrum One and OP Mainnet, excluding the position’s network\. Transfers need an available route and ETH for fees\. Nothing moves until you confirm in your wallet\. A position on Elysium uses the tokens already in your wallet on Elysium\./);
+  // Changed on purpose 2026-11-07 (review finding P8): funds coming from Elysium are never funds brought to it
+  // (src/v2/types.ts S2_DESTINATION_CHAIN_IDS), so a position there starts from the wallet's own tokens either way.
+  assert.match(where(ELYSIUM_FUNDS_DOCS), /Domino checks supported balances on Robinhood Chain, Ethereum, Base, Arbitrum One, OP Mainnet and Elysium, excluding the position’s network\. Transfers need an available route and ETH for fees, or HYPE on Elysium\. Nothing moves until you confirm in your wallet\. A position on Elysium uses the tokens already in your wallet on Elysium\./);
+});
+
+// Added 2026-11-07 (review findings P7 and P8): where Elysium is listed, no page promises bringing funds to a position there,
+// and the wallet's network fee is named in HYPE there too; today's words wherever it is off.
+test('Elysium listed: New position and What is Domino never promise bringing funds to a position there; Wallet requests names HYPE', () => {
+  const amount = (registry) => sectionText(registry.findDocPage('new-position'), 'step-amount');
+  assert.match(amount(docs), /A wallet that can’t fund the position is offered to bring funds from another network\./);
+  for (const registry of [ELYSIUM_DOCS, ELYSIUM_FUNDS_DOCS]) {
+    assert.match(amount(registry), /A wallet that can’t fund the position is offered to bring funds from another network, except on Elysium\./);
+  }
+  const where = (registry) => sectionText(registry.findDocPage('what-is-domino'), 'markets-positions-automate');
+  assert.match(where(docs), /Tokens on another network can be brought over first\./);
+  assert.match(where(ELYSIUM_DOCS), /Tokens on another network can be brought over first, except to Elysium\./);
+  const sign = (registry) => sectionText(registry.findDocPage('wallet-requests'), 'before-you-sign');
+  assert.match(sign(docs), /its network fee, paid in ETH\. Nothing is sent/);
+  assert.match(sign(ELYSIUM_DOCS), /its network fee, paid in ETH, or in HYPE on Elysium\. Nothing is sent/);
 });

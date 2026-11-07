@@ -17,6 +17,11 @@ export type { RawBody, RawReply }
 
 /** The gate's JSON refusal, byte for byte as functions/_middleware.ts sends it (same as read/interpret.ts). */
 export const GATE_REFUSAL = '{"error":"beta_access_required"}'
+/**
+ * The beta gate's own 503 page carries this title (functions/_lib/gate.ts; the same as read/interpret.ts GATE_PAGE_MARKER,
+ * which tests/read.test.mjs holds equal). Added 2026-11-07 (launch fix L-10): only a page that carries it is the gate.
+ */
+export const GATE_PAGE_MARKER = '<title>Domino · Access</title>'
 /** Non-JSON bodies are only ever inspected for the gate's refusal. */
 export const MAX_PAGE_BYTES = 16 * 1024
 export const JSON_MEDIA = /^application\/json(?:\s*;\s*charset\s*=\s*(?:utf-8|"utf-8"))?$/i
@@ -142,12 +147,18 @@ export async function fetchRaw(
  * package's worker. Recognised in this order: the beta gate's 401 JSON, the
  * gate's 503 page, a missing route (404, 405, or the SPA's HTML fallback),
  * and anything else.
+ *
+ * Changed on purpose 2026-11-07 (launch fix L-10): the gate's 503 page is an HTML
+ * page that carries the gate's own marker (GATE_PAGE_MARKER), as read/interpret.ts
+ * reads it; any other 503 without the header (a platform or upstream outage) is
+ * `unrecognised`, so each client says its busy, try-again words and asks again.
+ * It was read as the gate for any 503 that was not JSON.
  */
 export function classifyHeaderless(reply: RawReply): 'gate_required' | 'gate_unavailable' | 'feature_unavailable' | 'unrecognised' {
   const text = reply.body.kind === 'text' ? reply.body.text : null
   const json = reply.contentType !== null && /^application\/json\b/i.test(reply.contentType)
   if (reply.status === 401 && text === GATE_REFUSAL) return 'gate_required'
-  if (reply.status === 503 && !json) return 'gate_unavailable'
+  if (reply.status === 503 && !json && reply.contentType !== null && /^text\/html\b/i.test(reply.contentType) && text !== null && text.includes(GATE_PAGE_MARKER)) return 'gate_unavailable'
   if (reply.status === 404 || reply.status === 405) return 'feature_unavailable'
   if (reply.status === 200 && reply.contentType !== null && /^text\/html\b/i.test(reply.contentType)) return 'feature_unavailable'
   return 'unrecognised'

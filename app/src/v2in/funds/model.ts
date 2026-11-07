@@ -23,8 +23,9 @@ import { errorDisposition } from '../../v2/crosschain/errors'
 import { destinationChoices, networkName, roundedUnits, shortAmountText, type Naming } from '../../v2/crosschain/present'
 import type { CrosschainRequests, OriginsList, OriginToken, QuotePlan } from '../../v2/crosschain/types'
 import { BALANCE_CHAINS, balanceChain } from '../../v2/balanceChains'
-import { isV2ChainId, v2Chain } from '../../v2/chains'
+import { isV2ChainId, nativeArtwork, v2Chain, wrappedArtwork } from '../../v2/chains'
 import type { V2ChainId } from '../../v2/types'
+import { ELYSIUM_FUNDS_FROM, ELYSIUM_V2_ID } from '../../lib/elysiumIdentity'
 import {
   FUNDS_ETHEREUM_GAS_RESERVE_WEI,
   FUNDS_FIRST_GUESS_ROOM_BPS,
@@ -500,6 +501,8 @@ export type Kind = 'ether' | 'dollar'
  * Changed on purpose 2026-10-06 (rugged97's #379: chain-balances reads Ethereum and OP Mainnet when asked): on those two,
  * by their balance-chain profiles (v2/balanceChains.ts) the same way, so what is held there joins the line, the networks,
  * the sizing and the token to pay with as any of Domino's networks' holdings do.
+ * Changed on purpose 2026-11-07 (Elysium's screens): a network whose own currency is not Ether (Elysium's HYPE and WHYPE)
+ * has no ether: its HYPE is never brought as ETH. Its dollar token is a dollar as anywhere else.
  */
 export function kindOf(chainId: number, token: string): Kind | null {
   const elsewhere = balanceChain(chainId)
@@ -510,7 +513,7 @@ export function kindOf(chainId: number, token: string): Kind | null {
   if (!isV2ChainId(chainId)) return null
   const chain = v2Chain(chainId)
   const address = lower(token)
-  if (address === ZERO || address === lower(chain.wrappedNative.address)) return 'ether'
+  if (address === ZERO || address === lower(chain.wrappedNative.address)) return chain.nativeSymbol === 'ETH' ? 'ether' : null
   return chain.chargeCurrencies.some((c) => c.rank === 1 && lower(c.address) === address) ? 'dollar' : null
 }
 
@@ -744,7 +747,9 @@ export const heldOrigins = (held: readonly HeldStep[]): ReadonlySet<number> => n
  * The bundled mark of a holding on one of Domino's networks, by its address only (Added 2026-10-06, the review: the line
  * asked for a symbol's file that is not there): its ETH, its WETH, Robinhood Chain's USDG; else none (a plain disc).
  * Changed on purpose 2026-10-06 (rugged97's #379): on Ethereum and OP Mainnet, their ETH and WETH by their balance-chain
- * profiles; their USDC has no bundled mark, as on Base and Arbitrum One.
+ * profiles; their USDC has no bundled mark, as on Base and Arbitrum One. Changed on purpose 2026-11-06 (Elysium
+ * readiness): a V2 chain's native currency and wrapped token take Ether's and WETH's marks only where they are Ether's
+ * (v2/chains.ts nativeArtwork, wrappedArtwork); HYPE and WHYPE have none bundled. The balance chains' are Ether's.
  */
 export function holdingArtwork(chainId: number, token: string): 'ETH' | 'WETH' | 'USDG' | null {
   const elsewhere = balanceChain(chainId)
@@ -752,8 +757,8 @@ export function holdingArtwork(chainId: number, token: string): 'ETH' | 'WETH' |
   if (!isV2ChainId(chainId)) return null
   const address = lower(token)
   const chain = v2Chain(chainId)
-  if (address === ZERO) return 'ETH'
-  if (address === lower(chain.wrappedNative.address)) return 'WETH'
+  if (address === ZERO) return nativeArtwork(chain)
+  if (address === lower(chain.wrappedNative.address)) return wrappedArtwork(chain)
   return chainId === 4663 && chain.chargeCurrencies.some((c) => c.rank === 1 && lower(c.address) === address) ? 'USDG' : null
 }
 
@@ -790,9 +795,13 @@ export function balancesRequest(destination: number): { chainId: number; address
  * Domino's three are read exactly as before. Six tokens, within the service's 24; none when there is no such network.
  */
 export function balanceChainsRequest(destination: number): { chainId: number; address: string }[] {
-  return BALANCE_CHAINS.filter((chain) => chain.chainId !== destination && BALANCE_ORIGINS.includes(chain.chainId)).flatMap((chain) =>
+  const own = BALANCE_CHAINS.filter((chain) => chain.chainId !== destination && BALANCE_ORIGINS.includes(chain.chainId)).flatMap((chain) =>
     chain.tokens.map((token) => ({ chainId: chain.chainId, address: token.address })),
   )
+  // Added 2026-11-07 (Elysium's screens): Elysium, where funds can come from it, in this request of its own too, so a
+  // service that does not read it yet cannot take Domino's three with it (its tokens: finance/v2/holdings.ts CANDIDATE_ORIGINS).
+  if (!ELYSIUM_FUNDS_FROM || destination === ELYSIUM_V2_ID) return own
+  return [...own, ...(originCandidate(ELYSIUM_V2_ID)?.tokens ?? []).map((token) => ({ chainId: ELYSIUM_V2_ID, address: token.address.toLowerCase() }))]
 }
 
 /**
@@ -1061,8 +1070,10 @@ export const BOTH_PINNED_ORIGINS: readonly number[] = Object.freeze([1, 10, 56, 
  * Added 2026-10-06 (rugged97's #379): the balance chains read-v6's chain-balances reads when asked (v2/balanceChains.ts:
  * Ethereum, OP Mainnet) that crosschain-v1 bridges from (BOTH_PINNED_ORIGINS: the networks its origins listing names with
  * both Relay and Across pinned), in that order: the networks balanceChainsRequest asks about, beside Domino's own.
+ * Changed on purpose 2026-11-07 (Elysium's screens): then Elysium, only where funds can come from it
+ * (lib/elysiumIdentity.ts ELYSIUM_FUNDS_FROM), read in that same request of its own (balanceChainsRequest).
  */
-export const BALANCE_ORIGINS: readonly number[] = Object.freeze(BALANCE_CHAINS.map((chain) => chain.chainId as number).filter((chainId) => BOTH_PINNED_ORIGINS.includes(chainId)))
+export const BALANCE_ORIGINS: readonly number[] = Object.freeze([...BALANCE_CHAINS.map((chain) => chain.chainId as number).filter((chainId) => BOTH_PINNED_ORIGINS.includes(chainId)), ...(ELYSIUM_FUNDS_FROM ? [ELYSIUM_V2_ID] : [])])
 
 /** One of the "Other networks" and the tokens to send from it. */
 export interface OtherNetwork {

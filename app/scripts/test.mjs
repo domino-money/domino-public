@@ -40,6 +40,8 @@ execFileSync(
     'tests/contract-pin.test.mjs',
     'tests/backend-contract.test.mjs',
     'tests/build-guard.test.mjs',
+    // 2026-11-06 (the Elysium surface): the build's one Elysium switch, both ways, and the release build ignoring the test override.
+    'tests/elysium-switch.test.mjs',
     'tests/forwarder.test.mjs',
     'tests/edge-client.test.mjs',
     // 2026-10-01 (RPC-SPEC §2.10): Domino's own node from the edge (functions/_lib/localRpc.ts), and the six chain routes over it.
@@ -171,6 +173,8 @@ execFileSync(
     // 2026-10-02 (the owner: the chart's 24H / 7D / 30D / All went missing): the periods back, each from a measured start,
     // and the page's reads of a position at chosen past blocks that give a start the history lacks (lib/fees/pastReads.ts).
     'tests/fees-periods.test.mjs',
+    // 2026-11-04: Fees earned and Your APR from read-v6 1.2.0-rc.1's position-fees (Base, Arbitrum One), through Robinhood Chain's own code.
+    'tests/fees-position-fees.test.mjs',
     'tests/fees-past-reads.test.mjs',
     // 2026-09-25: the fees worker's lane and the page's shared state reads; since 2026-10-01 (RPC-SPEC) through the site's
     // own routes. The page's router to the public RPC, its fallbacks and the list's hold on the lanes (chain-priority,

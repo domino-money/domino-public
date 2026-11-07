@@ -47,8 +47,9 @@ export function tokenBook(chainId: V2ChainId, extra: readonly PositionToken[] = 
   }
   // The profile's names win; a price read for them is kept (2026-10-06).
   const priced = (address: string) => book.get(address)?.usd ?? null
-  book.set(ZERO_ADDRESS, { address: ZERO_ADDRESS, symbol: 'ETH', decimals: 18, usd: priced(ZERO_ADDRESS) })
-  book.set(chain.wrappedNative.address, { address: chain.wrappedNative.address, symbol: 'WETH', decimals: 18, usd: priced(chain.wrappedNative.address) })
+  // The chain's own native currency and wrapped token (ETH and WETH; HYPE and WHYPE on a HYPE-native chain, 2026-11-06).
+  book.set(ZERO_ADDRESS, { address: ZERO_ADDRESS, symbol: chain.nativeSymbol, decimals: 18, usd: priced(ZERO_ADDRESS) })
+  book.set(chain.wrappedNative.address, { address: chain.wrappedNative.address, symbol: chain.wrappedNative.symbol, decimals: 18, usd: priced(chain.wrappedNative.address) })
   for (const currency of chain.chargeCurrencies) book.set(currency.address, { address: currency.address, symbol: currency.symbol, decimals: currency.decimals, usd: priced(currency.address) })
   return book
 }
@@ -66,9 +67,9 @@ export function usdOfAmounts(book: TokenBook, tokens: readonly [Address, Address
   }))
 }
 
-/** A token's label: its symbol, else its short address. */
+/** A token's label: its symbol, else its short address; the native currency's is the book's (the chain's own, tokenBook). */
 export function labelOf(book: TokenBook, token: Address): string {
-  if (token.toLowerCase() === ZERO_ADDRESS) return 'ETH'
+  if (token.toLowerCase() === ZERO_ADDRESS) return book.get(ZERO_ADDRESS)?.symbol ?? 'ETH'
   return book.get(token.toLowerCase())?.symbol ?? shortAddress(token)
 }
 

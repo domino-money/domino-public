@@ -12,14 +12,15 @@ import { historyLoadQuality } from '../../../lib/fees/freshness'
 import { shortDate, shortTime } from '../../../lib/format/time'
 import { spanText } from '../../../lib/positionApr'
 import type { TokenDisplay } from '../../../lib/read/types'
-import { automationImpact, useVaultRecord } from '../../../lib/automationImpact'
+import { automationImpact, useVaultRecord, type AutomationKind, type VaultRecord } from '../../../lib/automationImpact'
 import { useAutomation } from '../../../lib/automationState'
 import { AUTOMATION_NAME, AutomationImpact } from './AutomationImpact'
 import { FeesActivity, TokenFigure } from './FeesActivity'
 import { FeesChart } from './FeesChart'
 import { PendingPlot } from './PendingPlot'
 import { feesView, periodView, type FeesView } from './model'
-import { anyPositive, basisOf, type Basis, growth, positive, stateToken, unitsNumber, unitsText, valueFigure, valueUnits } from './value'
+import { anyPositive, basisOf, type Basis, growth, positive, type QualifiedUsd, stateToken, unitsNumber, unitsText, valueFigure, valueUnits } from './value'
+import type { FeeHistoryView } from '../../../lib/fees/types'
 
 export interface FeesCardProps {
   /** One position. */
@@ -192,15 +193,26 @@ const INITIAL_PERIODS: readonly FeesPeriod[] = ['24h', '7d', 'all']
  * read says so in one calm line (the page asks again by itself). The hero and the legend are exact all along. A history
  * with nothing earned yet, a saved copy without the points, and a page where no past read can be made show All alone.
  */
-export function FeesCard({ source, bandPresent, quoteIndex, tokens, standalone = false, activity = true, workspace = false }: FeesCardProps) {
+export function FeesCard({ source, ...card }: FeesCardProps) {
+  const first = useFeeHistory(source.tokenId, 'page')
+  return <FeesCardBody id={source.tokenId} first={first} chainReads {...card} />
+}
+
+/**
+ * The card itself (changed on purpose 2026-11-04, the owner: every chain the same as Robinhood Chain): its view is handed
+ * in. `chainReads`: Robinhood Chain's own reads, a period's start at a past block and the automation's record; a history
+ * with stored points needs neither. `usd`: read-v6's qualified price, where a pair has no USDG (./value.ts basisOf).
+ * `stored` (added 2026-11-06, the owner: nothing pending on our side): without Robinhood Chain's reads, the automation that
+ * compounds the position and its record as the stored history tells it (src/v2in/position/positionFees.ts storedRecord),
+ * for the same lines and chart marks; its re-adds' destination is `id`.
+ */
+export function FeesCardBody({ id, first, chainReads = false, usd, stored = null, bandPresent, quoteIndex, tokens, standalone = false, activity = true, workspace = false }: Omit<FeesCardProps, 'source'> & { id: string; first: FeeHistoryView; chainReads?: boolean; usd?: QualifiedUsd | null; stored?: { kind: AutomationKind; record: VaultRecord } | null }) {
   const titleId = useId()
-  const id = source.tokenId
-  const first = useFeeHistory(id, 'page')
   const [chosen, setChosen] = useState<FeesPeriod | null>(null)
   const [inspected, setInspected] = useState<number | null>(null)
 
   const drawn = first.phase === 'verified' || first.phase === 'cached' ? first : null
-  const basis = useMemo(() => (drawn ? basisOf(drawn.state, quoteIndex) : null), [drawn, quoteIndex])
+  const basis = useMemo(() => (drawn ? basisOf(drawn.state, quoteIndex, usd) : null), [drawn, quoteIndex, usd])
   const view = useMemo(() => (drawn && basis ? feesView({ id, state: drawn.state, history: drawn.history, basis }) : null), [drawn, basis, id])
   // Period controls keep their place while measurements arrive; an unavailable start never fabricates a series.
   const offered = useMemo<readonly FeesPeriod[]>(() => {
@@ -215,7 +227,7 @@ export function FeesCard({ source, bandPresent, quoteIndex, tokens, standalone =
   if (opening === null && view !== null) setOpening(measured)
   const fallback = opening ?? measured
   const period: FeesPeriod = chosen && offered.includes(chosen) ? chosen : offered.includes(fallback) ? fallback : 'all'
-  const periodState = usePastReads(drawn ? id : null, period)
+  const periodState = usePastReads(chainReads && drawn ? id : null, period)
   const start = drawn ? periodStart(drawn.history, period) : null
   const pv = useMemo(() => (view && start ? periodView(view, period, start) : null), [view, period, start])
   useLoadMilestone('position', 'chart', view && (pv || periodState === 'unavailable') ? historyLoadQuality(first) : null)
@@ -224,18 +236,21 @@ export function FeesCard({ source, bandPresent, quoteIndex, tokens, standalone =
   // read, shared) and, when a vault holds it, that vault's record up to the NFT's latest settlement.
   const state = first.phase === 'loading' || first.phase === 'unclaimed-only' || first.phase === 'verified' || first.phase === 'cached' ? first.state : null
   // The early/saved card must not start a duplicate automation scan before the shared state read supplies it.
-  const automation = useAutomation(state && first.phase !== 'cached' ? id : null)
+  const automation = useAutomation(chainReads && state && first.phase !== 'cached' ? id : null)
   const sequence = automation.phase === 'ready' && automation.state.automation !== 'plain' && automation.state.automation !== 'other' ? automation.state : null
+  // Robinhood Chain's own read names the automation; a stored history hands it in (`stored`), with its record.
+  const kind: AutomationKind | null = chainReads ? (sequence?.automation ?? null) : (stored?.kind ?? null)
   // A saved chart never drives automation attribution or its additional reads.
   const own = first.phase === 'verified' && view ? view.sources[0] : null
   const from = own ? own.history.mintedAt.block : 0
   const to = own ? own.history.events.reduce((top, event) => Math.max(top, event.block), from) : 0
   const pair = own ? ([own.state.currencies[0].address, own.state.currencies[1].address] as const) : null
-  const vault = useVaultRecord(sequence && own ? sequence.vault : null, id, pair, from, to)
-  const record = vault.record
+  const vault = useVaultRecord(chainReads && sequence && own ? sequence.vault : null, id, pair, from, to)
+  const record = chainReads ? vault.record : (stored?.record ?? null)
+  const settled = chainReads ? vault.settled : true
   const impact = useMemo(
-    () => (sequence && own && record ? automationImpact({ tokenId: id, kind: sequence.automation, history: own.history, state: own.state, basis: own.basis, record }) : null),
-    [sequence, own, record, id],
+    () => (kind && own && record ? automationImpact({ tokenId: id, kind, history: own.history, state: own.state, basis: own.basis, record }) : null),
+    [kind, own, record, id],
   )
 
   const saved = first.phase === 'cached' ? first : null
@@ -259,7 +274,7 @@ export function FeesCard({ source, bandPresent, quoteIndex, tokens, standalone =
   )
 
   if (first.phase === 'idle' || first.phase === 'unavailable' || first.phase === 'loading' || (state && (state.currencies[0].decimals === null || state.currencies[1].decimals === null))) {
-    const loadingBasis = state ? basisOf(state, quoteIndex) : null
+    const loadingBasis = state ? basisOf(state, quoteIndex, usd) : null
     return root(
       first.phase,
       <>
@@ -282,7 +297,7 @@ export function FeesCard({ source, bandPresent, quoteIndex, tokens, standalone =
         <Head titleId={titleId} state={first.state} tokens={tokens} standalone={standalone} tabs={tabs} />
         <div className="dm-fees-body">
           <div className="dm-fees-summary">
-            <UnclaimedRow state={first.state} basis={basisOf(first.state, quoteIndex)} large={!bandPresent} />
+            <UnclaimedRow state={first.state} basis={basisOf(first.state, quoteIndex, usd)} large={!bandPresent} />
           </div>
           <QuietPlot />
         </div>
@@ -313,7 +328,7 @@ export function FeesCard({ source, bandPresent, quoteIndex, tokens, standalone =
       <div className="dm-fees-plot">
         <FeesChart view={view} pv={pv} zero={view.zero} onInspect={setInspected} automation={impact ? { adds: impact.adds, by: AUTOMATION_NAME[impact.kind], exactFees: impact.exactFees } : undefined} />
         <p key={period} className="dm-fees-window" data-fees-window="" title={`${shortDate(pv.start)} ${shortTime(pv.start)} — ${shortDate(pv.end)} ${shortTime(pv.end)}`}>
-          {pv.from.kind === 'opened' ? 'Since opened' : `From ${shortDate(pv.start)} ${shortTime(pv.start)}`}
+          {pv.from.kind === 'opened' && !view.sources[0].history.fromFloor ? 'Since opened' : `From ${shortDate(pv.start)} ${shortTime(pv.start)}`}
         </p>
       </div>
     )
@@ -400,14 +415,14 @@ export function FeesCard({ source, bandPresent, quoteIndex, tokens, standalone =
               </div>
               {/* The automation's lines keep their room while the vault's record is read; then they are there, or one quiet
                   line says it has added nothing back yet (2026-10-01, item E22: an empty room read as a broken layout). */}
-              {sequence && (impact ? (
-                <div className="dm-fees-impact-slot" data-kind={sequence.automation}>
+              {kind && (impact ? (
+                <div className="dm-fees-impact-slot" data-kind={kind}>
                   <AutomationImpact impact={impact} basis={basis} symbol={basis.kind === 'quote' ? symbolOf(lead, basis.into) : null} />
                 </div>
               ) : record ? (
                 <p className="dm-fees-impact-none" data-fees-impact="none">No fees added back yet</p>
-              ) : !vault.settled ? (
-                <div className="dm-fees-impact-slot" data-kind={sequence.automation} aria-hidden="true" />
+              ) : !settled ? (
+                <div className="dm-fees-impact-slot" data-kind={kind} aria-hidden="true" />
               ) : null)}
             </>
           )}</Breakdown>

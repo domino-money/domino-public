@@ -10,6 +10,7 @@
  */
 import { useEffect, useSyncExternalStore } from 'react'
 import type { PoolCatalogueEntry } from '../../config/selectedPoolCatalogue'
+import { isOtherV2ChainId } from '../../config/chainIdentity'
 import type { Instant, Market } from '../markets'
 import { dexStore, subjectOf, type DexPool } from './dexFigures'
 import { catalogueFallback, needsFallback, withFallback, type FallbackInputs } from './figureFallback'
@@ -24,10 +25,20 @@ export function fallbackInputs(poolId: string, entries: readonly PoolCatalogueEn
   return { kept: figureMemory.recall(id), dex: dexStore.pool(id, now.wall), selection: entry?.selection ?? null, now }
 }
 
+/**
+ * Whether a row is Robinhood Chain's, the only network the read service's figures and their stand-ins describe. Added
+ * 2026-11-06 (the owner's replica rule): Base's and Arbitrum One's rows reach the same tables (lib/read/networkMarkets.ts)
+ * with DEX Screener's figures already on; they are never remembered as the read service's, nor stood in for with
+ * Robinhood Chain's figures or asked about there. Every Robinhood Chain row is handled exactly as before. Changed on purpose
+ * 2026-11-07 (Elysium's screens): every V2 network beside Robinhood Chain (config/chainIdentity.ts OTHER_V2_CHAIN_IDS).
+ */
+const home = (row: Market) => !isOtherV2ChainId(row.tokens.base.chainId)
+
 /** Keeps what the read service gave for these rows (figureMemory.ts). */
 function useRemembered(rows: readonly Market[]) {
   useEffect(() => {
     for (const row of rows) {
+      if (!home(row)) continue
       const good = goodFigures(row)
       if (good) figureMemory.remember(row.poolId, good)
     }
@@ -45,7 +56,7 @@ function useAsked(tokens: string) {
 export function useFallbackRows(rows: readonly Market[], entries: readonly PoolCatalogueEntry[] | null, now: Instant): Market[] {
   useSyncExternalStore(dexStore.subscribe, dexStore.version, dexStore.version)
   useRemembered(rows)
-  const wanting = rows.filter((row) => needsFallback(row, now))
+  const wanting = rows.filter((row) => home(row) && needsFallback(row, now))
   const out = wanting.length === 0 ? (rows as Market[]) : rows.map((row) => (wanting.includes(row) ? withFallback(row, fallbackInputs(row.poolId, entries, now)) : row))
   const ask = [...new Set(wanting.filter((row) => !dexStore.pool(row.poolId, now.wall)).map((row) => subjectOf([row.tokens.base.address, row.tokens.quote.address])))].sort().join()
   useAsked(ask)

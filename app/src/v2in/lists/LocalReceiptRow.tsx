@@ -2,6 +2,7 @@ import { useCallback, useSyncExternalStore, type ReactNode } from 'react'
 import type { IndexedToken } from 'api-contracts/read-v6/types'
 import { IconCheck, IconChevronDown } from '../../components/icons'
 import { shortDate, shortTime } from '../../lib/format/time'
+import { nativeSymbolOf } from '../../v2/chains'
 import { v2TxUrl } from '../../v2/explorers'
 import { v2PositionHref } from '../route'
 import { amountWords, chainName, gweiWords, tokenNamer, weiWords } from './model'
@@ -46,7 +47,7 @@ export function LocalReceiptRow({ receipt, at, tokens, children }: { receipt: Lo
           {receipt.gas && <>
             <div data-receipt-field="gas-used"><dt>Transaction gas used</dt><dd>{receipt.gas.gasUsed}</dd></div>
             <div><dt>Gas price</dt><dd>{gweiWords(receipt.gas.effectiveGasPrice)}</dd></div>
-            {receipt.gas.l1Fee !== null && <div><dt>L1 data fee</dt><dd>{weiWords(receipt.gas.l1Fee)}</dd></div>}
+            {receipt.gas.l1Fee !== null && <div><dt>L1 data fee</dt><dd>{weiWords(receipt.gas.l1Fee, nativeSymbolOf(receipt.chainId))}</dd></div>}
           </>}
           <div><dt>Transaction</dt><dd>{href ? <a href={href} title={receipt.hash} target="_blank" rel="noreferrer noopener">{receipt.hash.slice(0, 8)}…{receipt.hash.slice(-4)}</a> : receipt.hash}</dd></div>
         </dl>

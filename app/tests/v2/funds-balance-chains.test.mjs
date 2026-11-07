@@ -152,7 +152,10 @@ test('the holdings merge: either read alone is itself; Ethereum\'s and OP Mainne
   assert.equal(model.mergeBalances(null, elsewhere), elsewhere);
   assert.equal(model.mergeBalances(null, null), null);
   const merged = model.mergeBalances(domino, elsewhere);
-  assert.deepEqual(merged.chains.map((c) => c.chainId), [4663, 8453, 42161, 1, 10], 'Domino\'s networks first, as read, then theirs');
+  // Changed on purpose 2026-11-07 (review finding C): Domino's networks as the package's default answer lists them (the
+  // three today, in this order; rugged97's day-9 fixture names every chain his package names, Elysium too), then theirs.
+  assert.deepEqual(domino.chains.slice(0, 3).map((c) => c.chainId), [4663, 8453, 42161]);
+  assert.deepEqual(merged.chains.map((c) => c.chainId), [...domino.chains.map((c) => c.chainId), 1, 10], 'Domino\'s networks first, as read, then theirs');
   domino.chains.forEach((chain, index) => assert.equal(merged.chains[index], chain, `${chain.chainId} untouched`));
   assert.equal(merged.totalUsd, null, 'nothing summed across the two reads');
   assert.equal(merged.coverage, 'partial');

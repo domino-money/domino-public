@@ -322,7 +322,7 @@
     },
     {
       "path": "bridge/src/worker.mjs",
-      "sha256": "7fbe2b81db837b53355bb7e8cd29d9ac115cb36429e36d33ea43f492a5f7e416"
+      "sha256": "42db834dcb4bd51b34677dceaa6a7e838e6972518ac33c3ec089b1d7eef37f5b"
     },
     {
       "path": "bridge/src/strict-json.mjs",

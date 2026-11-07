@@ -11,10 +11,12 @@ delete globalThis.__DOMINO_V2__;
 test('a 503 capability recovers to live on re-entry/focus, with the same manifest and one concurrent request', async () => {
   let status = 503, calls = 0, now = 0;
   const spec = V2_ROUTE_SPECS.readV6;
-  const probe = createV2RouteProbe({ now: () => now, get: async () => {
+  // Changed on purpose 2026-11-06 (read-v6 1.2.0-rc.1's window): the read Worker answers in the version asked.
+  const probe = createV2RouteProbe({ now: () => now, get: async (_path, options) => {
     calls++;
-    return { kind: 'reply', reply: { status, opaqueRedirect: false, contentType: 'application/json', contractHeader: spec.version,
-      body: { kind: 'text', text: JSON.stringify({ contractVersion: spec.version, dataMode: 'live_read_only', chainIds: [4663, 8453, 42161], enabledReads: ['portfolio', 'activity'], walletAuthentication: false, privateAccounts: false, ownerTransactions: false, automation: false }) } } };
+    const version = options.headers[spec.header];
+    return { kind: 'reply', reply: { status, opaqueRedirect: false, contentType: 'application/json', contractHeader: version,
+      body: { kind: 'text', text: JSON.stringify({ contractVersion: version, dataMode: 'live_read_only', chainIds: [4663, 8453, 42161], enabledReads: ['portfolio', 'activity'], walletAuthentication: false, privateAccounts: false, ownerTransactions: false, automation: false }) } } };
   } });
   const cache = createGateCache((service, chain) => v2Gate(service, chain, 'https://domino.money', async () => probe), () => now);
   const unavailable = await cache('autoExit', 4663);

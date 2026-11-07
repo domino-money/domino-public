@@ -32,3 +32,16 @@ export function routeFor(chainId: V2ChainId, mode: GateMode, setupFirstWhilePrev
  * created on the zap path: wherever its gate is open (`preview` or `live`), even while its listed pools keep Setup.
  */
 export const robinhoodFinderOpen = (mode: GateMode): boolean => mode !== 'off'
+
+/**
+ * Added 2026-11-06 (the replica rule, O-15: Base and Arbitrum One are Robinhood Chain's screens, only the network
+ * changes): whether "Create a new pool (advanced)" at the foot of today's pool step opens the zap path's pool finder on
+ * `chainId`, the network of the token chosen there (Robinhood Chain before one is chosen). On Robinhood Chain, as before:
+ * while its listed pools keep today's steps (`route` 'setup') and its gate is open. On Base and Arbitrum One: wherever
+ * their gate is open (`preview` runs to the review, then says the gate's sentence; `live` creates), exactly as Robinhood
+ * Chain's finder is offered under either. It opened Robinhood Chain's finder whatever token was chosen. Pure.
+ */
+export function finderOpen(chainId: V2ChainId, mode: GateMode, route: JourneyRoute = routeFor(chainId, mode)): boolean {
+  if (chainId === ROBINHOOD) return route === 'setup' && robinhoodFinderOpen(mode)
+  return mode !== 'off'
+}

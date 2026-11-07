@@ -12,6 +12,7 @@ import { NETWORK_NAMES } from '../../lib/networkName'
 import { V2_CHAINS } from '../chains'
 import { amountText, createChainNames, createTokenBook, durationText, knownDecimals, tokenLabel, unnamedChain } from './amounts'
 import { bpsPercent, CANDIDATE_COPY, CREATE_ON_DESTINATION, FEE_STATUS_WORDS, feeLines, fill, NO_ROUTE, PROVIDER_NAME, STATE_COPY } from './copy'
+import { isS2Destination } from '../types'
 import type { Candidate, ChainNames, DepositState, DestinationChainId, FeeStatus, OriginsList, Provider, QuotePlan, StatusReport, TokenBook, TokenInfo } from './types'
 
 export interface Naming {
@@ -98,13 +99,18 @@ export interface DestinationChoice {
 /**
  * What a deposit may deliver, per V2 chain: its stable, ETH and WETH, from the build's chain profiles. The runtime
  * refuses any other `destinationToken`; tests/v2/crosschain-copy.test.mjs checks this list against the package's.
+ * Changed on purpose 2026-11-07 (Elysium as a fourth V2 chain): the V2 chains a deposit can reach (../types.ts
+ * S2_DESTINATION_CHAIN_IDS), so not Elysium, where no bridge brings funds.
  */
 export function destinationChoices(): DestinationChoice[] {
-  return V2_CHAINS.map((chain) => ({
-    chainId: chain.chainId,
-    chain: chain.name,
-    tokens: [...chain.chargeCurrencies].sort((a, b) => a.rank - b.rank).map((c) => ({ address: c.address, symbol: c.symbol, decimals: c.decimals })),
-  }))
+  return V2_CHAINS.flatMap((chain) => {
+    const chainId = chain.chainId
+    return isS2Destination(chainId) ? [{
+      chainId,
+      chain: chain.name,
+      tokens: [...chain.chargeCurrencies].sort((a, b) => a.rank - b.rank).map((c) => ({ address: c.address, symbol: c.symbol, decimals: c.decimals })),
+    }] : []
+  })
 }
 
 // ---------------------------------------------------------------------------

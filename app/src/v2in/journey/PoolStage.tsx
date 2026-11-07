@@ -6,14 +6,14 @@ import { CREATE } from '../../lib/create/copy'
 import { initialState as initialListState, withPool as withListPool, withToken as withListToken, type JourneyState as ListState } from '../../lib/create/journey'
 import { useReadSource } from '../../lib/read/screens/readContext'
 import type { TokenCandidate } from '../../lib/read/screens/tokens'
-import { v2Chain } from '../../v2/chains'
+import { chainHasDex, v2Chain } from '../../v2/chains'
 import type { V2Gate } from '../../v2/gate'
 import { pricesAtSqrt, typedBothWays, parsePriceText } from '../../v2/plan/initialPrice'
 import { figureHint } from '../../lib/create/typedFigure'
 import { ZERO_ADDRESS, type Address, type Dex, type PoolRef, type V2ChainId } from '../../v2/types'
 import { JOURNEY_POOL_CREATION_OFFERED, NEW_POOL_TITLE } from './constants'
 import { useJourneyNetwork } from './context'
-import { JOURNEY } from './copy'
+import { JOURNEY, ONE_VERSION } from './copy'
 import { journeyError, type JourneyError } from './errors'
 import { dexName, feePercent, offeredPool, poolFromList, poolOf, tiersOf, type JourneyPool } from './model/pools'
 import { priceInvertedOn, pricedPair } from './model/price'
@@ -155,7 +155,7 @@ function ChosenPool({ pool, onChange }: { pool: JourneyPool; onChange: (event: M
         <TokenDiscPair chainId={pool.chainId} first={base} second={quote} size={32} />
         <div className="dm-flow-pool-name">
           <p className="dm-flow-pool-pair">
-            <TokenName token={base} /> / <TokenName token={quote} />
+            <TokenName token={base} chainId={pool.chainId} /> / <TokenName token={quote} chainId={pool.chainId} />
           </p>
           <span title={pool.readAt === null ? undefined : JOURNEY.pool.readAt(pool.block.toString())}>
             <PoolChips chainId={pool.chainId} dex={pool.pool.dex} fee={pool.pool.fee} />
@@ -220,8 +220,11 @@ function PoolFinder({ chainId, gate, open, finderOnly, onPool, onListed }: {
 }) {
   const profile = useMemo(() => profileTokens(chainId), [chainId])
   const stable = profile.find((token) => token.address !== ZERO_ADDRESS && token.address !== v2Chain(chainId).wrappedNative.address) ?? profile[1]
-  const [dex, setDex] = useState<Dex>(finderOnly ? 3 : 4)
-  const [a, setA] = useState<string>(finderOnly ? profile[1].address : profile[0].address)
+  // A chain without v3 (Elysium launches with v4 only) finds v4 pools alone, as Robinhood Chain's list does: no version
+  // to choose, so the version control is left out there (added 2026-11-06, Elysium readiness).
+  const v3Here = chainHasDex(chainId, 3)
+  const [dex, setDex] = useState<Dex>(finderOnly && v3Here ? 3 : 4)
+  const [a, setA] = useState<string>(finderOnly && v3Here ? profile[1].address : profile[0].address)
   const [b, setB] = useState<string>(stable.address)
   const [other, setOther] = useState('')
   const tiers = tiersOf(chainId, dex)
@@ -265,7 +268,10 @@ function PoolFinder({ chainId, gate, open, finderOnly, onPool, onListed }: {
       if (!at.spacingOk || !offeredPool(at.pool)) return setFound({ stage: 'idle', pool: null, error: { copy: JOURNEY.pool.unsupported, code: 'pool_tier_not_enabled', recovery: 'none' } })
       if (journeyPool.tokens.some((token) => token.decimals === null)) return setFound({ stage: 'idle', pool: null, error: { copy: JOURNEY.pool.decimalsUnknown, code: 'token_decimals_unknown', recovery: 'none' } })
       // Robinhood Chain while its listed pools keep today's steps: a v4 pool with a price opens there, by its own link.
-      if (finderOnly && at.pool.dex === 4 && at.initialized) return setFound({ stage: 'listed', pool: journeyPool, error: null })
+      // Changed on purpose 2026-11-06 (O-15): Robinhood Chain's alone. On Base and Arbitrum One (whose finder opens from a
+      // token of theirs, ./NewPositionV2.tsx) a pool with a price goes on here, as a v3 pool does on Robinhood Chain: that
+      // link is Robinhood Chain's, and their own list may not hold the pool (it lists pools with liquidity in range).
+      if (finderOnly && chainId === 4663 && at.pool.dex === 4 && at.initialized) return setFound({ stage: 'listed', pool: journeyPool, error: null })
       if (!at.initialized) return setFound({ stage: 'unpriced', pool: journeyPool, error: null })
       setFound({ stage: 'idle', pool: null, error: null })
       onPool(journeyPool)
@@ -286,9 +292,9 @@ function PoolFinder({ chainId, gate, open, finderOnly, onPool, onListed }: {
   const tokenItems = [...options.map((token) => ({ key: token.address as string, label: token.symbol ?? labelOf(book, token.address) })), { key: OTHER, label: JOURNEY.pool.otherAddress }]
   const body = (
     <div className="grid gap-3" data-pool-finder={dex}>
-      <p className="text-caption text-fg-muted">{JOURNEY.pool.findLead}</p>
+      <p className="text-caption text-fg-muted">{v3Here || ONE_VERSION === null ? JOURNEY.pool.findLead : ONE_VERSION.findLead}</p>
       {/* A pool is found by its version, so this control alone names the two: "Uniswap v4" / "Uniswap v3". Nowhere else does the version appear as text (./parts.tsx PoolChips). */}
-      <Segmented label={JOURNEY.pool.version} items={[{ key: '4', label: dexName(4) }, { key: '3', label: dexName(3) }]} value={String(dex) as '3' | '4'} onChange={(next) => chooseDex(Number(next) as Dex)} />
+      {v3Here && <Segmented label={JOURNEY.pool.version} items={[{ key: '4', label: dexName(4) }, { key: '3', label: dexName(3) }]} value={String(dex) as '3' | '4'} onChange={(next) => chooseDex(Number(next) as Dex)} />}
       <Segmented label={JOURNEY.pool.tokenA} items={tokenItems} value={a} onChange={setA} />
       <Segmented label={JOURNEY.pool.tokenB} items={tokenItems} value={b} onChange={setB} />
       {(a === OTHER || b === OTHER) && (

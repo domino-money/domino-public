@@ -111,6 +111,12 @@ export type NetworkPools =
        * as a Robinhood Chain link's pool with a look-alike is refused (components/create/Journey.tsx, audit I1).
        */
       warned?: readonly string[]
+      /**
+       * Added 2026-11-06 (the replica rule: a Base or Arbitrum One pool's page says what Robinhood Chain's says of such a
+       * pool): for each of `warned`, by key, the network's own currency its token passes for ("USDC"), for the warning's
+       * words (lib/read/screens/lookalike.ts warningText).
+       */
+      warnedAs?: Readonly<Record<string, string>>
     }
   | { kind: 'failed'; code: string; reason: string }
 

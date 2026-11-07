@@ -5,6 +5,7 @@ import { Segmented } from '../../components/ui'
 import { CREATE } from '../../lib/create/copy'
 import { slippageBpsFrom, slippageValue, slippageWritten } from '../../lib/create/slippage'
 import { groupedAmount } from '../../lib/create/amountText'
+import { inChainCurrency, v2Chain } from '../../v2/chains'
 import { ZERO_ADDRESS, type Address } from '../../v2/types'
 import { JOURNEY_SLIPPAGE_WARNING_ABOVE_BPS } from './constants'
 import { JOURNEY } from './copy'
@@ -82,12 +83,12 @@ export function AmountStage({ state, onAmounts, onSlippage, flowKey, onContinuat
               <div className="dm-flow-pair-row" data-zap-amount={token}>
                 <AmountField
                   id={`zap-amount-${token}`}
-                  label={<TokenName token={meta} />}
+                  label={<TokenName token={meta} chainId={state.chainId} />}
                   labelHidden
                   unit={
                     <>
                       <TokenDisc chainId={state.chainId} token={meta} size={20} />
-                      <TokenName token={meta} />
+                      <TokenName token={meta} chainId={state.chainId} />
                     </>
                   }
                   inputMode="decimal"
@@ -107,7 +108,7 @@ export function AmountStage({ state, onAmounts, onSlippage, flowKey, onContinuat
       </div>
       {paysEth && (
         <p className="dm-flow-position" data-tone="neutral" data-zap-eth-direct="">
-          <span>{JOURNEY.amount.ethDirect}</span>
+          <span>{inChainCurrency(JOURNEY.amount.ethDirect, v2Chain(state.chainId))}</span>
         </p>
       )}
       <ZapFunds state={state} onAmounts={onAmounts} flowKey={flowKey} onContinuationChange={onContinuationChange} />

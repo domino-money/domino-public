@@ -137,7 +137,10 @@ function listFiles(root, dir) {
  * 2026-10-02 (review of the RPC switch, finding 1): the second chain's
  * section's mode (src/chains/elysium/mode.ts), whose SECTION_READS decides
  * whether the preview's page CSP names that chain's RPC; it imports nothing
- * at run time.
+ * at run time. Added 2026-11-07 (Elysium as a fourth V2 chain): Elysium's
+ * literals (src/lib/elysiumIdentity.ts), the registry's one import now, so V2's
+ * chain list follows the build's switch; literals and the switch's define only,
+ * importing nothing (a Function has no define, so it reads Elysium as off).
  */
 export const BUNDLED = Object.freeze([
   '../api-contracts/read-v1/runtime.mjs',
@@ -151,6 +154,7 @@ export const BUNDLED = Object.freeze([
   'src/config/chainRobinhood.ts',
   'src/config/chains.ts',
   'src/lib/chain/csp.ts',
+  'src/lib/elysiumIdentity.ts',
 ])
 
 /**

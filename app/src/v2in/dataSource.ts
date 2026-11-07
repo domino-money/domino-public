@@ -14,7 +14,7 @@
  * No wallet, no fetch, no storage, no runtime of its own (the package's validators are handed in), so the node tests
  * run it as it is (tests/v2/v2in-transports.test.mjs).
  */
-import type { ReadV6Route } from 'api-contracts/read-v6/types'
+import type { ReadV6NextRoute } from 'api-contracts/read-v6/types'
 import type { V2Gate } from '../v2/gate'
 import { createS1PlanFixtureTransport } from '../v2/plan/fixtureTransport'
 import type { S1PlanTransport, S1PlanValidators } from '../v2/plan/types'
@@ -55,7 +55,7 @@ export interface ScriptedAnswer {
  * function that answers undefined leaves that request unscripted (refused).
  */
 export interface V2DataScript {
-  read6?: Partial<Record<ReadV6Route, ScriptedAnswer | ((request: Record<string, unknown>) => ScriptedAnswer | undefined | Promise<ScriptedAnswer | undefined>)>>
+  read6?: Partial<Record<ReadV6NextRoute, ScriptedAnswer | ((request: Record<string, unknown>) => ScriptedAnswer | undefined | Promise<ScriptedAnswer | undefined>)>>
   plan?: (request: Record<string, unknown>) => unknown
 }
 
@@ -72,7 +72,7 @@ const ON_ROUTES = Object.freeze(['portfolio', 'activity', 'plan'])
 const ON: V2RouteState = Object.freeze({ on: true, routes: ON_ROUTES })
 
 /** read-v6's live chain reads (2026-10-06): served under a script only when the suite scripted them, as the Worker names its own. */
-const CHAIN_READS = ['chain-pools', 'chain-balances', 'chain-tokens'] as const
+const CHAIN_READS = ['chain-pools', 'chain-balances', 'chain-tokens', 'position-fees'] as const
 
 /** A script's routes: today's, and the chain reads it scripted. */
 function scriptedOn(script: V2DataScript): V2RouteState {

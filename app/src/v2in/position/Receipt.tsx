@@ -3,6 +3,7 @@ import { SheetFact, SheetFacts, SheetStatus } from '../../components/positions/A
 import { FigureDash } from '../../components/ui'
 import type { DirectReceipt } from '../../finance/v2/direct'
 import type { GasCost, ReceiptLine } from '../../finance/v2/receipt'
+import { v2Chain } from '../../v2/chains'
 import { ethText } from '../../v2/plan/present'
 import type { Address, V2ChainId } from '../../v2/types'
 import { COPY } from './copy'
@@ -46,7 +47,7 @@ export function ZapReceiptView({ chainId, view, book, signed = 1 }: { chainId: V
             {read.summary.previousTokenId !== 0n && read.summary.previousTokenId !== read.summary.tokenId && (
               <SheetFact label={COPY.receipt.previous}>#{read.summary.previousTokenId.toString()}</SheetFact>
             )}
-            <Gas gas={read.gas} />
+            <Gas chainId={chainId} gas={read.gas} />
           </>
         )}
       </SheetFacts>
@@ -92,10 +93,11 @@ function Line({ line, amount, chainId, book }: { line: ReceiptLine; amount: (tok
   }
 }
 
-function Gas({ gas }: { gas: GasCost }) {
+/** The receipt's network fee, in the chain's own native currency (ETH; HYPE on a HYPE-native chain, 2026-11-06). */
+function Gas({ chainId, gas }: { chainId: V2ChainId; gas: GasCost }) {
   return (
     <SheetFact label={COPY.receipt.gas} data-position-receipt-gas={gas.status}>
-      {gas.status === 'available' ? <span className="tnum">{ethText(gas.totalWei)}</span> : <FigureDash reason={COPY.receipt.gasUnavailable} />}
+      {gas.status === 'available' ? <span className="tnum">{ethText(gas.totalWei, v2Chain(chainId).nativeSymbol)}</span> : <FigureDash reason={COPY.receipt.gasUnavailable} />}
     </SheetFact>
   )
 }
@@ -120,7 +122,7 @@ export function DirectReceiptView({ chainId, receipt, book, signed = 1 }: { chai
           ))}
         </SheetFact>
         <SheetFact label="Domino fee">{COPY.review.noFee}</SheetFact>
-        <Gas gas={receipt.gas} />
+        <Gas chainId={chainId} gas={receipt.gas} />
       </SheetFacts>
     </div>
   )

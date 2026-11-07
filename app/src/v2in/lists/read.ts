@@ -1,4 +1,5 @@
 import type { ActivityResponse, PortfolioResponse } from 'api-contracts/read-v6/types'
+import { chainHasDex } from '../../v2/chains'
 import { readActivity, readPortfolio, type ReadV6Reply } from '../../v2/read/v6'
 import { routeServes } from '../../v2/routes'
 import type { V2ReadTransports } from '../transports'
@@ -16,6 +17,18 @@ import { jittered } from '../../lib/jitter'
 
 /** A read's answer as the lists draw it: read-v6's own, or a route that is off (its reason in a data attribute). */
 export type ListsReply<T> = ReadV6Reply<T> | { kind: 'unavailable'; reason: string }
+
+/**
+ * A read about a Uniswap version its chain lacks (added 2026-11-06, Elysium readiness; rugged97's #459: v3 on a chain
+ * with v4 alone, which read-v6 refuses with invalid_request): never sent. Its answer is this one, given here: not
+ * available on that network, which a screen draws as it draws a chain with nothing to show (no fault, no new words),
+ * and never asked again (`offNetworkReply`, for a reader's policy).
+ */
+export const OFF_NETWORK: { readonly kind: 'unavailable'; readonly reason: 'dex_not_on_chain' } = Object.freeze({ kind: 'unavailable', reason: 'dex_not_on_chain' })
+/** Whether a read of these positions on `chainId` would be about a version the chain lacks. */
+export const offNetwork = (chainId: number, positions: readonly { dex: number }[]): boolean => positions.some((position) => !chainHasDex(chainId, position.dex))
+/** Whether an answer is that one: a reader asks it never again. */
+export const offNetworkReply = (reply: { kind: string; reason?: unknown }): boolean => reply.kind === 'unavailable' && reply.reason === OFF_NETWORK.reason
 
 /** The transports the lists read through: an open chain's (the site's route); null for none. */
 export interface ListsTransports {

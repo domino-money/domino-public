@@ -93,8 +93,12 @@ test('imports stay inside the module, the V2 foundation and the package’s type
   }
   assert.deepEqual(offenders, [], 'no session, wallet, finance, lib/http, lib/clock, onboarding, deposit, viem, wagmi or React');
   const imports = (path) => specifiers(ALL.find((file) => file.path === path).code);
-  assert.deepEqual(imports('lib/networkName.ts'), ['../config/chainIdentity'], 'the names table takes only the chain registry\'s literals');
-  assert.deepEqual(imports('config/chainIdentity.ts'), [], 'which import nothing');
+  // Changed on purpose 2026-11-06 (the Elysium surface): and Elysium's literals, for its row where it is live.
+  assert.deepEqual(imports('lib/networkName.ts'), ['../config/chainIdentity', './elysiumIdentity'], 'the names table takes only the chain registry\'s and Elysium\'s literals');
+  // Changed on purpose 2026-11-07 (Elysium as a fourth V2 chain): the registry's one import is Elysium's literals, so V2's
+  // chain list follows the build's switch; those import nothing.
+  assert.deepEqual(imports('config/chainIdentity.ts'), ['../lib/elysiumIdentity'], 'which import only Elysium\'s literals');
+  assert.deepEqual(imports('lib/elysiumIdentity.ts'), [], 'nor do Elysium\'s');
   // Type-only, except the runtime in contract.ts.
   const valueImports = MINE.filter(({ code }) => /^import\s+(?!type\b)[^;\n]*from\s+'api-contracts\//m.test(code)).map(({ path }) => path);
   assert.deepEqual(valueImports, ['v2/crosschain/contract.ts']);

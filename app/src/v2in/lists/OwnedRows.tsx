@@ -11,6 +11,7 @@ import { positionObservation, subscribePositionChanges, type PositionIdentity, t
 import { feesStore } from '../../lib/fees/spawn'
 import type { FeeHistoryView } from '../../lib/fees/types'
 import { rowAprs } from '../../components/positions/listApr'
+import { hasStoredApr, storedAprId, useStoredAprs } from './storedAprs'
 import { PendingRows } from '../../components/positions/PositionRow'
 import { useWalletAnswer, walletAnswerAt, walletChanged, type WalletAnswer } from '../../lib/walletPositions'
 import { POSITION_VALUATIONS, type PositionValuations } from './valuation'
@@ -21,6 +22,13 @@ import { EmptyDomino } from '../../components/positions/visual/EmptyDomino'
 import '../../styles/position-collection.css'
 import { BulkClosePositions } from './BulkClosePositions'
 import { automationState, subscribeAutomation } from '../automate/store'
+
+/**
+ * Added 2026-11-06 (R-07): the Wallet card's tokens on Base and Arbitrum One (../walletNetworks/WalletNetworks.tsx), opened from
+ * this chunk by components/portfolio/PortfolioTokens.tsx: it reads the same portfolio and the same chain reads, so it is
+ * part of this chunk rather than a chunk of its own.
+ */
+export { WalletNetworksWatch } from '../walletNetworks/WalletNetworks'
 
 const noViews: ReadonlyMap<string, FeeHistoryView> = new Map()
 const quiet = () => undefined
@@ -85,6 +93,7 @@ export function OwnedCollection({ owner, readOnly = false, deposits, onEmptyActi
   const ids = shown.filter(hasPositionApr).map((row) => row.tokenId).join(',')
   // One batched subscription for visible NFTs. No scan is launched from a row component.
   const aprs = useCollectionAprs(ids, tab === 'open')
+  const storedAprs = useStoredAprs(shown, own.reply?.kind === 'ok' ? own.reply.body : null, tab === 'open')
   const note = ownNote(latest ?? own.reply)
   const partial = own.reply?.kind === 'ok' && own.reply.body.truncated.positions
   const settled = historical.phase === 'ready' && own.reply?.kind === 'ok'
@@ -123,7 +132,7 @@ export function OwnedCollection({ owner, readOnly = false, deposits, onEmptyActi
       {note && <Note note={note} inGrid={false} />}
       {shown.length ? <div className="dm-own-list" role="tabpanel" aria-labelledby="own-title" data-owned-rows={tab}>
         <div className="dm-collection-head" data-collection-tab={tab} aria-hidden="true"><span>Pool</span>{tab === 'closed' ? <span>Position history</span> : <><span>Value</span><span>Fees to collect</span><span>Your APR</span></>}</div>
-        {shown.map((row, index) => <V2PositionRow key={row.key} row={row} late={late[index]} apr={hasPositionApr(row) ? aprs.get(row.tokenId) ?? null : null} />)}
+        {shown.map((row, index) => <V2PositionRow key={row.key} row={row} late={late[index]} apr={hasPositionApr(row) ? aprs.get(row.tokenId) ?? null : hasStoredApr(row) ? storedAprs.get(storedAprId(row)) ?? null : null} />)}
       </div> : empty ? <EmptyState icon={<EmptyDomino dark={readOnly} />} title={readOnly ? 'No positions at this address' : 'No positions yet'} action={!readOnly ? <LinkButton href={newPositionHref()}>New position</LinkButton> : undefined} className="dm-own-none" data-empty="owned-none" />
         : rows.length ? <EmptyState title={tab === 'open' ? 'No open positions' : 'No closed positions'} data-empty={`owned-${tab}`} />
           // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a list not read yet keeps its loading rows,

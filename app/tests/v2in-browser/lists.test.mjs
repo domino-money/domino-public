@@ -1060,8 +1060,11 @@ for (const network of [
     const detail = s.page.locator(`[data-position-detail][data-position-id="${tokenId}"]`);
     await detail.locator('[data-usd="principal"][data-usd-basis="pool-price"]').waitFor();
     assert.deepEqual(await detail.locator('[data-usd]').allTextContents(), ['$5.00', '$0.75'], 'the same shared read values the list and the position page');
-    assert.match(await detail.locator('[data-position-details] [data-stat="principal"]').textContent(), /2\s+USDC.*3\s+TEST/);
-    assert.match(await detail.locator('[data-position-details] [data-stat="fees"]').textContent(), /0\.25\s+USDC.*0\.5\s+TEST/);
+    // Changed on purpose 2026-11-06 (O-07, the owner: every chain the same as Robinhood Chain): the token amounts under each
+    // tile's Token amounts, as on Robinhood Chain's page; Details holds no copy of them.
+    assert.match(await detail.locator('[data-cell="principal"] [data-stat="principal"]').textContent(), /2\s+USDC.*3\s+TEST/);
+    assert.match(await detail.locator('[data-cell="fees"] [data-stat="fees"]').textContent(), /0\.25\s+USDC.*0\.5\s+TEST/);
+    assert.equal(await detail.locator('[data-position-details] [data-stat="principal"], [data-position-details] [data-stat="fees"]').count(), 0);
     assert.equal(s.wallet.state.signed.length, 0, 'valuation needs no wallet signature');
     assert.equal(s.planAsked.length, 0, 'valuation never prepares a transaction');
   } finally { await s.close(); }

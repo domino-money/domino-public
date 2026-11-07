@@ -11,9 +11,9 @@ import {
   type Abi,
 } from 'viem'
 import zapInterface from '../../../../api-contracts/v2/abi/IDominoZap.json'
-import { isV2ChainId, v2Chain, type V2Chain } from '../../v2/chains'
+import { hasDex, isV2ChainId, positionManagerOf, v2Chain, type V2Chain } from '../../v2/chains'
 import { V2_FIXTURE_SETS_TAKEN } from '../../v2/flag'
-import { APP_COMPONENTS, CODE_COMPONENTS, CREATE3_PROXY_INITCODE_HASH, CREATE_X, DEPLOY_ORDER, canonical, v2Availability } from '../../v2/manifest'
+import { APP_COMPONENTS, CODE_COMPONENTS, CREATE3_PROXY_INITCODE_HASH, CREATE_X, DEPLOY_ORDER, canonical, componentsFor, deployOrderFor, v2Availability } from '../../v2/manifest'
 import type { Address, Dex, Hex, V2CodeComponent, V2Component, V2Contracts, V2DeployedComponent, V2DeploymentFacts, V2ManifestContract } from '../../v2/types'
 
 /**
@@ -92,9 +92,11 @@ function admit(contracts: V2Contracts): void {
 // Changed on purpose (data) 2026-10-02 (Domino V2 integration): exported for ./liveLock.ts, whose live set is this same one.
 export const sameSet = (a: V2Contracts, b: V2Contracts): boolean =>
   a.chainId === b.chainId && Object.keys(a.addresses).length === Object.keys(b.addresses).length
-  && (Object.keys(a.addresses) as V2Component[]).every((name) =>
-    typeof b.addresses[name] === 'string' && b.addresses[name].toLowerCase() === a.addresses[name].toLowerCase()
-    && typeof b.codeHashes[name] === 'string' && b.codeHashes[name].toLowerCase() === a.codeHashes[name].toLowerCase())
+  && (Object.keys(a.addresses) as V2Component[]).every((name) => {
+    const address = b.addresses[name], hash = b.codeHashes[name]
+    return typeof address === 'string' && address.toLowerCase() === a.addresses[name]?.toLowerCase()
+      && typeof hash === 'string' && hash.toLowerCase() === a.codeHashes[name]?.toLowerCase()
+  })
   // A set that carries its manifest's facts carries exactly the pinned manifest's.
   && (b.deployment === undefined || canonical(b.deployment) === canonical(a.deployment))
 
@@ -156,17 +158,24 @@ const HASH = /^0x[0-9a-f]{64}$/
  * The manifest checks that need a hash function (the rest are src/v2/manifest.ts checkV2Manifest's): the 13 contracts
  * are the CREATE3 prediction for the facts' deployer through the canonical CreateX (`deployment_addresses_changed`), the
  * raw and guarded salts are the prediction's (`deployment_salts_changed`), and `sourceTreeSha256` is
- * sha256(canonical(sourceHashes)) (`deployment_source_tree_changed`). Throws the first refusal.
+ * sha256(canonical(sourceHashes)) (`deployment_source_tree_changed`). Throws the first refusal. Changed on purpose
+ * 2026-11-06 (Elysium readiness; backend `checked_manifest`): of a chain with v4 alone, the nine contracts and eight
+ * salts of its versions (whose vault the facts record), each at the same CREATE3 address as on the other chains.
  */
 export function checkV2Prediction(facts: V2DeploymentFacts): void {
   if (!facts || typeof facts !== 'object' || typeof facts.deployer !== 'string' || !/^0x[0-9a-f]{40}$/.test(facts.deployer)) fail('deployment_addresses_changed')
   if (facts.createx !== CREATE_X) fail('deployment_addresses_changed')
   const predicted = predictionFor(facts.deployer)
-  if (canonical(facts.contracts) !== canonical(predicted.contracts)) fail('deployment_addresses_changed')
-  if (canonical(facts.salts) !== canonical(predicted.salts) || canonical(facts.guardedSalts) !== canonical(predicted.guardedSalts)) fail('deployment_salts_changed')
+  const dexes = ([3, 4] as const).filter((dex) => facts.contracts && Object.hasOwn(facts.contracts, `vault.v${dex}`))
+  if (dexes.length === 0) fail('deployment_addresses_changed')
+  const pick = (source: Readonly<Record<string, string>>, keys: readonly string[]) => Object.fromEntries(keys.map((key) => [key, source[key]]))
+  const order = deployOrderFor(dexes)
+  if (canonical(facts.contracts) !== canonical(pick(predicted.contracts, componentsFor(dexes)))) fail('deployment_addresses_changed')
+  if (canonical(facts.salts) !== canonical(pick(predicted.salts, order)) || canonical(facts.guardedSalts) !== canonical(pick(predicted.guardedSalts, order))) fail('deployment_salts_changed')
   if (typeof facts.sourceTreeSha256 !== 'string' || sha256(stringToBytes(canonical(facts.sourceHashes))).slice(2) !== facts.sourceTreeSha256) fail('deployment_source_tree_changed')
   for (const name of Object.keys(facts.contracts) as V2ManifestContract[]) {
-    if (typeof facts.codeHashes?.[name] !== 'string' || !HASH.test(facts.codeHashes[name])) fail('deployment_addresses_changed')
+    const hash = facts.codeHashes?.[name]
+    if (typeof hash !== 'string' || !HASH.test(hash)) fail('deployment_addresses_changed')
   }
 }
 
@@ -242,8 +251,11 @@ const isAppComponent = (name: string): name is V2Component => Object.hasOwn(APP_
  */
 function codeTarget(contracts: V2Contracts, component: V2CodeComponent): { at: Address; expected: Hex } {
   if (isAppComponent(component)) {
-    if (!Object.hasOwn(contracts.addresses, component) || !Object.hasOwn(contracts.codeHashes, component)) return fail('deployment_component_unknown')
-    return { at: contracts.addresses[component].toLowerCase() as Address, expected: contracts.codeHashes[component].toLowerCase() as Hex }
+    // A set of a chain without v3 has no v3 component: asking for one is refused, never read.
+    const at = Object.hasOwn(contracts.addresses, component) ? contracts.addresses[component] : undefined
+    const hash = Object.hasOwn(contracts.codeHashes, component) ? contracts.codeHashes[component] : undefined
+    if (typeof at !== 'string' || typeof hash !== 'string') return fail('deployment_component_unknown')
+    return { at: at.toLowerCase() as Address, expected: hash.toLowerCase() as Hex }
   }
   if (!Object.hasOwn(CODE_COMPONENTS, component)) return fail('deployment_component_unknown')
   const pinned = DEPLOYABLE ? v2Availability(contracts.chainId) : null
@@ -251,7 +263,10 @@ function codeTarget(contracts: V2Contracts, component: V2CodeComponent): { at: A
   if (!facts) return fail('deployment_component_unknown')
   checkV2Prediction(facts)
   const name = CODE_COMPONENTS[component]
-  return { at: facts.contracts[name], expected: facts.codeHashes[name] }
+  const at = facts.contracts[name], expected = facts.codeHashes[name]
+  // A vault implementation or executor of a version the chain lacks (v3 on a chain with v4 alone) is no component of it.
+  if (typeof at !== 'string' || typeof expected !== 'string') return fail('deployment_component_unknown')
+  return { at, expected }
 }
 
 /**
@@ -314,15 +329,19 @@ async function checkZap(call: ReadCall, dex: Dex, zap: Address, expected: Addres
  * Checks each asked zap against the chain's profile (spec §2.1 recommendation): `zap.v3.positionManager()` must be the
  * chain's v3 NonfungiblePositionManager and `zap.v4.positionManager()` its v4 PositionManager, else
  * `deployment_identity_changed`; then reads `hookedPoolsAllowed()`. One read at a time, once per session per chain and
- * zap. Resolves to each zap's answer by dex.
+ * zap. Resolves to each zap's answer by dex. Changed on purpose 2026-11-06 (Elysium readiness): by default the zaps of
+ * the chain's own versions (both on Robinhood Chain, Base and Arbitrum One, as before); a version the chain or the set
+ * lacks is refused (`deployment_component_unknown`) before any read.
  */
-export async function checkZapPositionManager(call: ReadCall, contracts: V2Contracts, chain: V2Chain, dexes: readonly Dex[] = [3, 4]): Promise<Readonly<Partial<Record<Dex, ZapCheck>>>> {
+export async function checkZapPositionManager(call: ReadCall, contracts: V2Contracts, chain: V2Chain, dexes: readonly Dex[] = chain.dexes): Promise<Readonly<Partial<Record<Dex, ZapCheck>>>> {
   admit(contracts)
   if (chain.chainId !== contracts.chainId) fail('deployment_chain_mismatch')
   const result: Partial<Record<Dex, ZapCheck>> = {}
   for (const dex of dexes) {
-    const zap = (dex === 3 ? contracts.addresses.zapV3 : contracts.addresses.zapV4).toLowerCase() as Address
-    const expected = (dex === 3 ? chain.uniswap.v3.positionManager : chain.uniswap.v4.positionManager).toLowerCase() as Address
+    const named = dex === 3 ? contracts.addresses.zapV3 : contracts.addresses.zapV4
+    if (!hasDex(chain, dex) || typeof named !== 'string') return fail('deployment_component_unknown')
+    const zap = named.toLowerCase() as Address
+    const expected = positionManagerOf(chain, dex).toLowerCase() as Address
     result[dex] = await once(zapChecks, `${contracts.chainId}:${dex}:${zap}:${expected}`, () => checkZap(call, dex, zap, expected))
   }
   return Object.freeze(result)

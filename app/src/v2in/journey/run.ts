@@ -3,9 +3,9 @@ import { readZapReceipt, type ZapReceipt } from '../../finance/v2/receipt'
 import { capacityBusyWait, isCapacityBusy } from '../../finance/v2/requestCoordinator'
 import type { PreparedV2, SignedNonce, V2Receipt } from '../../finance/v2/transact'
 import type { ZapBatch, ZapReview, ZapStep } from '../../finance/v2/zap'
-import { v2Chain } from '../../v2/chains'
+import { positionManagerOf, v2Chain } from '../../v2/chains'
 import type { V2Gate } from '../../v2/gate'
-import { requestS1Plan } from '../../v2/plan/client'
+import { planDex, requestS1Plan } from '../../v2/plan/client'
 import type { ConsentChoice } from '../../v2/plan/consent'
 import { readFeesToCome } from '../../v2/plan/present'
 import { planRequestWire } from '../../v2/plan/request'
@@ -288,7 +288,7 @@ export function useJourneyRun(input: RunInput) {
       const result = answer.result
       kept = answer.kept
       if (gen !== generation.current) return
-      if (result.kind !== 'ok') throw new PlanFailure(planFailure(result, chainId, latest.current.label))
+      if (result.kind !== 'ok') throw new PlanFailure(planFailure(result, chainId, latest.current.label, planDex(asked)))
       // What the person asked for (rev2 review F1): the money client ties the plan's swaps to it.
       const target = planTargetOf(asked)
       if (!target) throw new Error('plan_target')
@@ -579,7 +579,7 @@ export function useJourneyRun(input: RunInput) {
         } catch { /* No row at once: read-v6's item still comes. */ }
       }
       const chain = v2Chain(reviewed.review.chainId), pool = reviewed.review.plan.plan.intent.pool
-      const manager = chain.uniswap[pool.dex === 3 ? 'v3' : 'v4'].positionManager
+      const manager = positionManagerOf(chain, pool.dex)
       const tokenId = read && read.summary.tokenId > 0n ? read.summary.tokenId.toString() : null
       if (current.state !== 'reverted' && tokenId && hash) {
         try {

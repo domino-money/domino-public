@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { ELYSIUM_LIVE, ELYSIUM_V2_ID } from '../../lib/elysiumIdentity'
 import type { V2Service } from '../../v2/capabilities'
 import { v2Gate, type V2Gate } from '../../v2/gate'
 import { v2PageProbe } from '../transports'
@@ -41,6 +42,13 @@ export function useGate(service: V2Service, chainId: number): V2Gate | null {
   }, [service, chainId, key])
   return known && known.key === key ? known.gate : null
 }
+
+/**
+ * Elysium's gate of a service (added 2026-11-07, Elysium as a fourth V2 chain): useGate for chain 99901 where the build
+ * serves Elysium (lib/elysiumIdentity.ts ELYSIUM_LIVE); where it does not, null, with no hook, no check and no timer. A
+ * build-time fact, so every render of a build calls the same hooks.
+ */
+export const useElysiumGate: (service: V2Service) => V2Gate | null = ELYSIUM_LIVE ? (service) => useGate(service, ELYSIUM_V2_ID) : () => null
 
 /** Whether a gate lets its option be seen at all (preview or live). */
 export const gateOpen = (gate: V2Gate | null): gate is Exclude<V2Gate, { mode: 'off' }> => gate !== null && gate.mode !== 'off'

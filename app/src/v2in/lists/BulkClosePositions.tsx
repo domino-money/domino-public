@@ -8,7 +8,7 @@ import { receiptPause, receiptSettled, receiptWalletAway } from '../receiptWait'
 import { refreshFeeStates } from '../../lib/fees/useFeeHistory'
 import { v2Gate } from '../../v2/gate'
 import type { Hex } from '../../v2/types'
-import { v2Chain } from '../../v2/chains'
+import { nativeSymbolOf, v2Chain } from '../../v2/chains'
 import { v2PageProbe } from '../transports'
 import { actionError, REJECTED_IN_WALLET, STILL_PENDING_COPY, type ActionError } from '../position/errors'
 import { ActionDialog, ErrorLine, Note, Tick } from '../position/ui'
@@ -372,7 +372,7 @@ export function BulkClosePositions({ owner, rows }: { owner: string; rows: reado
         </>}
         {prepared && state.stage === 'review' && <>
           <SheetCard caption="Estimated to your wallet"><p className="dm-bulk-total tnum">{totalInks(prepared.receive)}</p><p className="dm-bulk-names">{current.map((row) => pairName(row)).join(' · ')}</p></SheetCard>
-          <SheetFacts><SheetFact label="Network fee, at most">{weiWords(prepared.step.networkFeeWei)}</SheetFact><SheetFact label="Domino fee">None</SheetFact></SheetFacts>
+          <SheetFacts><SheetFact label="Network fee, at most">{weiWords(prepared.step.networkFeeWei, nativeSymbolOf(current[0]?.chainId ?? 0))}</SheetFact><SheetFact label="Domino fee">None</SheetFact></SheetFacts>
           <details className="dm-bulk-details"><summary>Details</summary><SheetFacts><SheetFact label="Minimum returned">{totals(prepared.minimums)}</SheetFact><SheetFact label="Slippage tolerance">0.5%</SheetFact></SheetFacts><p>Closes #{current.map((row) => row.tokenId).join(', #')}. The empty position NFTs stay in your wallet.</p></details>
           {prepared.vaultRoots.length > 0 && <Note>Any funds or other positions held by your automation stay there. You can manage them inside the position.</Note>}
           {prepared.pausesAutomation.length > 0 && <Tick checked={pause} onChange={setPause}>I understand that closing these positions stops their automation.</Tick>}

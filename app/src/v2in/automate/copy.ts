@@ -2,7 +2,7 @@ import { MANDATE_REASON_TEXT, mandateInvalidText, type MandateReason } from '../
 import { VAULT_TEXT } from '../../finance/v2/vault'
 import { personRefused } from '../../finance/nonce'
 import { CONTRACTS_NOT_LIVE } from '../../finance/v2/liveLock'
-import { v2Chain } from '../../v2/chains'
+import { nativeSymbolOf, v2Chain } from '../../v2/chains'
 import { DECLINED_COPY, decodeV2Error, shortTokenLabel, type ErrorLabels, type Recovery } from '../../v2/errors'
 import type { Address } from '../../v2/types'
 
@@ -118,7 +118,7 @@ export const CLOSED_TEXT: Readonly<Record<string, string>> = Object.freeze({
   wallet_review_expired: SLOW,
   wallet_review_required: SLOW,
   pending_wallet_transaction: 'Your wallet has a transaction waiting. Let it finish, then try again.',
-  native_gas_reserve_insufficient: 'Your ETH does not cover the network fee for this step.',
+  native_gas_reserve_insufficient: 'Your {native} does not cover the network fee for this step.',
   gas_budget_exceeded: 'This step needs more gas than expected. Try again in a moment.',
   invalid_gas_budget: 'The network fee could not be worked out. Try again in a moment.',
   invalid_wallet_reply: WALLET_FAILED,
@@ -165,8 +165,9 @@ function fill(text: string, labels: ErrorLabels): string {
       return 'this network'
     }
   })()
-  const token = labels.subjectToken ? (labels.token?.(labels.subjectToken) ?? shortTokenLabel(labels.subjectToken)) : 'this token'
-  return text.replace(/\{chain\}/g, chain).replace(/\{token\}/g, token).replace(/\{fee\}/g, 'the automation')
+  const token = labels.subjectToken ? (labels.token?.(labels.subjectToken) ?? shortTokenLabel(labels.subjectToken, labels.chainId)) : 'this token'
+  // {native}: what the chain pays its network fees in, ETH (HYPE on a HYPE-native chain; added 2026-11-06).
+  return text.replace(/\{chain\}/g, chain).replace(/\{token\}/g, token).replace(/\{fee\}/g, 'the automation').replace(/\{native\}/g, nativeSymbolOf(labels.chainId))
 }
 
 /**

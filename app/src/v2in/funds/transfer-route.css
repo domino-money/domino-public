@@ -10,6 +10,8 @@
   .dm-funds-route-network > svg { width: 75%; height: 75%; }
   .dm-funds-route-art .dm-network-mark { --network-color: #7183b3; display: grid; place-items: center; width: 100%; height: 100%; border-radius: 50%; color: white; background: var(--network-color); box-shadow: inset 0 1px 1px #ffffff30; }
   .dm-funds-route-art .dm-network-mark svg { width: 80%; height: 80%; }
+  /* A network whose mark is its own official file (Elysium's slot; none today): the whole disc, its own colours. */
+  .dm-funds-route-art .dm-network-mark > img { display: block; width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
   .dm-funds-route-art .dm-network-mark[data-network="Base"] { --network-color: #2856d8; }
   .dm-funds-route-art .dm-network-mark[data-network="Arbitrum One"] { --network-color: #295c80; }
   .dm-funds-route-art .dm-network-mark[data-network="OP Mainnet"] { --network-color: #d64c55; font-size: 0.7rem; font-weight: 750; font-style: italic; }

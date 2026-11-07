@@ -158,7 +158,9 @@ function PriceCell({ market, now }: { market: Market; now: Instant }) {
       </span>
     )
   }
-  const title = `The pool’s own price on Robinhood Chain, at block ${price.block}.`
+  // Changed on purpose 2026-11-06 (the replica rule): the pool's own network, as every chip names it; it said Robinhood
+  // Chain on a Base or Arbitrum One row. Robinhood Chain's rows read as before.
+  const title = `The pool’s own price on ${networkName(market.tokens.base.chainId)}, at block ${price.block}.`
   return (
     <span className="dm-mkt-price" data-pool-price={price.stale ? 'stale' : 'usable'} title={title}>
       <span className="dm-mkt-price-unit">
@@ -171,14 +173,14 @@ function PriceCell({ market, now }: { market: Market; now: Instant }) {
   )
 }
 
-function Row({ m: read, now, full, home, onFigures, poolToken, pinned, revealed = false, withdrawn = false }: { m: Market; now: Instant; full: boolean; home: boolean; onFigures: (href: string) => void; poolToken?: string | null; pinned: boolean; revealed?: boolean; withdrawn?: boolean }) {
+function Row({ m: read, now, full, home, onFigures, poolToken, poolLink, pinned, revealed = false, withdrawn = false }: { m: Market; now: Instant; full: boolean; home: boolean; onFigures: (href: string) => void; poolToken?: string | null; poolLink?: (market: Market) => string; pinned: boolean; revealed?: boolean; withdrawn?: boolean }) {
   const p = read.provenance
   const age = p ? retrievedAgeSeconds(p.market, now) : null
   const stale = p ? providerStale(p.market, now) : false
   // The same projection the figures dialog is given, so the row and the dialog
   // it opens never disagree about whether a figure is still current.
   const m = agedMarket(read, now)
-  const href = poolHref(m.poolId, poolToken ?? null)
+  const href = poolLink ? poolLink(m) : poolHref(m.poolId, poolToken ?? null)
   const line = p ? provenanceLine(p, age, stale) : undefined
   // Domino's own qualified history when there is one; the attributed backend estimate otherwise, marked as one.
   const apr = poolAprPresentation(m, now)
@@ -419,6 +421,7 @@ export function MarketsTable({
   includeCatalogue = true,
   poolToken,
   revealed,
+  poolLink,
 }: {
   variant?: 'featured' | 'full' | 'home'
   /** Full only. */
@@ -439,6 +442,11 @@ export function MarketsTable({
   poolToken?: string
   /** Pools shown only because a person asked for every one (a token page's Show all), by pool id: they rise in. */
   revealed?: ReadonlySet<string>
+  /**
+   * Added 2026-11-06 (the replica rule): each row's pool page, where it is not Robinhood Chain's (a Base or Arbitrum One
+   * token page's rows open #/pool/network/<chain>/<pool>/<token>). Robinhood Chain's rows take poolHref, as before.
+   */
+  poolLink?: (market: Market) => string
 }) {
   const full = variant === 'full'
   const home = variant === 'home'
@@ -607,7 +615,7 @@ export function MarketsTable({
         <tbody key={filtering} className={full ? 'animate-fade' : undefined} data-refilter={full && refiltered ? '' : undefined}>
           {matches.map(({ poolId, market, catalogue, token }) =>
             market ? (
-              <Row key={poolId} m={market} now={now} full={full} home={home} onFigures={(href) => setFiguresOpen({ key: market.key, href })} poolToken={poolToken ?? token} pinned={ranked && catalogue?.pinned === true} revealed={revealed?.has(poolId) === true} withdrawn={featured.withdrawn?.has(poolId.toLowerCase()) === true} />
+              <Row key={poolId} m={market} now={now} full={full} home={home} onFigures={(href) => setFiguresOpen({ key: market.key, href })} poolToken={poolToken ?? token} poolLink={poolLink} pinned={ranked && catalogue?.pinned === true} revealed={revealed?.has(poolId) === true} withdrawn={featured.withdrawn?.has(poolId.toLowerCase()) === true} />
             ) : catalogue ? (
               // A pool the store is about to collect for the first time keeps its placeholder briefly (marketsProvider.ts).
               <CatalogueRow key={poolId} poolId={poolId} entry={catalogue} full={full} home={home} loading={state.phase === 'loading' || (state.phase === 'ready' && state.placeholders?.includes(poolId.toLowerCase()) === true)} token={token} pinned={ranked && catalogue.pinned === true} standIn={standIns.get(poolId)} revealed={revealed?.has(poolId) === true} />

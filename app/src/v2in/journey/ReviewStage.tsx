@@ -1,4 +1,6 @@
-import { Fragment, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useState, type ReactNode } from 'react'
+import type { ChainStatus, PortfolioResponse } from 'api-contracts/read-v6/types'
+import { CreatedNext, type CreatedWays } from '../../components/create/CreatedNext'
 import { CreatedArt, CreatedTile, InCreatedSlot, NewPositionAgain } from '../../components/create/createdParts'
 import { coversFullRange, poolSizeLine } from '../../components/create/valuation'
 import { automateHref } from '../../components/explore/routes'
@@ -8,21 +10,26 @@ import { Button, cx, FigureDash, Pill, Skeleton } from '../../components/ui'
 import { askAutoExitOnArrival, expectNewPosition } from '../../lib/automate/autoExitAsk'
 import { AUTO_EXIT_FEATURE, FEATURES } from '../../lib/automate/features'
 import { CREATE } from '../../lib/create/copy'
+import type { JourneyState as V1JourneyState } from '../../lib/create/journey'
 import { useFlowMade } from '../../lib/create/createProgress'
 import { slippageBpsFrom, slippageWritten } from '../../lib/create/slippage'
 import { rangePosition, usableTicks } from '../../lib/read/screens/poolRange'
 import type { ReceiptLine } from '../../finance/v2/receipt'
-import { v2Chain } from '../../v2/chains'
+import { inChainCurrency, v2Chain } from '../../v2/chains'
 import { v2TxUrl } from '../../v2/explorers'
 import type { V2Gate } from '../../v2/gate'
 import { ethAboutText, ethText, EXACT_FRACTION, exitOffer, feesToCome, keptWhileRequoting, networkFeeLine, planNetworkCost, priceText, rangeBothWays, smallerUpToPercent, spanText } from '../../v2/plan/present'
+import { readPortfolio } from '../../v2/read/v6'
+import { routeServes } from '../../v2/routes'
 import { ZERO_ADDRESS, type Address, type Dex, type V2ChainId } from '../../v2/types'
 import { exitOrderKey } from '../autoexit/entry'
 import { gateOpen, useGate } from '../automate/gate'
 import { setupHref } from '../automate/intent'
 import { v2PositionHref } from '../route'
+import { v2ReadTransports } from '../transports'
 import { JOURNEY_HIGH_SLIPPAGE_COPY, JOURNEY_SLIPPAGE_WARNING_ABOVE_BPS, NEW_POOL_CONFIRM_COPY, NEW_POOL_TITLE } from './constants'
 import { JOURNEY } from './copy'
+import { createdHref, createdKey, createdOffers } from './model/created'
 import { dexName, feePercent } from './model/pools'
 import { priceInvertedOn, pricedPair, type JourneyPriceState } from './model/price'
 import type { JourneyState } from './model/state'
@@ -252,7 +259,7 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
   if (figures) {
     for (const key of figures.warnings) {
       // Said for a v3 pool only (the zap client raises it for one): "On this pool…", never a version on screen.
-      if (key === 'v3_weth_leftovers' && pool.pool.dex === 3) warnings.push({ key, text: JOURNEY.review.wethWarning })
+      if (key === 'v3_weth_leftovers' && pool.pool.dex === 3) warnings.push({ key, text: inChainCurrency(JOURNEY.review.wethWarning, chain) })
       if (key === 'nft_approval_stays') warnings.push({ key, text: JOURNEY.review.approvalStays })
     }
     if (figures.replacesApproval) warnings.push({ key: 'replaces_approval', text: JOURNEY.review.replacesApproval })
@@ -297,7 +304,7 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
           <p className="dm-flow-headline-pair">
             <TokenDiscPair chainId={state.chainId} first={baseToken} second={quoteToken} size={40} ring="#1a1815" />
             <span className="min-w-0" data-review-pool="">
-              <TokenName token={baseToken} /> / <TokenName token={quoteToken} />
+              <TokenName token={baseToken} chainId={state.chainId} /> / <TokenName token={quoteToken} chainId={state.chainId} />
             </span>
           </p>
           <PoolChips chainId={state.chainId} dex={pool.pool.dex} fee={pool.pool.fee} />
@@ -438,9 +445,9 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
             </span>{' '}
             <span className="dm-rv-v">
               {network.kind === 'about'
-                ? JOURNEY.review.networkAbout(ethAboutText(network.wei))
+                ? JOURNEY.review.networkAbout(ethAboutText(network.wei, chain.nativeSymbol))
                 : network.kind === 'upTo'
-                  ? JOURNEY.review.networkUpTo(ethText(network.wei))
+                  ? JOURNEY.review.networkUpTo(ethText(network.wei, chain.nativeSymbol))
                   : !stale && (quoting || kept.steps.some((step) => step.status === 'preparing'))
                     ? <Skeleton className="inline-block h-[1em] w-24 align-middle" />
                     : JOURNEY.review.networkLater}
@@ -610,7 +617,7 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
             {/* §2.7's sentence, which the delta of 6 Oct (§1) lets Details keep. */}
             {paysEth && (
               <div className="grid gap-2 pt-2">
-                <Note data-review-warning="eth_direct">{JOURNEY.review.ethDirect}</Note>
+                <Note data-review-warning="eth_direct">{inChainCurrency(JOURNEY.review.ethDirect, chain)}</Note>
               </div>
             )}
             <dl className="dm-flow-facts" data-review-plan="">
@@ -637,7 +644,7 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
                   under a label of its own (with the approvals the line in view counts, so never below it). */}
               {network.kind === 'about' && network.ceiling !== null && (
                 <Fact label={JOURNEY.review.networkCeiling} data="review-network-fee">
-                  {ethText(network.ceiling)}
+                  {ethText(network.ceiling, chain.nativeSymbol)}
                   {network.othersMissing && (
                     <>
                       {' + '}
@@ -647,7 +654,7 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
                 </Fact>
               )}
               <Fact label={JOURNEY.review.l1Fee} data="review-l1-fee">
-                {l1Fee && l1Fee.status === 'ok' ? ethText(l1Fee.wei) : <FigureDash />}
+                {l1Fee && l1Fee.status === 'ok' ? ethText(l1Fee.wei, chain.nativeSymbol) : <FigureDash />}
               </Fact>
               <Fact label={JOURNEY.review.deadline} data="review-deadline">
                 <span className="block">{JOURNEY.review.deadlineValue(spanText(figures.quoteLeft))}</span>
@@ -658,7 +665,7 @@ export function ReviewStage({ state, gate, view, price, confirmed, onConfirmed, 
               {/* Changed on purpose 2026-10-31 (QA round 2 follow-ups, Q24): base then quote, as the headline names the pair. */}
               <Fact label={CREATE.review.detailRows.contracts} data="details-tokens">
                 {(flip ? [pool.pool.currency1, pool.pool.currency0] : [pool.pool.currency0, pool.pool.currency1]).map((currency) => (
-                  <span key={currency} className="block">{currency === ZERO_ADDRESS ? `ETH (${CREATE.review.detailRows.native})` : currency}</span>
+                  <span key={currency} className="block">{currency === ZERO_ADDRESS ? `${chain.nativeSymbol} (${CREATE.review.detailRows.native})` : currency}</span>
                 ))}
               </Fact>
               <Fact label={CREATE.review.detailRows.pool} data="details-pool">{pool.id}</Fact>
@@ -847,7 +854,7 @@ function Created({ view }: { view: RunView }) {
             <>
               {read.lines.map((line) => <ReceiptRow key={line.logIndex} line={line} amount={amount} />)}
               <Fact label={JOURNEY.created.gas} data="receipt-gas" attrs={{ 'data-receipt-gas': read.gas.status }}>
-                {read.gas.status === 'available' ? ethText(read.gas.totalWei) : <FigureDash />}
+                {read.gas.status === 'available' ? ethText(read.gas.totalWei, v2Chain(chainId).nativeSymbol) : <FigureDash />}
               </Fact>
             </>
           )}
@@ -931,6 +938,69 @@ function CreatedExit({ chainId, dex, tokenId, offer }: { chainId: V2ChainId; dex
       </span>
     </a>
   )
+}
+
+/**
+ * Robinhood Chain's success (components/create/CreatedNext.tsx) for a position made on Base or Arbitrum One through the
+ * owner's journey (./JourneyCreateV2.tsx; O-18, 2026-11-06), beside the zap path's own created view (Created, above): the
+ * position's page and each setup by that network's routes (./model/created.ts), Auto-exit's ask by the position's own
+ * key, and only the automations its gates (the vault's, Auto-exit's: the position's page asks the same) and read-v6's
+ * word on the network (`chains[]` of the wallet's portfolio, the setup's own refusal) say it takes now. The gates are the
+ * page's kept ones; read-v6's portfolio is read once (useAutomationWord).
+ */
+export function CreatedOnNetwork({ chainId, dex, tokenId, owner, state, receipt }: { chainId: V2ChainId; dex: Dex; tokenId: bigint; owner: string | null; state: V1JourneyState; receipt: string }) {
+  const vault = useGate('vault', chainId)
+  const autoExit = useGate('autoExit', chainId)
+  const word = useAutomationWord(owner, chainId)
+  const offers = createdOffers({ vault: gateOpen(vault), autoExit: gateOpen(autoExit), word })
+  const key = createdKey(chainId, dex, tokenId)
+  const ways: CreatedWays = {
+    href: (choice) => createdHref(chainId, dex, tokenId, choice),
+    onOpen: () => expectNewPosition(key),
+    onExit: () => askAutoExitOnArrival(key),
+    compound: offers.compound,
+    exit: offers.exit,
+    receipt,
+  }
+  return <CreatedNext tokenId={tokenId.toString()} state={state} ways={ways} />
+}
+
+/**
+ * read-v6's portfolio of one wallet, asked once, the way the lists ask it (../lists/read.ts createListsReads: the site's
+ * route, only while its capabilities serve `portfolio`; every answer through the package's validator, ../../v2/read/v6.ts),
+ * its body or null. Not through the lists' own reader (../lists/source.ts OWN_PORTFOLIO): loading that module here
+ * registers its catch-up after a create at once, which would start its few minutes of quick re-reads at the create
+ * instead of when the position's page opens (it replays the create then, and waits on those re-reads for read-v6 to list
+ * the new position).
+ */
+async function portfolioOnce(wallet: string): Promise<PortfolioResponse | null> {
+  // Drawn only under a live S1 gate, which this origin has (src/v2/gate.ts v2Gate): no origin check of its own.
+  const transports = v2ReadTransports()
+  if (!routeServes(await transports.routeState('readV6'), 'portfolio')) return null
+  const reply = await readPortfolio(transports.read, transports.readRuntime, wallet)
+  return reply.kind === 'ok' ? reply.body : null
+}
+
+/**
+ * read-v6's word on `chainId`'s automation (`chains[]` of a wallet's portfolio), for CreatedOnNetwork: one read of it;
+ * 'pending' until it is in; no word (`status` null) without a wallet, or from a read that answered nothing. Its review
+ * (2026-11-06): `owner` is the wallet that made the position (./JourneyCreateV2.tsx hands in the review's owner), never
+ * the one connected now, so a disconnect under the success keeps the word it had.
+ */
+function useAutomationWord(owner: string | null, chainId: V2ChainId): { status: ChainStatus | null } | 'pending' {
+  const wallet = owner === null ? null : owner.toLowerCase()
+  const [said, setSaid] = useState<{ wallet: string; body: PortfolioResponse | null } | null>(null)
+  useEffect(() => {
+    if (wallet === null) return
+    let alive = true
+    void portfolioOnce(wallet).then((body) => { if (alive) setSaid({ wallet, body }) }, () => { if (alive) setSaid({ wallet, body: null }) })
+    return () => {
+      alive = false
+    }
+  }, [wallet])
+  if (wallet === null) return { status: null }
+  if (said?.wallet !== wallet) return 'pending'
+  return { status: said.body?.chains.find((chain) => chain.chainId === chainId) ?? null }
 }
 
 function ReceiptRow({ line, amount }: { line: ReceiptLine; amount: (token: Address, raw: bigint, round?: 'down' | 'up') => ReactNode }) {

@@ -5,7 +5,8 @@ import { JOURNEY } from './copy'
 
 /**
  * The tokens New position can name on one network, by address (copied from the #/v2 screens' src/v2ui/s1/tokens.ts,
- * which this area never imports): native ETH, WETH and the chain's charge currencies from its profile (trusted), then
+ * which this area never imports): the chain's native currency and wrapped token (ETH and WETH, or HYPE and WHYPE) and its
+ * charge currencies from its profile (trusted), then
  * what a list or a token's own `decimals()`/`symbol()` said (its symbol untrusted text, already cleaned; its decimals
  * null when unread, never guessed). Identity is chain + address; a symbol is only a label.
  */
@@ -25,18 +26,19 @@ export function tokenBook(chainId: V2ChainId, extra: readonly JourneyToken[] = [
     // A later entry with decimals fills an earlier one without; the profile's names win below.
     if (!known || (known.decimals === null && token.decimals !== null)) book.set(token.address, token)
   }
-  book.set(ZERO_ADDRESS, { address: ZERO_ADDRESS, symbol: 'ETH', decimals: 18 })
-  book.set(chain.wrappedNative.address, { address: chain.wrappedNative.address, symbol: 'WETH', decimals: 18 })
+  // The chain's own native currency and wrapped token (ETH and WETH; HYPE and WHYPE on a HYPE-native chain, 2026-11-06).
+  book.set(ZERO_ADDRESS, { address: ZERO_ADDRESS, symbol: chain.nativeSymbol, decimals: 18 })
+  book.set(chain.wrappedNative.address, { address: chain.wrappedNative.address, symbol: chain.wrappedNative.symbol, decimals: 18 })
   for (const currency of chain.chargeCurrencies) book.set(currency.address, { address: currency.address, symbol: currency.symbol, decimals: currency.decimals })
   return book
 }
 
-/** The tokens the profile names on a chain (ETH, WETH, then its other charge currencies), each once: the pool finder's list. */
+/** The tokens the profile names on a chain (its native currency, its wrapped token, then its other charge currencies), each once: the pool finder's list. */
 export function profileTokens(chainId: V2ChainId): JourneyToken[] {
   const chain = v2Chain(chainId)
   const out: JourneyToken[] = [
-    { address: ZERO_ADDRESS, symbol: 'ETH', decimals: 18 },
-    { address: chain.wrappedNative.address, symbol: 'WETH', decimals: 18 },
+    { address: ZERO_ADDRESS, symbol: chain.nativeSymbol, decimals: 18 },
+    { address: chain.wrappedNative.address, symbol: chain.wrappedNative.symbol, decimals: 18 },
   ]
   for (const currency of chain.chargeCurrencies) {
     if (out.some((token) => token.address === currency.address)) continue
@@ -45,9 +47,9 @@ export function profileTokens(chainId: V2ChainId): JourneyToken[] {
   return out
 }
 
-/** A token's label: its symbol, else its short address. */
+/** A token's label: its symbol, else its short address; the native currency's is the book's (the chain's own, tokenBook). */
 export function labelOf(book: TokenBook, token: Address): string {
-  if (token.toLowerCase() === ZERO_ADDRESS) return 'ETH'
+  if (token.toLowerCase() === ZERO_ADDRESS) return book.get(ZERO_ADDRESS)?.symbol ?? 'ETH'
   return book.get(token.toLowerCase())?.symbol ?? shortAddress(token)
 }
 

@@ -1,12 +1,13 @@
 import { MAX_CLOSE_POSITIONS } from '../../finance/v2/direct'
-import { v2Chain } from '../../v2/chains'
+import { positionManagerOrNull, v2Chain } from '../../v2/chains'
 import type { PositionRowView } from './model'
 
 /** Inventory suggests choices; the direct client proves ownership and custody again at review and send. */
 export function canCloseTogether(row: PositionRowView): boolean {
   const chain = v2Chain(row.chainId)
-  const manager = row.dex === 4 ? chain.uniswap.v4.positionManager : chain.uniswap.v3.positionManager
-  return row.status === 'live' && row.tab === 'open' && !row.hooked && row.vault?.role !== 'successor' && row.positionManager.toLowerCase() === manager
+  // A row of a version the chain lacks (v3 on a chain with v4 alone) names no manager of it: never offered.
+  const manager = positionManagerOrNull(chain, row.dex)
+  return manager !== null && row.status === 'live' && row.tab === 'open' && !row.hooked && row.vault?.role !== 'successor' && row.positionManager.toLowerCase() === manager
 }
 
 /** Each group is one official manager's atomic call. Different managers/networks require separate confirmations. */

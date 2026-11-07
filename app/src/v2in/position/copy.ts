@@ -260,15 +260,9 @@ export const COPY = {
     inRange: 'In range',
     outOfRange: 'Out of range',
     closed: 'Closed',
-    holds: 'What it holds',
-    holdsInfo: 'What this position holds now, at the pool’s price. Fees not included.',
-    fees: 'Fees to collect',
-    feesInfo: 'Fees this position earned and has not collected yet.',
+    // Changed on purpose 2026-11-06 (the owner: every chain the same as Robinhood Chain): the tiles' words are Robinhood
+    // Chain's own (components/positions/keyFigureParts.tsx KEY_FIGURES_COPY); v3's Fees to collect keeps its own help.
     collectableInfo: 'Tokens available to collect. This can include tokens withdrawn from liquidity outside Domino.',
-    price: 'Current price',
-    priceInfo: 'The position earns fees while this price is inside its range.',
-    inRangeEarning: 'In range: earning fees',
-    outOfRangeIdle: 'Out of range: not earning fees',
     apr: 'Your APR',
     aprInfo: 'This position’s own fees, as a yearly rate on the money in it, at today’s prices. Not a promise of future earnings.',
     aprMissing: 'Fee history unavailable',
@@ -285,6 +279,15 @@ export const COPY = {
     reading: (id: string) => `Reading position ${id}…`,
     connect: 'Connect the wallet that holds this position to see it.',
     notListed: 'This position isn’t in your wallet’s list.',
+    // Added 2026-11-06: Robinhood Chain's own words (screens/PositionDetail.tsx), for an NFT the stored history says is burned.
+    gone: 'This position NFT no longer exists',
+    goneAt: (id: string, block: number) => `NFT #${id} was not found at block ${block}.`,
+    // Added 2026-11-06 (O-05): another address's position, opened from its list, read by anyone; Robinhood Chain's own line.
+    ownerOnly: { connected: ['Only the owner wallet', 'can collect fees, add or close.'], disconnected: ['Connect the owner wallet', 'to collect fees, add or close.'] },
+    // Added 2026-11-06 (O-09): why Collect fees is off, as Robinhood Chain's own button says it.
+    noFees: 'No fees to collect yet.',
+    closedNoLiquidity: 'This position is closed: it holds no liquidity.',
+    feesUnread: 'The fees could not be read just now.',
     listUnavailable: 'Your positions can’t be listed right now.',
     listInvalid: 'The list of positions came back in a form this app does not accept.',
     chainStale: (chain: string) => `${chain} is behind: what you see may be a few minutes old.`,
@@ -292,7 +295,11 @@ export const COPY = {
     nftId: 'NFT id',
     network: 'Network',
     owner: 'Owner',
-    pool: 'Pool',
+    // Changed on purpose 2026-11-06 (O-12): Robinhood Chain's own Details words.
+    poolId: 'Pool id',
+    poolPage: 'Pool',
+    newInPool: 'New position in this pool',
+    feesHistory: 'Fees history',
     feeTier: 'Fee tier',
     tickSpacing: 'Tick spacing',
     ticks: 'Ticks',
@@ -301,7 +308,6 @@ export const COPY = {
     none: 'None',
     manager: 'Position manager',
     vault: 'Automation',
-    readAt: 'Read at block',
     activityWords: {
       create: 'Created a position',
       increase: 'Added to a position',

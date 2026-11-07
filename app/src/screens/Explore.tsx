@@ -3,7 +3,7 @@ import '../styles/screens.css'
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { SELECTED_POOL_CATALOGUE, catalogueTokens } from '../config/selectedPoolCatalogue'
-import { exploreHref, marketsHref, marketsNetworkHref, newNetworkHref, parseExploreHash, parseMarketsNetworkHash, poolHref } from '../components/explore/routes'
+import { exploreHref, marketsHref, marketsNetworkHref, parseExploreHash, parseMarketsNetworkHash, poolHref } from '../components/explore/routes'
 import { useHash } from '../components/explore/useHash'
 import { IconChevronLeft, IconSearch } from '../components/icons'
 import { FilterBar } from '../components/markets/FilterBar'
@@ -17,7 +17,7 @@ import { NetworkTokenExplorer } from '../components/read/screens/NetworkTokenExp
 import { TokenSearch } from '../components/read/screens/TokenSearch'
 import { StoredTokenExplorer } from '../components/read/screens/StoredTokenExplorer'
 import { SectionHead } from '../components/figures'
-import { Button, Card, Display, EmptyState, LinkButton, PageShell } from '../components/ui'
+import { Button, Card, Display, EmptyState, PageShell } from '../components/ui'
 import { parseAddressInput } from '../lib/read/screens/identity'
 import { featuredTitle } from '../lib/read/featuredList'
 import { useFeatured } from '../lib/read/featuredSource'
@@ -288,10 +288,10 @@ function ExploreBody({ others = null, checkingNetworks = false }: { others?: Oth
       key={`${networkLocation.chainId}:${networkLocation.token.toLowerCase()}`}
       location={networkLocation} others={others} checking={checkingNetworks} initial={networkHandoff}
       navigation={<a href={marketsHref()} className="dm-mkt-back"><IconChevronLeft size={14} />Markets</a>}
-      actions={(token) => <LinkButton href={newNetworkHref(networkLocation.chainId, token.address)} data-network-new-position="">New position</LinkButton>}
-      // QA round 2, N5 (the owner's yes): a pool row opens New position on this network with that pool proposed; New
-      // position checks the proposal against its own read of the network's pools.
-      openPool={(token, option) => { window.location.hash = newNetworkHref(networkLocation.chainId, token.address, option.key).slice(1) }}
+      // Changed on purpose 2026-11-06 (the owner's replica rule): Robinhood Chain's token page, so no New position beside
+      // the title and each pool row opens the pool's own page (#/pool/network/<chain>/<pool>/<token>), whose Create a
+      // position opens New position on this network with that pool proposed. QA round 2's N5 (a row opened New position
+      // directly) stood in while these networks had no pool page.
     /></PageShell>
   }
 

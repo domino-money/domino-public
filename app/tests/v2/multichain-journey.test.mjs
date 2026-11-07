@@ -126,6 +126,35 @@ test('the pools to read for a token: each profile token at every tier of v4 and 
   assert.equal(other.length, 4 * 3 + 7 * 2, 'any token: v4 with ETH, WETH and USDC; v3 with WETH and USDC');
 });
 
+// Added 2026-11-06 (review F1 of the integrated branch): a Base or Arbitrum One position's Pool and New position links name
+// the token whose pools read has the pool's key (the network pool page finds a pool only there), or none.
+test('the token a network position\'s pool links name: the side whose pools read has the pool, never one that cannot', () => {
+  const ARB = '0x912ce59144191c1204e64559fe8253a0e49e6548';
+  const USDT_ARB = '0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9';
+  const AERO = '0x940181a94a35a4569e4529a3cdfb74e38fd98631';
+  const CBBTC = '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf';
+  const v3 = (currency0, currency1, fee = 3000, tickSpacing = 60) => ({ dex: 3, currency0, currency1, fee, tickSpacing, hooks: ZERO });
+  for (const [name, chainId, pool, expected] of [
+    // WETH (or USDC) sorts first, but its read lists it only against the network's own currencies: the other token's
+    // read lists the pair (the reviewer's Arbitrum One WETH/USDT and WETH/ARB, Base's WETH/cbBTC, WETH/AERO, USDC/cbBTC).
+    ['WETH/USDT v3 on Arbitrum One', 42161, v3(WETH_ARB, USDT_ARB, 500, 10), USDT_ARB],
+    ['WETH/ARB v3 on Arbitrum One', 42161, v3(WETH_ARB, ARB), ARB],
+    ['WETH/AERO v3 on Base', 8453, v3(WETH_BASE, AERO), AERO],
+    ['USDC/cbBTC v3 on Base', 8453, v3(USDC_BASE, CBBTC, 500, 10), CBBTC],
+    ['WETH/cbBTC v3 on Base, Base\'s 0.04%', 8453, v3(WETH_BASE, CBBTC, 400, 8), CBBTC],
+    // Two of the network's own currencies: either read lists it; the first, as before.
+    ['WETH/USDC v3 on Base', 8453, WETH_USDC_V3, WETH_BASE],
+    ['ETH/USDC v4 on Base', 8453, ETH_USDC_V4, USDC_BASE],
+    ['ETH/token v4', 8453, { dex: 4, currency0: ZERO, currency1: TOKEN, fee: 500, tickSpacing: 10, hooks: ZERO }, TOKEN],
+    // No side's read has it: two other tokens, a fee and spacing off the standard pairs, a hook, another network's tier.
+    ['ARB/USDT v3 on Arbitrum One', 42161, v3(ARB, USDT_ARB, 500, 10), null],
+    ['v4 off the standard pairs', 8453, { dex: 4, currency0: ZERO, currency1: TOKEN, fee: 3000, tickSpacing: 10, hooks: ZERO }, null],
+    ['a hooked v4 pool', 8453, { dex: 4, currency0: ZERO, currency1: TOKEN, fee: 3000, tickSpacing: 60, hooks: '0x00000000000000000000000000000000000000c0' }, null],
+    ['an Arbitrum One v3 pool at Base\'s 0.04%', 42161, v3(WETH_ARB, ARB, 400, 8), null],
+  ]) assert.equal(networks.networkPoolToken(chainId, pool), expected, name);
+  assert.equal(networks.poolsToRead(42161, WETH_ARB).some((pool) => [pool.currency0, pool.currency1].includes(USDT_ARB)), false, 'WETH\'s own read never lists USDT');
+});
+
 test('the rows: the pools a position can open in now, grouped by what the token pairs with, the most liquidity first; keyed as today\'s list keys them', () => {
   const token = networks.displayOf(8453, { address: USDC_BASE, symbol: 'USDC', decimals: 6 });
   const v3Address = '0x00000000000000000000000000000000000c0ffe';
@@ -433,4 +462,48 @@ test('preselectOf: Enter takes the first hit only when no other hit of any netwo
   assert.equal(pick([homeEth, theirEth, hit('ETH', { home: true })]), -1, 'and so is a copy on Robinhood Chain');
   assert.equal(pick([{ ...homeEth, own: false }, theirEth]), -1, 'only Robinhood Chain\'s own main token is spared the rule');
   assert.equal(pick([hit('USDC', { own: true }), hit('USDC', { own: true })]), -1, 'Base\'s and Arbitrum One\'s own USDC: the person still chooses');
+});
+
+// Added 2026-11-06 (the owner's replica rule, O-01 and O-03: Base and Arbitrum One's token page and pool page are Robinhood
+// Chain's): a network's pool row as a Markets row, which the same table, the same pool page and the same figures dialog
+// draw. Its key names the chain; its figures are DEX Screener's, attributed as a Robinhood Chain row's discovered figures
+// are; its APR the read service's estimate method on them, marked an estimate; nothing is made up past their ten minutes.
+test('networkMarketRow: a Base pool row as Robinhood Chain’s Markets row, chain-qualified, DEX Screener’s figures attributed, an estimate APR, the pool’s own price', () => {
+  const markets = require(`${BUILD}lib/read/networkMarkets.js`);
+  const token = networks.displayOf(8453, { address: TOKEN, symbol: 'TOKEN', decimals: 18 });
+  const V4_ETH = { dex: 4, currency0: ZERO, currency1: TOKEN, fee: 3000, tickSpacing: 60, hooks: ZERO };
+  const V3_WETH = { dex: 3, currency0: TOKEN, currency1: WETH_BASE, fee: 3000, tickSpacing: 60, hooks: ZERO };
+  const rows = networks.listedPools(8453, token, [onChain(V4_ETH), onChain(V3_WETH)], 1).map((row) => ({ ...row, protocolFeeRaw: 0 }));
+  const AT = 1_790_000_000;
+  const read = dexOf([figuresOf(8453, poolIdOf(V4_ETH), TOKEN, ZERO, '35138.92', '8844.96', AT)]);
+  const [eth, weth] = otherChains.networkRows(rows, read, {}, null, { nowS: AT + 60, listed: true });
+  const row = markets.networkMarketRow(eth);
+  assert.equal(row.key, `8453:${poolIdOf(V4_ETH).toLowerCase()}`, 'the chain in the key: an id can repeat across chains');
+  assert.equal(row.poolId, poolIdOf(V4_ETH).toLowerCase());
+  assert.equal(markets.onNetwork(row), true);
+  assert.deepEqual(row.tvlUsd, { value: '35138.92', state: 'provider', asOf: AT, source: 'DexScreener', fallback: 'discovered' });
+  assert.deepEqual(row.volume24hUsd, { value: '8844.96', state: 'provider', asOf: AT, source: 'DexScreener', fallback: 'discovered' });
+  assert.equal(row.feeAprPercent.state, 'unavailable', 'no Domino history on Base');
+  assert.deepEqual(row.aprFallback, { percent: '27.56', asOf: AT, basis: 'discovered' }, 'the same estimate New position’s row shows (networkRows test above)');
+  assert.deepEqual(row.poolState, { sqrtPriceX96: eth.sqrtPriceX96, tick: eth.tick, tickSpacing: 60, block: eth.block, currency0: ZERO, currency1: TOKEN }, 'the price from the pool’s own state, in pool order');
+  assert.equal(row.feePips, 3000);
+  assert.equal(row.integration, 'hookless_fixed_fee');
+  assert.deepEqual(row.tokens, { base: eth.currencies[0], quote: eth.currencies[1] });
+  // A row DEX Screener has no figures for: dashes, no estimate, nothing stood in.
+  const bare = markets.networkMarketRow(weth);
+  assert.equal(bare.tvlUsd.state, 'unavailable');
+  assert.equal(bare.volume24hUsd.state, 'unavailable');
+  assert.equal(bare.aprFallback, undefined);
+  // Past its ten minutes the same pool's figures are gone from the row, and its estimate with them.
+  const aged = otherChains.networkRows(rows, read, {}, null, { nowS: AT + 601, listed: true }).find((option) => option.key === eth.key);
+  const old = markets.networkMarketRow(aged);
+  assert.equal(old.tvlUsd.state, 'unavailable');
+  assert.equal(old.aprFallback, undefined);
+  // A v3 pool whose protocol fee is on: the LPs' share, as New position's row works it out (rowApr.ts v3LpShare).
+  const v3 = markets.networkMarketRow({ ...weth, liquidity: eth.liquidity, volume: eth.volume, protocolFeeRaw: otherChains.PROTOCOL_FEE_UNDESCRIBED, v3FeeProtocol: 0x44 });
+  assert.equal(v3.aprFallback.percent, '20.67', 'three quarters of the v4 twin’s 27.56%');
+  assert.deepEqual(v3.aprFallback, { percent: rowApr.rowApr({ integration: 'hookless_fixed_fee', currentLpFeePips: 3000, protocolFeeRaw: otherChains.PROTOCOL_FEE_UNDESCRIBED, v3FeeProtocol: 0x44, liquidity: eth.liquidity, volume: eth.volume }).text, asOf: AT, basis: 'discovered' });
+  assert.equal(markets.networkMarketRows([eth, weth]).length, 2);
+  // Robinhood Chain's rows are never a network's.
+  assert.equal(markets.onNetwork({ tokens: { base: { chainId: 4663 } } }), false);
 });

@@ -1,5 +1,7 @@
 import { COPY } from '../../read/screens/copy'
 import { doc, p } from '../blocks'
+// 2026-11-06: Elysium's words where it is live (../elysium.ts).
+import { ELYSIUM_LIVE, OTHERS } from '../elysium'
 import type { DocPage } from '../types'
 
 /**
@@ -92,7 +94,7 @@ export const NON_CUSTODIAL: DocPage = {
       title: 'If Domino’s site is down',
       blocks: [
         p('Your position is a standard Uniswap position NFT in your wallet, so you can collect its fees or close it with any app that manages Uniswap positions on its network, or through that network’s Uniswap contract on ', doc('Contracts', 'contracts'), '.'),
-        p('Your automation can be emptied from a block explorer: Robin Etherscan on Robinhood Chain, Basescan or Arbiscan. The transaction that set it up, in your wallet’s activity, shows its address: open that address on the explorer, connect your wallet and call ', { mono: 'exitAll' }, ', as Leave automation does. Only your wallet can call it, and everything goes to your wallet.'),
+        p(`Your automation can be emptied from a block explorer: Robin Etherscan on Robinhood Chain, Basescan${ELYSIUM_LIVE ? ', Arbiscan or Elysium’s explorer' : ' or Arbiscan'}. The transaction that set it up, in your wallet’s activity, shows its address: open that address on the explorer, connect your wallet and call `, { mono: 'exitAll' }, ', as Leave automation does. Only your wallet can call it, and everything goes to your wallet.'),
       ],
     },
   ],
@@ -204,9 +206,10 @@ export const PRIVACY: DocPage = {
         p('Your positions, their fees and their history, as the chain has them now, are read by Domino’s own servers, from Domino’s own Robinhood Chain node. Your browser asks only Domino, so no other node sees your address. Your wallet signs and sends through its own connection to the chain.'),
         p('A position’s fees at a past moment, for its chart, are read by Domino’s read service through an archive provider outside Domino. It is given only the position’s number and the block, never your address.'),
         // 2026-10-04 (the owner: docs revalidated for V2): read-v6, position-plan-v1, crosschain-v1 and the wallet's own reads.
-        p('Your positions on Base and Arbitrum One, your automation and your Auto-exit come from Domino’s read service, which keeps its own record of Domino’s contracts. A quote, for a position or a deposit, is asked of Domino with your signed-in address; a deposit’s bridge, Relay or Across, is given your address, which sends and receives it. Before you sign, and for Look in my wallet, your wallet reads the network through its own connection.'),
+        p(`Your positions on ${OTHERS}, your automation and your Auto-exit come from Domino’s read service, which keeps its own record of Domino’s contracts. A quote, for a position or a deposit, is asked of Domino with your signed-in address; a deposit’s bridge, Relay or Across, is given your address, which sends and receives it. Before you sign, and for Look in my wallet, your wallet reads the network through its own connection.`),
         p('Token pictures and prices come from a public market data provider. Like any site it sees your internet address, never your wallet’s.'),
-        p('The Wallet card asks Domino’s read service for a wallet’s tokens by its address. ', doc('Signing in', 'wallet', 'sign-in'), ' tells Domino’s sign-in service your address, for the session.'),
+        // Added 2026-11-06 (R-07): chain-balances reads Base and Arbitrum One through hosted endpoints (docs/v2/F6_BACKEND.md).
+        p(`The Wallet card asks Domino’s read service for a wallet’s tokens by its address. On ${OTHERS}, that service reads them through a network provider outside Domino, which is given the address. `, doc('Signing in', 'wallet', 'sign-in'), ' tells Domino’s sign-in service your address, for the session.'),
       ],
     },
   ],

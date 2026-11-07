@@ -42,7 +42,7 @@ export function PreviewPanel({ state, price, step, className, style }: { state: 
               <TokenDiscPair chainId={state.chainId} first={pair[0]} second={pair[1]} size={40} />
               <div className="dm-flow-pv-pool-words">
                 <p className="dm-flow-pv-pair">
-                  <TokenName token={pair[0]} /> / <TokenName token={pair[1]} />
+                  <TokenName token={pair[0]} chainId={state.chainId} /> / <TokenName token={pair[1]} chainId={state.chainId} />
                 </p>
                 <p className="text-caption text-fg-subtle">{v2Chain(state.chainId).name}</p>
               </div>
@@ -91,7 +91,7 @@ export function PreviewPanel({ state, price, step, className, style }: { state: 
               <span className="dm-flow-pv-amount dm-fig-xs">
                 {figureText(book, input.token, input.amount)}{' '}
                 <span className="dm-flow-pv-symbol">
-                  <TokenName token={book.get(input.token) ?? { address: input.token, symbol: null }} />
+                  <TokenName token={book.get(input.token) ?? { address: input.token, symbol: null }} chainId={state.chainId} />
                 </span>
               </span>
             </div>

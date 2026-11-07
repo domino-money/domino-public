@@ -28,12 +28,13 @@
  * S2's probe.
  */
 import { DEV_ORIGIN, PREVIEW_ALIAS, SITE_ORIGIN } from '../chains/elysium/mode'
+import { ELYSIUM_LIVE, ELYSIUM_V2_ID } from '../lib/elysiumIdentity'
 import { serviceAvailability, type V2Service } from './capabilities'
 import { isV2ChainId, v2Chain } from './chains'
 import { V2_ON } from './flag'
-import { v2Availability } from './manifest'
+import { isManifestError, v2Availability } from './manifest'
 import { routeServes, type V2RouteProbe, type V2RouteState } from './routes'
-import type { V2ChainId, V2Contracts } from './types'
+import { isS2Destination, type V2ChainId, type V2Contracts } from './types'
 
 export type V2Gate =
   | { readonly mode: 'off' }
@@ -83,7 +84,16 @@ const FIXTURE_SETS: boolean = typeof __DOMINO_V2_FIXTURE_SETS__ === 'boolean' &&
 async function previewSet(chainId: V2ChainId): Promise<V2Contracts | null> {
   if (FIXTURE_SETS) {
     const { fixtureContracts } = await import('./manifestFixtures')
-    return fixtureContracts(chainId)
+    // Changed on purpose 2026-11-07 (Elysium as a fourth V2 chain): Elysium's fixture is the fork rehearsal of the
+    // synthetic profile (tests/fixtures/v2-chains/elysium-99901.json) that the forced test builds serve, so against
+    // rugged97's real profile it binds nothing (its chain's name and addresses are the synthetic profile's). Elysium then
+    // falls through to its pinned production set below, never to another chain's; the three chains' fixtures always bind
+    // (tests/v2/manifest-pin.test.mjs), and any other refusal is thrown as before.
+    try {
+      return fixtureContracts(chainId)
+    } catch (error) {
+      if (!ELYSIUM_LIVE || !isManifestError(error) || chainId !== ELYSIUM_V2_ID) throw error
+    }
   }
   const pinned = v2Availability(chainId)
   return pinned.available ? pinned.contracts : null
@@ -129,7 +139,7 @@ export async function serviceRouteOpen(service: Exclude<V2Service, 's2'>, routes
  * his listener serves the three chains since 01:43 UTC, version f807cf9c, and their fork qualification planned 15 of 15
  * exactly on each, with Trading API legs, #342). Narrow it here to close a chain again.
  */
-export const S1_PLAN_CHAINS: readonly V2ChainId[] = Object.freeze([4663, 8453, 42161])
+export const S1_PLAN_CHAINS: readonly V2ChainId[] = Object.freeze(ELYSIUM_LIVE ? [4663, 8453, 42161, ELYSIUM_V2_ID] : [4663, 8453, 42161])
 
 /** The gate for one service on one chain at `origin`, with the probe its backend word comes from (none: the table's word). */
 export async function v2Gate(service: V2Service, chainId: number, origin: string = pageOrigin(), routes: S2Routes = noRoutes): Promise<V2Gate> {
@@ -159,10 +169,11 @@ export async function v2Gate(service: V2Service, chainId: number, origin: string
  * locked and says its own sentence (src/v2in/funds FUNDS_TEXT.locked). A manifest plays no part, and neither do the test
  * hooks' contract set and backend word, which are about Domino's contracts. The set a gate carries is the chain's pinned
  * one where there is one, else the FIXTURE set the preview carries: S2 reads neither (tests/v2/funds-source.test.mjs).
- * Off where every gate is off (not a V2 build, not the preview alias or the dev server, not a V2 chain).
+ * Off where every gate is off (not a V2 build, not the preview alias or the dev server, not a V2 chain), and on a chain
+ * funds are not brought to (./types.ts S2_DESTINATION_CHAIN_IDS: not Elysium, where a position uses the wallet's own tokens).
  */
 export async function s2Gate(chainId: number, routes: S2Routes, origin: string = pageOrigin()): Promise<V2Gate> {
-  if (!v2OriginOpen(origin) || !isV2ChainId(chainId)) return OFF
+  if (!v2OriginOpen(origin) || !isV2ChainId(chainId) || !isS2Destination(chainId)) return OFF
   let state: V2RouteState
   try {
     state = await (await routes()).state('crosschain')

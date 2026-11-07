@@ -34,6 +34,8 @@
   [data-position-detail] .dm-pos-chips { grid-column: 2; grid-row: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.875rem; margin: 0; }
   [data-position-detail] .dm-pos-chips > .dm-chip { min-height: 0; padding: 0.125rem 0.4375rem; border-radius: 0.375rem; background: var(--v4-w055); box-shadow: none; font-size: 0.75rem; line-height: 1rem; font-weight: 400; color: var(--fg-subtle); white-space: nowrap; }
   [data-position-detail] .dm-pos-chips > .dm-chip + .dm-chip::before { content: none; }
+  /* A network drawn from its own file (lib/chainMarks.ts: Elysium alone, 2026-11-07): its mark before its name. */
+  [data-position-detail] .dm-pos-chips [data-position-network][data-chain-mark]::before { content: ''; display: inline-block; width: 0.75rem; height: 0.75rem; margin-right: 0.3125rem; vertical-align: -0.125rem; background: var(--dm-chain-mark) center / contain no-repeat; }
   /* The fee tag (the kit's .tag): two joined segments, "Uniswap" and "0.30% fee", 2px apart; the "·" stays in the text,
      drawn at no size, so the chip still reads "Uniswap · 0.30% fee". */
   [data-position-detail] .dm-pos-chips > .dm-chip.dm-pos-tag { padding: 0; background: none; }

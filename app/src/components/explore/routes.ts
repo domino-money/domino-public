@@ -11,8 +11,12 @@
  * is still bound to it by the read pipeline. Older links put a pool id in the
  * section part, `#/pools#<id>`; Markets forwards those.
  *
- * Pure string functions only, with no imports: tests load this file alone.
+ * Pure string functions only; the one import is the chain list's literals (config/chainIdentity.ts, Changed on purpose
+ * 2026-11-07, Elysium's screens: a network link names any V2 chain beside Robinhood Chain, Elysium included where the
+ * build serves it), so tests load this file with that one.
  */
+
+import { isOtherV2ChainId, type OtherV2ChainIdOf } from '../../config/chainIdentity'
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/
 const POOL_ID = /^0x[0-9a-fA-F]{64}$/
@@ -77,7 +81,8 @@ export const marketsHref: typeof exploreHref = exploreHref
 
 /** A cross-network token is always identified by both network and address. Existing address-only links stay on Robinhood. */
 export interface NetworkTokenLocation {
-  chainId: 8453 | 42161
+  /** One of the V2 chains beside Robinhood Chain (config/chainIdentity.ts OTHER_V2_CHAIN_IDS), written as its decimal id. */
+  chainId: OtherV2ChainIdOf
   token: string
   /**
    * QA round 2, N5: New position's pool proposed by a token page's row (`#/new/network/<chain>/<token>/<pool>`), lowercase.
@@ -94,8 +99,9 @@ function networkLocation(hash: string, page: 'markets' | 'new'): NetworkTokenLoc
   // anything else after the token is still no route.
   const proposed = page === 'new' && segments.length === 5 && POOL_ID.test(pool)
   if (route !== page || network !== 'network' || (segments.length !== 4 && !proposed) || !ADDRESS.test(token)) return null
-  if (chain !== '8453' && chain !== '42161') return null
-  return { chainId: Number(chain) as NetworkTokenLocation['chainId'], token, ...(proposed ? { pool: pool.toLowerCase() } : {}) }
+  const chainId = /^[1-9][0-9]{0,9}$/.test(chain) ? Number(chain) : null
+  if (!isOtherV2ChainId(chainId)) return null
+  return { chainId, token, ...(proposed ? { pool: pool.toLowerCase() } : {}) }
 }
 
 export const parseMarketsNetworkHash = (hash: string): NetworkTokenLocation | null => networkLocation(hash, 'markets')
@@ -108,6 +114,8 @@ export const marketsNetworkHref = (chainId: NetworkTokenLocation['chainId'], tok
 export const newNetworkHref = (chainId: NetworkTokenLocation['chainId'], token: string, pool: string | null = null) => `#/new/network/${chainId}/${token}${pool ? `/${pool}` : ''}`
 
 export const poolHref = (poolId: string, token: string | null = null) => (token ? `#/pool/${poolId}/${token}` : `#/pool/${poolId}`)
+
+/** A Base or Arbitrum One pool's page, `#/pool/network/<chain>/<pool>/<token>`: ./poolNetwork.ts (2026-11-06). */
 
 /** New position, or New position with a pool chosen; `token` is one of the pool's tokens to verify it with (parseNewHash). */
 export const newPositionHref = (poolId: string | null = null, token: string | null = null) => (poolId ? (token ? `#/new/${poolId}/${token}` : `#/new/${poolId}`) : '#/new')

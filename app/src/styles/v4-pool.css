@@ -172,6 +172,8 @@
   [data-pool-page] .dm-pool-chips .dm-fee-sep { display: inline; font-size: 0; }
   /* QA round 2, Q23: the network, the tag's middle segment, square on both sides (as the Markets rows', v4-markets.css). */
   [data-pool-page] .dm-pool-chips .dm-fee-net { border-radius: 0.125rem; }
+  /* A network drawn from its own file (lib/chainMarks.ts: Elysium alone, 2026-11-07): its mark before its name, in the segment. */
+  [data-pool-page] .dm-pool-chips .dm-fee-net[data-chain-mark]::before { content: ''; display: inline-block; width: 0.875rem; height: 0.875rem; margin-right: 0.3125rem; vertical-align: -0.1875rem; background: var(--dm-chain-mark) center / contain no-repeat; }
   /* QA round 2, final review read-1 (Q28): the fee segment is the button of its tip (InfoTip, no (i) mark), on the tag's line as
      the other segments are, and a step lighter while a pointer or the keyboard is on it, as a chip under a pointer. */
   [data-pool-page] .dm-pool-chips .dm-info-tip-trigger { vertical-align: top; }
@@ -299,6 +301,10 @@
   [data-pool-page] details.dm-pool-a-details { padding-bottom: 0.375rem; border-radius: 0 0 1.625rem 1.625rem; box-shadow: inset 1px 0 0 var(--v4-card-ring), inset -1px 0 0 var(--v4-card-ring), inset 0 -1px 0 var(--v4-card-ring), var(--v4-card-drop); }
   [data-pool-page] .dm-pool-a-recent:last-child { padding-bottom: 0.375rem; border-radius: 1.625rem; box-shadow: var(--dm-pool-rim), var(--v4-card-drop); }
   [data-pool-page] .dm-pool-layout > :is(.dm-pool-a-recent + details.dm-pool-a-range, details.dm-pool-a-range + details.dm-pool-a-auto, details.dm-pool-a-auto + .dm-pool-a-details) { margin-top: -0.75rem; padding-top: 0.125rem; }
+  /* Base and Arbitrum One (2026-11-06, the replica rule): no chart and no recent activity yet, so the card of rows starts at
+     Choosing a price range, which rounds its top corners as Recent activity does, and Pool details joins it. */
+  [data-pool-page] .dm-pool-layout--network > details.dm-pool-a-range { padding-top: 0.375rem; border-radius: 1.625rem 1.625rem 0 0; box-shadow: var(--dm-pool-rim-top); }
+  [data-pool-page] .dm-pool-layout--network > details.dm-pool-a-range + .dm-pool-a-details { margin-top: -0.75rem; padding-top: 0.125rem; }
   [data-pool-page] .dm-v3-pool-recent > .dm-card, [data-pool-page] :is(details.dm-pool-a-range, details.dm-pool-a-auto) > .dm-card { border: 0; background: transparent; box-shadow: none; }
   [data-pool-page] .dm-v3-pool-recent > .dm-card { padding: 0; border-radius: 0; }
   /* The row heads: a 62px row, the pip and the plus. */
@@ -445,6 +451,11 @@
     [data-pool-page] .dm-pool-layout--follow > div.dm-pool-a-auto { align-self: stretch; }
     [data-pool-page] .dm-pool-layout > .dm-pool-a-details { grid-area: details; }
     [data-pool-page] .dm-pool-layout--follow > .dm-pool-a-details { margin-top: -0.75rem; }
+    /* Base and Arbitrum One (2026-11-06): what Domino can do here stands in the chart's place, beside the estimate, as a
+       page whose pool Domino can't open positions in shows it beside the chart. */
+    [data-pool-page] .dm-pool-layout.dm-pool-layout--network { grid-template-areas: "head head" "figs figs" "automation earn" "range range" "details details"; }
+    [data-pool-page] .dm-pool-layout.dm-pool-layout--network:not([data-pool-pending]):has(> .dm-pool-a-lead) { grid-template-areas: "head head" "lead lead" "figs figs" "automation earn" "range range" "details details"; }
+    [data-pool-page] .dm-pool-layout--network > div.dm-pool-a-auto { align-self: stretch; }
     [data-pool-page] .dm-pool-a-chart .dm-pool-chart-body > :is(.dm-pool-canvas, .dm-pool-plot-empty) { min-height: 17.5rem; }
     [data-pool-page] .dm-pool-stats.dm-stats--tiles.dm-stats--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     [data-pool-page] .dm-pool-stats.dm-stats--tiles.dm-stats--5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }

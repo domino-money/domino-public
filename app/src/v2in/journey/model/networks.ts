@@ -1,3 +1,4 @@
+import { OTHER_V2_CHAIN_IDS, V2_CHAIN_IDS } from '../../../config/chainIdentity'
 import { PROTOCOL_FEE_UNDESCRIBED, type NetworkPoolFacts, type NetworkToken, type OtherChainId } from '../../../lib/create/otherChains'
 import { fixedFeePercent } from '../../../lib/read/screens/fee'
 import type { AttributedFigure } from '../../../lib/read/screens/figures'
@@ -5,11 +6,11 @@ import { NATIVE_CURRENCY, poolIdKey, type PoolIdKey } from '../../../lib/read/sc
 import type { PoolOption } from '../../../lib/read/screens/poolsList'
 import type { TokenDisplay } from '../../../lib/read/types'
 import type { PoolOnChain } from '../../../finance/v2/zap'
-import { v2Chain } from '../../../v2/chains'
-import { ZERO_ADDRESS, type Address, type Dex, type PoolRef } from '../../../v2/types'
+import { hasDex, nativeArtwork, v2Chain, wrappedArtwork } from '../../../v2/chains'
+import { ZERO_ADDRESS, type Address, type Dex, type PoolRef, type V2ChainId } from '../../../v2/types'
 import type { JourneyGates } from '../source'
 import { profileTokens, type JourneyToken } from '../tokens'
-import { offeredPool, poolOf, tiersOf } from './pools'
+import { offeredPool, poolOf, samePool, tiersOf } from './pools'
 
 /**
  * Base and Arbitrum One in today's journey (2026-10-05, ../otherChains.ts): what is pure of it. Which networks are offered,
@@ -20,16 +21,20 @@ import { offeredPool, poolOf, tiersOf } from './pools'
 /** A row's TVL and 24h volume until DEX Screener's are put on as the rows are drawn (lib/create/otherChains.ts networkRows). */
 const UNREPORTED: AttributedFigure = { state: 'unavailable', provider: 'dexscreener', reason: 'no_provider_figures' }
 
-/** The networks offered: Base and Arbitrum One, each only while its S1 gate is live. */
+/**
+ * The networks offered: the V2 chains beside Robinhood Chain (config/chainIdentity.ts OTHER_V2_CHAIN_IDS: Base, Arbitrum
+ * One, and Elysium where the build serves it; Changed on purpose 2026-11-07, Elysium's screens: it named Base and Arbitrum
+ * One), each only while its S1 gate is live.
+ */
 export function offeredNetworks(gates: JourneyGates | null): OtherChainId[] {
   if (!gates) return []
-  return ([8453, 42161] as const).filter((chainId) => gates[chainId]?.mode === 'live')
+  return OTHER_V2_CHAIN_IDS.filter((chainId) => gates[chainId]?.mode === 'live')
 }
 
-/** Discovery uses read-v6, independently of whether creating a position is enabled at this origin. */
+/** Discovery uses read-v6, independently of whether creating a position is enabled at this origin (the same networks). */
 export function readableNetworks(gates: JourneyGates | null): OtherChainId[] {
   if (!gates) return []
-  return ([8453, 42161] as const).filter((chainId) => gates[chainId]?.mode !== 'off')
+  return OTHER_V2_CHAIN_IDS.filter((chainId) => gates[chainId]?.mode !== 'off')
 }
 
 /**
@@ -42,7 +47,9 @@ export function mergeGates(held: JourneyGates | null, next: JourneyGates): Journ
   if (!held) return next
   let changed = false
   const out = { ...held }
-  for (const chainId of [4663, 8453, 42161] as const) {
+  // Every V2 chain the build serves, each in both (config/chainIdentity.ts V2_CHAIN_IDS, as ../source.ts reads the gates;
+  // Changed on purpose 2026-11-07, Elysium's screens: the three were written out).
+  for (const chainId of V2_CHAIN_IDS as readonly V2ChainId[]) {
     if (held[chainId].mode === 'live' || held[chainId].mode === next[chainId].mode) continue
     out[chainId] = next[chainId]
     changed = true
@@ -50,10 +57,14 @@ export function mergeGates(held: JourneyGates | null, next: JourneyGates): Journ
   return changed ? Object.freeze(out) : held
 }
 
-/** A token of another network as a screen shows it: the profile's artwork for ETH and the network's WETH, else a disc. */
+/**
+ * A token of another network as a screen shows it: the profile's artwork for its ETH and its WETH (none for a HYPE-native
+ * chain's HYPE and WHYPE, v2/chains.ts nativeArtwork, 2026-11-06), else a disc.
+ */
 export function displayOf(chainId: OtherChainId, token: JourneyToken): TokenDisplay {
   const address = token.address.toLowerCase()
-  const weth = v2Chain(chainId).wrappedNative.address
+  const chain = v2Chain(chainId)
+  const weth = chain.wrappedNative.address
   return {
     origin: 'read',
     chainId,
@@ -61,7 +72,7 @@ export function displayOf(chainId: OtherChainId, token: JourneyToken): TokenDisp
     symbol: token.symbol,
     decimals: token.decimals,
     readStatus: token.decimals === null ? 'partial' : 'available',
-    artwork: address === ZERO_ADDRESS ? 'ETH' : address === weth ? 'WETH' : null,
+    artwork: address === ZERO_ADDRESS ? nativeArtwork(chain) : address === weth ? wrappedArtwork(chain) : null,
   }
 }
 
@@ -117,7 +128,8 @@ export function poolsToRead(chainId: OtherChainId, token: Address): PoolRef[] {
   const ether = (address: Address) => address === ZERO_ADDRESS || address === weth
   const refs: PoolRef[] = []
   const seen = new Set<string>()
-  for (const dex of [4, 3] as const satisfies readonly Dex[]) {
+  // Only the versions the network has: no v3 pool is ever asked on a chain with v4 alone.
+  for (const dex of ([4, 3] as const satisfies readonly Dex[]).filter((version) => hasDex(v2Chain(chainId), version))) {
     if (dex === 3 && self === ZERO_ADDRESS) continue
     for (const partner of profileTokens(chainId)) {
       const other = dex === 3 && partner.address === ZERO_ADDRESS ? weth : partner.address
@@ -133,6 +145,21 @@ export function poolsToRead(chainId: OtherChainId, token: Address): PoolRef[] {
     }
   }
   return refs
+}
+
+/**
+ * The token whose pools read on its network reads `pool` (pure; added 2026-11-06, review F1 of the integrated branch): the
+ * network's pool page and New position's network link find a pool only in that read (read-v6 chain-pools, as
+ * `poolsToRead`: the token against the network's own currencies, in the standard hookless keys). A side that is not one
+ * of the network's own currencies first (its read lists it against them), then either one of them; never native ETH (no
+ * token page). Null when no side's read has that key: a pair of two other tokens, or a fee and spacing off the standard
+ * ones. A WETH/ARB pool is ARB's (WETH's read lists only WETH against USDC); an ETH/USDC pool is USDC's.
+ */
+export function networkPoolToken(chainId: OtherChainId, pool: PoolRef): Address | null {
+  const own = new Set(profileTokens(chainId).map((token) => token.address.toLowerCase()))
+  const sides = [pool.currency0, pool.currency1].map((address) => address.toLowerCase() as Address).filter((address) => address !== ZERO_ADDRESS)
+  const ordered = [...sides.filter((address) => !own.has(address)), ...sides.filter((address) => own.has(address))]
+  return ordered.find((token) => poolsToRead(chainId, token).some((ref) => samePool(ref, pool))) ?? null
 }
 
 /** A pool's key on screen: the v4 pool id, or a v3 pool's address as a 32-byte word (lib/read/screens/poolsList.ts `dex`). */

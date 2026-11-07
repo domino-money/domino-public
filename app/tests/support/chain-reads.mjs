@@ -24,13 +24,17 @@ const STABLE_PRICE = POOLS.tokens.find((token) => token.symbol === 'USDC').price
  */
 const balanceChain = (name) => JSON.parse(readFileSync(new URL(`../../../api-contracts/v2/balance-chains/${name}.json`, import.meta.url), 'utf8'));
 const BALANCE_CHAINS = [balanceChain('ethereum-1'), balanceChain('optimism-10')];
+/** Added 2026-11-07 (Elysium's screens): Elysium as the builds forcing it on serve it (tests/fixtures/v2-chains). */
+const ELYSIUM = JSON.parse(readFileSync(new URL('../fixtures/v2-chains/elysium-99901.json', import.meta.url), 'utf8'));
 const STABLES = {
   4663: '0x5fc5360d0400a0fd4f2af552add042d716f1d168', 8453: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', 42161: '0xaf88d065e77c8cc2239327c5edb3a432268e5831',
   ...Object.fromEntries(BALANCE_CHAINS.map((chain) => [chain.chainId, chain.chargeCurrencies.find((c) => c.rank === 1).address.toLowerCase()])),
+  99901: ELYSIUM.chargeCurrencies.find((c) => c.rank === 1).address.toLowerCase(),
 };
 const WRAPPED = {
   4663: '0x0bd7d308f8e1639fab988df18a8011f41eacad73', 8453: '0x4200000000000000000000000000000000000006', 42161: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1',
   ...Object.fromEntries(BALANCE_CHAINS.map((chain) => [chain.chainId, chain.wrappedNative.address.toLowerCase()])),
+  99901: ELYSIUM.wrappedNative.address.toLowerCase(),
 };
 /**
  * Added 2026-10-06 (Robinhood Chain's pairs valued in USD): the fixtures' round as Robinhood Chain's own feed reads it (the
@@ -50,6 +54,8 @@ const ETH_PRICES = {
  * Changed on purpose 2026-10-06: Robinhood Chain too, USDG at 1 and its ETH and WETH at the same round from its own feed.
  */
 function priceOf(chainId, address) {
+  // Elysium's HYPE and WHYPE (2026-11-07): priced at their native pool on day 9, unpriced here, as a pool not read says.
+  if (chainId === 99901 && (address === ZERO || address === WRAPPED[chainId])) return { price: null, priceReason: 'no_qualified_price_source' };
   if (address === ZERO || address === WRAPPED[chainId]) return ETH_PRICES[chainId] ? { price: ETH_PRICES[chainId], priceReason: null } : { price: null, priceReason: 'eth_usd_stale' };
   if (address === STABLES[chainId]) return { price: STABLE_PRICE, priceReason: null };
   return { price: null, priceReason: 'no_pool' };
@@ -67,8 +73,8 @@ const sumUsd = (values) => {
   return `${micro / 1_000_000n}.${String(micro % 1_000_000n).padStart(6, '0')}`;
 };
 
-function checked(route, request, body) {
-  if (!runtime.validateResponse(route, body) || !runtime.validateExchange(route, request, body)) {
+function checked(route, request, body, contract = runtime) {
+  if (!contract.validateResponse(route, body) || !contract.validateExchange(route, request, body)) {
     throw new Error(`the test's ${route} answer breaks the contract: ${JSON.stringify(body).slice(0, 400)}`);
   }
   return { status: 200, body };
@@ -79,8 +85,10 @@ function checked(route, request, body) {
  * sqrtPriceX96, tick, liquidity}) at its head, the wallet's `balances` ({[address]: raw}). `calls` records each request.
  * Added 2026-10-06: a v3 pool's `address` beside its `pool` (or on it, as before), and a pool's `depthUsd` when its depth
  * was measured.
+ * Added 2026-11-07 (Elysium's screens): `contract`, the read-v6 runtime the answers are checked with: the package's own, or
+ * day 9's (./elysium-day9.mjs READ_V6_DAY9.runtime) for a build that forces Elysium on, whose chain 99901 it names.
  */
-export function createChainReads({ chainId, tokens = [], pools = [], balances = {} }) {
+export function createChainReads({ chainId, tokens = [], pools = [], balances = {}, contract = runtime }) {
   const calls = [];
   const meta = new Map(tokens.map((token) => [token.address, token]));
   const live = (address) => {
@@ -95,7 +103,7 @@ export function createChainReads({ chainId, tokens = [], pools = [], balances = 
         if (request.chainId !== chainId) return { status: 200, body: { ...TOKENS, chainId: request.chainId, query: request.query, tokens: [] } };
         const text = String(request.query).toLowerCase();
         const hits = tokens.filter((token) => token.address === text || token.symbol.toLowerCase().includes(text) || (token.name ?? '').toLowerCase().includes(text)).slice(0, request.limit ?? 20);
-        return checked(route, request, { ...TOKENS, chainId, query: request.query, tokens: hits.map((token) => ({ address: token.address, symbol: token.symbol, name: token.name ?? null, decimals: token.decimals, sources: token.sources ?? ['uniswap_default_list'] })), truncated: false });
+        return checked(route, request, { ...TOKENS, chainId, query: request.query, tokens: hits.map((token) => ({ address: token.address, symbol: token.symbol, name: token.name ?? null, decimals: token.decimals, sources: token.sources ?? ['uniswap_default_list'] })), truncated: false }, contract);
       }
       if (route === 'chain-pools') {
         if (request.chainId !== chainId) return undefined;
@@ -114,7 +122,7 @@ export function createChainReads({ chainId, tokens = [], pools = [], balances = 
             market: depthUsd === null ? { status: 'unavailable', reference: null, depthUsd: null, reason: 'pool_depth_unmeasurable' } : { status: 'measured', reference: pool.currency0, depthUsd, reason: null },
           })),
           truncated: false,
-        });
+        }, contract);
       }
       if (route === 'chain-balances') {
         const asked = request.tokens ?? [];
@@ -133,7 +141,7 @@ export function createChainReads({ chainId, tokens = [], pools = [], balances = 
         });
         const complete = chains.every((chain) => chain.status === 'current');
         const all = chains.every((chain) => chain.totalUsd !== null);
-        return checked(route, request, { ...BALANCES, wallet: request.wallet, coverage: complete ? 'complete' : 'partial', chains, totalUsd: all && chains.length > 0 ? sumUsd(chains.map((chain) => chain.totalUsd)) : null });
+        return checked(route, request, { ...BALANCES, wallet: request.wallet, coverage: complete ? 'complete' : 'partial', chains, totalUsd: all && chains.length > 0 ? sumUsd(chains.map((chain) => chain.totalUsd)) : null }, contract);
       }
       return undefined;
     },

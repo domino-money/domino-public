@@ -1,4 +1,4 @@
-import { isV2ChainId, v2Chain } from '../../v2/chains'
+import { isV2ChainId, positionManagerOrNull, v2Chain } from '../../v2/chains'
 import type { Hex, V2ChainId } from '../../v2/types'
 
 /** Recovery hints only. No signature, signed transaction, balance or financial authority lives here. */
@@ -22,7 +22,8 @@ function valid(value: unknown): value is PendingClose {
   const row = value as PendingClose
   if (!address.test(row.wallet) || !isV2ChainId(row.chainId) || ![3, 4].includes(row.dex)) return false
   const chain = v2Chain(row.chainId)
-  if (row.positionManager !== (row.dex === 4 ? chain.uniswap.v4.positionManager : chain.uniswap.v3.positionManager)) return false
+  // A row of a version the chain lacks (v3 on a chain with v4 alone) names no manager of it: never kept.
+  if (row.positionManager !== positionManagerOrNull(chain, row.dex)) return false
   return Array.isArray(row.tokenIds) && row.tokenIds.length >= 1 && row.tokenIds.length <= 2 && new Set(row.tokenIds).size === row.tokenIds.length
     && row.tokenIds.every((id) => typeof id === 'string' && /^[1-9][0-9]{0,77}$/.test(id))
     && typeof row.data === 'string' && row.data.length <= 65_536 && hex.test(row.data)

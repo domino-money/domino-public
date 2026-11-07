@@ -15,6 +15,7 @@
  *      wired), spec §3.1: no Domino contract on any chain) is gated by ./gate.ts from the crosschain route's own
  *      capabilities (./routes.ts) and never asks this table: its row below is kept for the table's shape only.
  */
+import { ELYSIUM_LIVE, ELYSIUM_V2_ID } from '../lib/elysiumIdentity'
 import { V2_CHAINS, isV2ChainId, v2Chain } from './chains'
 import { V2_ON } from './flag'
 import { notAvailableCopy, v2Availability } from './manifest'
@@ -22,12 +23,18 @@ import type { V2ChainId, V2Contracts } from './types'
 
 export type V2Service = 's1' | 's2' | 'vault' | 'autoExit'
 
-/** The backend's word for each service on each chain. None exists yet: all off (spec §9 points 1, 10, 17, 24). */
+/**
+ * The backend's word for each service on each chain. None exists yet: all off (spec §9 points 1, 10, 17, 24). Changed on
+ * purpose 2026-11-07 (Elysium as a fourth V2 chain): Elysium's row where it is live, off too. As on the other three, its
+ * services open only from their routes' own answers (./gate.ts serviceRouteOpen), never from this table.
+ */
+const ELYSIUM_OFF: Partial<Record<V2ChainId, boolean>> = ELYSIUM_LIVE ? { [ELYSIUM_V2_ID]: false } : {}
+const allOff = (): Readonly<Record<V2ChainId, boolean>> => Object.freeze({ 4663: false, 8453: false, 42161: false, ...ELYSIUM_OFF } as Record<V2ChainId, boolean>)
 export const V2_BACKEND_CAPABILITIES: Readonly<Record<V2Service, Readonly<Record<V2ChainId, boolean>>>> = Object.freeze({
-  s1: Object.freeze({ 4663: false, 8453: false, 42161: false }),
-  s2: Object.freeze({ 4663: false, 8453: false, 42161: false }),
-  vault: Object.freeze({ 4663: false, 8453: false, 42161: false }),
-  autoExit: Object.freeze({ 4663: false, 8453: false, 42161: false }),
+  s1: allOff(),
+  s2: allOff(),
+  vault: allOff(),
+  autoExit: allOff(),
 })
 
 export type ServiceAvailability =

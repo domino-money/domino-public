@@ -6,13 +6,14 @@ import { newPositionHref } from '../../components/explore/routes'
 import { IconPlus } from '../../components/icons'
 import { Button, Card, EmptyState, LinkButton, RangeBar, Skeleton } from '../../components/ui'
 import { feeText, rangeView } from '../../lib/automate/picker'
+import { ELYSIUM_LIVE, ELYSIUM_V2_ID } from '../../lib/elysiumIdentity'
 import { feeWords } from '../../lib/format/fee'
 import { v2Chain } from '../../v2/chains'
 import type { V2Gate } from '../../v2/gate'
-import type { Address } from '../../v2/types'
+import type { Address, V2ChainId } from '../../v2/types'
 import { MandateDialog, type ExitTarget } from '../autoexit/MandateDialog'
 import { v2PositionHref } from '../route'
-import { gateOpen, useGate } from './gate'
+import { gateOpen, useElysiumGate, useGate } from './gate'
 import { protectionPositions, protectionSelection, type ProtectionPosition } from './protectionPositions'
 import { usePortfolio } from './read6'
 import { setupWaiting, useSetupWaitOver } from './setupPositions'
@@ -54,8 +55,10 @@ export default function ProtectionSetup({ owner, route }: { owner: string; route
   const vault4663 = useGate('vault', 4663), exit4663 = useGate('autoExit', 4663)
   const vault8453 = useGate('vault', 8453), exit8453 = useGate('autoExit', 8453)
   const vault42161 = useGate('vault', 42161), exit42161 = useGate('autoExit', 42161)
-  const gates = { 4663: joined(vault4663, exit4663), 8453: joined(vault8453, exit8453), 42161: joined(vault42161, exit42161) }
-  const pending = [vault4663, exit4663, vault8453, exit8453, vault42161, exit42161].some((gate) => gate === null)
+  // Changed on purpose 2026-11-07 (Elysium as a fourth V2 chain): Elysium's gates, where the build serves it.
+  const vault99901 = useElysiumGate('vault'), exit99901 = useElysiumGate('autoExit')
+  const gates = { 4663: joined(vault4663, exit4663), 8453: joined(vault8453, exit8453), 42161: joined(vault42161, exit42161), ...(ELYSIUM_LIVE ? { [ELYSIUM_V2_ID]: joined(vault99901, exit99901) } : {}) } as Readonly<Record<V2ChainId, OpenGate | null>>
+  const pending = (ELYSIUM_LIVE ? [vault4663, exit4663, vault8453, exit8453, vault42161, exit42161, vault99901, exit99901] : [vault4663, exit4663, vault8453, exit8453, vault42161, exit42161]).some((gate) => gate === null)
   const [version, setVersion] = useState(0)
   const waitOver = useSetupWaitOver()
   const answer = usePortfolio(owner as Address, null, version)

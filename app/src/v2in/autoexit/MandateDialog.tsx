@@ -4,7 +4,7 @@ import { ActionSheet, SheetAlert, SheetCard, SheetFact, SheetFacts, SheetLocked,
 import { AUTO_EXIT_TEXT, type MandateBatch, type MandateReview, type ProtectBatch } from '../../finance/v2/autoExit'
 import type { VaultCreateRequest, VaultCreateReview } from '../../finance/v2/vault'
 import type { V2Gate } from '../../v2/gate'
-import { v2Chain } from '../../v2/chains'
+import { positionManagerOrNull, v2Chain } from '../../v2/chains'
 import type { Address, Dex, V2ChainId } from '../../v2/types'
 import { describeError, errorLabels, PROTECTION_CONSENT_TEXT, STEPS_INSTEAD, type ErrorView } from '../automate/copy'
 import { protectionSettings } from '../automate/form'
@@ -333,7 +333,7 @@ export function MandateDialog({ target, gate, onClose, onChanged, done }: {
     steps,
     context: 'autoExit',
     labels,
-    affected: { positionManager: (dex === 3 ? v2Chain(target.chainId).uniswap.v3 : v2Chain(target.chainId).uniswap.v4).positionManager, tokenIds: [target.tokenId.toString()], vault: mandate?.vault },
+    affected: { positionManager: positionManagerOrNull(v2Chain(target.chainId), dex) ?? undefined, tokenIds: [target.tokenId.toString()], vault: mandate?.vault },
     done: signed ? ['sign-mandate'] : [],
     onStepDone: (outcome) => {
       if (!mandate || !session) return

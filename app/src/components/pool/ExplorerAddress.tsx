@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { ROBINHOOD_EXPLORER } from '../../config/chainIdentity'
+import { ELYSIUM_EXPLORER, ELYSIUM_EXPLORER_NAME, ELYSIUM_LIVE, ELYSIUM_V2_ID } from '../../lib/elysiumIdentity'
 import { Address } from '../read/screens/Address'
 
 /**
@@ -7,12 +8,15 @@ import { Address } from '../read/screens/Address'
  * network's own explorer, on a person's click only, never a read. The hosts and names the docs' Contracts page links
  * (components/docs/DocsContent.tsx). v2/explorers.ts is not imported, so the pool page does not carry V2's chain
  * profiles. Kept out of components/read/screens, which hold no link (tests/screens.test.mjs), as the page's other ways
- * out are (PoolAutomation's docs links).
+ * out are (PoolAutomation's docs links). Changed on purpose 2026-11-07 (Elysium as a fourth V2 chain): Elysium's explorer
+ * where it is live and has one (lib/elysiumIdentity.ts ELYSIUM_EXPLORER, none known today): until then its addresses are
+ * the short address alone, as on any network without an explorer here.
  */
 const EXPLORERS: Readonly<Record<number, { name: string; host: string }>> = {
   4663: { name: 'Robinhood explorer', host: ROBINHOOD_EXPLORER },
   8453: { name: 'Basescan', host: 'https://basescan.org' },
   42161: { name: 'Arbiscan', host: 'https://arbiscan.io' },
+  ...((ELYSIUM_LIVE && ELYSIUM_EXPLORER !== null ? { [ELYSIUM_V2_ID]: { name: ELYSIUM_EXPLORER_NAME, host: ELYSIUM_EXPLORER } } : {}) as Record<number, { name: string; host: string }>),
 }
 
 const CONTRACT = /^0x[0-9a-fA-F]{40}$/

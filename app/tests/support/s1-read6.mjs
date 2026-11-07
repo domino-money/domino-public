@@ -16,10 +16,20 @@ const ZERO = '0x0000000000000000000000000000000000000000';
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const lower = (value) => String(value).toLowerCase();
 
-/** The three chains, all current (the fixture's Robinhood status, per chain). */
-function chains() {
+/**
+ * The package's own contract: its runtime and its constants. Added 2026-11-07 (Elysium's screens): a suite on a build that
+ * forces Elysium on hands in day 9's (./elysium-day9.mjs READ_V6_DAY9), whose chains end with Elysium's.
+ */
+const PACKAGE = Object.freeze({ runtime, CONSTANTS });
+
+/**
+ * The contract's chains, all current (the fixture's Robinhood status, per chain). Added 2026-11-07: `unindexed`, the chains
+ * the service does not index yet, each as the fixture's own unregistered chain reads (`deployment_not_registered`).
+ */
+function chains(contract = PACKAGE, unindexed = []) {
   const current = PORTFOLIO.chains.find((c) => c.status === 'current');
-  return [4663, 8453, 42161].map((chainId) => ({ ...clone(current), chainId, deployment: { ...current.deployment, manifestSha256: chainId.toString(16).padStart(64, '0') } }));
+  const none = PORTFOLIO.chains.find((c) => c.reason === 'deployment_not_registered');
+  return contract.CONSTANTS.chainIds.map((chainId) => (unindexed.includes(chainId) ? { ...clone(none), chainId } : { ...clone(current), chainId, deployment: { ...current.deployment, manifestSha256: chainId.toString(16).padStart(64, '0') } }));
 }
 
 /**
@@ -27,11 +37,11 @@ function chains() {
  * seconds), in the shape the contract's own rules accept (runtime.mjs tokenPrice and priced: its chain's feed, a round
  * inside the heartbeat, no pool).
  */
-export function ethUsdPrice(chainId, usd, at = Math.floor(Date.now() / 1000)) {
+export function ethUsdPrice(chainId, usd, at = Math.floor(Date.now() / 1000), contract = PACKAGE) {
   return {
     source: 'chainlink_eth_usd', usd, pool: null, depthUsd: null,
     snapshot: { number: 73_399_900, hash: '0x' + 'de'.repeat(32), timestamp: at },
-    ethUsd: { feed: CONSTANTS.priceProfiles[chainId].feed, roundId: '110680464442257320001', updatedAt: at - 60, usd },
+    ethUsd: { feed: contract.CONSTANTS.priceProfiles[chainId].feed, roundId: '110680464442257320001', updatedAt: at - 60, usd },
   };
 }
 
@@ -74,20 +84,23 @@ export function vaultOf({ wallet, chainId = 4663, address, rootTokenId, pool, re
   };
 }
 
-/** The wallet's portfolio: positions, tokens (sorted as the contract requires) and vaults; no mandates, no credits. */
-export function portfolioOf({ wallet, positions = [], tokens = [], vaults = [] }) {
+/**
+ * The wallet's portfolio: positions, tokens (sorted as the contract requires) and vaults; no mandates, no credits.
+ * `contract` and `unindexed` (2026-11-07): see chains().
+ */
+export function portfolioOf({ wallet, positions = [], tokens = [], vaults = [], contract = PACKAGE, unindexed = [] }) {
   const body = clone(PORTFOLIO);
   body.wallet = lower(wallet);
   body.servedAt = Math.floor(Date.now() / 1000);
-  body.chains = chains();
-  body.coverage = 'complete';
+  body.chains = chains(contract, unindexed);
+  body.coverage = unindexed.length ? 'partial' : 'complete';
   body.tokens = [...tokens].sort((a, b) => (`${String(a.chainId).padStart(20, '0')}:${a.address}` < `${String(b.chainId).padStart(20, '0')}:${b.address}` ? -1 : 1));
   body.positions = positions;
   body.vaults = vaults;
   body.mandates = [];
   body.credits = [];
   body.truncated = { mandates: false, positions: false, vaults: false };
-  return validated('portfolio', body);
+  return validated('portfolio', body, contract);
 }
 
 /** An S1 receipt as read-v6 lists it (an `s1_action` item). */
@@ -102,20 +115,20 @@ export function s1Action({ chainId = 4663, block = 73_393_000, logIndex = 3, wal
   };
 }
 
-/** The wallet's receipts page. */
-export function activityOf({ wallet, items = [] }) {
+/** The wallet's receipts page. `contract` and `unindexed` (2026-11-07): see chains(). */
+export function activityOf({ wallet, items = [], contract = PACKAGE, unindexed = [] }) {
   const body = clone(ACTIVITY);
   body.wallet = lower(wallet);
   body.servedAt = Math.floor(Date.now() / 1000);
-  body.chains = chains().map((c) => ({ ...c, finalizedThrough: { ...c.finalizedThrough, number: 73_395_500 } }));
-  body.coverage = 'complete';
+  body.chains = chains(contract, unindexed).map((c) => (c.status === 'current' ? { ...c, finalizedThrough: { ...c.finalizedThrough, number: 73_395_500 } } : c));
+  body.coverage = unindexed.length ? 'partial' : 'complete';
   body.tokens = [];
   body.items = items;
   body.nextCursor = null;
-  return validated('activity', body);
+  return validated('activity', body, contract);
 }
 
-function validated(route, body) {
-  assert.ok(runtime.validateResponse(route, body), `the ${route} answer the suite built is the contract's`);
+function validated(route, body, contract = PACKAGE) {
+  assert.ok(contract.runtime.validateResponse(route, body), `the ${route} answer the suite built is the contract's`);
   return { status: 200, body };
 }

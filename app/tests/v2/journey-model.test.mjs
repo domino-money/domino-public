@@ -323,3 +323,75 @@ test('heldRaw: what the position holds by Review\'s plan, the need or the amount
     assert.deepEqual(rowOf(held), textOf(planned.need), `${kind ?? 'unread'}: as the row writes it`);
   }
 });
+
+// Added 2026-11-06 (the replica rule, O-15: Base and Arbitrum One are Robinhood Chain's screens, only the network
+// changes): "Create a new pool (advanced)" opens the finder of the chosen token's network; on Robinhood Chain exactly as before.
+test('O-15: the pool finder opens on the chosen token\'s network wherever its gate is open; Robinhood Chain\'s only while its list keeps today\'s steps', () => {
+  for (const mode of ['preview', 'live']) {
+    assert.equal(routing.finderOpen(4663, mode), true, `Robinhood Chain ${mode}: as robinhoodFinderOpen`);
+    assert.equal(routing.finderOpen(4663, mode, 'zap'), false, 'never beside the zap path\'s own screens');
+    for (const chainId of [8453, 42161]) assert.equal(routing.finderOpen(chainId, mode), true, `${chainId} ${mode}`);
+  }
+  for (const chainId of [4663, 8453, 42161]) assert.equal(routing.finderOpen(chainId, 'off'), false, `${chainId} closed`);
+});
+
+// O-15 (2026-11-06): the one transaction this item changes, pinned at its request: a create on a pool with no price on
+// Base or Arbitrum One carries the starting price exactly as Robinhood Chain's does (chainId, pool, initialPrice), and the
+// package takes its wire form. Everything else of the request is the ordinary create's.
+test('O-15: a new pool on Base (v4) and Arbitrum One (v3): the starting price in the create request, exact, on the network\'s own chain id', () => {
+  const USDC_ARB = '0xaf88d065e77c8cc2239327c5edb3a432268e5831';
+  const WETH_ARB = '0x82af49447d8a07e3bd95bd0d56f35241523fbab1';
+  const cases = [
+    { chainId: 8453, pool: { dex: 4, currency0: ZERO, currency1: USDC_BASE, fee: 3000, tickSpacing: 60, hooks: ZERO }, tokens: [{ address: ZERO, symbol: 'ETH', decimals: 18 }, { address: USDC_BASE, symbol: 'USDC', decimals: 6 }], typed: USDC_BASE, base: ZERO },
+    { chainId: 42161, pool: { dex: 3, currency0: WETH_ARB, currency1: USDC_ARB, fee: 3000, tickSpacing: 60, hooks: ZERO }, tokens: [{ address: WETH_ARB, symbol: 'WETH', decimals: 18 }, { address: USDC_ARB, symbol: 'USDC', decimals: 6 }], typed: USDC_ARB, base: WETH_ARB },
+  ];
+  for (const one of cases) {
+    const fresh = ethUsdc({ chainId: one.chainId, pool: one.pool, tokens: one.tokens, exists: false, initialized: false, sqrtPriceX96: 0n, tick: 0 });
+    let state = machine.withPool(machine.initialJourney(one.chainId), fresh, 0);
+    assert.equal(machine.canContinue('pool', state).reason, 'Set a starting price to continue.', `${one.chainId}: a price first`);
+    state = machine.withStart(state, { base: 'currency0', text: '2500' }, 0);
+    assert.equal(machine.canContinue('pool', state).ok, true);
+    state = machine.withAmounts(state, { mode: 'pool', other: null, text: { [one.typed]: '1000' } });
+    const request = machine.createRequest(state, 'direct');
+    assert.equal(request.chainId, one.chainId, 'the network\'s own chain id');
+    assert.equal(request.action, 'create');
+    assert.deepEqual(request.pool, one.pool, 'the pool the person indicated, as read');
+    assert.deepEqual(request.initialPrice, { price: '2500', baseToken: one.base, decimals0: 18, decimals1: 6, sqrtPriceX96: 3961408125713216879677197n }, 'the same exact starting price as Robinhood Chain\'s 2,500 per ETH');
+    const wire = planRequestWire(request);
+    assert.ok(runtime.validateRequest('plan', wire), `${one.chainId}: the package takes it`);
+    assert.deepEqual(wire.initialPrice, { price: '2500', baseToken: one.base, decimals0: 18, decimals1: 6 }, 'the app\'s own sqrt price is never sent');
+    assert.equal(wire.chainId, one.chainId);
+  }
+});
+
+// Added 2026-11-06 (O-17): the DEX chip of New position's Review, as Robinhood Chain's: none on Base or Arbitrum One.
+test('O-17: a pool\'s chips name its DEX only for a v3 pool on Robinhood Chain; never on Base or Arbitrum One', () => {
+  assert.equal(pools.dexChipShown(4663, 4), false, 'Robinhood Chain\'s listed v4 pools: none, as before');
+  assert.equal(pools.dexChipShown(4663, 3), true, 'a v3 pool the finder found there: "Uniswap", as before');
+  for (const chainId of [8453, 42161]) for (const dex of [3, 4]) assert.equal(pools.dexChipShown(chainId, dex), false, `${chainId} v${dex}`);
+});
+
+// Added 2026-11-06 (the replica rule, O-18): Robinhood Chain's success for a position made on Base or Arbitrum One.
+test('O-18: the success on another network links by that network\'s routes, and offers only the automations its gates and read-v6 allow now', () => {
+  const created = require(`${BUILD}v2in/journey/model/created.js`);
+  assert.equal(created.createdHref(8453, 4, 5000001n, 'plain'), '#/positions/base-v4-5000001');
+  assert.equal(created.createdHref(8453, 4, 5000001n, 'compound'), '#/sequence/compound/base-v4-5000001');
+  assert.equal(created.createdHref(42161, 3, 77n, 'domino'), '#/sequence/domino/arbitrum-v3-77');
+  assert.equal(created.createdHref(42161, 3, 77n, 'plain'), '#/positions/arbitrum-v3-77');
+  assert.equal(created.createdKey(8453, 4, 5000001n), '8453:4:5000001', 'the automation panel\'s own key (autoexit/entry.ts exitOrderKey)');
+  assert.equal(created.createdKey(4663, 4, 9n), '9', 'Robinhood Chain v4: the bare id, as CreatedNext asks it');
+  const running = { automationHalted: false, operatorsAdmitted: 1 };
+  assert.equal(created.automationRefused(running), false);
+  assert.equal(created.automationRefused({ automationHalted: true, operatorsAdmitted: 1 }), true, 'a halted registry: the setup refuses');
+  assert.equal(created.automationRefused({ automationHalted: false, operatorsAdmitted: 0 }), true, 'no operator admitted: the setup refuses');
+  assert.equal(created.automationRefused({ automationHalted: null, operatorsAdmitted: null }), false, 'not reported: no refusal, as the setup reads it');
+  for (const none of [null, undefined]) assert.equal(created.automationRefused(none), false, 'no word: no refusal');
+  const said = (status) => ({ status });
+  assert.deepEqual(created.createdOffers({ vault: true, autoExit: true, word: said(running) }), { compound: true, exit: true });
+  assert.deepEqual(created.createdOffers({ vault: true, autoExit: false, word: said(running) }), { compound: true, exit: false }, 'Auto-exit’s own gate closed');
+  assert.deepEqual(created.createdOffers({ vault: false, autoExit: true, word: said(running) }), { compound: false, exit: false }, 'Auto-exit runs in a vault');
+  assert.deepEqual(created.createdOffers({ vault: true, autoExit: true, word: said({ automationHalted: true, operatorsAdmitted: 1 }) }), { compound: false, exit: false }, 'halted: not offered');
+  assert.deepEqual(created.createdOffers({ vault: true, autoExit: true, word: said({ automationHalted: false, operatorsAdmitted: 0 }) }), { compound: false, exit: false }, 'no operator: not offered');
+  assert.deepEqual(created.createdOffers({ vault: true, autoExit: true, word: 'pending' }), { compound: false, exit: false }, 'the plain position alone while the wallet’s portfolio is read: never drawn, then taken back');
+  assert.deepEqual(created.createdOffers({ vault: true, autoExit: true, word: said(null) }), { compound: true, exit: true }, 'no wallet or no answer: the gates decide, as the setup does');
+});

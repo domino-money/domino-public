@@ -1,5 +1,5 @@
 import type { ActivityResponse } from 'api-contracts/read-v6/types'
-import { isV2ChainId, v2Chain } from '../../v2/chains'
+import { isV2ChainId, positionManagerOrNull, v2Chain } from '../../v2/chains'
 import type { V2ChainId } from '../../v2/types'
 
 /** A verified owner transaction, retained on this device. Never inserted into read-v6's indexed response. */
@@ -26,7 +26,7 @@ export function validLocalClose(value: unknown): value is LocalCloseReceipt {
   const item = value as LocalCloseReceipt
   return typeof item.wallet === 'string' && ADDRESS.test(item.wallet) && isV2ChainId(item.chainId)
     && typeof item.positionManager === 'string' && ADDRESS.test(item.positionManager) && (item.dex === 3 || item.dex === 4)
-    && item.positionManager.toLowerCase() === v2Chain(item.chainId).uniswap[item.dex === 3 ? 'v3' : 'v4'].positionManager
+    && item.positionManager.toLowerCase() === positionManagerOrNull(v2Chain(item.chainId), item.dex)
     && typeof item.hash === 'string' && HASH.test(item.hash) && typeof item.blockHash === 'string' && HASH.test(item.blockHash)
     && Number.isSafeInteger(item.block) && item.block > 0 && (item.at === null || (Number.isSafeInteger(item.at) && item.at > 0))
     && (item.state === 'included' || item.state === 'finalized')
@@ -87,8 +87,8 @@ export const forgetLocalClose = (wallet: string, chainId: V2ChainId, positionMan
 
 /** A tx match alone cannot hide a receipt: prove the same manager, exits, NFT set and token totals. */
 export function publicCloseProves(local: LocalCloseReceipt, items: readonly ActivityResponse['items'][number][]): boolean {
-  const manager = v2Chain(local.chainId).uniswap[local.dex === 3 ? 'v3' : 'v4'].positionManager
-  if (manager.toLowerCase() !== local.positionManager.toLowerCase() || local.amounts.some((entry) => entry.amount === null)) return false
+  const manager = positionManagerOrNull(v2Chain(local.chainId), local.dex)
+  if (!manager || manager.toLowerCase() !== local.positionManager.toLowerCase() || local.amounts.some((entry) => entry.amount === null)) return false
   const same = items.filter((item) => item.chainId === local.chainId && item.tx.hash.toLowerCase() === local.hash.toLowerCase()
     && item.tx.snapshot.number === local.block && item.tx.snapshot.hash.toLowerCase() === local.blockHash.toLowerCase())
   const exits = same.filter((item): item is Extract<ActivityResponse['items'][number], { kind: 's1_action' }> => item.kind === 's1_action' && item.action === 'exit')

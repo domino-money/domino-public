@@ -16,7 +16,7 @@ import type { V2ChainId } from '../../v2/types'
 import { AmountStage } from './AmountStage'
 import { JOURNEY } from './copy'
 import { useLinkedPool } from './linkedPool'
-import { feePercent, poolFromList, type JourneyPool } from './model/pools'
+import { dexChipShown, feePercent, poolFromList, type JourneyPool } from './model/pools'
 import { priceInvertedOn } from './model/price'
 import {
   back, canContinue, canOpen, createRequest, goTo, initialJourney, inputsOf, journeyPrice, next, stepIndex,
@@ -282,10 +282,11 @@ export function ZapJourney({ chainId, gate, finderOnly, onListed, poolId = '', l
     const [l0, l1] = [labelOf(book, pool.pool.currency0), labelOf(book, pool.pool.currency1)]
     switch (step) {
       case 'pool': {
-        // The DEX as ./parts.tsx PoolChips says it: never its version; nothing at all for a v4 pool on Robinhood Chain. The
-        // pair as its price is written, base then quote (QA round 2, Q24).
+        // The DEX as ./parts.tsx PoolChips says it: never its version; only for a v3 pool on Robinhood Chain (O-17, 2026-11-06:
+        // nothing on Base or Arbitrum One, as on Robinhood Chain's v4 pools). The pair as its price is written, base then
+        // quote (QA round 2, Q24).
         const [base, quote] = flip ? [l1, l0] : [l0, l1]
-        return [`${base} / ${quote}`, v2Chain(chainId).name, ...(chainId === 4663 && pool.pool.dex === 4 ? [] : ['Uniswap']), feePercent(pool.pool.fee)].join(' · ')
+        return [`${base} / ${quote}`, v2Chain(chainId).name, ...(dexChipShown(chainId, pool.pool.dex) ? ['Uniswap'] : []), feePercent(pool.pool.fee)].join(' · ')
       }
       case 'range': {
         if (!state.range) return null

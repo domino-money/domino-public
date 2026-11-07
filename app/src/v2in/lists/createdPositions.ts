@@ -1,5 +1,5 @@
 import type { PortfolioResponse } from 'api-contracts/read-v6/types'
-import { isV2ChainId, v2Chain } from '../../v2/chains'
+import { isV2ChainId, positionManagerOrNull, v2Chain } from '../../v2/chains'
 import type { V2ChainId } from '../../v2/types'
 
 /**
@@ -28,7 +28,7 @@ export const createdPositionKey = (item: Pick<CreatedPosition, 'chainId' | 'posi
 function valid(item: CreatedPosition, wallet: string, now: number): boolean {
   return !!item && typeof item === 'object' && typeof item.wallet === 'string' && ADDRESS.test(item.wallet) && item.wallet.toLowerCase() === wallet
     && isV2ChainId(item.chainId) && (item.dex === 3 || item.dex === 4)
-    && typeof item.positionManager === 'string' && item.positionManager.toLowerCase() === v2Chain(item.chainId).uniswap[item.dex === 3 ? 'v3' : 'v4'].positionManager
+    && typeof item.positionManager === 'string' && item.positionManager.toLowerCase() === positionManagerOrNull(v2Chain(item.chainId), item.dex)
     && typeof item.tokenId === 'string' && /^[1-9][0-9]{0,77}$/.test(item.tokenId)
     && typeof item.hash === 'string' && HASH.test(item.hash) && typeof item.blockHash === 'string' && HASH.test(item.blockHash)
     && Number.isSafeInteger(item.block) && item.block > 0 && Number.isSafeInteger(item.observedAt) && item.observedAt <= now && now - item.observedAt < KEEP

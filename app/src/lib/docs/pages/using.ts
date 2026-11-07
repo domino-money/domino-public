@@ -1,11 +1,13 @@
 import { CREATE } from '../../create/copy'
 import { b, doc, list, note, p, shot } from '../blocks'
+// 2026-11-06: Elysium's words where it is live (../elysium.ts).
+import { ELYSIUM_FUNDS_FROM, ELYSIUM_LIVE, NETWORKS, OTHERS } from '../elysium'
 import type { DocPage } from '../types'
 
 export const MARKETS: DocPage = {
   slug: 'markets',
   title: 'Markets',
-  summary: 'Browse today’s Robinhood Chain pools, search tokens on Base and Arbitrum One, and understand their figures.',
+  summary: `Browse today’s Robinhood Chain pools, search tokens on ${OTHERS}, and understand their figures.`,
   sections: [
     {
       id: 'pools-table',
@@ -44,10 +46,11 @@ export const MARKETS: DocPage = {
       id: 'find-a-token',
       title: 'Find a token’s pools',
       blocks: [
-        p('The search at the top finds tokens on Robinhood Chain, Base and Arbitrum One. Search a known token by name, or paste its contract address. Check the network label before choosing.'),
+        p(`The search at the top finds tokens on ${NETWORKS}. Search a known token by name, or paste its contract address. Check the network label before choosing.`),
         // 2026-10-01 (items V2, V3, I1).
         p('On Robinhood Chain, a token’s page lists stored and provider-listed pools, each once: today’s list first, then by liquidity. High-fee or unsupported pools stay behind ', b('Show all'), '.'),
-        p('On Base and Arbitrum One, the token’s page shows pools verified by Domino’s reader. ', b('New position'), ' keeps the token and network; choose the pool in the next screen.'),
+        // 2026-11-06 (replica rule): Robinhood Chain's token page.
+        p(`On ${OTHERS}, the token’s page lists the pools Domino’s reader finds on that network. Each pool opens its own page, as on Robinhood Chain.`),
         p('An unavailable lookup does not mean the token does not exist.'),
         p('Anyone can name a token anything. Tokens that share a name show their liquidity and say so, and one posing as USDG, WETH or ETH is called out; a pool holding one shows a warning instead of ', b('Create a position'), '.'),
       ],
@@ -122,7 +125,7 @@ export const NEW_POSITION: DocPage = {
         // position (r6/poolpage). 2026-10-04: New position has no network choice (the owner, 2026-10-02).
         // Changed on purpose 2026-10-05 (the owner: the search across the three networks, each result with its network's
         // tag): still no network choice; the search finds tokens on Base and Arbitrum One too.
-        p('New position works on Robinhood Chain, Base and Arbitrum One. From a pool’s page, ', b('Create a position'), ' opens these same four steps, with that pool already chosen.'),
+        p(`New position works on ${NETWORKS}. From a pool’s page, `, b('Create a position'), ' opens these same four steps, with that pool already chosen.'),
       ],
     },
     {
@@ -155,7 +158,8 @@ export const NEW_POSITION: DocPage = {
       title: 'Amount',
       blocks: [
         shot('new-amount', 'Step 3: the amounts; slippage is under Advanced.'),
-        p('Type an amount in one token and the other fills in to fit your range. Hold both? Type your own amount in each: the position takes as much as both allow, and the rest stays in your wallet. ', b(CREATE.amount.fillIn), ' works out the second amount again. Short of one? Domino can swap part of the other, or offer to pay with another token you hold. A range beside today’s price takes its one token only: see ', doc('A range beside the price', 'ranges', 'one-sided'), '. A wallet that can’t fund the position is offered to ', doc('bring funds from another network', 'bring-funds'), '.'),
+        // 2026-11-07 (review P8): no funds are brought to Elysium (v2/types.ts S2_DESTINATION_CHAIN_IDS).
+        p('Type an amount in one token and the other fills in to fit your range. Hold both? Type your own amount in each: the position takes as much as both allow, and the rest stays in your wallet. ', b(CREATE.amount.fillIn), ' works out the second amount again. Short of one? Domino can swap part of the other, or offer to pay with another token you hold. A range beside today’s price takes its one token only: see ', doc('A range beside the price', 'ranges', 'one-sided'), '. A wallet that can’t fund the position is offered to ', doc('bring funds from another network', 'bring-funds'), ELYSIUM_LIVE ? ', except on Elysium.' : '.'),
         // 2026-09-27 (round 6): the tolerance moved under the amount step's Advanced, closed until opened.
         p('Under ', b('Advanced'), ', slippage tolerance is how far the price may move before a step stops. It starts at 0.5%; choose 0.1% to 5%.'),
       ],
@@ -196,7 +200,8 @@ export const BRING_FUNDS: DocPage = {
       blocks: [
         // 2026-10-10: transfer offers follow the position amount; remote funding is optional when local funds cover it.
         p('In the Amount step, Domino shows funds available on other networks. Enter your position amount to check a transfer. If you can already pay on the position’s network, ', b('Use another network'), ' lets you check this option too.'),
-        p('Domino checks supported balances on Robinhood Chain, Ethereum, Base, Arbitrum One and OP Mainnet, excluding the position’s network. Transfers need an available route and ETH for fees. Nothing moves until you confirm in your wallet.'),
+        // 2026-11-07 (review P8): wherever Elysium is listed; funds from it are never funds brought to it.
+        p(`Domino checks supported balances on Robinhood Chain, Ethereum, Base, Arbitrum One${ELYSIUM_FUNDS_FROM ? ', OP Mainnet and Elysium' : ' and OP Mainnet'}, excluding the position’s network. Transfers need an available route and ETH for fees${ELYSIUM_FUNDS_FROM ? ', or HYPE on Elysium' : ''}. Nothing moves until you confirm in your wallet.${ELYSIUM_LIVE ? ' A position on Elysium uses the tokens already in your wallet on Elysium.' : ''}`),
       ],
     },
     {
@@ -263,7 +268,8 @@ export const POSITIONS: DocPage = {
         // 2026-09-27: the page's key figures and order as the owner's round 5 made them (points 2, 4, 5 and 10).
         list(
           ['At the top: the pair, whether it is in range, how its fees are used, and the actions available for this position: see ', doc('Manage a position', 'manage-position'), '.'],
-          [b('Position value'), ': what it holds, in each token and, with USDG, in dollars.'],
+          // Changed on purpose 2026-11-06 (O-19): dollars where priced, Base and Arbitrum One included.
+          [b('Position value'), ': what it holds, in each token and, when priced, in dollars.'],
           [b('Fees ready to collect'), ': earned and not yet collected.'],
           [b('Your APR'), ': this position’s own fees as a yearly rate, from its history. Not the pool’s APR, and not a promise.'],
           [b('Current price'), ': the pool’s price now, on a bar between your range’s two ends.'],
@@ -277,7 +283,8 @@ export const POSITIONS: DocPage = {
       title: 'The Price range chart',
       blocks: [
         p('One line says first whether the position earns fees: ', b('Earning fees'), ' while the price is inside your range, ', b('Not earning'), ' outside it, with how far the price must move to come back, or ', b('Closed'), '.'),
-        p('The band marks ', b('Max'), ' and ', b('Min'), ', with the price ', b('Now'), '. History starts when this position opened, up to 7 days: green inside the range, red outside. Unread history is not filled in. Closed charts stop at the verified closing time, marked ', b('Last'), '.'),
+        // Changed on purpose 2026-11-06 (O-19): only where Domino keeps the pool's price history (PositionRange.tsx `history`).
+        p('The band marks ', b('Max'), ' and ', b('Min'), ', with the price ', b('Now'), '. Where Domino keeps the pool’s price history, it starts when this position opened, up to 7 days: green inside the range, red outside. Unread history is not filled in. Closed charts stop at the verified closing time, marked ', b('Last'), '.'),
         p('Fees earned offers 24H, 7D and All. A recent position’s periods start at its opening.'),
       ],
     },
@@ -296,7 +303,8 @@ export const POSITIONS: DocPage = {
       // Round 6 (2026-09-27): every token in dollars, the three largest first (the owner's rule).
       // 2026-10-01 (audit V7). Changed on purpose 2026-10-01 (integration pass 3): "read-only" is a word the docs never use
       // (tests/docs.test.mjs, the words); what it meant, said plainly.
-      blocks: [p('The Wallet card shows the tokens of the connected wallet, or any address, in dollars: the three largest first, the rest under ', b('Show all'), '. ', b('View address'), ' also lists that address’s positions, just to look at. Balances are public data.')],
+      // Added 2026-11-06 (R-07): its tokens on Base and Arbitrum One (src/v2in/walletNetworks/model.ts). 2026-11-07: and Elysium's.
+      blocks: [p('The Wallet card shows the tokens of the connected wallet, or any address, in dollars: the three largest first, the rest under ', b('Show all'), `. On Base and Arbitrum One it lists ETH, WETH, USDC and its positions’ tokens${ELYSIUM_LIVE ? ', and on Elysium HYPE, WHYPE, Elysium’s dollar token and its positions’ tokens' : ''}, naming each token’s network. `, b('View address'), ' also lists that address’s positions, just to look at. Balances are public data.')],
     },
   ],
 }

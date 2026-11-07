@@ -1,6 +1,6 @@
 import type { ActivityResponse, IndexedToken } from 'api-contracts/read-v6/types'
 import type { ConfirmedOperation } from '../../lib/confirmedOperations'
-import { isV2ChainId, v2Chain, V2_CHAINS } from '../../v2/chains'
+import { isV2ChainId, positionManagerOrNull, v2Chain, V2_CHAINS } from '../../v2/chains'
 import type { ActivityPosition } from './activityModel'
 import { decodedEventWords, tokenNamer, type ShownReceipt } from './model'
 
@@ -24,7 +24,7 @@ export function sessionActivity(wallet: string | null, proofs: readonly Confirme
     if (!event) return []
     const dex = Number(event.args.dex)
     if (dex !== 3 && dex !== 4) return []
-    if (chain.uniswap[dex === 3 ? 'v3' : 'v4'].positionManager.toLowerCase() !== proof.positionManager) return []
+    if (positionManagerOrNull(chain, dex)?.toLowerCase() !== proof.positionManager) return []
     const tokenId = String(event.args.rootTokenId)
     if (position && (position.chainId !== proof.chainId || position.dex !== dex || position.tokenId !== tokenId)) return []
     // Another log from this transaction is not proof that this setup has reached the index.

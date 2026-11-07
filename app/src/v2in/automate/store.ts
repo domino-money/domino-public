@@ -1,3 +1,4 @@
+import { V2_CHAIN_IDS } from '../../config/chainIdentity'
 import type { Address, Hex, V2ChainId } from '../../v2/types'
 import { confirmedOperationState, subscribeConfirmedOperations, type ConfirmedOperation } from '../../lib/confirmedOperations'
 
@@ -257,7 +258,8 @@ function projectProofs(before: State): State {
 
 /** Called by the shared public-confirmation subscription, including when a receipt is later reorganized. */
 export function applyAutomationProof(operation: ConfirmedOperation): void {
-  if (![4663, 8453, 42161].includes(operation.chainId)) return
+  // Any V2 chain the build serves (config/chainIdentity.ts V2_CHAIN_IDS; Changed on purpose 2026-11-07: the three were written out).
+  if (!V2_CHAIN_IDS.includes(operation.chainId)) return
   for (const [key, old] of proofs) if (old.chainId === operation.chainId && old.hash === operation.hash && old.blockHash !== operation.blockHash) { proofs.delete(key); proofApprovals.delete(key) }
   const key = proofKey(operation)
   proofs.set(key, operation)

@@ -4,7 +4,7 @@ import { SheetCard, SheetFact, SheetFacts, SheetMore } from '../../components/po
 import { Button, cx, FigureDash, Skeleton } from '../../components/ui'
 import type { ZapReview, ZapWarning } from '../../finance/v2/zap'
 import { CREATE } from '../../lib/create/copy'
-import { v2Chain } from '../../v2/chains'
+import { inChainCurrency, v2Chain, type V2Chain } from '../../v2/chains'
 import { conversionSummary, ethAboutText, ethText, EXACT_FRACTION, feesToCome, feeTierText, networkFeeLine, planNetworkCost, priceText, rangeBothWays, shortAddress, smallerUpToPercent, spanText } from '../../v2/plan/present'
 import type { S1PlanReply, S1PlanRequest } from '../../v2/plan/types'
 import { ZERO_ADDRESS, type Address, type TokenAmount, type V2ChainId } from '../../v2/types'
@@ -97,7 +97,7 @@ export function Review({ chainId, book, reply, request, review = null, steps = [
   const converted = zapPlan.action === 'exit' && zapPlan.plan.legs.length > 0 && removed
     ? conversionSummary({ pool, legs: zapPlan.plan.legs, expectedRemoved: removed, offerAbovePercent: UNCONVERTED_OFFER_ABOVE_PERCENT })
     : null
-  const warnings = warningsOf(zapPlan.action, pool.dex, review)
+  const warnings = warningsOf(zapPlan.action, pool.dex, review, chain)
   if (review?.replacesApproval) warnings.push({ key: 'replaces_approval', text: COPY.review.replacesApproval })
   const paysEth = inputs.some((input) => input.token === ZERO_ADDRESS)
   const fee = facts.fee
@@ -168,9 +168,9 @@ export function Review({ chainId, book, reply, request, review = null, steps = [
         >
           <span className="tnum">
             {network.kind === 'about'
-              ? COPY.review.networkAbout(ethAboutText(network.wei))
+              ? COPY.review.networkAbout(ethAboutText(network.wei, chain.nativeSymbol))
               : network.kind === 'upTo'
-                ? COPY.review.networkFeeUpTo(ethText(network.wei))
+                ? COPY.review.networkFeeUpTo(ethText(network.wei, chain.nativeSymbol))
                 : !stale && steps.some((step) => step.status === 'preparing')
                   ? <Skeleton className="inline-block h-[1em] w-24 align-middle" />
                   : COPY.review.networkUnknown}
@@ -219,7 +219,7 @@ export function Review({ chainId, book, reply, request, review = null, steps = [
         {(smaller !== null || paysEth) && (
           <div className="dm-pa-notes">
             {smaller !== null && <Note data-position-smaller={smaller}>{COPY.review.smaller(smaller)}</Note>}
-            {paysEth && <Note data-position-warning="eth_direct">{COPY.review.ethDirect}</Note>}
+            {paysEth && <Note data-position-warning="eth_direct">{inChainCurrency(COPY.review.ethDirect, chain)}</Note>}
           </div>
         )}
         <SheetFacts data-position-review-facts="">
@@ -248,7 +248,7 @@ export function Review({ chainId, book, reply, request, review = null, steps = [
           {network.kind === 'about' && network.ceiling !== null && (
             <SheetFact label={COPY.review.networkCeiling} data-position-network-ceiling="">
               <span className="tnum">
-                {ethText(network.ceiling)}
+                {ethText(network.ceiling, chain.nativeSymbol)}
                 {network.othersMissing && (
                   <>
                     {' + '}
@@ -259,7 +259,7 @@ export function Review({ chainId, book, reply, request, review = null, steps = [
             </SheetFact>
           )}
           <SheetFact label={COPY.review.l1Fee} data-position-l1="">
-            <span className="tnum">{l1Fee.status === 'ok' ? ethText(l1Fee.wei) : <FigureDash reason={COPY.review.l1Unavailable} />}</span>
+            <span className="tnum">{l1Fee.status === 'ok' ? ethText(l1Fee.wei, chain.nativeSymbol) : <FigureDash reason={COPY.review.l1Unavailable} />}</span>
           </SheetFact>
           <SheetFact label={COPY.review.deadline} data-position-deadline="">{COPY.review.deadlineValue(spanText(facts.expiresAt - Math.floor(at)))}</SheetFact>
           {zapPlan.action !== 'changeRange' && rangeFact}
@@ -273,7 +273,7 @@ export function Review({ chainId, book, reply, request, review = null, steps = [
               them ("ETH (native)", never the zero address), each in full in its title; the version only as data-dex. */}
           <SheetFact label={CREATE.review.detailRows.contracts} data-position-review-tokens="">
             <span className="tnum">
-              <span title={pool.currency0}>{contractText(pool.currency0)}</span> / <span title={pool.currency1}>{contractText(pool.currency1)}</span>
+              <span title={pool.currency0}>{contractText(pool.currency0, chain)}</span> / <span title={pool.currency1}>{contractText(pool.currency1, chain)}</span>
             </span>
           </SheetFact>
           {intent.tokenId > 0n && <SheetFact label={COPY.page.nftId}>{intent.tokenId.toString()}</SheetFact>}
@@ -285,8 +285,8 @@ export function Review({ chainId, book, reply, request, review = null, steps = [
 }
 
 /** A token's contract as New position's Details writes it: "ETH (native)" for the native currency, else its short address. */
-function contractText(token: Address): string {
-  return token === ZERO_ADDRESS ? `ETH (${CREATE.review.detailRows.native})` : shortAddress(token)
+function contractText(token: Address, chain: V2Chain): string {
+  return token === ZERO_ADDRESS ? `${chain.nativeSymbol} (${CREATE.review.detailRows.native})` : shortAddress(token)
 }
 
 function RangeWords({ low, high, base, quote }: { low: number | null; high: number | null; base: string; quote: string }): ReactNode {
@@ -301,9 +301,9 @@ function RangeWords({ low, high, base, quote }: { low: number | null; high: numb
 }
 
 /** The review's warnings (the zap client's closed keys; the action's own without a client review). The WETH note is a v3 pool's alone. */
-function warningsOf(action: ZapReview['action'], dex: 3 | 4, review: ZapReview | null): { key: string; text: string }[] {
+function warningsOf(action: ZapReview['action'], dex: 3 | 4, review: ZapReview | null, chain: V2Chain): { key: string; text: string }[] {
   const keys: ZapWarning[] = review ? review.warnings.filter((key) => key !== 'exit_conversion_dust' && (key !== 'v3_weth_leftovers' || dex === 3)) : [...(dex === 4 && action === 'increase' ? ['v4_increase_sends_fees' as const] : []), ...(action === 'changeRange' ? ['change_range_new_nft' as const] : [])]
-  return keys.map((key) => ({ key, text: warningText(key as Exclude<ZapWarning, 'exit_conversion_dust'>) }))
+  return keys.map((key) => ({ key, text: inChainCurrency(warningText(key as Exclude<ZapWarning, 'exit_conversion_dust'>), chain) }))
 }
 
 function warningText(key: Exclude<ZapWarning, 'exit_conversion_dust'>): string {

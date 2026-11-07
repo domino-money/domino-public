@@ -53,7 +53,7 @@ function harness(answers, { send = async () => HASH, current = () => true, realF
     './errors': { actionError: (error) => ({ copy: 'failed', code: error instanceof Error ? error.message : 'unknown', recovery: 'none' }) },
     './wallet': { connectPosition: async () => connection },
     '../lists/positionSync': { positionChanged: (change) => announced.push(change) },
-    '../../v2/chains': { v2Chain: () => ({ uniswap: { v3: { positionManager: '0x03' }, v4: { positionManager: '0x04' } } }) },
+    '../../v2/chains': { v2Chain: () => ({ uniswap: { v3: { positionManager: '0x03' }, v4: { positionManager: '0x04' } } }), positionManagerOf: (chain, dex) => chain.uniswap[dex === 4 ? 'v4' : 'v3'].positionManager },
     '../receiptWait': wait,
     '../journey/receiptFollow': { RECEIPT_FOLLOW: { follow: (key, job) => { follows.push({ key, job }); shared?.follow(key, job); } } },
   };

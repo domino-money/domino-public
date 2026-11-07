@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { agedMarket, percentText, presentMetric, type Metric } from '../../../lib/markets'
+import { agedMarket, percentText, presentMetric, type Market, type Metric } from '../../../lib/markets'
 import { presentAprEstimate } from '../../../lib/read/aprEstimate'
 import { projectMarketRow } from '../../../lib/read/project'
 import { overviewPoolOption, storedPoolRead } from '../../../lib/read/publicOverview'
@@ -15,7 +15,9 @@ import { usePoolStandIns, useFallbackRow } from '../../../lib/read/useFallback'
 import { useNow } from '../../../lib/read/useNow'
 import { APR_SLIVER, aprDigits } from '../../../lib/format/apr'
 import { FEE_VENUE, feeWords } from '../../../lib/format/fee'
+import { ELYSIUM_LIVE, ELYSIUM_V2_ID } from '../../../lib/elysiumIdentity'
 import { networkName } from '../../../lib/networkName'
+import { chainMarkProps } from '../../../lib/chainMarks'
 import { useLoadMilestone } from '../../../lib/useLoadMilestone'
 import { FEE_MEANING } from '../../explore/feeMeaning'
 import { InfoTip } from '../../InfoTip'
@@ -168,10 +170,19 @@ function refusal(option: PoolOption): string {
  * changes) has no estimate and no typical range: what Domino can do here says
  * why, beside its chart.
  */
-export function PoolWorkspace({ source, option, onOption, actions, earnAction, painted, notice, moment = false }: {
+export function PoolWorkspace({ source, option, onOption, actions, earnAction, painted, notice, moment = false, figures }: {
   source: ReadSource
   option: PoolOption
   onOption: (next: PoolOption) => void
+  /**
+   * Added 2026-11-06 (the owner's replica rule: Robinhood Chain's pool page on Base and Arbitrum One): the pool's figures
+   * handed in by the caller, read on the pool's own network (lib/read/networkMarkets.ts: the network's pools read and DEX
+   * Screener's figures), `loading` while they are on their way. With them the page reads nothing of its own (no
+   * capabilities, no market, history, activity or positions read: the read service holds none of that network), and the
+   * blocks whose data no read has for that network yet are left out: the price history chart, the recent activity, and
+   * Domino's own 24h history in Technical details. Without them, Robinhood Chain's page, exactly as before.
+   */
+  figures?: { row: Market | null; loading: boolean }
   actions?: ReactNode
   /** QA round 2, N84 (the owner's yes): the way into New position again, under the earnings estimate, one-column page only. */
   earnAction?: ReactNode
@@ -183,6 +194,7 @@ export function PoolWorkspace({ source, option, onOption, actions, earnAction, p
   painted?: Extract<ReadOutcome<'overview'>, { state: 'ok' }>
 }) {
   const poolId = option.key
+  const handed = figures !== undefined
   const optionChanged = useRef(onOption)
   useEffect(() => { optionChanged.current = onOption }, [onOption])
   const [checked, setChecked] = useState<{ key: string; listed: Listed } | null>(null)
@@ -199,7 +211,7 @@ export function PoolWorkspace({ source, option, onOption, actions, earnAction, p
   const onDay = useCallback((span: DaySpan) => { if (span.base === pageBase) setHeard({ key: poolId, span }) }, [poolId, pageBase])
   // One clock for the page: figures age, and a pool price read long ago turns stale, while it is open.
   const now = useNow(true)
-  const checkable = typeof source.routeEnabled === 'function'
+  const checkable = !handed && typeof source.routeEnabled === 'function'
   const listed: Listed | null = !checkable ? NOTHING_LISTED : checked?.key === poolId ? checked.listed : null
   const ready = listed !== null
   const storedFirst = listed?.['markets-snapshot'] === true
@@ -215,7 +227,7 @@ export function PoolWorkspace({ source, option, onOption, actions, earnAction, p
   }, [source, poolId, checkable])
 
   useEffect(() => {
-    if (!ready) return
+    if (!ready || handed) return
     const controller = new AbortController()
     const { signal } = controller
     let cancelRefresh: (() => void) | null = null
@@ -263,7 +275,7 @@ export function PoolWorkspace({ source, option, onOption, actions, earnAction, p
     if (bundled && typeof document !== 'undefined' && document.hidden) cancelRefresh = whenVisibleAfter(0, () => void load())
     else void load()
     return () => { controller.abort(); cancelRefresh?.() }
-  }, [source, poolId, ready, storedFirst, bundled, marketAttempt])
+  }, [source, poolId, ready, storedFirst, bundled, marketAttempt, handed])
 
   // The copy's figures, dated as they were read, until the page's own first answer (speed wave, item 44, 2026-09-28);
   // shown once the page knows which of its routes are listed, as its own answer is, so its cards take their places
@@ -285,15 +297,17 @@ export function PoolWorkspace({ source, option, onOption, actions, earnAction, p
   // bound again by address. A catalogue label never supplies decimals.
   const bound = (token: PoolOption['currencies'][number]) => option.currencies.find((known) => known.address === token.address) ?? token
   const row = projected ? { ...projected, tokens: { base: bound(projected.tokens.base), quote: bound(projected.tokens.quote) } } : null
-  // Refused figures stood in for, as on Markets (audit V1, lib/read/figureFallback.ts): dated and attributed.
-  const shown = useFallbackRow(row ? agedMarket(row, now) : null, now)
+  // Refused figures stood in for, as on Markets (audit V1, lib/read/figureFallback.ts): dated and attributed. A network's
+  // row handed in (`figures`) already carries DEX Screener's, and is never stood in for (lib/read/useFallback.ts).
+  const own = handed ? (figures.row ?? null) : row
+  const shown = useFallbackRow(own ? agedMarket(own, now) : null, now)
   const provenance = shown?.provenance
   // A refused acquisition with nothing stored is not loading: nothing is coming until the ceiling drains, so its figures
   // are dashes, not an endless skeleton.
-  const loading = answered === null || (answered.ok === null && answered.acquiring === true && answered.accepted !== false)
+  const loading = handed ? figures.loading && figures.row === null : answered === null || (answered.ok === null && answered.acquiring === true && answered.accepted !== false)
   // A pool with no stored figures at all (still being collected, or the store refused them): this browser's last ones,
   // DEX Screener's, or today's selection's stand in, dated and attributed (audit V1), rather than resting bubbles.
-  const standIns = usePoolStandIns(option, shown === null && answered !== null, now)
+  const standIns = usePoolStandIns(option, !handed && shown === null && answered !== null, now)
   const failure = answered && !answered.ok ? answered.failure : null
   // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a figure with no answer is a dash with no
   // reason. Gone from the dashes' titles, the live region and the chart: the failed read's words (failureText, e.g.
@@ -372,7 +386,10 @@ export function PoolWorkspace({ source, option, onOption, actions, earnAction, p
   // earnings estimate and the recent activity, the typical range beside what Domino can do here, then Details; where
   // Domino can't open a position, what it can do here and the recent activity beside the chart. A phone reads them in
   // the DOM's order.
-  return <div data-pool-workspace={option.key} className={usable ? 'dm-pool-layout' : 'dm-pool-layout dm-pool-layout--follow'} data-pool-moment={moment ? '' : undefined}>
+  // A network's page (`figures`) has no chart and no recent activity: what Domino can do here stands beside the estimate,
+  // in the chart's place, as a page whose pool Domino can't open positions in shows it beside the chart (v4-pool.css).
+  const layout = !usable ? 'dm-pool-layout dm-pool-layout--follow' : handed ? 'dm-pool-layout dm-pool-layout--network' : 'dm-pool-layout'
+  return <div data-pool-workspace={option.key} className={layout} data-pool-moment={moment ? '' : undefined} data-pool-network={handed ? base.chainId : undefined}>
     <div className="dm-pool-head dm-pool-a-head">
       <div className="dm-pool-title">
         {/* Named as its price is written, "TOKEN/USDG" beside "1 TOKEN = X USDG" (audit E21). */}
@@ -386,8 +403,9 @@ export function PoolWorkspace({ source, option, onOption, actions, earnAction, p
                 ("Uniswap · Robinhood Chain · 0.30% fee"), by the app's one table of network names; Q28: what the fee is.
                 Changed on purpose 2026-10-30 (QA round 2, final review read-1): the fee segment opens that sentence as the
                 button of a tip (InfoTip, no (i) mark on the chip), which a tap or the keyboard opens as the key figures' do (N38); a hover title alone
-                reached neither, and the chip keeps its short text. */}
-            <span className="dm-chip"><span className="dm-fee-venue">{FEE_VENUE}</span><span className="dm-fee-sep"> · </span><span className="dm-fee-venue dm-fee-net" data-chain-chip={base.chainId}>{network}</span><span className="dm-fee-sep"> · </span><InfoTip label={`About the ${feeWords(fee).toLowerCase()}`} text={FEE_MEANING}><span className="dm-fee-value">{feeWords(fee)}</span></InfoTip></span>
+                reached neither, and the chip keeps its short text. Changed on purpose 2026-11-07 (Elysium's screens): a
+                network drawn from its own file (lib/chainMarks.ts: Elysium alone) shows its mark beside its name. */}
+            <span className="dm-chip"><span className="dm-fee-venue">{FEE_VENUE}</span><span className="dm-fee-sep"> · </span><span className="dm-fee-venue dm-fee-net" data-chain-chip={base.chainId} {...chainMarkProps(base.chainId)}>{network}</span><span className="dm-fee-sep"> · </span><InfoTip label={`About the ${feeWords(fee).toLowerCase()}`} text={FEE_MEANING}><span className="dm-fee-value">{feeWords(fee)}</span></InfoTip></span>
           </div>
         </div>
       </div>
@@ -424,28 +442,32 @@ export function PoolWorkspace({ source, option, onOption, actions, earnAction, p
       </p>
     </div>
 
-    <div className="dm-pool-a-chart dm-lit">
+    {!handed && <div className="dm-pool-a-chart dm-lit">
       {/* Changed on purpose 2026-10-31 (QA round 2 follow-ups, Q24): the chart is handed the two tokens in the order the
           pool's name is written (base, then quote), as the figures sheet hands them (PoolFiguresDialog), so its "Price of"
           switch reads "PRIORS | USDG" under "PRIORS / USDG"; a USDG-first pool read "USDG | PRIORS". It still opens on the
           base priced in the quote, and reads exactly what it read. */}
       <PoolHistoryChart source={source} option={{ key: option.key, currencies: [base, quote] }} market={shown} loading={loading} quote={1} onDay={onDay} />
-    </div>
+    </div>}
 
     {usable && <div className="dm-pool-a-earn dm-lit">
       <PoolEarnings apr={aprNumber} aprDigits={aprShown} tvl={tvl} loading={loading || (metricsListed && !metricsRead && !!shown)} saved={aprNumber !== null && (savedApr || (tvl !== null && tvl > 0 && tvlMetric?.state === 'stale'))} action={earnAction} />
     </div>}
 
-    <div className="dm-pool-a-recent dm-v3-pool-recent dm-lit">
+    {/* A network's page: what Domino can do here, as a card beside the estimate (in the DOM before the rows below, so a
+        phone reads it after the estimate and the card of rows stays whole). */}
+    {usable && handed && <div className="dm-pool-a-auto dm-lit"><PoolAutomation usable={usable} why={refusal(option)} /></div>}
+
+    {!handed && <div className="dm-pool-a-recent dm-v3-pool-recent dm-lit">
       <PoolActivitySummary read={activityRead} listed={activityListed} option={option} now={now} day={day} usd={usd} volume={volumeText} loading={loading} />
-    </div>
+    </div>}
 
     {usable && <details className="dm-pool-a-range dm-v3-pool-disclosure dm-lit">
       <summary>Choosing a price range<span aria-hidden="true" /></summary>
       <PoolRangeGuide guide={guide} day={day} unit={unit} saved={price.state === 'usable' && price.stale} />
     </details>}
 
-    {usable ? <details className="dm-pool-a-auto dm-v3-pool-disclosure dm-lit">
+    {usable && handed ? null : usable ? <details className="dm-pool-a-auto dm-v3-pool-disclosure dm-lit">
       <summary>Automate your position<span aria-hidden="true" /></summary>
       <PoolAutomation usable={usable} why={refusal(option)} />
     </details> : <div className="dm-pool-a-auto dm-lit"><PoolAutomation usable={usable} why={refusal(option)} /></div>}
@@ -466,12 +488,16 @@ export function PoolWorkspace({ source, option, onOption, actions, earnAction, p
         {/* QA round 2, Q34: the chain's own ETH has no contract; its zero address is named for what it is. N24 (the
             owner's yes): a token's contract opens on the pool's network's explorer; the pool id stays unlinked.
             Changed on purpose 2026-10-31 (QA round 2 follow-ups, Q24): the two tokens in the order the pool's name is
-            written (base, then quote), as the title above; a USDG-first pool listed USDG first here. */}
-        {[base, quote].map((token) => <div key={token.address}><dt><PoolTokenLabel token={token} /></dt><dd className="text-fg-muted">{token.address === NATIVE_CURRENCY ? <>Native ETH (<Address value={token.address} short />)</> : <ExplorerAddress address={token.address} chainId={base.chainId}><SymbolText token={token} /></ExplorerAddress>}</dd></div>)}
+            written (base, then quote), as the title above; a USDG-first pool listed USDG first here.
+            Changed on purpose 2026-11-07 (review finding P4): the network's own currency, "Native HYPE" on Elysium, where
+            the build serves it (a build-time fact, so a build where it is off carries the one word it had). */}
+        {[base, quote].map((token) => <div key={token.address}><dt><PoolTokenLabel token={token} /></dt><dd className="text-fg-muted">{token.address === NATIVE_CURRENCY ? <>{ELYSIUM_LIVE && base.chainId === ELYSIUM_V2_ID ? 'Native HYPE' : 'Native ETH'} (<Address value={token.address} short />)</> : <ExplorerAddress address={token.address} chainId={base.chainId}><SymbolText token={token} /></ExplorerAddress>}</dd></div>)}
         {/* QA round 2, N72 (the owner's option b): a fixed fee off Uniswap's usual tiers says so here, inside the closed
             details only, with no version named. */}
         <div><dt>Fee</dt><dd data-fee-tier={fee === 'Dynamic fee' ? undefined : STANDARD_FEE_PIPS.has(option.feePips) ? 'standard' : 'non-standard'}>{fee === 'Dynamic fee' ? fee : `${fee} · fixed${STANDARD_FEE_PIPS.has(option.feePips) ? '' : ' · non-standard'}`}</dd></div>
-        {protocol && (
+        {/* A network's v3 pool whose protocol fee is on carries no v4 packed fee (lib/create/otherChains.ts
+            PROTOCOL_FEE_UNDESCRIBED): its row is left out rather than a dash. */}
+        {protocol && !(handed && protocol.state === 'invalid') && (
           <div data-protocol-fee={protocol.state}>
             <dt>Protocol fee</dt>
             <dd title={protocol.state === 'invalid' ? 'The pool’s protocol fee could not be read as two directional rates.' : `Taken from the token a swap sells into the pool, before the LP fee. Packed value ${option.protocolFeeRaw}, read at block ${blockText(option.block)}.`}>
@@ -504,19 +530,26 @@ export function PoolWorkspace({ source, option, onOption, actions, earnAction, p
               "Robinhood Chain" on Base and Arbitrum One pools too. */}
           <dt>Pool read</dt>
           <dd title={`The pool was read on ${network} and matches its id. Its tokens are not checked or endorsed.`}>
-            On chain at block {blockText(option.block)} · {option.kind === 'stored' ? 'stored on-chain observation' : option.kind === 'discovery' ? 'found by provider discovery' : `from the catalogue (${option.catalogue?.source === 'initialize_event' ? 'initialize event' : 'verified observation'} at block ${option.catalogue ? blockText(option.catalogue.block) : ''})`}
+            On chain at block {blockText(option.block)}{handed ? null : <> · {option.kind === 'stored' ? 'stored on-chain observation' : option.kind === 'discovery' ? 'found by provider discovery' : `from the catalogue (${option.catalogue?.source === 'initialize_event' ? 'initialize event' : 'verified observation'} at block ${option.catalogue ? blockText(option.catalogue.block) : ''})`}</>}
             {option.requestedById && ' · asked for by id'}
           </dd>
         </div>
       </dl>
       <div className="dm-pool-details-parts">
-        <section className="dm-pool-embedded" aria-labelledby="pool-apr-how">
+        {(!handed || aprStandIn) && <section className="dm-pool-embedded" aria-labelledby="pool-apr-how">
           <h3 id="pool-apr-how" className="dm-pool-embedded-title">How the APR is worked out</h3>
           <div className="grid gap-3 text-[0.8125rem] leading-[1.125rem]">
-            <dl data-history-apr="">
+            {!handed && <dl data-history-apr="">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3"><dt className="text-fg-muted">Pool APR, Domino history</dt><dd className="font-medium">{historyApr}</dd></div>
-            </dl>
-            {shown ? (
+            </dl>}
+            {/* A network's page (`figures`): the estimate its APR tile shows, worked out from DEX Screener's figures; the read
+                service holds no estimate of that network to show here, and its absence is left out rather than a dash. */}
+            {handed ? (aprStandIn && (
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3" data-network-apr="">
+                <span className="text-fg-muted">Estimated APR</span>
+                <FallbackApr apr={aprStandIn} compact />
+              </div>
+            )) : shown ? (
               <PoolAprEstimate observation={shown.feeAprEstimate} now={now} detailed label="Estimated APR" />
             ) : (
               <div className="flex flex-wrap items-baseline justify-between gap-x-3">
@@ -525,7 +558,7 @@ export function PoolWorkspace({ source, option, onOption, actions, earnAction, p
               </div>
             )}
           </div>
-        </section>
+        </section>}
         <section className="dm-pool-embedded" aria-labelledby="pool-provider-figures">
           <h3 id="pool-provider-figures" className="dm-pool-embedded-title">Other provider figures</h3>
           <div className="grid gap-3">

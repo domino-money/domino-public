@@ -1,30 +1,38 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { ActivityResponse, PortfolioResponse } from 'api-contracts/read-v6/types'
-import { IconChevronDown, IconChevronLeft, IconClose, IconSearch, IconWalletLine } from '../../components/icons'
+import { IconChevronDown, IconChevronLeft, IconClose, IconMarkets, IconPlus, IconSearch, IconWalletLine } from '../../components/icons'
+import { newNetworkHref, newPositionHref, poolHref, positionsHref } from '../../components/explore/routes'
+import { poolNetworkHref } from '../../components/explore/poolNetwork'
 import { positionsListHref, viewedPositionsAddress } from '../../components/positions/listHref'
 import { openWalletDialog } from '../../finance/signedOut'
 import { IconCollect } from '../../components/positions/actionIcons'
 import { PositionRange, chainCardPrice, preloadPriceChart } from '../../components/positions/PositionRange'
+import { Amounts, FigureDetail, KEY_FIGURES_COPY as KEY, PriceNow, RangeLine, ValueSplit } from '../../components/positions/keyFigureParts'
+import { AUTOMATION_NAME } from '../../components/positions/visual/AutomationImpact'
+import { basisOf, rawPair, valueShares } from '../../components/positions/visual/value'
 import { activityOpenedAt } from '../../lib/chart/positionOpened'
-import { readablePrice } from '../../lib/chart/priceFacts'
-import { priceInverted } from '../../lib/read/orientation'
+import { cardPoolUsableForDomino } from '../../lib/read/screens/positions'
+import { walletState } from '../../lib/walletCards'
+import { chainMarkProps } from '../../lib/chainMarks'
 import { Amount as CardAmount, PairName, PositionStatus } from '../../components/positions/PositionFigures'
 import { PositionSkeleton } from '../../components/positions/visual/PositionSkeleton'
 import { Address } from '../../components/read/screens/Address'
 import { TokenMarkPair } from '../../components/TokenIcon'
-import { Button, Chip, Display, EmptyState, FigureDash, KeyValue, KeyValueList, PageShell, Stat, StatStrip, cx } from '../../components/ui'
+import { Button, Chip, Display, EmptyState, FigureDash, KeyValue, KeyValueList, LinkButton, PageShell, Stat, StatStrip, cx } from '../../components/ui'
 import { LiveFigure, UsdText } from '../../components/figures'
 import { formatUsdFloor } from '../../lib/format/usd'
 import { useRouteTitle } from '../../lib/routeTitle'
 import { useMediaQuery } from '../../lib/useMediaQuery'
 import { useWalletIdentity } from '../../lib/walletIdentity'
 import { newPositionExpected } from '../../lib/automate/autoExitAsk'
-import { v2Chain } from '../../v2/chains'
+import { chainHasDex, v2Chain } from '../../v2/chains'
 import { v2Gate, type V2Gate } from '../../v2/gate'
 import { v2PageProbe } from '../transports'
 import { feeTierText } from '../../v2/plan/present'
 import { coverageNote } from '../../v2/read/v6'
-import { ZERO_ADDRESS } from '../../v2/types'
+import { ZERO_ADDRESS, type Address as TokenAddress, type V2ChainId } from '../../v2/types'
+import { networkPoolToken } from '../journey/model/networks'
+import { networkPoolListed } from './networkPool'
 import { parseV2PositionParam, type V2PositionRef } from '../route'
 import { ApprovalFact, useZapApproval } from './Approval'
 import { cardOf, poolIdentity, walletPositionOf } from './card'
@@ -37,7 +45,7 @@ import { chainStatusOf, findPosition, fromV6, hookedPool, isLive, tokensOf, vaul
 import { MoreActions, positionMenuItems } from './MoreActions'
 import { PositionDialog, type PositionMode } from './PositionDialog'
 import type { V6Read } from './source'
-import { labelOf, tokenBook } from './tokens'
+import { tokenBook } from './tokens'
 import { useActivityHistory } from '../lists/activity'
 import PositionHistory from '../lists/PositionHistory'
 import { useCreatedPositions, useKeyed, useKeyedLatest, useUsdAged } from '../lists/hooks'
@@ -45,6 +53,8 @@ import { OWN_PORTFOLIO } from '../lists/source'
 import { positionRows, usdAsOf } from '../lists/model'
 import type { OpenGate } from './wallet'
 import RecordedInsights from './RecordedInsights'
+import { YourAprStat } from '../../components/positions/YourAprStat'
+import { burnedAt, compoundingKind, storedAutomaticAdds, storedFeesEvents, storedHistoryWords, usePositionFees, useStoredPosition } from './positionFees'
 import { usdTitleWords } from './usdAvailability'
 
 // 2026-10-03 (the owner's point 10): the Price range chart's own chunk, asked for as this page's code arrives (V1's page does the same).
@@ -131,9 +141,21 @@ function Known({ line, sentence }: { line: string; sentence: string }) {
  * only, the owner, 2026-10-02: none is read without a wallet); the money clients read the chain through the wallet again
  * before any send. The chain's status comes before any of its figures (§6.2); an unread position is said so, never
  * drawn as zeros. Where the gate is `off` the route is V1's: the list (`list`).
+ *
+ * Changed on purpose 2026-11-06 (the owner: Base and Arbitrum One an exact copy of Robinhood Chain's page, only the
+ * network changes): Robinhood Chain's four tiles (dollars with their Token amounts and split bar, the price with its range
+ * bar), its charts before the grid, its Details (Pool id, New position in this pool, Fees history; no "Read at block"),
+ * Collect fees off with why when there is nothing to collect, the page of another address's position read by anyone from
+ * that address's list, and, from read-v6's `position-fees` once its route is open, Fees earned, Your APR, the
+ * automation's lines, Activity's settlements and an NFT that no longer exists, each as Robinhood Chain's page says it.
  */
 export default function PositionPage({ param, list }: { param: string; list: ReactNode }) {
-  const ref = useMemo(() => parseV2PositionParam(param), [param])
+  // A position of a version its network lacks (v3 on a chain with v4 alone) is no position there: the list, as for any
+  // other address the route does not name, and nothing of it is read.
+  const ref = useMemo(() => {
+    const named = parseV2PositionParam(param)
+    return named && chainHasDex(named.chainId, named.dex) ? named : null
+  }, [param])
   const identity = useWalletIdentity()
   const wallet = identity.kind === 'connected' ? identity.address.toLowerCase() : null
   const walletChain = identity.kind === 'connected' ? identity.chainId : null
@@ -159,20 +181,49 @@ export default function PositionPage({ param, list }: { param: string; list: Rea
   return <Opened key={`${param}|${wallet ?? ''}`} target={ref} gate={gate} wallet={wallet} walletOnChain={walletChain === ref.chainId} />
 }
 
+/**
+ * (2026-11-06, O-14) An NFT the stored history (read-v6 `position-fees`) says is burned: Robinhood Chain's own page for
+ * one (screens/PositionDetail.tsx, phase `gone`), its title, body and way back. `automation`: the wallet's vault of it.
+ */
+function Gone({ id, block, automation }: { id: string; block: number; automation?: ReactNode }) {
+  return (
+    <PageShell>
+      <Back />
+      {automation}
+      <EmptyState icon={<IconSearch />} title={COPY.page.gone} body={COPY.page.goneAt(id, block)} plate className="dm-pos-empty"
+        action={<LinkButton href={positionsHref} variant="outline" size="sm">{COPY.page.back}</LinkButton>} data-empty="position-gone" data-position-reason="burned" />
+    </PageShell>
+  )
+}
+
 function Opened({ target, gate, wallet, walletOnChain }: { target: V2PositionRef; gate: OpenGate; wallet: string | null; walletOnChain: boolean }) {
-  // The portfolio is the connected wallet's: none is read without one (never an empty owner to read-v6).
-  const needsWallet = wallet === null
+  // The portfolio is the connected wallet's (never an empty owner to read-v6). Added 2026-11-06 (O-05, the owner: every
+  // chain the same as Robinhood Chain, whose page anyone reads): a page opened from another address's list (View address)
+  // also reads that address's portfolio, which read-v6 serves with no sign-in, the same read its list made; the page is
+  // then that address's, with no action. A bare link with no list behind it still needs the holder's wallet.
+  const viewed = viewedPositionsAddress()
+  const other = viewed !== null && viewed !== wallet ? viewed : null
+  const needsWallet = wallet === null && other === null
   const reply = useKeyed(OWN_PORTFOLIO, wallet)
   const latest = useKeyedLatest(OWN_PORTFOLIO, wallet)
+  const otherReply = useKeyed(OWN_PORTFOLIO, other)
+  const otherLatest = useKeyedLatest(OWN_PORTFOLIO, other)
   const created = useCreatedPositions(wallet)
-  const history = useActivityHistory(wallet)
-  const activity = useMemo<V6Read<ActivityResponse> | null>(() => history.answer ? { kind: 'ok', body: history.answer } : history.error, [history.answer, history.error])
   const id = target.tokenId.toString()
   useRouteTitle(`Position #${id}`)
+  // The stored history's word on the NFT (read-v6 `position-fees`, asked only while the route's capabilities name it):
+  // the same read the page's Fees earned card makes.
+  const storedRef = useMemo(() => ({ chainId: target.chainId, dex: target.dex, tokenId: id }), [target.chainId, target.dex, id])
+  const burned = burnedAt(useStoredPosition(storedRef).position)
 
   // The figures, Activity and automation share one wallet-keyed snapshot. A known creation remains discoverable
   // while the index catches up; it never supplies fabricated balances or permits actions before the live read.
   const found = reply?.kind === 'ok' ? findPosition(reply.body, target.chainId, target.dex, target.tokenId) : null
+  const elsewhere = otherReply?.kind === 'ok' ? findPosition(otherReply.body, target.chainId, target.dex, target.tokenId) : null
+  const viewing = !(found && isLive(found)) && elsewhere !== null && isLive(elsewhere) && otherReply?.kind === 'ok' && chainStatusOf(otherReply.body, target.chainId)?.status !== 'unavailable'
+  const holder = viewing ? other : wallet
+  const history = useActivityHistory(holder)
+  const activity = useMemo<V6Read<ActivityResponse> | null>(() => history.answer ? { kind: 'ok', body: history.answer } : history.error, [history.answer, history.error])
   const creation = created.find(item => item.chainId === target.chainId && item.dex === target.dex && item.tokenId === id)
   const awaited = reply !== null && !(found && isLive(found)) && newPositionExpected(exitOrderKey(id, target.chainId, target.dex))
   useEffect(() => {
@@ -182,7 +233,22 @@ function Opened({ target, gate, wallet, walletOnChain }: { target: V2PositionRef
     return () => clearTimeout(timer)
   }, [awaited, reply, target.chainId, wallet])
 
-  if (needsWallet) {
+  if (viewing && otherReply?.kind === 'ok' && elsewhere && isLive(elsewhere)) {
+    const status = chainStatusOf(otherReply.body, target.chainId)
+    return (
+      <PageShell>
+        <Back />
+        <LivePosition gate={gate} answer={otherReply.body} position={elsewhere} holder={other}
+          stale={status?.status === 'stale' || elsewhere.freshness?.status === 'stale' || (otherLatest !== null && otherLatest.kind !== 'ok')}
+          coverage={otherLatest !== null && otherLatest.kind !== 'ok' ? 'kept' : coverageNote(otherReply.body.chains) ? 'partial' : null}
+          wallet={wallet} walletOnChain={walletOnChain} activity={activity} onChanged={() => { if (other) OWN_PORTFOLIO.again(other) }} />
+      </PageShell>
+    )
+  }
+  // Another address's list is still being read: the page waits in its frame, as for its own.
+  if (other !== null && otherReply === null && !(found && isLive(found))) return <Waiting id={id} />
+  if (needsWallet || wallet === null) {
+    if (burned !== null) return <Gone id={id} block={burned} />
     return (
       <Empty title={`Position #${id}`} body={<Known line={knownLine(target, wallet)} sentence={COPY.page.connect} />} reason="connect_wallet"
         action={<Button type="button" onClick={openWalletDialog} data-position-connect=""><IconWalletLine size={16} />Connect wallet</Button>} />
@@ -213,6 +279,7 @@ function Opened({ target, gate, wallet, walletOnChain }: { target: V2PositionRef
           indexed={{ portfolio: answer, subscriber: null }} onChanged={() => OWN_PORTFOLIO.again(wallet)} />
       : null
     if (!found) {
+      if (burned !== null) return <Gone id={id} block={burned} automation={automation} />
       return (
         <Empty title={`Position #${id}`} body={<Known line={knownLine(target, wallet)} sentence={COPY.page.notListed} />} reason="position_not_listed"
           action={<Button type="button" variant="outline" onClick={openWalletDialog} data-position-connect="">Open wallet</Button>} automation={automation} />
@@ -227,6 +294,7 @@ function Opened({ target, gate, wallet, walletOnChain }: { target: V2PositionRef
         gate={gate}
         answer={answer}
         position={found}
+        holder={wallet}
         stale={status.status === 'stale' || found.freshness?.status === 'stale' || (latest !== null && latest.kind !== 'ok')}
         // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the marker's data only; it was a line under
         // the title ("Details couldn’t update. Showing the last available reading.", or a chain "unavailable right now").
@@ -240,10 +308,42 @@ function Opened({ target, gate, wallet, walletOnChain }: { target: V2PositionRef
   )
 }
 
-function LivePosition({ gate, answer, position, stale, coverage, wallet, walletOnChain, activity, onChanged }: {
+/**
+ * (Review F1, UI-2, 2026-11-06) Whether the network's pools read for `token` lists the pool `poolId` (./networkPool.ts):
+ * asked once per pool and token, false until it does, and on Robinhood Chain or with no token. The page's gate at mount is
+ * enough: the read is public chain data, whichever way the gate opens later.
+ */
+function useNetworkPoolListed(gate: OpenGate, chainId: V2ChainId, token: TokenAddress | null, poolId: string): boolean {
+  const ask = chainId !== 4663 && token !== null ? `${chainId}|${token}|${poolId.toLowerCase()}` : null
+  const gateAtMount = useRef(gate)
+  const [listed, setListed] = useState<string | null>(null)
+  useEffect(() => {
+    if (ask === null || token === null || chainId === 4663) return
+    const controller = new AbortController()
+    void networkPoolListed(gateAtMount.current, chainId, token, poolId, controller.signal).then((yes) => {
+      if (yes && !controller.signal.aborted) setListed(ask)
+    }, () => undefined)
+    return () => controller.abort()
+  }, [ask, chainId, token, poolId])
+  return ask !== null && listed === ask
+}
+
+/** A dollar figure as the key figures write it (components/positions/KeyFigures.tsx): whole groups once it is long. */
+function ValueFigure({ text }: { text: string }) {
+  const long = text.length > 13
+  return (
+    <LiveFigure value={text} mode={long ? 'whole' : 'digits'} dimCents className={cx('dm-fig-lg', long && 'dm-position-long-figure')}>
+      {long && text.split(/(?<=,)/).map((part, index) => <span className="dm-position-amount-group" key={index}>{part}</span>)}
+    </LiveFigure>
+  )
+}
+
+function LivePosition({ gate, answer, position, holder, stale, coverage, wallet, walletOnChain, activity, onChanged }: {
   gate: OpenGate
   answer: PortfolioResponse
   position: LiveV6Position
+  /** Whose portfolio `answer` is: the connected wallet's, or (O-05) the address whose list the page was opened from. */
+  holder: string | null
   stale: boolean
   coverage: string | null
   wallet: string | null
@@ -255,11 +355,11 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
   const chain = v2Chain(chainId)
   const book = useMemo(() => tokenBook(chainId, tokensOf(answer, chainId)), [answer, chainId])
   const card = useMemo(() => cardOf(position, book), [position, book])
+  const storedFees = usePositionFees(useMemo(() => ({ chainId, dex: position.dex, tokenId: position.tokenId.toString() }), [chainId, position.dex, position.tokenId]), book)
   const action = useMemo(() => fromV6(position, answer), [position, answer])
   const automationPosition = useMemo(() => walletPositionOf(position, book), [position, book])
   const reserves = position.vault ? vaultReservesOf(answer, chainId, position.vault.address) : null
   const price = chainCardPrice(card, { sqrtPriceX96: position.sqrtPriceX96.toString(10), tick: position.tick, block: position.snapshotBlock ?? 0 })
-  const priced = priceInverted(position.pool.currency0, position.pool.currency1) ? { base: position.pool.currency1, quote: position.pool.currency0 } : { base: position.pool.currency0, quote: position.pool.currency1 }
   const phone = useMediaQuery('(max-width: 767px)')
   // The page's moment (v4-position.css, html:not(.dm-booted)) plays when this page's figures arrive, as a page load does
   // in the approved V4 site; once it is over, later reads never run it again (the owner's silent updates, 2026-10-15).
@@ -269,33 +369,33 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
   }, [])
   const [mode, setMode] = useState<PositionMode | null>(null)
   const [automationToolbar, setAutomationToolbar] = useState<HTMLSpanElement | null>(null)
-  const approval = useZapApproval(gate, action, walletOnChain)
   const [base, quote] = card.currencies
   const owner = position.owner
   const successor = position.vault?.role === 'successor'
   // The owner's actions: the connected wallet that holds it. A successor is held by the wallet's vault (read-v6 lists it
-  // in the wallet's portfolio): its sentence, no action.
+  // in the wallet's portfolio): its sentence, no action. (2026-11-06, O-05) Only in the connected wallet's own portfolio:
+  // another address's vault is never this wallet's.
   const heldByVault = successor && position.vault !== null && owner === position.vault.address
-  const mine = wallet !== null && (owner === wallet || heldByVault)
+  // (2026-11-06, O-05 review) Whether `answer` is the connected wallet's own portfolio. Another address's (View address) is
+  // read with none of its owner's automation and no "Your automation" line: Robinhood Chain's page shows anyone but the
+  // owner none (its automation reads the connected wallet's own portfolio, which never holds this position).
+  const ownRead = wallet !== null && answer.wallet.toLowerCase() === wallet
+  const mine = wallet !== null && (owner === wallet || (heldByVault && ownRead))
+  const approval = useZapApproval(gate, mine ? action : null, walletOnChain)
   const hooked = hookedPool(position.pool)
   const items = action ? positionMenuItems(action, false) : []
   const identity = poolIdentity(chainId, position.pool)
-  const custody = successor ? COPY.custody.successor : position.vault?.role === 'root' ? COPY.custody.root : COPY.custody.walletHolds
+  // (QA round 2, N43, as Robinhood Chain's page) Opened from the holder's own list: whose the actions are.
+  const fromHolderList = viewedPositionsAddress() === owner
   // Added 2026-10-06 (read-v6 1.1.0-rc.1's qualified USD): what it holds and its fees in USD, as V1's page shows them
-  // (components/positions/KeyFigures.tsx), with token amounts in Details. As in creation, one qualified currency also
+  // (components/positions/KeyFigures.tsx), with token amounts under each tile. As in creation, one qualified currency also
   // values the pair at this position's own pool price. This is a pool mark, not an independently qualified token quote.
   // Changed on purpose 2026-10-14 (the incident of 2026-10-13, package V1; decision D4): the dollars are its list row's
   // own (../lists/model.ts withUsd), worked out by the one valuation from this same answer, so the page and the row can
-  // never differ; and a tile never says "USD unavailable": a figure that is not current says "as of HH:MM UTC" (the last
-  // complete valuation, or any figure once no newer answer has arrived for two minutes: `late`), and with no figure the
-  // two token amounts are the tile's figure, with one short reason under them.
-  // Changed on purpose 2026-10-14 (package V1, review). `late` is the row's own, counted from when this page took the
-  // answer (../lists/hooks.ts useUsdAged), not from this page's mount: opened from a list that already said "as of
-  // 13:05 UTC", the tiles showed the same 13:05 figures with no time for two more minutes. Each tile says its own time
-  // (one figure may be of now beside a kept one). And the time no longer takes the place of the basis: an estimate at
-  // the pool's price that is not current says both, in its title and in Details (decision D3: "basis disclosed").
+  // never differ; and a tile never says "USD unavailable": with no figure the two token amounts are the tile's figure.
+  // `late` is the row's own, counted from when this page took the answer (../lists/hooks.ts useUsdAged). An estimate at
+  // the pool's price says so in its title and in Details (decision D3: "basis disclosed").
   const fresh = position.freshness?.status === 'fresh' && !stale
-  const pair = [position.pool.currency0, position.pool.currency1] as const
   const row = useMemo(() => {
     const listed = answer.positions.find((one) => one.chainId === chainId && one.dex === position.dex && one.positionManager.toLowerCase() === position.manager && one.tokenId === position.tokenId.toString())
     return listed ? positionRows({ ...answer, positions: [listed] }, () => true)[0] ?? null : null
@@ -312,14 +412,45 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
   // Details: the time of a figure that is not current (the kept one's first), then what an estimate is an estimate of.
   const datedAt = (holdsUsd !== null ? holdsAsOf : undefined) ?? (feesUsd !== null ? feesAsOf : undefined)
   const usdDetail = datedAt !== undefined || poolTitle ? usdTitleWords({ asOf: datedAt, estimate: poolTitle, block: null }) : undefined
-  // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices, "as of 02:25 UTC" named among them): a figure that
-  // is not current is shown as it is: no time under it ("as of 13:05 UTC"), in its title or in Details ("Last complete
-  // valuation, from …": ./usdAvailability.ts usdTitleWords); with no dollar figure, the two amounts carry no reason under
-  // them or in their title, and Details no "USD valuation" line saying why. The basis of an estimate is still said
-  // (decision D3); data-usd-snapshot marks a kept figure, data-usd-reason why one is missing.
+  // Changed on purpose 2026-11-06 (O-07, the owner: every chain the same as Robinhood Chain): Robinhood Chain's split of the
+  // value between its two tokens, under the tile's Token amounts; the share is the same in any unit, so the quote token's.
+  const state = useMemo(() => walletState(automationPosition, position.snapshotBlock ?? 0, owner), [automationPosition, position.snapshotBlock, owner])
+  const shares = useMemo(() => {
+    const basis = state ? basisOf(state) : null
+    const raw = rawPair([card.principal[0].raw, card.principal[1].raw])
+    return basis && raw ? valueShares(basis, raw) : null
+  }, [state, card])
+  // Changed on purpose 2026-11-06 (O-09): Robinhood Chain's own rule, nothing to collect (both fees zero, or not read) is a
+  // button that is off, with why (components/positions/PositionActions.tsx collectReason). A closed v3 position may still
+  // owe tokens, so a closed position with fees owed can still collect them.
+  // (Review, 2026-11-06) A closed position with nothing to collect says so in Robinhood Chain's own words, never "yet".
+  const fees = position.feesOwed
+  const noFees = fees === null || (fees[0] === 0n && fees[1] === 0n)
+  const collectOff = hooked ? 'hooked' : !noFees ? undefined : position.liquidity === 0n ? 'closed' : fees === null ? 'unread' : 'no_fees'
+  const collectReason = collectOff === 'hooked' ? HOOKED_COPY : collectOff === 'closed' ? COPY.page.closedNoLiquidity : collectOff === 'unread' ? COPY.page.feesUnread : collectOff === 'no_fees' ? COPY.page.noFees : undefined
+  // Added 2026-11-06 (O-06, O-11): the stored history's settlements in Activity, outside changes included, and the
+  // automation's re-adds named, as Robinhood Chain's Activity lists its ledger's.
+  const kind = compoundingKind(answer, position)
+  const storedEvents = useMemo(() => storedFeesEvents(position.tokenId.toString(), storedFees, book), [position.tokenId, storedFees, book])
+  const automatic = useMemo(() => storedAutomaticAdds(storedFees, kind, book, AUTOMATION_NAME), [storedFees, kind, book])
+  // (O-12) Robinhood Chain's links under Details: New position in this pool, into a pool Domino can open a position in
+  // (no hooks, a fixed fee); on Base and Arbitrum One by New position's own network link, which reads the pool again.
+  // Changed on purpose 2026-11-06 (INT-1, rep/mkt merged): the Pool button too, Robinhood Chain's v4 pools' page there,
+  // and on Base and Arbitrum One the network's pool page (components/explore/poolNetwork.ts), which shows a pool its
+  // network's pools read lists for that token: one Domino can open a position in, as New position's link.
+  // Changed on purpose 2026-11-06 (review F1, UI-2): on Base and Arbitrum One both links name the token whose pools read
+  // has this pool's key (networkPoolToken: a WETH/ARB pool is ARB's, never WETH's), and appear only once that read lists
+  // the pool (it leaves out a pool with no active liquidity); otherwise neither, never a link to "We couldn't find this pool".
+  const token = base.address === ZERO_ADDRESS ? quote.address : base.address
+  const usable = cardPoolUsableForDomino(card)
+  const networkToken = useMemo(() => (chainId === 4663 || !usable ? null : networkPoolToken(chainId, position.pool)), [chainId, usable, position.pool])
+  const listed = useNetworkPoolListed(gate, chainId, networkToken, card.poolId)
+  const opensOnNetwork = chainId !== 4663 && networkToken !== null && listed ? networkToken : null
+  const newHref = !usable ? null : chainId === 4663 ? (position.dex === 4 ? newPositionHref(card.poolId, token) : null) : opensOnNetwork ? newNetworkHref(chainId, opensOnNetwork, card.poolId) : null
+  const poolPage = chainId === 4663 ? (position.dex === 4 ? poolHref(card.poolId, token) : null) : opensOnNetwork ? poolNetworkHref(chainId, card.poolId, opensOnNetwork) : null
 
   return (
-    <div data-position-detail="" data-position-workspace-page="" data-position-id={position.tokenId.toString()} data-position-v2={`${chain.slug}-v${position.dex}`} data-snapshot={position.snapshotBlock ?? undefined}>
+    <div data-position-detail="" data-position-workspace-page="" data-position-id={position.tokenId.toString()} data-position-v2={`${chain.slug}-v${position.dex}`} data-snapshot={position.snapshotBlock ?? undefined} data-position-read={holder === wallet ? undefined : 'viewed'}>
       <div className="dm-pos-title">
         <div className="dm-pos-name">
           <TokenMarkPair base={base} quote={quote} size={phone ? 36 : 46} ring="var(--bg)" />
@@ -335,7 +466,8 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
                 </span>
               </Chip>
               <Chip>
-                <span data-position-network={chain.slug}>{chain.name}</span>
+                {/* Changed on purpose 2026-11-07 (Elysium's screens): a network drawn from its own file shows its mark (lib/chainMarks.ts). */}
+                <span data-position-network={chain.slug} {...chainMarkProps(chain.chainId)}>{chain.name}</span>
               </Chip>
               <span className="sr-only">
                 Position #<span translate="no">{position.tokenId.toString()}</span>
@@ -353,7 +485,7 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
               <span className="text-caption text-fg-muted" data-position-v2-blocked="successor">{SUCCESSOR_BLOCKED_COPY}</span>
             ) : (
               <>
-                <Button type="button" variant="primary" disabled={hooked} title={hooked ? HOOKED_COPY : undefined} data-position-v2-action="collect" onClick={() => setMode('collect')}>
+                <Button type="button" variant="primary" disabled={hooked || noFees} title={collectReason} data-position-v2-action="collect" data-position-collect-off={collectOff} onClick={() => setMode('collect')}>
                   <IconCollect size={18} /><span>{COPY.button.collect}</span>
                 </Button>
                 <MoreActions id={`position-v2-more-${position.tokenId}`} items={items} onPick={(key) => { if (key !== 'protect') setMode(key) }} data-position-v2-actions={gate.mode} />
@@ -369,34 +501,57 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
             )}
           </div>
         )}
+        {/* (2026-11-06, O-05) Robinhood Chain's line (screens/PositionDetail.tsx, QA round 2 N43): anyone but the owner wallet
+            reads this page with no action on it; opened from the holder's own list, it says whose they are. */}
+        {!mine && fromHolderList && card.hasLiquidity && (
+          <p className="max-w-md text-body text-fg-muted" data-position-owner-only={wallet !== null ? 'other-wallet' : 'no-wallet'}>
+            {wallet !== null
+              ? <>{COPY.page.ownerOnly.connected[0]} <Address value={owner} short /> {COPY.page.ownerOnly.connected[1]}</>
+              : <>{COPY.page.ownerOnly.disconnected[0]} <Address value={owner} short /> {COPY.page.ownerOnly.disconnected[1]}</>}
+          </p>
+        )}
       </div>
 
-      <PositionAutomation tokenId={position.tokenId.toString()} position={automationPosition} holder={position.owner}
-        chainId={chainId} dex={position.dex} priceContext={{ block: position.snapshotBlock, saved: stale }}
-        indexed={{ portfolio: answer, subscriber: position.custody.subscriber }} toolbar={automationToolbar} onChanged={onChanged} />
-      <StatStrip layout="tiles" className="dm-pos-stats" title={position.snapshotBlock !== null ? `Read at block ${position.snapshotBlock}` : undefined} data-position-stats="" data-position-overview="">
+      {ownRead && (
+        <PositionAutomation tokenId={position.tokenId.toString()} position={automationPosition} holder={position.owner}
+          chainId={chainId} dex={position.dex} priceContext={{ block: position.snapshotBlock, saved: stale }}
+          indexed={{ portfolio: answer, subscriber: position.custody.subscriber }} toolbar={automationToolbar} onChanged={onChanged} />
+      )}
+      {/* Changed on purpose 2026-11-06 (O-07, O-08, O-13; the owner: every chain the same as Robinhood Chain): Robinhood
+          Chain's four tiles (components/positions/KeyFigures.tsx), drawn with its own parts: each dollar figure with its
+          Token amounts under it (the value's split bar too), and the price with the range bar, its two ends and whether it
+          earns. No title on the strip (QA round 2, R23: it said "Read at block N"). */}
+      <StatStrip layout="tiles" className="dm-pos-stats" data-position-stats="" data-position-overview="" data-valued={holdsUsd !== null ? '' : undefined}>
         <Stat
-          label="Position value"
-          info={COPY.page.holdsInfo}
+          label={KEY.value}
+          info={KEY.valueInfo}
           className="dm-pos-stat"
           data-cell="principal"
+          data-long-value={holdsText && holdsText.length > 13 ? '' : undefined}
           data-value-width={holdsText && holdsText.length > 11 ? 'wide' : holdsText && holdsText.length > 8 ? 'medium' : undefined}
           data-usd-reason={holdsUsd === null ? row?.usdReason : undefined}
+          sub={holdsUsd !== null ? (
+            <FigureDetail active label={KEY.tokenAmounts}>
+              <ValueSplit shares={shares} />
+              <Amounts card={card} which="principal" />
+            </FigureDetail>
+          ) : null}
         >
           {holdsUsd !== null ? (
             <span className="dm-arrive" title={holdsTitle} data-usd="principal" data-usd-basis={row?.valueUsdBasis} data-usd-snapshot={row?.usdSavedAt !== undefined && row.usdNow?.figure !== 'value' ? '' : undefined} data-usd-dated={holdsAsOf !== undefined ? '' : undefined}>
-              <LiveFigure value={holdsText!} mode="digits" dimCents className="dm-fig-lg" />
+              <ValueFigure text={holdsText!} />
             </span>
           ) : (
             <span className="dm-pos-amounts" data-usd-amounts="principal"><CardAmount amount={card.principal[0]} /><CardAmount amount={card.principal[1]} /></span>
           )}
         </Stat>
         <Stat
-          label={COPY.page.fees}
-          info={position.dex === 3 ? COPY.page.collectableInfo : COPY.page.feesInfo}
+          label={KEY.fees}
+          info={position.dex === 3 ? COPY.page.collectableInfo : KEY.feesInfo}
           className="dm-pos-stat"
           data-cell="fees"
           data-usd-reason={feesUsd === null ? row?.usdReason : undefined}
+          sub={feesUsd !== null ? <FigureDetail active label={KEY.tokenAmounts}><Amounts card={card} which="unsettledFees" /></FigureDetail> : null}
         >
           {feesUsd !== null ? (
             <span data-usd="fees" title={feesTitle} data-usd-basis={row?.feesUsdBasis} data-usd-snapshot={row?.usdSavedAt !== undefined && row.usdNow?.figure !== 'fees' ? '' : undefined} data-usd-dated={feesAsOf !== undefined ? '' : undefined}>
@@ -407,37 +562,30 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
           )}
         </Stat>
         {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a dash, with no "Fee history unavailable" under it or as its title. */}
-        <Stat label={COPY.page.apr} info={COPY.page.aprInfo} className="dm-pos-stat" data-cell="apr" data-apr="no_qualified_source">
+        {storedFees ? <YourAprStat fees={storedFees} compact closed={!card.hasLiquidity} /> : <Stat label={COPY.page.apr} info={COPY.page.aprInfo} className="dm-pos-stat" data-cell="apr" data-apr="no_qualified_source">
           <span className="dm-fig-lg"><FigureDash /></span>
-        </Stat>
-        <Stat label={COPY.page.price} info={COPY.page.priceInfo} className="dm-pos-stat dm-lit" data-cell="price" sub={<span className="dm-pos-span-state" data-in={String(card.inRange)} data-ember-rest="">{card.hasLiquidity ? (card.inRange ? COPY.page.inRangeEarning : COPY.page.outOfRangeIdle) : COPY.page.closed}</span>}>
+        </Stat>}
+        <Stat label={KEY.price} info={KEY.priceInfo} className="dm-pos-stat dm-lit" data-cell="price" sub={<RangeLine price={price} card={card} />}>
           <span data-stat="price">
-            {/* The same price presentation as KeyFigures: one figure, then its unambiguous quote unit. */}
-            {price.state.phase === 'ready' && price.state.price.state === 'usable' ? (
-              <span className="dm-pos-price" data-current-price="usable" title={`Pool price at block ${price.state.price.block}: ${price.state.price.text}`}>
-                {/* Changed on purpose 2026-10-03: the price is the app's one way round (lib/read/orientation.ts), so its two
-                    sides are too; the pool's own order wrote "1 ETH = 0.0₆7101 MANY" for MANY's price in ETH. */}
-                <span className="dm-fig-lg">{readablePrice(price.state.price.text)}</span>{' '}
-                <span className="dm-pos-price-side dm-pos-price-unit">{labelOf(book, priced.quote)} per {labelOf(book, priced.base)}</span>
-              </span>
-            ) : (
-              <span className="dm-fig-lg text-fg-subtle" data-current-price="unusable">—</span>
-            )}
+            <PriceNow price={price} card={card} />
           </span>
         </Stat>
       </StatStrip>
 
+      {/* As Robinhood Chain's page: the charts (Fees earned, Price range) before the grid of Activity and Details. */}
+      {chainId !== 4663 && <RecordedInsights key={`${chainId}:${position.manager}:${position.tokenId}:${card.poolId}`} answer={answer} position={position} card={card} price={price} book={book} fresh={fresh} fees={storedFees} />}
+
       <div className="dm-pos-grid">
-        {chainId !== 4663 ? <RecordedInsights key={`${chainId}:${position.manager}:${position.tokenId}:${card.poolId}`} answer={answer} position={position} card={card} price={price} book={book} fresh={fresh} /> : <section className="dm-card dm-pos-card" aria-labelledby="position-range-title">
+        {chainId === 4663 && <section className="dm-card dm-pos-card" aria-labelledby="position-range-title">
           <h2 id="position-range-title" className="dm-title">
             {COPY.page.rangeTitle}
           </h2>
           {/* The pool's stored price history (2026-10-03, the owner's point 10): kept by the read service for Robinhood
               Chain's Uniswap v4 pools only. */}
-          <PositionRange card={card} price={price} variant="page" history={chainId === 4663 && position.dex === 4} openedAt={activityOpenedAt(activity?.kind === 'ok' ? activity.body : null, position)} />
+          <PositionRange card={card} price={price} variant="page" history={position.dex === 4} openedAt={activityOpenedAt(activity?.kind === 'ok' ? activity.body : null, position)} />
         </section>}
 
-        <PositionHistory wallet={wallet} position={{ chainId, dex: position.dex, tokenId: position.tokenId.toString() }} />
+        <PositionHistory wallet={holder} position={{ chainId, dex: position.dex, tokenId: position.tokenId.toString() }} events={storedEvents} automatic={automatic} />
 
         <details className="dm-card dm-pos-details" data-position-details="">
           <summary className="dm-pos-details-head">
@@ -445,18 +593,10 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
             <span className="dm-pos-details-hint">{COPY.page.detailsHint}</span>
             <IconChevronDown size={16} />
           </summary>
+          {/* Changed on purpose 2026-11-06 (O-07, O-12, O-13): Robinhood Chain's Details. The token amounts are under the
+              tiles now; the pool's id under its own name; no "Read at block" (QA round 2, R23). Its Held line and Domino's
+              permission come only where Robinhood Chain's page draws them too: a position a vault holds, an approval given. */}
           <KeyValueList className="dm-pos-facts">
-            <KeyValue label="Tokens in this position"><span className="dm-pos-amounts" data-stat="principal"><CardAmount amount={card.principal[0]} /><CardAmount amount={card.principal[1]} /></span></KeyValue>
-            <KeyValue label="Fees ready to collect"><span className="dm-pos-amounts" data-stat="fees"><CardAmount amount={card.unsettledFees[0]} /><CardAmount amount={card.unsettledFees[1]} /></span></KeyValue>
-            {usdDetail && <KeyValue label="USD valuation"><span data-usd-detail="">{usdDetail}</span></KeyValue>}
-            {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): Details no longer says what isn't available
-                ("APR data: Lifetime fee history isn’t available from this network’s current data source…", "USD valuation: …",
-                a token's price "temporarily unavailable"); a pool-price estimate's basis is still named (decision D3). */}
-            {chainId !== 4663 && poolTitle && pair.filter((_, index) => (position.principal?.[index] ?? 0n) > 0n || (position.feesOwed?.[index] ?? 0n) > 0n).map(address => {
-              const token = answer.tokens.find(item => item.chainId === chainId && item.address.toLowerCase() === address)
-              if (token?.price || !token?.priceReason) return null
-              return <KeyValue key={address} label={`${labelOf(book, address)} independent price`}><span data-usd-price-reason={token.priceReason}>No independently qualified quote. The USD estimate above uses this position’s pool price.</span></KeyValue>
-            })}
             <KeyValue label={COPY.page.nftId}>
               <Address value={position.tokenId.toString()} />
             </KeyValue>
@@ -466,15 +606,7 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
                 <Address value={owner} />
               </span>
             </KeyValue>
-            <KeyValue label={COPY.page.custody}>
-              <span data-position-custody={successor ? 'successor' : position.vault?.role === 'root' ? 'root' : 'wallet'}>{custody}</span>
-            </KeyValue>
-            {position.vault && (
-              <KeyValue label={COPY.page.vault}>
-                <Address value={position.vault.address} />
-              </KeyValue>
-            )}
-            <KeyValue label={COPY.page.pool}>{identity.kind === 'v4' ? <Address value={identity.id} /> : <Address value={identity.address} />}</KeyValue>
+            <KeyValue label={COPY.page.poolId}>{identity.kind === 'v4' ? <Address value={identity.id} /> : <Address value={identity.address} />}</KeyValue>
             <KeyValue label={COPY.page.uniswapVersion}>
               <span data-position-dex={position.dex}>v{position.dex}</span>
             </KeyValue>
@@ -496,13 +628,41 @@ function LivePosition({ gate, answer, position, stale, coverage, wallet, walletO
             <KeyValue label={COPY.page.manager}>
               <Address value={position.manager} />
             </KeyValue>
-            {position.snapshotBlock !== null && (
-              <KeyValue label={COPY.page.readAt}>
-                <span className="tnum">{position.snapshotBlock}</span>
+            {usdDetail && <KeyValue label="USD valuation"><span data-usd-detail="">{usdDetail}</span></KeyValue>}
+            {/* Robinhood Chain's Fees history line, while the stored history is read (read-v6 `position-fees`). */}
+            {storedFees && (
+              <KeyValue label={COPY.page.feesHistory}>
+                <span data-history-source={storedFees.phase === 'verified' ? 'stored' : storedFees.phase}>{storedHistoryWords(storedFees)}</span>
+              </KeyValue>
+            )}
+            {position.vault && ownRead && (
+              <KeyValue label={COPY.page.custody}>
+                <span data-position-custody={successor ? 'successor' : 'root'}>{successor ? COPY.custody.successor : COPY.custody.root}</span>
+              </KeyValue>
+            )}
+            {position.vault && (
+              <KeyValue label={COPY.page.vault}>
+                <Address value={position.vault.address} />
               </KeyValue>
             )}
             <ApprovalFact approval={approval} />
           </KeyValueList>
+          {(poolPage || newHref) && (
+            <div className="dm-pos-links">
+              {poolPage && (
+                <LinkButton href={poolPage} variant="outline" size="sm" data-position-pool-link="">
+                  <IconMarkets />
+                  {COPY.page.poolPage}
+                </LinkButton>
+              )}
+              {newHref && (
+                <LinkButton href={newHref} variant="outline" size="sm" data-position-new-in-pool="">
+                  <IconPlus />
+                  {COPY.page.newInPool}
+                </LinkButton>
+              )}
+            </div>
+          )}
         </details>
       </div>
 

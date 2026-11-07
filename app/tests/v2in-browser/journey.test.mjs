@@ -737,8 +737,15 @@ for (const outcome of ['reincluded', 'reverted', 'navigation', 'atomic-navigatio
     if (atomic) assert.deepEqual([chain.batches.length, chain.chainNow()], [1, 8453], 'one atomic confirmation on Base');
     else assert.deepEqual([approve.chainId, createTx.chainId], ['0x2105', '0x2105']);
     assert.equal(createTx.data, answers.at(-1).plan.call.data, 'the call data the plan carried');
-    // The created view is the zap path's (its receipt, its link on Base), never today's Robinhood Chain lists.
-    assert.match(await page.locator('a[data-created-next="position"]').getAttribute('href'), /^#\/positions\/base-v4-\d+$/);
+    // Changed on purpose 2026-11-06 (the replica rule, O-18): the created view is Robinhood Chain's ("What should Domino do
+    // with it?" and its choices), its links by Base's routes, never today's Robinhood Chain lists; no receipt in it, as on
+    // Robinhood Chain (the receipt is a row of Receipts). It was the zap path's: the receipt, then View position.
+    const createdLine = await page.locator('#created-title').innerText();
+    assert.match(createdLine, /^Position NFT \d+ is in your wallet\.\s+What should Domino do with it\?$/, 'Robinhood Chain’s words');
+    assert.equal(await page.locator('[data-created-position] [data-receipt]').count(), 0, 'no receipt in the created view, as on Robinhood Chain');
+    const plain = page.locator('a[data-created-next="plain"]');
+    assert.match(await plain.getAttribute('href'), /^#\/positions\/base-v4-\d+$/);
+    assert.match(await plain.innerText(), /^Plain position\s+Fees wait in the position until you collect them\.\s+View position$/);
     for (const mode of ['compound', 'domino']) {
       const setup = page.locator(`a[data-created-next="${mode}"]`);
       await setup.waitFor();
@@ -762,7 +769,7 @@ for (const outcome of ['reincluded', 'reverted', 'navigation', 'atomic-navigatio
       item.tx.hash = hint.hash; item.tx.snapshot.hash = hint.blockHash; item.tx.snapshot.timestamp = now();
       activityItems.push(item);
       made = { tokenId: createdId, tickLower: s.planned.at(-1).tickLower, tickUpper: s.planned.at(-1).tickUpper, read: true };
-      await page.locator('a[data-created-next="position"]').click();
+      await page.locator('a[data-created-next="plain"]').click();
       await page.locator(`[data-position-detail][data-position-id="${createdId}"]`).waitFor({ timeout: 30_000 });
       const row = page.locator(`[data-position-activity-item="${item.id}"]`);
       // Rewritten on purpose 2026-10-14 (incident C1; the owner's decision D0): this case held the defect, it waited for
@@ -814,9 +821,10 @@ for (const outcome of ['reincluded', 'reverted', 'navigation', 'atomic-navigatio
       return;
     }
     await page.locator('[data-zap-receipt="included"]').waitFor({ timeout: 30_000 });
-    // Added 2026-10-14 (incident C1; the owner's decision D0): in a block with success is "Confirmed" (it was "Included"),
-    // and the word stays when the block is final (it turned "Finalized"): finality is a line in Receipts' details.
-    assert.equal(await page.locator('[data-fact="receipt-state"][data-receipt-state="included"] dd').innerText(), 'Confirmed');
+    // Changed on purpose 2026-11-06 (O-18): found again, the position is Robinhood Chain's success again, the receipt's
+    // state its data only ("Confirmed" was its Status row; finality is a line in Receipts' details, as on Robinhood Chain).
+    assert.match(await page.locator('[data-zap-receipt="included"] #created-title').innerText(), /What should Domino do with it\?$/);
+    assert.equal(await page.locator('[data-fact="receipt-state"]').count(), 0, 'no Status row: Robinhood Chain’s view');
     const restored = await page.evaluate(owner => JSON.parse(sessionStorage.getItem('domino:created-positions:v1:' + owner) ?? '[]'), OWNER);
     assert.deepEqual([restored[0].tokenId, restored[0].blockHash], [createdId, replacementHash], 'a checked reinclusion restores only the new block evidence');
     receiptStage = 'finalized';
@@ -824,7 +832,7 @@ for (const outcome of ['reincluded', 'reverted', 'navigation', 'atomic-navigatio
     // minute after one that found it not final yet.
     await page.clock.fastForward(FINALITY_LEAP_MS);
     await page.locator('[data-zap-receipt="finalized"]').waitFor({ timeout: 30_000 });
-    assert.equal(await page.locator('[data-fact="receipt-state"][data-receipt-state="finalized"] dd').innerText(), 'Confirmed');
+    assert.match(await page.locator('[data-zap-receipt="finalized"] #created-title').innerText(), /What should Domino do with it\?$/);
     assert.equal(chain.sends.length, sendCount, 'reorg and finality checks never resend the action');
     assert.equal(s.planned.length, planCount, 'the sent review is never silently requoted');
     // Added 2026-10-06 (the final check's F1/F6): Back rests under it, as on Robinhood Chain (test (t) follows it further).
@@ -841,7 +849,7 @@ for (const outcome of ['reincluded', 'reverted', 'navigation', 'atomic-navigatio
     const tokenId = await page.locator('[data-created-position]').getAttribute('data-created-position');
     await watchEmpty(page);
     const before = served.length;
-    await page.locator('a[data-created-next="position"]').click();
+    await page.locator('a[data-created-next="plain"]').click();
     await page.locator('[data-position-reason="awaiting_index"]').waitFor({ timeout: 30_000 });
     await until(() => served.length >= before + 2, 'the wallet’s list read again');
     made = { tokenId, tickLower: s.planned.at(-1).tickLower, tickUpper: s.planned.at(-1).tickUpper, read: true };
@@ -929,6 +937,159 @@ test('(e2) his journey on Base, a range above the price: the success recommends 
   } finally { await s.close(); }
 });
 
+// Added 2026-11-06 (the replica rule, O-15: Base and Arbitrum One are Robinhood Chain's screens, only the network
+// changes): with a Base token chosen in his step 1, "Create a new pool (advanced)" opened Robinhood Chain's finder. It
+// opens Base's: a pool with no price yet is read through the wallet on Base, given its starting price, and created on
+// Base's zap, the plan asked with that price (position-plan-v1's `initialPrice`), exactly as on Robinhood Chain.
+const initialPrice = require('../../.test-build/app/src/v2/plan/initialPrice.js');
+const POOL_NEW_BASE = { dex: 4, currency0: ZERO, currency1: USDC_BASE, fee: 3000, tickSpacing: 60, hooks: ZERO };
+/** position-plan-v1 as it would answer a create of a new pool on Base, at the starting price asked: no swap. */
+function newPoolPlanner(answers = []) {
+  return (wire) => {
+    if (wire.action !== 'create' || wire.chainId !== 8453 || !wire.initialPrice) return undefined;
+    const base = wire.initialPrice.baseToken.toLowerCase() === wire.pool.currency0 ? 'currency0' : 'currency1';
+    const exact = initialPrice.initialSqrtPrice({ price: initialPrice.parsePriceText(wire.initialPrice.price), base, decimals0: wire.initialPrice.decimals0, decimals1: wire.initialPrice.decimals1 });
+    // The service's own plain decimals for the price both ways (the package's new-pool fixture writes them so).
+    const body = planAnswer(wire, { owner: OWNER, zap: ZAP_V4, now: now(), legs: [], nonce: { word: 9, bit: answers.length },
+      initialPrice: { sqrtPriceX96: exact.sqrtPriceX96, tick: exact.tick, price0In1: '2500', price1In0: '0.0004', decimals0: wire.initialPrice.decimals0, decimals1: wire.initialPrice.decimals1 },
+      expected: { amounts: [10n ** 17n, 250_000_000n], returned: [] } });
+    answers.push(body);
+    return body;
+  };
+}
+
+test('(b3) a Base token chosen: Create a new pool (advanced) opens Base’s finder, and a pool with no price is created on Base at its starting price', async () => {
+  const chain = createV2Chain({ chainId: 8453, timestamp: now(), balances: { [USDC_BASE]: 5_000_000_000n }, pools: [{ pool: POOL_BASE, sqrtPriceX96: SQRT_BASE, tick: TICK_BASE, liquidity: 10n ** 18n }] });
+  chain.switchTo(4663);
+  const read = createReadStub({ answer: robinhoodRead });
+  const answers = [];
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [8453], contracts: { 8453: contractsFor(8453) }, planner: newPoolPlanner(answers),
+    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
+  });
+  try {
+    const page = s.page;
+    await page.locator('[data-create-journey]').waitFor();
+    await page.getByRole('combobox', { name: 'Search a token' }).fill('USDC');
+    await page.locator(`[data-token-network-option="8453:${USDC_BASE}"]`).click({ timeout: 30_000 });
+    await page.locator('[data-picker="pool"][data-picker-network="8453"] input[name="pool-option"]').first().waitFor({ timeout: 30_000 });
+    // His step 1, a Base token chosen and no pool yet: the advanced path is Base's, never Robinhood Chain's.
+    await page.locator('[data-pool-advanced] summary').click();
+    assert.equal(await page.locator('[data-network-find-other="4663"]').count(), 0, 'not Robinhood Chain’s finder');
+    await page.locator('[data-network-find-other="8453"]').click();
+    const zap = page.locator('[data-zap-journey="8453"][data-zap-gate="live"]');
+    await zap.waitFor();
+    assert.equal(await page.locator('[data-zap-journey="4663"]').count(), 0);
+    const finder = zap.locator('[data-pool-find]');
+    // Base's tokens and Base's v3 tiers (0.02%, 0.03% and 0.04% included), where Robinhood Chain's finder offers its own.
+    const tokens = (await finder.getByRole('radiogroup', { name: 'First token' }).getByRole('radio').allInnerTexts()).map((t) => t.trim());
+    assert.deepEqual(tokens.slice(0, 2), ['WETH', 'USDC'], 'Base’s own currencies (ETH is v4’s), never USDG');
+    const v3Tiers = (await finder.getByRole('radiogroup', { name: 'Fee tier' }).getByRole('radio').allInnerTexts()).map((t) => t.trim());
+    assert.ok(['0.02%', '0.03%', '0.04%'].every((tier) => v3Tiers.includes(tier)), `Base’s extra v3 tiers: ${v3Tiers}`);
+    await finder.getByRole('radiogroup', { name: 'Uniswap version' }).getByRole('radio', { name: 'Uniswap v4' }).click();
+    await finder.getByRole('radiogroup', { name: 'First token' }).getByRole('radio', { name: 'ETH', exact: true }).click();
+    await finder.getByRole('radiogroup', { name: 'Second token' }).getByRole('radio', { name: 'USDC', exact: true }).click();
+    await finder.getByRole('radiogroup', { name: 'Fee tier' }).getByRole('radio', { name: '0.30%', exact: true }).click();
+    await finder.locator('[data-pool-read]').click();
+    // No price yet: the advanced offer, then the starting price, on Base.
+    await zap.locator('[data-new-pool-offer]').waitFor({ timeout: 30_000 });
+    assert.equal(chain.chainNow(), 8453, 'read through the wallet on Base');
+    await zap.locator('[data-new-pool-start]').click();
+    const chosen = zap.locator('[data-chosen-pool][data-pool-source="wallet"]');
+    await chosen.waitFor();
+    assert.equal((await chosen.locator('[data-chain-chip="8453"]').innerText()).trim(), 'Base');
+    assert.equal(await chosen.locator('[data-dex-chip]').count(), 0, 'O-17: no "Uniswap" chip on Base, as on Robinhood Chain');
+    await zap.locator('[data-new-pool-input]').fill('2500');
+    await zap.locator('[data-new-pool-both]').waitFor();
+    assert.match(await zap.locator('[data-new-pool-both]').innerText(), /^1 ETH = 2,?500 USDC · 1 USDC = 0\.0004 ETH$/);
+    await zap.locator('[data-zap-continue="pool"]').click();
+    await zap.locator('[data-stage="range"]').waitFor();
+    await zap.locator('[data-zap-continue="range"]').click();
+    await zap.locator(`[data-zap-amount="${ZERO}"] input`).fill('0.1');
+    await zap.locator(`[data-zap-amount="${USDC_BASE}"] input`).fill('250');
+    await zap.locator('[data-zap-continue="amount"]').click();
+    const review = zap.locator('[data-zap-review="live"][data-zap-review-stage="reviewed"]');
+    await review.waitFor({ timeout: 30_000 });
+    // The one request this item changes: a create on Base, the pool as indicated, its starting price exact.
+    assert.equal(s.planned.length, 1, 'one plan');
+    const asked = s.planned[0];
+    assert.deepEqual([asked.action, asked.chainId], ['create', 8453]);
+    assert.deepEqual(asked.pool, POOL_NEW_BASE);
+    assert.deepEqual(asked.initialPrice, { price: '2500', baseToken: ZERO, decimals0: 18, decimals1: 6 });
+    assert.deepEqual(asked.inputs.map((input) => input.token), [ZERO, USDC_BASE]);
+    assert.equal(asked.inputs[1].amountRaw, '250000000');
+    assert.match(await review.locator('[data-fact="review-start"]').innerText(), /^Starting price: 1 ETH = 2,?500 USDC · 1 USDC = 0\.0004 ETH$/);
+    assert.equal(await review.locator('[data-review-headline] [data-dex-chip]').count(), 0, 'O-17: Review’s chips as Robinhood Chain’s');
+    // §2.6.5: the box to tick before the wallet is asked.
+    assert.equal(await zap.locator('[data-create-position]').isDisabled(), true, 'not before the box is ticked');
+    await zap.locator('[data-new-pool-confirm]').check();
+    await zap.locator('[data-create-position]:not([disabled])').click({ timeout: 30_000 });
+    await zap.locator('[data-created-position][data-zap-receipt]').waitFor({ timeout: 60_000 });
+    const txs = chain.sends.map((entry) => entry.tx);
+    assert.ok(txs.every((tx) => tx.chainId === '0x2105'), 'every step on Base');
+    const createTx = txs.at(-1);
+    assert.equal(createTx.to, ZAP_V4, 'the create on Base’s zap');
+    assert.equal(createTx.data, answers.at(-1).plan.call.data, 'the call data the plan carried, with its starting price');
+    assert.equal(BigInt(createTx.value), 10n ** 17n, 'the native input as msg.value');
+    const sqrt = initialPrice.initialSqrtPrice({ price: initialPrice.parsePriceText('2500'), base: 'currency0', decimals0: 18, decimals1: 6 }).sqrtPriceX96;
+    assert.equal(chain.poolPrice(POOL_NEW_BASE), sqrt, 'the pool now priced at exactly the starting price typed');
+    assert.equal(chain.poolPrice(POOL_BASE), SQRT_BASE, 'the listed pool untouched');
+    assert.deepEqual(chain.offChain.filter((m) => m !== 'wallet_getCapabilities'), [], 'nothing of Base asked while the wallet was elsewhere');
+  } finally { await s.close(); }
+});
+
+// Added 2026-11-06 (the review of O-15): the finder of a Base token's network, on a pool that already has a price. On
+// Robinhood Chain such a v4 pool is handed back to today's list by its #/new/<id> link, a Robinhood Chain link; on Base it
+// goes on in the finder's own steps, as a v3 pool found on Robinhood Chain does. "Back to the pool list" returns to his
+// step 1. Nothing is planned or sent on the way.
+test('(b4) a Base token chosen: Base’s finder on a pool with a price goes on in its own steps, never to Robinhood Chain’s link', async () => {
+  const chain = createV2Chain({ chainId: 8453, timestamp: now(), balances: { [USDC_BASE]: 5_000_000_000n }, pools: [{ pool: POOL_BASE, sqrtPriceX96: SQRT_BASE, tick: TICK_BASE, liquidity: 10n ** 18n }] });
+  chain.switchTo(4663);
+  const read = createReadStub({ answer: robinhoodRead });
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [8453], contracts: { 8453: contractsFor(8453) }, planner: basePlanner([]),
+    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
+  });
+  try {
+    const page = s.page;
+    await page.locator('[data-create-journey]').waitFor();
+    await page.getByRole('combobox', { name: 'Search a token' }).fill('USDC');
+    await page.locator(`[data-token-network-option="8453:${USDC_BASE}"]`).click({ timeout: 30_000 });
+    await page.locator('[data-picker="pool"][data-picker-network="8453"] input[name="pool-option"]').first().waitFor({ timeout: 30_000 });
+    await page.locator('[data-pool-advanced] summary').click();
+    await page.locator('[data-network-find-other="8453"]').click();
+    const zap = page.locator('[data-zap-journey="8453"][data-zap-gate="live"]');
+    await zap.waitFor();
+    // Back to the pool list returns to his step 1, then the finder opens again.
+    await zap.locator('[data-network-back-to-list]').click();
+    await page.locator('#create-token-search').waitFor();
+    assert.equal(await page.locator('[data-zap-journey]').count(), 0, 'his journey again');
+    await page.getByRole('combobox', { name: 'Search a token' }).fill('USDC');
+    await page.locator(`[data-token-network-option="8453:${USDC_BASE}"]`).click({ timeout: 30_000 });
+    await page.locator('[data-picker="pool"][data-picker-network="8453"] input[name="pool-option"]').first().waitFor({ timeout: 30_000 });
+    await page.locator('[data-pool-advanced] summary').click();
+    await page.locator('[data-network-find-other="8453"]').click();
+    await zap.waitFor();
+    const hash = await page.evaluate(() => location.hash);
+    const finder = zap.locator('[data-pool-find]');
+    await finder.getByRole('radiogroup', { name: 'Uniswap version' }).getByRole('radio', { name: 'Uniswap v4' }).click();
+    await finder.getByRole('radiogroup', { name: 'First token' }).getByRole('radio', { name: 'ETH', exact: true }).click();
+    await finder.getByRole('radiogroup', { name: 'Second token' }).getByRole('radio', { name: 'USDC', exact: true }).click();
+    await finder.getByRole('radiogroup', { name: 'Fee tier' }).getByRole('radio', { name: '0.05%', exact: true }).click();
+    await finder.locator('[data-pool-read]').click();
+    const chosen = zap.locator('[data-chosen-pool][data-pool-source="wallet"]');
+    await chosen.waitFor({ timeout: 30_000 });
+    assert.equal(chain.chainNow(), 8453, 'read through the wallet on Base');
+    assert.equal(await zap.locator('[data-pool-use-listed], [data-new-pool-offer]').count(), 0, 'no hand-back to a list, no new-pool offer');
+    assert.equal(await chosen.locator('[data-dex-chip]').count(), 0, 'O-17: no "Uniswap" chip on Base');
+    await zap.locator('[data-zap-continue="pool"]').click();
+    await zap.locator('[data-stage="range"]').waitFor();
+    assert.equal(await page.evaluate(() => location.hash), hash, 'never Robinhood Chain’s #/new/<id> link');
+    assert.equal(s.planned.length, 0, 'nothing planned before Review');
+    assert.equal(chain.sends.length, 0, 'nothing sent');
+  } finally { await s.close(); }
+});
+
 // Added 2026-10-05 (the owner: "and if he wants to build on Arbitrum, the same thing"): his journey on Arbitrum One, in a
 // v3 pool, with both networks offered.
 const WETH_ARB = '0x82af49447d8a07e3bd95bd0d56f35241523fbab1';
@@ -1013,15 +1174,16 @@ test('(f) his journey on Arbitrum One: both networks in his search, each with it
     assert.equal(txs.at(-1).to, ZAP_V3, 'the create on Arbitrum One\'s v3 zap');
     // Two tokens to pull: the client takes one Permit2 signature for both (createWithPermit), else the direct create.
     assert.ok(['0x0e97b041', '0xec627dfe'].includes(txs.at(-1).data.slice(0, 10)), 'create, or create with its Permit2 signature');
-    assert.match(await page.locator('a[data-created-next="position"]').getAttribute('href'), /^#\/positions\/arbitrum-v3-\d+$/);
+    assert.match(await page.locator('a[data-created-next="plain"]').getAttribute('href'), /^#\/positions\/arbitrum-v3-\d+$/);
     // Added 2026-10-06 (the final check's F1/F6): Back rests under it, as on Robinhood Chain.
     assert.equal(await backOf(page).isHidden(), true, 'Back rests once the position exists');
-    // Changed on purpose 2026-10-06 (the review, money #3, a second look): the receipt's "Paid in", right under that review,
-    // is the very figure its "You put in" says (both rounded up), never a second figure for one amount.
-    const paid = await page.locator('[data-created-position] [data-fact="receipt-paid-in"] dd').allInnerTexts();
-    assert.equal(paid.length, 2, 'what each token paid in');
-    const putAfter = await review.locator('[data-review-inputs]').innerText();
-    for (const figure of paid) assert.ok(putAfter.includes(figure.trim()), `${putAfter} names ${figure.trim()}, as the receipt does`);
+    // Changed on purpose 2026-11-06 (the replica rule, O-18): Robinhood Chain's created view on Arbitrum One too, so no
+    // receipt rows under the review (its "Paid in" was checked against "You put in" here); the receipt is a row of Receipts,
+    // with the figures the money client read from the zap's events, as on Robinhood Chain.
+    assert.match(await page.locator('#created-title').innerText(), /^Position NFT \d+ is in your wallet\.\s+What should Domino do with it\?$/);
+    assert.equal(await page.locator('[data-created-position] [data-fact^="receipt-"]').count(), 0, 'no receipt rows in the created view');
+    const kept = await page.evaluate((owner) => JSON.parse(sessionStorage.getItem('domino:session-receipts:v1:' + owner) ?? '[]'), OWNER);
+    assert.deepEqual(kept.map((entry) => [entry.chainId, entry.action, entry.dex]), [[42161, 'create', 3]], 'the create, a row of Receipts at once');
   } finally { await s.close(); }
 });
 
@@ -1540,7 +1702,7 @@ test('(t) his journey on Base: once the position exists Back rests under its suc
     await page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
     await page.keyboard.press('Escape');
     assert.equal(await success.isVisible(), true, 'the success stays');
-    assert.equal(await success.locator('a[data-created-next="position"]').count(), 1);
+    assert.equal(await success.locator('a[data-created-next="plain"]').count(), 1);
     assert.equal(await page.locator('[data-create-position="connect"]').count(), 0, 'never Connect wallet in its place');
     assert.equal(await backOf(page).isHidden(), true);
     // A done step reopened leaves the success, as on Robinhood Chain: Back is there again.
@@ -1549,6 +1711,73 @@ test('(t) his journey on Base: once the position exists Back rests under its suc
     assert.equal(await backOf(page).isVisible(), true, 'Back again on the step reopened');
     assert.equal(await page.locator('[data-created-position]').count(), 0);
     assert.equal(chain.sends.length, 2, 'the approval and the create, once');
+  } finally { await s.close(); }
+});
+
+// Added 2026-11-06 (the replica rule, O-18): on Base the success is Robinhood Chain's, with only the automations Base
+// takes now. read-v6 says Base's registry halted automation (`chains[].automationHalted`), the setup's own refusal: the
+// success offers the position kept plain alone, no notice in place of the others; Robinhood Chain's words otherwise.
+test('(t4) his journey on Base while read-v6 says Base’s automation is halted: Robinhood Chain’s success with the plain position alone', async () => {
+  const chain = createV2Chain({ chainId: 8453, timestamp: now(), balances: { [USDC_BASE]: 5_000_000_000n }, pools: [{ pool: POOL_BASE, sqrtPriceX96: SQRT_BASE, tick: TICK_BASE, liquidity: 10n ** 18n }] });
+  chain.switchTo(4663);
+  const read = createReadStub({ answer: robinhoodRead });
+  let read6Asked = 0;
+  const halted = () => {
+    read6Asked += 1;
+    const reply = basePortfolio(null);
+    reply.body.chains.find((item) => item.chainId === 8453).automationHalted = true;
+    return reply;
+  };
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [8453], contracts: { 8453: contractsFor(8453) }, planner: basePlanner([]),
+    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
+    read6: { portfolio: halted, activity: () => activityOf({ wallet: OWNER }) },
+  });
+  try {
+    const page = s.page;
+    await page.locator('[data-create-journey]').waitFor();
+    await page.getByRole('combobox', { name: 'Search a token' }).fill('USDC');
+    await page.locator(`[data-token-network-option="8453:${USDC_BASE}"]`).click({ timeout: 30_000 });
+    await page.locator('[data-picker="pool"][data-picker-network="8453"] input[name="pool-option"]').first().click({ timeout: 30_000 });
+    await page.locator('[data-chosen-pool]').waitFor();
+    // O-17: his Review's pool chips on Base, as Robinhood Chain's: the network and the fee, no "Uniswap".
+    const current = (step) => page.locator(`li[data-step="${step}"][aria-current="step"]`);
+    await pressContinue(current('pool'));
+    await current('range').waitFor();
+    await pressContinue(current('range'));
+    await current('amount').waitFor();
+    await page.locator('li[data-step="amount"] [data-pair-balance="ready"]').first().waitFor({ timeout: 30_000 });
+    await page.locator('li[data-step="amount"][aria-current="step"] [data-pair-side="1"] input[inputmode="decimal"]').fill('1000');
+    await pressContinue(current('amount'));
+    const review = page.locator('[data-stage-card="review"] [data-zap-review="live"][data-zap-review-stage="reviewed"]');
+    await review.waitFor({ timeout: 30_000 });
+    const chips = review.locator('[data-review-headline] [data-pool-chips]');
+    assert.equal(await chips.locator('[data-dex-chip]').count(), 0, 'no "Uniswap" chip on Base’s Review');
+    assert.deepEqual((await chips.locator('.dm-chip').allInnerTexts()).map((text) => text.trim()), ['Base', '0.05% fee']);
+    await page.locator('[data-create-position="live"]:not([disabled])').click({ timeout: 30_000 });
+    const success = page.locator('[data-created-position][data-zap-receipt]');
+    await success.waitFor({ timeout: 60_000 });
+    assert.match(await success.locator('#created-title').innerText(), /^Position NFT \d+ is in your wallet\.\s+What should Domino do with it\?$/);
+    const plain = success.locator('a[data-created-next="plain"]');
+    await plain.waitFor();
+    assert.match(await plain.getAttribute('href'), /^#\/positions\/base-v4-\d+$/);
+    // The gates are open (a live vault and Auto-exit on this fake Base) and the page has had time to read read-v6: still
+    // the plain position alone, and nothing said about the others.
+    await until(() => read6Asked > 0, 'read-v6 asked about the wallet');
+    await page.waitForTimeout(1_500);
+    assert.deepEqual(await success.locator('a[data-created-next]').evaluateAll((links) => links.map((link) => link.getAttribute('data-created-next'))), ['plain'], 'no automation offered on a halted network');
+    assert.doesNotMatch(await success.innerText(), /paused|not available|stopped/i, 'no notice in their place');
+    assert.equal(chain.sends.length, 2, 'the approval and the create, once');
+    // Its review (2026-11-06): read-v6's word is about the wallet that made the position, so the wallet disconnected under
+    // the success (as test (t) does) never brings back a choice the network refuses. It did: with no wallet connected the
+    // word was none, and the gates alone offered Auto-compound, Domino-compound and Auto-exit again.
+    await page.locator('header [aria-haspopup="dialog"]').click();
+    await page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]').getByRole('button', { name: 'Disconnect wallet', exact: true }).click();
+    await page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(1_500);
+    assert.equal(await success.isVisible(), true, 'the success stays');
+    assert.deepEqual(await success.locator('a[data-created-next]').evaluateAll((links) => links.map((link) => link.getAttribute('data-created-next'))), ['plain'], 'still the plain position alone with the wallet gone');
   } finally { await s.close(); }
 });
 

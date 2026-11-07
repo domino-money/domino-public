@@ -2,7 +2,7 @@ import { BaseError, decodeFunctionResult, encodeAbiParameters, encodeFunctionDat
 import v3FactoryAbi from '../../../../api-contracts/v2/abi/IUniswapV3FactoryMinimal.json'
 import v3PoolAbi from '../../../../api-contracts/v2/abi/IUniswapV3PoolMinimal.json'
 import v4StateViewAbi from '../../../../api-contracts/v2/abi/IV4StateViewMinimal.json'
-import { profileRank, v3TickSpacing, type V2Chain } from '../../v2/chains'
+import { hasDex, positionManagerOf, profileRank, v3Of, v3TickSpacing, type V2Chain } from '../../v2/chains'
 import { assistedSwapFee, type FeePlace } from '../../v2/feeRule'
 import { V2_FIXTURE_SETS_TAKEN } from '../../v2/flag'
 import { chooseConsent, type ConsentChoice } from '../../v2/plan/consent'
@@ -536,8 +536,16 @@ export function createZapClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Co
   const batchReviews = new WeakMap<ZapBatch, ZapReview>()
   const offeredBatches = new Map<string, { batch: ZapBatch; review: ZapReview; inclusion?: { hash: Hex; blockNumber: bigint; blockHash: Hex } }>()
 
-  const zapOf = (dex: Dex): Address => (dex === 3 ? contracts.addresses.zapV3 : contracts.addresses.zapV4).toLowerCase() as Address
-  const managerOf = (dex: Dex): Address => (dex === 3 ? chain.uniswap.v3.positionManager : chain.uniswap.v4.positionManager)
+  // A version the chain lacks (v3 on a chain with v4 alone: no v3 zap in its set, no v3 in its profile) is refused as an
+  // unknown one, before any read or write (changed on purpose 2026-11-06, Elysium readiness).
+  const zapOf = (dex: Dex): Address => ((dex === 3 ? contracts.addresses.zapV3 : contracts.addresses.zapV4) ?? fail('plan_pool_dex')).toLowerCase() as Address
+  /** The same zap, or null for a version the chain lacks: for a question that must not throw (review F1, 2026-11-06). */
+  const zapOrNull = (dex: Dex): Address | null => {
+    const zap = dex === 3 ? contracts.addresses.zapV3 : contracts.addresses.zapV4
+    return zap ? (zap.toLowerCase() as Address) : null
+  }
+  const managerOf = (dex: Dex): Address => (hasDex(chain, dex) ? positionManagerOf(chain, dex) : fail('plan_pool_dex'))
+  const v3 = () => (hasDex(chain, 3) ? v3Of(chain) : fail('plan_pool_dex'))
   const managerAbi = (dex: Dex): Abi => (dex === 3 ? V3_POSITION_MANAGER_ABI : V4_POSITION_MANAGER_ABI)
   const registry = () => contracts.addresses.registry.toLowerCase() as Address
   const expiring = (deadline: bigint) => deadline - BigInt(Math.floor(now())) < BigInt(MIN_DEADLINE_LEFT_S)
@@ -576,8 +584,10 @@ export function createZapClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Co
    */
   async function isDominoVault(rpc: Rpc, at: Address, block: Hex | 'latest'): Promise<boolean> {
     if (same(at, ZERO_ADDRESS)) return false
-    await verifyV2Code((address) => rpc('eth_getCode', [address, block]), contracts, ['vaultFactoryV3', 'vaultFactoryV4'])
-    for (const factory of [contracts.addresses.vaultFactoryV3, contracts.addresses.vaultFactoryV4]) {
+    // The factories of the chain's versions: both on Robinhood Chain, Base and Arbitrum One; v4's alone without v3.
+    const factories = hasDex(chain, 3) ? (['vaultFactoryV3', 'vaultFactoryV4'] as const) : (['vaultFactoryV4'] as const)
+    await verifyV2Code((address) => rpc('eth_getCode', [address, block]), contracts, factories)
+    for (const factory of factories.map((name) => contracts.addresses[name] ?? fail('deployment_invalid'))) {
       if (await read<boolean>(rpc, factory.toLowerCase() as Address, VAULT_FACTORY_ABI, 'isVault', [at], block)) return true
     }
     return false
@@ -695,7 +705,7 @@ export function createZapClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Co
     const [, , token0, token1, fee, tickLower, tickUpper, liquidity] = row
     let spacing = v3TickSpacing(chain, fee)
     // A tier outside the profile's table (spec §1.4): its spacing is the factory's.
-    if (spacing === null) spacing = Number(await read<number>(rpc, chain.uniswap.v3.factory, V3_FACTORY_ABI, 'feeAmountTickSpacing', [fee], block))
+    if (spacing === null) spacing = Number(await read<number>(rpc, v3().factory, V3_FACTORY_ABI, 'feeAmountTickSpacing', [fee], block))
     if (!spacing || tickLower >= tickUpper) return 'position_identity'
     const pool: PoolRef = { dex: 3, currency0: lower(token0), currency1: lower(token1), fee, tickSpacing: spacing, hooks: ZERO_ADDRESS }
     return { position: { tokenId, owner: nft.holder, pool, tickLower, tickUpper, liquidity }, approved: nft.approved }
@@ -710,7 +720,7 @@ export function createZapClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Co
    */
   async function poolAt(rpc: Rpc, pool: PoolRef, block: Hex | 'latest', number: bigint): Promise<PoolOnChain> {
     if (pool.dex === 3) {
-      const address = lower(await read<Address>(rpc, chain.uniswap.v3.factory, V3_FACTORY_ABI, 'getPool', [pool.currency0, pool.currency1, pool.fee], block))
+      const address = lower(await read<Address>(rpc, v3().factory, V3_FACTORY_ABI, 'getPool', [pool.currency0, pool.currency1, pool.fee], block))
       if (isNative(address)) return { pool, id: address, exists: false, initialized: false, sqrtPriceX96: 0n, tick: 0, liquidity: 0n, block: number }
       const slot0 = await read<readonly [bigint, number]>(rpc, address, V3_POOL_ABI, 'slot0', [], block)
       const liquidity = await read<bigint>(rpc, address, V3_POOL_ABI, 'liquidity', [], block)
@@ -724,7 +734,7 @@ export function createZapClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Co
 
   /** The v3 tick spacing of a fee tier, from the profile's factory (`feeAmountTickSpacing`; 0 means the tier is not enabled). */
   async function v3SpacingOf(rpc: Rpc, fee: number, block: Hex | 'latest'): Promise<number> {
-    return Number(await read<number>(rpc, chain.uniswap.v3.factory, V3_FACTORY_ABI, 'feeAmountTickSpacing', [fee], block))
+    return Number(await read<number>(rpc, v3().factory, V3_FACTORY_ABI, 'feeAmountTickSpacing', [fee], block))
   }
 
   async function takesEth(rpc: Rpc, account: AccountCode, block: Hex): Promise<boolean> {
@@ -1234,6 +1244,8 @@ export function createZapClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Co
   async function positionApproval(dex: Dex, tokenId: bigint): Promise<PositionApproval> {
     guard()
     if ((dex !== 3 && dex !== 4) || typeof tokenId !== 'bigint' || tokenId <= 0n || tokenId > MAX_UINT256) fail('invalid_position_id')
+    // (Review F1, 2026-11-06) A version the chain lacks (v3 on a chain with v4 alone), before any read, as zapOf refuses it.
+    if (!hasDex(chain, dex)) fail('plan_pool_dex')
     return t.bounded(async (rpc) => {
       await t.identity(rpc)
       const block = await t.latestBlock(rpc)
@@ -1249,6 +1261,8 @@ export function createZapClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Co
   async function prepareRevoke(dex: Dex, tokenId: bigint, gas: V2GasBudget | null = null): Promise<PreparedV2> {
     guard()
     if ((dex !== 3 && dex !== 4) || typeof tokenId !== 'bigint' || tokenId <= 0n || tokenId > MAX_UINT256) fail('invalid_position_id')
+    // (Review F1, 2026-11-06) A version the chain lacks (v3 on a chain with v4 alone), before any read, as zapOf refuses it.
+    if (!hasDex(chain, dex)) fail('plan_pool_dex')
     return t.bounded(async (rpc) => {
       await t.identity(rpc)
       await verifyDeployment(rpc, dex, 'latest')
@@ -1268,8 +1282,12 @@ export function createZapClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Co
   function nonceHome(entry: SignedNonce): { abi: Abi; dex: Dex | null } | null {
     if (entry.chainId !== chain.chainId || entry.owner.toLowerCase() !== owner) return null
     if (entry.space === 'permit2' && same(entry.verifier, chain.permit2)) return { abi: PERMIT2_ABI, dex: null }
-    if (entry.space === 'zap' && same(entry.verifier, zapOf(3))) return { abi: ZAP_ABI, dex: 3 }
-    if (entry.space === 'zap' && same(entry.verifier, zapOf(4))) return { abi: ZAP_ABI, dex: 4 }
+    // Changed on purpose 2026-11-06 (review F1): each zap of the chain's own versions, so a chain with v4 alone (no v3 zap)
+    // still finds its v4 zap's nonces; zapOf(3) threw there first. Robinhood Chain, Base and Arbitrum One: v3's, then v4's.
+    if (entry.space === 'zap') for (const dex of chain.dexes) {
+      const zap = zapOrNull(dex)
+      if (zap !== null && same(entry.verifier, zap)) return { abi: ZAP_ABI, dex }
+    }
     return null
   }
 
@@ -1609,7 +1627,7 @@ export function createZapClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Co
   /** A pool the person indicates, read through the wallet at the latest block (see `poolAt`); v3 tiers are checked against the factory. */
   async function readPool(pool: PoolRef): Promise<PoolOnChain & { spacingOk: boolean }> {
     guard()
-    if (pool.dex !== 3 && pool.dex !== 4) fail('plan_pool_dex')
+    if (!hasDex(chain, pool.dex)) fail('plan_pool_dex')
     if (!addr(pool.currency0) || !addr(pool.currency1) || !addr(pool.hooks) || BigInt(pool.currency0) >= BigInt(pool.currency1)) fail('plan_pool_order')
     return t.bounded(async (rpc) => {
       await t.identity(rpc)
@@ -1649,7 +1667,7 @@ export function createZapClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Co
   async function readPools(pools: readonly PoolRef[]): Promise<(PoolOnChain & { spacingOk: boolean })[]> {
     guard()
     for (const pool of pools) {
-      if (pool.dex !== 3 && pool.dex !== 4) fail('plan_pool_dex')
+      if (!hasDex(chain, pool.dex)) fail('plan_pool_dex')
       if (!addr(pool.currency0) || !addr(pool.currency1) || !addr(pool.hooks) || BigInt(pool.currency0) >= BigInt(pool.currency1)) fail('plan_pool_order')
     }
     if (pools.length === 0) return []
@@ -1665,10 +1683,10 @@ export function createZapClient(wallet: V2Wallet, chain: V2Chain, supplied: V2Co
           first.push({ target: chain.uniswap.v4.stateView, abi: V4_STATE_VIEW_ABI, functionName: 'getSlot0', args: [ids[index]] })
           first.push({ target: chain.uniswap.v4.stateView, abi: V4_STATE_VIEW_ABI, functionName: 'getLiquidity', args: [ids[index]] })
         } else {
-          first.push({ target: chain.uniswap.v3.factory, abi: V3_FACTORY_ABI, functionName: 'getPool', args: [pool.currency0, pool.currency1, pool.fee] })
+          first.push({ target: v3().factory, abi: V3_FACTORY_ABI, functionName: 'getPool', args: [pool.currency0, pool.currency1, pool.fee] })
         }
       })
-      for (const fee of fees) first.push({ target: chain.uniswap.v3.factory, abi: V3_FACTORY_ABI, functionName: 'feeAmountTickSpacing', args: [fee] })
+      for (const fee of fees) first.push({ target: v3().factory, abi: V3_FACTORY_ABI, functionName: 'feeAmountTickSpacing', args: [fee] })
       const answers = await aggregate(rpc, first, block.tag)
       const spacing = new Map(fees.map((fee, index) => {
         const answer = answers[answers.length - fees.length + index]

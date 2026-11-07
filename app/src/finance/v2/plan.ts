@@ -1,5 +1,5 @@
 import { decodeAbiParameters, type Address, type Hex } from 'viem'
-import { v3TickSpacing, type V2Chain } from '../../v2/chains'
+import { hasDex, v3TickSpacing, type V2Chain } from '../../v2/chains'
 import { feeTermsMatch, expectedFeeTerms, type RankOf } from '../../v2/feeRule'
 import { routeProblems, type PlanTarget } from '../../v2/plan/route'
 import { ACTION, LEG_KIND, ZERO_ADDRESS, type ActionName, type ChangeRangePlan, type CreatePlan, type ExitPlan, type IncreasePlan, type PermitBatch, type PoolRef, type PositionIntent, type SwapLeg, type V2Contracts, type ZapPlan } from '../../v2/types'
@@ -107,7 +107,8 @@ export const actionCode = (name: ActionName) => ACTION[name]
 /** Check 1: the zap of the pool's DEX on the plan's chain, from that chain's manifest; null when they disagree. */
 export function zapFor(contracts: V2Contracts, chainId: number, pool: PoolRef): Address | null {
   if (contracts.chainId !== chainId) return null
-  if (pool.dex === 3) return contracts.addresses.zapV3
+  // A set of a chain without v3 has no v3 zap: a v3 pool there is no plan of this chain.
+  if (pool.dex === 3) return contracts.addresses.zapV3 ?? null
   if (pool.dex === 4) return contracts.addresses.zapV4
   return null
 }
@@ -115,7 +116,8 @@ export function zapFor(contracts: V2Contracts, chainId: number, pool: PoolRef): 
 /** A pool well formed for its DEX on this chain: sorted currencies, v3 hookless and with its tier's spacing, no native on v3. */
 export function poolProblems(pool: PoolRef, chain: V2Chain): string[] {
   const problems: string[] = []
-  if (pool.dex !== 3 && pool.dex !== 4) return ['plan_pool_dex']
+  // A version the chain lacks (v3 on a chain with v4 alone) is refused as an unknown one.
+  if (!hasDex(chain, pool.dex)) return ['plan_pool_dex']
   if (!isAddress(pool.currency0) || !isAddress(pool.currency1) || !isAddress(pool.hooks)) return ['plan_pool_address']
   if (BigInt(pool.currency0) >= BigInt(pool.currency1)) problems.push('plan_pool_order')
   if (!Number.isInteger(pool.fee) || pool.fee < 0 || pool.fee > 1_000_000) problems.push('plan_pool_fee')
@@ -189,6 +191,8 @@ export function legProblems(legs: readonly SwapLeg[], chain: V2Chain, routerVers
       if (!same(leg.router, chain.uniswap.universalRouter.address)) problems.add('plan_leg_router')
       else if (version === null || version < 212) problems.add('plan_leg_router_not_admitted')
     } else if (leg.kind === LEG_KIND.v3Path) {
+      // Never a v3 path on a chain without v3.
+      if (!hasDex(chain, 3)) problems.add('plan_leg_kind')
       if (!same(leg.router, ZERO_ADDRESS)) problems.add('plan_leg_router')
       const tokens = v3PathTokens(leg.data)
       if (!tokens || !same(tokens[0], leg.tokenIn) || !same(tokens[tokens.length - 1], leg.tokenOut) || tokens.some((t) => same(t, ZERO_ADDRESS))) problems.add('plan_leg_path')

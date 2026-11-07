@@ -3,12 +3,14 @@ import { positionHref } from '../../components/explore/routes'
 import { SheetCard, SheetFact, SheetFacts, SheetMore, TokenRow, TokenRows } from '../../components/positions/ActionSheet'
 import { Button, FigureDash, LinkButton, Skeleton } from '../../components/ui'
 import { slippageBpsFrom } from '../../lib/create/slippage'
+import { formatUsd } from '../../lib/format/usd'
 import { useWalletIdentity } from '../../lib/walletIdentity'
 import { v2Chain } from '../../v2/chains'
 import { v2TxUrl } from '../../v2/explorers'
 import { ethText, keptWhileRequoting, priceText, rangeBothWays } from '../../v2/plan/present'
 import type { S1PlanRequest } from '../../v2/plan/types'
-import type { ActionName, Address } from '../../v2/types'
+import { ZERO_ADDRESS, type ActionName, type Address } from '../../v2/types'
+import { usdOfPoolAmounts } from '../usd'
 import { v2PositionHref } from '../route'
 import { CHANGE_RANGE_BURNS_WHEN_ALL, EXIT_BURNS, EXIT_PAUSE_COPY, EXIT_REARM_COPY, POSITION_SLIPPAGE_DEFAULT_BPS, POSITION_SLIPPAGE_MIN_BPS, ROOT_PAUSE_COPY, type Share } from './constants'
 import { COPY } from './copy'
@@ -145,6 +147,18 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, av
   })
   const direct = useDirectExit(gate, position, label, book)
   const usesDirect = mode === 'collect' || mode === 'close' || (mode === 'exit' && way === 'both')
+  // Added 2026-11-06 (O-10): what Collect fees and Close position pay, in USD beside "You receive", as Robinhood Chain's
+  // own dialogs show it: read-v6's qualified prices, or one of them at this pool's price as read with the amounts (its
+  // title then says so). Display only: nothing the transaction carries comes from it.
+  const prepared = direct.prepared
+  const worth = (mode === 'collect' || mode === 'close') && prepared ? usdOfPoolAmounts({
+    amounts: prepared.receive,
+    decimals: [decimalsOf(book, pool.currency0), decimalsOf(book, pool.currency1)],
+    prices: [book.get(pool.currency0)?.usd, book.get(pool.currency1)?.usd],
+    sqrtPriceX96: prepared.state.sqrtPriceX96,
+    allowPoolMark: pool.hooks === ZERO_ADDRESS,
+  }) : null
+  const receiveUsd = worth && prepared ? { text: formatUsd(worth.value), basis: worth.basis, title: worth.basis === 'pool-price' ? `Pool price at block ${prepared.state.blockNumber}` : undefined } : null
   // A direct action reads the position through the wallet, on the position's chain (the live path switches it there
   // first, §1.3). Under `preview` nothing is sent, so the wallet is never asked to switch for a read: off the position's
   // chain the review shows what was chosen, as the zap actions' preview does.
@@ -391,7 +405,7 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, av
         <div className="dm-pa-field" data-position-direct={direct.stage}>
           {!direct.receipt && !directDone && (
             <div className="dm-pa-field" data-position-receive={mode === 'collect' ? 'collect' : 'close'}>
-              <SheetCard caption={COPY.wallet.youReceive}>
+              <SheetCard caption={COPY.wallet.youReceive} aside={receiveUsd ? <span title={receiveUsd.title} data-position-receive-usd={receiveUsd.basis}>{receiveUsd.text}</span> : undefined}>
                 {direct.prepared ? (
                   <Pair chainId={chainId} book={book} tokens={[pool.currency0, pool.currency1]} amounts={direct.prepared.receive} size="lg" />
                 ) : direct.stage === 'reading' ? (
@@ -410,9 +424,12 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, av
                     {direct.prepared ? <Pair chainId={chainId} book={book} tokens={[pool.currency0, pool.currency1]} amounts={direct.prepared.atLeast} /> : <FigureDash reason={direct.error?.copy ?? COPY.page.notRead} />}
                   </SheetFact>
                 )}
-                <SheetFact label="Domino fee">{COPY.review.noFee}</SheetFact>
+                {/* Changed on purpose 2026-11-06 (O-10, the owner: every chain the same as Robinhood Chain): Collect fees and Close
+                    position say what Robinhood Chain's own say (components/positions/PositionActions.tsx), with no Domino fee line;
+                    Withdraw keeps it. */}
+                {mode === 'exit' && <SheetFact label="Domino fee">{COPY.review.noFee}</SheetFact>}
                 <SheetFact label={COPY.review.networkFee} data-position-network-fee="">
-                  {direct.prepared ? <span className="tnum">{COPY.review.networkFeeUpTo(ethText(direct.prepared.step.networkFeeWei))}</span> : direct.stage === 'reading' ? <Skeleton className="ml-auto h-4 w-20" /> : <FigureDash reason={direct.error?.copy ?? COPY.page.notRead} />}
+                  {direct.prepared ? <span className="tnum">{COPY.review.networkFeeUpTo(ethText(direct.prepared.step.networkFeeWei, v2Chain(chainId).nativeSymbol))}</span> : direct.stage === 'reading' ? <Skeleton className="ml-auto h-4 w-20" /> : <FigureDash reason={direct.error?.copy ?? COPY.page.notRead} />}
                 </SheetFact>
               </SheetFacts>
             </div>

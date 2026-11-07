@@ -10,7 +10,7 @@ import type { V2ChainId } from '../../v2/types'
 import { JourneyNetworkContext, type JourneyNetwork } from './context'
 import { JOURNEY } from './copy'
 import { JOURNEY_STAYS_ON_ROBINHOOD, SETUP_STAYS_WHILE_PREVIEW } from './constants'
-import { robinhoodFinderOpen, routeFor, ROBINHOOD, type GateMode } from './model/routing'
+import { finderOpen, routeFor, ROBINHOOD, type GateMode } from './model/routing'
 import { poolPricesFor } from './poolPrices'
 import { otherChainsFor } from './otherChains'
 import { useOtherChainsDiscovery } from './useOtherChainsDiscovery'
@@ -71,12 +71,13 @@ export default function NewPositionV2({ flow, poolId, linkToken, networkToken = 
   const linkedResult = linked?.key === linkKey ? linked.result : null
   const linkedCandidate = linkedResult?.ok ? networkCandidate(linkedResult.token) : null
   const chainId: V2ChainId = ROBINHOOD
-  const [finder, setFinder] = useState(false)
+  // Changed on purpose 2026-11-06 (O-15): the network whose pool finder is open, null for none (it was Robinhood Chain's alone).
+  const [finder, setFinder] = useState<V2ChainId | null>(null)
   // A new flow (screens/NewPosition.tsx useFlowKey: New position followed again after a position was made) starts on today's journey.
   const [seenFlow, setSeenFlow] = useState(flow)
   if (seenFlow !== flow) {
     setSeenFlow(flow)
-    setFinder(false)
+    setFinder(null)
   }
   const mode: GateMode = gates ? gates[chainId].mode : 'off'
   const zapHook = zapOnRobinhood()
@@ -86,12 +87,24 @@ export default function NewPositionV2({ flow, poolId, linkToken, networkToken = 
   // read by Domino's service while Robinhood Chain's S1 gate is live; and (the owner: AI/PONS short and nothing offered)
   // what paying with one other token would be, under the pool's network's live S1 gate (./poolPrices.ts).
   const prices = useMemo(() => poolPricesFor(gates), [gates])
-  const robinhoodFinder = route === 'setup' && robinhoodFinderOpen(mode)
-  const zap = !networkToken && gate !== undefined && gate.mode !== 'off' && (route === 'zap' || (robinhoodFinder && finder)) ? gate : null
+  /** A network's gate when its finder may open now (./model/routing.ts finderOpen), else null. */
+  const finderGate = (on: V2ChainId) => {
+    const open = gates?.[on]
+    return open !== undefined && open.mode !== 'off' && finderOpen(on, open.mode, on === chainId ? route : undefined) ? open : null
+  }
+  // Changed on purpose 2026-11-06 (the replica rule, O-15: Base and Arbitrum One are Robinhood Chain's screens, only the
+  // network changes): "Create a new pool (advanced)" opens the finder of the network of the token chosen in step 1
+  // (./PoolAdvanced.tsx), where a pool with no price yet is created on that network's contracts as on Robinhood Chain's
+  // (the plan API plans a create with `initialPrice` on all three); Robinhood Chain's before a token is chosen, as before.
+  // It opened Robinhood Chain's finder whatever the token. A finder opened from a network token's link opens too (it opened
+  // nothing there).
+  const finding = finder !== null ? finderGate(finder) : null
+  const zap = finding ?? (!networkToken && gate !== undefined && gate.mode !== 'off' && route === 'zap' ? gate : null)
+  const zapChain: V2ChainId = finding ? finder ?? chainId : chainId
   const network: JourneyNetwork = {
     chainId,
-    findOther: robinhoodFinder && !finder ? () => setFinder(true) : null,
-    backToList: robinhoodFinder && finder ? () => setFinder(false) : null,
+    findOther: (on) => (finder === null && finderGate(on) !== null ? () => setFinder(on) : null),
+    backToList: finding !== null ? () => setFinder(null) : null,
     s1: gate,
     gates: gates ?? undefined,
   }
@@ -99,16 +112,16 @@ export default function NewPositionV2({ flow, poolId, linkToken, networkToken = 
   // proposed (`initialPool`, a hint the journey's own pools read on that network must list before it is chosen: today's
   // components/create/Journey.tsx). Handed as a spread, so this build stands whether or not that prop has landed yet.
   const journeyLink = { poolId, linkToken, initialToken: linkedCandidate, initialPool: networkToken?.pool ?? null }
-  // A pool the finder read that today's journey opens (a v4 pool with a price): today's own link, #/new/<id>.
+  // A pool the finder read that today's journey opens (a v4 pool with a price, on Robinhood Chain): today's own link, #/new/<id>.
   const onListed = (id: string) => {
-    setFinder(false)
+    setFinder(null)
     window.location.hash = `#/new/${id}`
   }
   // Added 2026-11-02 (review M1): a linked token that passes for one of its network's own currencies (./model/chainReads.ts
   // usableNetworkToken) never opens New position chosen: its warning is said, in the words the search and the token pages
   // use, as a Robinhood Chain link to a pool with a look-alike is refused (components/create/Journey.tsx, audit I1).
   const lookalike = linkedResult?.ok === false && linkedResult.code === TOKEN_LOOKALIKE
-  const body: ReactNode = networkToken && !linkedCandidate ? (
+  const body: ReactNode = networkToken && !linkedCandidate && !finding ? (
     <PageShell width="flow">
       <PageHeader size="display" title={CREATE.page.title} />
       <p className={lookalike ? 'dm-pool-warning' : 'dm-hint'} role={lookalike ? 'alert' : 'status'} data-network-handoff={linkedResult?.ok === false || (gates && !linkedReader) ? 'unavailable' : 'loading'} data-token-warning={lookalike ? 'lookalike' : undefined}>
@@ -118,7 +131,7 @@ export default function NewPositionV2({ flow, poolId, linkToken, networkToken = 
       {(linkedResult?.ok === false || (gates && !linkedReader)) && <a href="#/new">Search again</a>}
     </PageShell>
   ) : zap ? (
-    <ZapJourney key={`${flow}:${chainId}:${finder ? 'finder' : 'zap'}`} chainId={chainId} gate={zap} finderOnly={robinhoodFinder} onListed={onListed} poolId={poolId} linkToken={linkToken} />
+    <ZapJourney key={`${flow}:${zapChain}:${finding ? 'finder' : 'zap'}`} chainId={zapChain} gate={zap} finderOnly={finding !== null} onListed={onListed} poolId={poolId} linkToken={linkToken} />
   ) : (
     <OtherChainsContext.Provider value={others}>
       <PoolPricesContext.Provider value={prices}>

@@ -1,7 +1,7 @@
 import { decodeFunctionResult, encodeAbiParameters, encodeEventTopics, encodeFunctionData, getContractAddress, keccak256, type Abi } from 'viem'
 import v3PoolAbi from '../../../../api-contracts/v2/abi/IUniswapV3PoolMinimal.json'
 import v4StateViewAbi from '../../../../api-contracts/v2/abi/IV4StateViewMinimal.json'
-import type { V2Chain } from '../../v2/chains'
+import { hasDex, v3Of, type V2Chain } from '../../v2/chains'
 import { RECEIVE_MODE, ZERO_ADDRESS, type Address, type Dex, type ExitMandate, type Hex, type ReceiveMode, type V2ChainId, type V2Component, type V2Contracts } from '../../v2/types'
 import { atomicStatus, simulateBatch, type AtomicStatus, type BatchCall, type BatchSimulator } from '../batch'
 import { readAccountCode } from '../delegates'
@@ -87,7 +87,7 @@ interface PricedPool {
 
 /** A v3 pool's address: CREATE2 of the chain profile's factory with its init code hash, salt keccak256(abi.encode(token0, token1, fee)). */
 const v3PoolAt = (chain: V2Chain, pool: PricedPool): Address =>
-  getContractAddress({ opcode: 'CREATE2', from: chain.uniswap.v3.factory, salt: keccak256(encodeAbiParameters([{ type: 'address' }, { type: 'address' }, { type: 'uint24' }], [pool.currency0, pool.currency1, pool.fee])), bytecodeHash: chain.uniswap.v3.poolInitCodeHash }).toLowerCase() as Address
+  getContractAddress({ opcode: 'CREATE2', from: v3Of(chain).factory, salt: keccak256(encodeAbiParameters([{ type: 'address' }, { type: 'address' }, { type: 'uint24' }], [pool.currency0, pool.currency1, pool.fee])), bytecodeHash: v3Of(chain).poolInitCodeHash }).toLowerCase() as Address
 
 /**
  * Whether the pool's price has reached an armed trigger (Added 2026-10-06, the review of point 5): at or below the lower
@@ -574,6 +574,8 @@ export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied:
    * the publisher signs): v4 by the chain profile's StateView (`getSlot0(poolId)`), v3 by the pool's own `slot0`.
    */
   function poolPriceAt(at: ReadAt, pool: PricedPool): Promise<bigint> {
+    // A pool of a version the chain lacks has no price here (never a v3 read on a chain with v4 alone).
+    if (!hasDex(chain, pool.dex)) return Promise.reject(new Error('mandate_price_unavailable'))
     if (pool.dex === 3) return sqrtPriceOf(at, v3PoolAt(chain, pool), V3_POOL_ABI, 'slot0', [])
     if (pool.dex !== 4 || pool.tickSpacing === null) return Promise.reject(new Error('mandate_price_unavailable'))
     const id = keccak256(encodeAbiParameters(POOL_KEY, [{ currency0: pool.currency0, currency1: pool.currency1, fee: pool.fee, tickSpacing: pool.tickSpacing, hooks: pool.hooks }]))
@@ -582,7 +584,7 @@ export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied:
 
   /** A position's pool as the chain profile's position manager of its DEX says it (v4 its key, v3 its tokens and tier). */
   async function positionPool(at: ReadAt, dex: Dex, tokenId: bigint): Promise<PricedPool> {
-    if (dex !== 3 && dex !== 4) return fail('vault_invalid_dex')
+    if (!hasDex(chain, dex)) return fail('vault_invalid_dex')
     if (typeof tokenId !== 'bigint' || tokenId <= 0n || tokenId > MAX_UINT256) return fail('vault_invalid_token_id')
     if (dex === 4) {
       const [key] = await view<readonly [{ currency0: string; currency1: string; fee: number; tickSpacing: number; hooks: string }]>(at, managerOf(chain, 4), V4_POSITION_MANAGER_ABI, 'getPoolAndPositionInfo', [tokenId], 'vault_position_not_found')
@@ -915,7 +917,7 @@ export function createAutoExitClient(wallet: V2Wallet, chain: V2Chain, supplied:
       await t.identity(rpc)
       const { at, snapshot } = await pinBlock(t, rpc)
       const fresh = request.newVault !== undefined ? request.newVault : null
-      if (fresh !== null && (!fresh || (fresh.dex !== 3 && fresh.dex !== 4))) return fail('vault_invalid_dex')
+      if (fresh !== null && (!fresh || !hasDex(chain, fresh.dex))) return fail('vault_invalid_dex')
       if (!isAddress(request.vault)) return fail('vault_invalid_address')
       const asked = request.vault.toLowerCase() as Address
       // A vault not created yet, while it is not: the wallet's next one on that factory, for this position as its root.

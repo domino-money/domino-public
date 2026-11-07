@@ -373,7 +373,9 @@ function figuresRenderer() {
     Skeleton: () => null, PoolAprEstimate: () => React.createElement('span', null, '—'), FallbackApr: () => null,
     PoolHistoryChart: props => (chart = props, React.createElement('section', { 'data-shared-history': '' }, 'Price history')),
     // 2026-10-30 (QA round 2): the fee as every chip writes it and what it is (Q28), and the network's name (Q23).
-    ...require('../.test-build/app/src/lib/networkName.js'), FEE_VENUE: 'Uniswap', feeWords: (fee) => `${fee} fee`, FEE_MEANING: 'What the fee is.' }
+    ...require('../.test-build/app/src/lib/networkName.js'), FEE_VENUE: 'Uniswap', feeWords: (fee) => `${fee} fee`, FEE_MEANING: 'What the fee is.',
+    // 2026-11-07 (Elysium's screens): whether a row is another V2 network's, the app's one list (config/chainIdentity.ts).
+    isOtherV2ChainId: require('../.test-build/app/src/config/chainIdentity.js').isOtherV2ChainId }
   const module = load(transpile('../src/components/read/screens/PoolFiguresDialog.tsx'), dependencies)
   return { ...module, render(opened, current = null, readSource = {}, action = undefined) {
     live = current; source = readSource; chart = null

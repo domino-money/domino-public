@@ -29,6 +29,24 @@ export interface Basis {
   block: number
   /** The quote token's symbol for `quote` (untrusted text; null when unreadable or for USD). */
   symbol: string | null
+  /** USD per whole `into` token (10^18 units of a dollar), where USD comes from read-v6's qualified price and not from USDG. */
+  usd?: bigint
+}
+
+/** A qualified USD price (read-v6's 18 decimals) and the side it values a position in. */
+export interface QualifiedUsd {
+  into: 0 | 1
+  usd: string
+}
+
+const DOLLAR = 10n ** 18n
+
+/** A positive decimal price as 10^18 units of a dollar; null when it is not one. */
+function usdUnits(text: string): bigint | null {
+  const found = /^(\d+)(?:\.(\d{1,18}))?$/.exec(text)
+  if (!found) return null
+  const units = BigInt(found[1]) * DOLLAR + BigInt((found[2] ?? '').padEnd(18, '0'))
+  return units > 0n ? units : null
 }
 
 export const isUsdg = (address: string) => address.toLowerCase() === USDG
@@ -44,12 +62,18 @@ export function usdgSide(currencies: readonly [{ address: string }, { address: s
  * unknown or the price is not positive: nothing is guessed. Changed on purpose
  * 2026-09-28 (one-sided): without a `quoteIndex`, the quote is the app's one
  * rule's (lib/read/orientation.ts), ETH where the pair holds it, the pair's
- * second token otherwise, as every price on the page is written.
+ * second token otherwise, as every price on the page is written. Added
+ * 2026-11-04: `qualified`, read-v6's USD price, on a chain whose pairs have no
+ * USDG (the owner: every chain the same): USD there too.
  */
-export function basisOf(state: PositionState, quoteIndex?: 0 | 1): Basis | null {
+export function basisOf(state: PositionState, quoteIndex?: 0 | 1, qualified?: QualifiedUsd | null): Basis | null {
   const [a, b] = state.currencies
   if (a.decimals === null || b.decimals === null || state.sqrtPriceX96 <= 0n) return null
   const usd = usdgSide(state.currencies)
+  const price = usd === null && qualified ? usdUnits(qualified.usd) : null
+  if (qualified && price !== null) {
+    return { kind: 'usd', into: qualified.into, decimals: [a.decimals, b.decimals], sqrtPriceX96: state.sqrtPriceX96, block: state.block, symbol: null, usd: price }
+  }
   const into = usd ?? quoteIndex ?? quoteOf(a.address, b.address)
   return {
     kind: usd === null ? 'quote' : 'usd',
@@ -64,7 +88,8 @@ export function basisOf(state: PositionState, quoteIndex?: 0 | 1): Basis | null 
 /** Both amounts in the basis currency, as a scaled bigint (10^18 units of it). */
 export function valueUnits(basis: Basis, amounts: readonly [bigint, bigint]): bigint {
   const text = valueIn({ amounts, decimals: basis.decimals, into: basis.into, sqrtPriceX96: basis.sqrtPriceX96 })
-  return BigInt(text.replace('.', ''))
+  const units = BigInt(text.replace('.', ''))
+  return basis.usd === undefined ? units : (units * basis.usd) / DOLLAR
 }
 
 /** A scaled value as its decimal string. */
@@ -73,7 +98,7 @@ export const unitsText = (units: bigint) => scaledText(units, PRICE_SCALE)
 /** A scaled value as a plain number, for geometry only (positions on a chart, shares of a bar). */
 export const unitsNumber = (units: bigint) => Number(unitsText(units))
 /** Geometry uses the actual rational value, including a single atomic fee below the display's fixed-point floor. */
-export const valueNumber = (basis: Basis, amounts: readonly [bigint, bigint]) => Number(valueIn({ amounts, decimals: basis.decimals, into: basis.into, sqrtPriceX96: basis.sqrtPriceX96, fractionDigits: Math.min(336, Math.max(...basis.decimals) + 80) }))
+export const valueNumber = (basis: Basis, amounts: readonly [bigint, bigint]) => Number(valueIn({ amounts, decimals: basis.decimals, into: basis.into, sqrtPriceX96: basis.sqrtPriceX96, fractionDigits: Math.min(336, Math.max(...basis.decimals) + 80) })) * (basis.usd === undefined ? 1 : unitsNumber(basis.usd))
 
 /** Raw amounts from their decimal strings; null when either is not a whole non-negative number. */
 export function rawPair(raw: readonly [string, string]): readonly [bigint, bigint] | null {

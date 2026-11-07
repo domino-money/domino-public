@@ -9,7 +9,6 @@ import { test } from 'node:test';
 
 const require = createRequire(import.meta.url);
 const chains = require('../../.test-build/app/src/v2/chains.js');
-const profile = (name) => JSON.parse(readFileSync(new URL(`../../../api-contracts/v2/chains/${name}.json`, import.meta.url), 'utf8'));
 
 test('Robinhood, Base and Arbitrum One, in that order, with their hex ids; Elysium is not one of them', () => {
   assert.deepEqual(chains.V2_CHAINS.map((c) => [c.chainId, c.hex, c.slug, c.name]), [
@@ -17,9 +16,14 @@ test('Robinhood, Base and Arbitrum One, in that order, with their hex ids; Elysi
     [8453, '0x2105', 'base', 'Base'],
     [42161, '0xa4b1', 'arbitrum', 'Arbitrum One'],
   ]);
-  assert.equal(chains.ELYSIUM_HIDDEN, true);
-  assert.equal(profile('elysium').enabled, false);
-  assert.equal(chains.V2_CHAINS.some((c) => /elysium/i.test(c.name) || c.chainId === 99801), false);
+  // Changed on purpose 2026-11-06 (Elysium readiness): ELYSIUM_HIDDEN read the placeholder profile, which rugged97's
+  // enabling change removes (tests/v2/chain-layouts.test.mjs holds the build to both layouts). Elysium stays out because
+  // the app's one list does not name it.
+  assert.equal(chains.V2_CHAINS.some((c) => /elysium/i.test(c.name) || c.slug === 'elysium' || c.chainId === 99801), false);
+  assert.deepEqual(chains.V2_CHAINS.map((c) => [c.nativeSymbol, c.wrappedNative.symbol]), [['ETH', 'WETH'], ['ETH', 'WETH'], ['ETH', 'WETH']]);
+  assert.equal(chains.isV2ChainId(99801), false);
+  assert.equal(chains.isV2ChainId('4663'), false);
+  assert.deepEqual([4663, 8453, 42161].map(chains.isV2ChainId), [true, true, true]);
   assert.throws(() => chains.v2Chain(99801), /chain_not_supported/);
   assert.throws(() => chains.v2Chain(1), /chain_not_supported/);
 });

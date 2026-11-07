@@ -50,6 +50,9 @@ const PROFILES = {
   4663: require('../../../api-contracts/v2/chains/robinhood-4663.json'),
   8453: require('../../../api-contracts/v2/chains/base-8453.json'),
   42161: require('../../../api-contracts/v2/chains/arbitrum-42161.json'),
+  // Added 2026-11-07 (Elysium's screens): Elysium, as the builds that force it on serve it (the synthetic day-9 profile,
+  // Uniswap v4 alone, HYPE native). Its v3 contracts are none: nothing here answers at a v3 address on it.
+  99901: require('../fixtures/v2-chains/elysium-99901.json'),
 };
 
 /** Anvil's public dev account #1 (0x7099…79c8), the owner the V2 test plans name. Its key is public; it signs nothing real. */
@@ -152,13 +155,15 @@ const DELEGATE = '0x0000000000000000000000000000000000007702';
 function profileOf(chainId) {
   const raw = PROFILES[chainId];
   if (!raw) throw new Error(`no profile for ${chainId}`);
-  const tiers = { ...raw.uniswap.v3.tickSpacingByFee, ...(chainId === 8453 ? { 200: 4, 300: 6, 400: 8 } : {}) };
+  // A chain with Uniswap v4 alone (Elysium, added 2026-11-07) has no v3 tiers and no v3 contracts: those are null.
+  const v3 = raw.uniswap.v3;
+  const tiers = { ...(v3?.tickSpacingByFee ?? {}), ...(chainId === 8453 ? { 200: 4, 300: 6, 400: 8 } : {}) };
   return {
     chainId,
     v4PositionManager: lower(raw.uniswap.v4.positionManager),
     v4PoolManager: lower(raw.uniswap.v4.poolManager),
-    v3PositionManager: lower(raw.uniswap.v3.positionManager),
-    v3Factory: lower(raw.uniswap.v3.factory),
+    v3PositionManager: v3 ? lower(v3.positionManager) : null,
+    v3Factory: v3 ? lower(v3.factory) : null,
     v4StateView: lower(raw.uniswap.v4.stateView),
     multicall3: lower(raw.multicall3),
     universalRouter: lower(raw.uniswap.universalRouter.address),
@@ -228,7 +233,7 @@ export function createV2Chain({
 
   const code = new Map([
     ...Object.entries(COMPONENT_CODE).map(([name, bytes]) => [lower(FAKE[name]), bytes]),
-    [profile.v4PositionManager, '0x6004'], [profile.v4PoolManager, '0x6044'], [profile.v4StateView, '0x6045'], [profile.v3PositionManager, '0x6003'], [profile.v3Factory, '0x6033'],
+    [profile.v4PositionManager, '0x6004'], [profile.v4PoolManager, '0x6044'], [profile.v4StateView, '0x6045'], ...(profile.v3PositionManager ? [[profile.v3PositionManager, '0x6003'], [profile.v3Factory, '0x6033']] : []),
     [profile.universalRouter, '0x6001'], [profile.permit2, '0x6002'], [profile.weth, '0x60ff'], [DELEGATE, '0x6077'],
   ]);
   if (ownerCode === 'delegated') code.set(owner, `0xef0100${DELEGATE.slice(2)}`);

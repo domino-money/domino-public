@@ -607,7 +607,11 @@ test('the deploy guard catches each fixture file by its rehearsal facts, and not
   // A bundle that carries the module inlines its three files, each caught above.
   const fixturesSource = readFileSync(new URL('../../src/v2/manifestFixtures.ts', import.meta.url), 'utf8');
   const inlined = [...fixturesSource.matchAll(/^import \w+ from '\.\/fixtures\/(manifest\.[a-z]+-\d+\.fixture\.json)'$/gm)].map((match) => match[1]).sort();
-  assert.deepEqual(inlined, ['manifest.arbitrum-42161.fixture.json', 'manifest.base-8453.fixture.json', 'manifest.robinhood-4663.fixture.json'], 'manifestFixtures.ts can never ship');
+  // Changed on purpose 2026-11-07 (Elysium as a fourth V2 chain): and Elysium's, Arbitrum One's rehearsal moved to the
+  // synthetic v4-only profile, so the same rehearsal facts mark it.
+  assert.deepEqual(inlined, ['manifest.arbitrum-42161.fixture.json', 'manifest.base-8453.fixture.json', 'manifest.elysium-99901.fixture.json', 'manifest.robinhood-4663.fixture.json'], 'manifestFixtures.ts can never ship');
+  const elysium = readFileSync(new URL('../../src/v2/fixtures/manifest.elysium-99901.fixture.json', import.meta.url), 'utf8');
+  assert.ok(findForbidden(elysium).some((hit) => hit.marker === 'V2 fixture manifest'), 'manifest.elysium-99901.fixture.json');
   const raw = fixture();
   for (const address of [raw.roles.deployer, ...Object.values(raw.contracts)]) assert.deepEqual(findForbidden(JSON.stringify(address)), [], `${address} is production's own`);
   assert.equal(fixtures.fixtureContracts(8453).fixture, true, 'what a fixture parses into says so, and never sends');
@@ -625,10 +629,12 @@ test('manifest.ts names no fixture deployer or address, no URL, and imports noth
   assert.doesNotMatch(source, /https?:\/\//, 'no URL of any kind');
   const imports = [...source.matchAll(/^import[^;]*?from '([^']+)'/gm)].map((match) => match[1]);
   // Changed on purpose 2026-10-04 (#327): the three verified deployment manifests, by relative path from git.
+  // Changed on purpose 2026-11-07 (Elysium as a fourth V2 chain): Elysium's literals and the files its build hands in
+  // (./elysiumFiles.ts: its profile and its pinned record, read by the switch, never imported by path).
   assert.deepEqual(imports, [
     '../../../api-contracts/v2/chains/robinhood-4663.json', '../../../api-contracts/v2/chains/base-8453.json', '../../../api-contracts/v2/chains/arbitrum-42161.json',
     '../../../docs/deployments/v2-robinhood-4663-2026-10-04/deployment.json', '../../../docs/deployments/v2-base-8453-2026-10-04/deployment.json', '../../../docs/deployments/v2-arbitrum-42161-2026-10-04/deployment.json',
-    './chains', './flag', './types',
+    '../lib/elysiumIdentity', './chains', './elysiumFiles', './flag', './types',
   ]);
   assert.match(source, /^declare const __DOMINO_DEPLOYABLE__: boolean \| undefined$/m, 'declared module-scoped, as finance/pin.ts does');
   assert.equal(fixtures.FIXTURE_ADMISSION, 'fork-rehearsal');

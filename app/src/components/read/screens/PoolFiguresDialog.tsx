@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode } from 'react'
 import { agedMarket, feeLabel, presentMetric, type Market, type Metric } from '../../../lib/markets'
 import { FEE_VENUE, feeWords } from '../../../lib/format/fee'
 import { networkName } from '../../../lib/networkName'
+import { isOtherV2ChainId } from '../../../config/chainIdentity'
 import { useFeatured } from '../../../lib/read/featuredSource'
 import { pricePair } from '../../../lib/read/orientation'
 import { poolAprPresentation } from '../../../lib/read/poolAprPresentation'
@@ -68,6 +69,9 @@ export function PoolFiguresDialog({ market: opened, action, onClose }: { market:
   const providers = names.filter((name) => name !== OWN_HISTORY)
   const sources = [...names.filter((name) => name === OWN_HISTORY), ...(providers.length ? [`${providers.join(' and ')}, not checked by Domino`] : [])].join('; ')
   const network = networkName(market.tokens.base.chainId)
+  // Another V2 network than Robinhood Chain (lib/read/networkMarkets.ts onNetwork, the same test; Changed on purpose
+  // 2026-11-07: Elysium too where the build serves it).
+  const elsewhere = isOtherV2ChainId(market.tokens.base.chainId)
   const loading = (label: string, data: Record<`data-${string}`, string>) => <span className="inline-flex" {...data}>
     <Skeleton className="h-4 w-16" /><span className="sr-only">{label} loading</span>
   </span>
@@ -94,7 +98,9 @@ export function PoolFiguresDialog({ market: opened, action, onClose }: { market:
 
       {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the figures carry no retrieval time in their
           titles any more, and a pool with no chart is a dash that no longer says "Price history is unavailable for this pool." */}
-      {source && option ? <PoolHistoryChart source={source} option={option} market={market} loading={coming} compact />
+      {/* Changed on purpose 2026-11-06 (the replica rule, the owner: missing data stays out of sight): a Base or Arbitrum One
+          pool has no price history anywhere yet, so its sheet has no chart at all; Robinhood Chain's reads as before. */}
+      {elsewhere ? null : source && option ? <PoolHistoryChart source={source} option={option} market={market} loading={coming} compact />
         : <section className="dm-card dm-pool-chart dm-pool-chart--compact" aria-label="Price history" data-pool-chart-awaiting-source="">
           <h3 className="dm-pool-heading">Price history</h3>
           <div className="dm-pool-plot-empty" role="status">{option ? <><Skeleton className="h-4 w-24" /><span className="sr-only">Price history loading</span></> : <FigureDash />}</div>

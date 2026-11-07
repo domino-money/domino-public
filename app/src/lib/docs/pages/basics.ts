@@ -1,5 +1,7 @@
 import { CREATE } from '../../create/copy'
 import { b, doc, list, note, p, screen } from '../blocks'
+// 2026-11-06: Elysium's words where it is live (../elysium.ts).
+import { ELYSIUM_LIVE, OTHERS } from '../elysium'
 import type { DocPage } from '../types'
 
 export const POOLS: DocPage = {
@@ -43,7 +45,7 @@ export const POOLS: DocPage = {
       id: 'versions',
       title: 'Uniswap v3 and v4',
       blocks: [
-        p('Domino works with two kinds of Uniswap pools, v3 and v4. For you they work the same: two tokens, a fee tier and your range. A position’s Details names its kind.'),
+        p(`Domino works with two kinds of Uniswap pools, v3 and v4${ELYSIUM_LIVE ? '; Elysium has Uniswap v4 only' : ''}. For you they work the same: two tokens, a fee tier and your range. A position’s Details names its kind.`),
         p('One difference shows: a v3 pool holds WETH, never ETH. ETH you pay with goes in as WETH, and what the range doesn’t use comes back as WETH.'),
       ],
     },
@@ -139,7 +141,8 @@ export const EARNED_FEES: DocPage = {
         p('A position’s page adds up its fees from the chain: those paid out each time they were collected or compounded, read from its own records, and those ready to collect now. Its chart shows measured moments, including about a day and a week ago. Some positions’ Fees earned can’t be measured, such as one whose liquidity changed after it opened; Fees ready to collect is always exact. See ', doc('who sees those reads', 'privacy', 'who-sees'), '.'),
         // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): a position Domino V1's reads do not cover
         // (src/v2in/position/PositionPage.tsx: no dollar value and no APR without a qualified source, decision #22).
-        p('Those figures are for positions in Robinhood Chain’s Uniswap v4 pools. On Base and Arbitrum One, and in v3 pools, a position’s page shows its fees ready to collect in tokens, with no dollar value or APR.'),
+        // Changed on purpose 2026-11-06 (O-19): dollars where priced; position-fees, worded to hold before and after it opens.
+        p(`Those figures are for positions in Robinhood Chain’s Uniswap v4 pools. On ${OTHERS}, Fees earned and Your APR come from Domino’s own record of a position’s fees, where that record follows it. A position it doesn’t follow, like one in a Robinhood Chain v3 pool, shows its fees ready to collect, in dollars when its tokens have a price.`),
       ],
     },
     {

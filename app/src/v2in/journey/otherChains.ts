@@ -15,7 +15,7 @@ import type { Address, V2ChainId } from '../../v2/types'
 import type { V2Transports } from '../transports'
 import { JOURNEY } from './copy'
 import { journeyError } from './errors'
-import { READER_POOLS_CACHE_MS, balanceTokens, balancesOfAnswer, factsOfAnswer, lookalikeOf, lookalikePools, passingAfter, pastedOf, poolsOfAnswer, rereadOf, resolvedOf, rowsOfTokens, symbolRank, usableNetworkToken } from './model/chainReads'
+import { READER_POOLS_CACHE_MS, balanceTokens, balancesOfAnswer, factsOfAnswer, lookalikeMains, lookalikeOf, lookalikePools, passingAfter, pastedOf, poolsOfAnswer, rereadOf, resolvedOf, rowsOfTokens, symbolRank, usableNetworkToken } from './model/chainReads'
 import { createNetworkSearch, searchable, type SearchAnswer } from './model/networkSearch'
 import { displayOf, factsOfFound, listedPools, networkTokens, readableNetworks, optionOf, poolsToRead, refOf } from './model/networks'
 import { chainPoolsOn, patiently, servedOn, type ReadGate, type Served } from './served'
@@ -217,14 +217,14 @@ export function otherChainsFor(gates: JourneyGates | null, { walletFallback = tr
       // Changed on purpose 2026-11-02 (review M1): with the pools a link may never choose (`warned`), each answer's own.
       if (said.kind === 'ok') {
         const options = poolsOfAnswer(chainId, token, said.body, said.receivedAt)
-        return { kind: 'ok', options, facts: factsOfAnswer(said.body), subject, warned: lookalikePools(chainId, options) }
+        return { kind: 'ok', options, facts: factsOfAnswer(said.body), subject, warned: lookalikePools(chainId, options), warnedAs: lookalikeMains(chainId, options) }
       }
       if (gate.mode !== 'live' || !walletFallback) return { kind: 'failed', ...unread(chainId) }
       try {
         const read = await inTurn(async () => (await connectJourney(chainId, gate.contracts)).zap.readPools(poolsToRead(chainId, token.address as Address)))
         if (signal.aborted) return { kind: 'ok', options: [] }
         const options = listedPools(chainId, token, read, Date.now())
-        return { kind: 'ok', options, facts: factsOfFound(read), subject, warned: lookalikePools(chainId, options) }
+        return { kind: 'ok', options, facts: factsOfFound(read), subject, warned: lookalikePools(chainId, options), warnedAs: lookalikeMains(chainId, options) }
       } catch (error) {
         return { kind: 'failed', ...failure(error, chainId) }
       }

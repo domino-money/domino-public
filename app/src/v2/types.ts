@@ -9,11 +9,34 @@
  * alone never says which chain a pool, a plan, a signature or an approval belongs to.
  */
 
+import type { V2ChainIdOf } from '../config/chainIdentity'
+
 export type Address = `0x${string}`
 export type Hex = `0x${string}`
 
-/** The chains V2 serves (spec §1.2). Elysium is not one of them until its mainnet exists (api-contracts/v2/chains/elysium.json). */
-export type V2ChainId = 4663 | 8453 | 42161
+/**
+ * The chains V2 may serve (spec §1.2). Changed on purpose 2026-11-06 (Elysium readiness): the app's one list of them
+ * (config/chainIdentity.ts), rather than the three ids written again here. Changed on purpose 2026-11-07 (Elysium as a
+ * fourth V2 chain): Robinhood Chain, Base, Arbitrum One and Elysium (99901), in every build; whether a build serves
+ * Elysium is config/chainIdentity.ts V2_CHAIN_IDS, which follows the build's switch (`isV2ChainId` and `V2_CHAINS` in
+ * ./chains.ts follow the list), and a table's Elysium row is written behind ELYSIUM_LIVE.
+ */
+export type V2ChainId = V2ChainIdOf
+
+/**
+ * The V2 chains a deposit brings funds TO (added 2026-11-07, Elysium as a fourth V2 chain): crosschain-v1's destinations,
+ * Robinhood Chain, Base and Arbitrum One, which the deposit's own records take (finance/v2/crosschain.ts isPendingBatch,
+ * v2/crosschain/steps.ts isJournalRecord). Elysium is a V2 chain but not one of them: its profile names no bridge and no
+ * bridge serves 99901, so S2 is off there (./gate.ts s2Gate) and no destination choice names it
+ * (./crosschain/present.ts). It joins once its profile's bridge.providers is not empty, crosschain-v1 pins it as a
+ * destination and those two records take it (docs/ELYSIUM_DAY9.md).
+ */
+export type S2DestinationChainId = 4663 | 8453 | 42161
+export const S2_DESTINATION_CHAIN_IDS: readonly S2DestinationChainId[] = Object.freeze([4663, 8453, 42161])
+export const isS2Destination = (value: unknown): value is S2DestinationChainId => (S2_DESTINATION_CHAIN_IDS as readonly unknown[]).includes(value)
+/** A V2 chain's native currency and its wrapped token: Ether on Robinhood Chain, Base and Arbitrum One; HYPE on Elysium. */
+export type NativeSymbol = 'ETH' | 'HYPE'
+export type WrappedSymbol = 'WETH' | 'WHYPE'
 
 /** `PoolRef.dex`: 3 is Uniswap v3, 4 is Uniswap v4. No forks. */
 export type Dex = 3 | 4
@@ -228,6 +251,13 @@ export const V2_WINDOWS = { v4ObservationMaxSeconds: 300, v3TwapMinSeconds: 600 
  * `priceAnchor` added.
  */
 export type V2Component = 'registry' | 'priceAnchor' | 'autoExit' | 'zapV3' | 'zapV4' | 'vaultFactoryV3' | 'vaultFactoryV4'
+/**
+ * The components of Uniswap v3 the app calls (added 2026-11-06, Elysium readiness): a chain without v3 (Elysium, v4 only)
+ * has none of them, so a set's tables may lack them (`V2ByComponent`).
+ */
+export type V2V3Component = 'zapV3' | 'vaultFactoryV3'
+/** A table by component the app calls: each of them, but the v3 ones only on a chain with v3. */
+export type V2ByComponent<T> = Readonly<Record<Exclude<V2Component, V2V3Component>, T>> & Readonly<Partial<Record<V2V3Component, T>>>
 
 /**
  * Changed on purpose (data) 2026-10-02 (Domino V2 rev2 §7): every Domino V2 contract whose runtime code
@@ -243,6 +273,13 @@ export type V2ManifestContract =
   | 'zap.v4.steps' | 'zap.v3' | 'zap.v4' | 'vaultExecutor.v3' | 'vaultExecutor.v4'
 /** The eleven deployCreate3 components (the two executors are their vault implementation's first CREATE). */
 export type V2DeployedComponent = Exclude<V2ManifestContract, 'vaultExecutor.v3' | 'vaultExecutor.v4'>
+/**
+ * The four contracts of Uniswap v3 in a manifest (added 2026-11-06, Elysium readiness; backend/v2_manifest.py
+ * DEX_COMPONENTS): a manifest of a chain without v3 records none of them, its other nine only.
+ */
+export type V2V3ManifestContract = 'vault.v3' | 'vaultFactory.v3' | 'zap.v3' | 'vaultExecutor.v3'
+/** A manifest's table by contract: every contract of the versions it records; the v3 ones only with v3. */
+export type V2ByManifestContract<K extends V2ManifestContract, T> = Readonly<Record<Exclude<K, V2V3ManifestContract>, T>> & Readonly<Partial<Record<Extract<K, V2V3ManifestContract>, T>>>
 /** A manifest's `environment`. Only `public-chain-preparation` is ever a production deployment. */
 export type V2Environment = 'public-chain-preparation' | 'fork-rehearsal' | 'local-test'
 /** The admission a manifest passed (backend/v2_manifest.py ADMISSIONS): `production`, or one of the two test ones. */
@@ -261,11 +298,14 @@ export interface V2DeploymentFacts {
   /** `roles.deployer`: every CREATE3 salt starts with it. */
   readonly deployer: Address
   readonly createx: Address
-  /** All 13 contracts (lowercase) and their runtime code hashes, by the manifest's names. */
-  readonly contracts: Readonly<Record<V2ManifestContract, Address>>
-  readonly codeHashes: Readonly<Record<V2ManifestContract, Hex>>
-  readonly salts: Readonly<Record<V2DeployedComponent, Hex>>
-  readonly guardedSalts: Readonly<Record<V2DeployedComponent, Hex>>
+  /**
+   * The contracts (lowercase) and their runtime code hashes, by the manifest's names: all 13, or the nine of a chain
+   * without v3 (changed on purpose 2026-11-06, Elysium readiness).
+   */
+  readonly contracts: V2ByManifestContract<V2ManifestContract, Address>
+  readonly codeHashes: V2ByManifestContract<V2ManifestContract, Hex>
+  readonly salts: V2ByManifestContract<V2DeployedComponent, Hex>
+  readonly guardedSalts: V2ByManifestContract<V2DeployedComponent, Hex>
   readonly sourceHashes: Readonly<Record<string, string>>
   readonly sourceTreeSha256: string
 }
@@ -277,9 +317,16 @@ export interface V2DeploymentFacts {
  */
 export interface V2Contracts {
   chainId: V2ChainId
-  addresses: Readonly<Record<V2Component, Address>>
+  /**
+   * Changed on purpose 2026-11-06 (Elysium readiness): every component of the chain's Uniswap versions. On Robinhood
+   * Chain, Base and Arbitrum One all seven, required; on a chain without v3 (its profile's `uniswap.v3` null), no
+   * `zapV3` or `vaultFactoryV3`. Where that is asked: src/v2/chains.ts `hasDex` (the chain's versions), src/v2/manifest.ts
+   * `bound()` (`sameDexes`: the manifest's versions must be the chain's) and finance/v2/vault.ts `componentsOn` (the
+   * components a money client requires); the last two hold the live chains to all seven.
+   */
+  addresses: V2ByComponent<Address>
   /** keccak256 of each component's runtime code, the manifest's `runtimeCodeHashes`. */
-  codeHashes: Readonly<Record<V2Component, Hex>>
+  codeHashes: V2ByComponent<Hex>
   /**
    * True when it came from a manifest under a TEST admission (fork-rehearsal or local-test: the FIXTURE manifests of
    * tests and the v2-test build). A fixture never reaches a deployable build (scripts/deploy-markers.mjs) and never

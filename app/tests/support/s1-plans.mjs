@@ -61,7 +61,9 @@ export function echoOf(wire, owner) {
  */
 export function planAnswer(wire, o) {
   const chainId = wire.chainId;
-  const chain = CONSTANTS.chains[String(chainId)];
+  // Added 2026-11-07 (Elysium's screens): `o.chains`, the chain rows of the package a build bundles: day 9's for Elysium
+  // (./elysium-day9.mjs PLAN_DAY9.CONSTANTS.chains), the package's own otherwise.
+  const chain = (o.chains ?? CONSTANTS.chains)[String(chainId)];
   const owner = lower(o.owner);
   const zap = lower(o.zap);
   const now = o.now;

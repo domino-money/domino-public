@@ -1,5 +1,6 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { WALLET_FALLBACK_TOKENS } from '../../config/selectedPoolCatalogue'
+import { ROBINHOOD_ID, isOtherV2ChainId } from '../../config/chainIdentity'
 import { formatUsd } from '../../lib/format/usd'
 import { scaledText } from '../../lib/format/decimal'
 import type { WalletRow, WalletView } from '../../lib/read/pagers'
@@ -14,13 +15,33 @@ import { createWalletReadGuard, subscribePositionEvidence } from '../../lib/posi
 import { PRICED_AT_MOST, PRICED_PER_LOAD, SHOWN_HOLDINGS, WHOLE_LIST, addressesToPrice, held, knownHeld, listGap, nextAsk, priceSource, reconcileWalletRows, totalLeavesOut, totalWithheld, walletHoldings, walletSnapshotValid, walletTotalSnapshot, type Holding, type ListWholeness, type WalletTotalSnapshot } from '../../lib/walletHoldings'
 import { NO_PRICES, WALLET_MEMORY_MAX_AGE_MS, bookQuotes, recallWallet, rememberWallet, withAnswer, type PriceBook, type RememberedList } from '../../lib/walletMemory'
 import { walletPrices } from '../../lib/walletPrices'
+import { NETWORKS_OFF, cardTotal, mergeCardRows, networkHoldings, networksText, type CardRow, type NetworkHolding, type WalletNetworksView } from '../../lib/walletNetworks'
+import { chainMarkProps } from '../../lib/chainMarks'
+import { networkName } from '../../lib/networkName'
+import { recovering } from '../../lib/staleRelease'
 import { LiveFigure } from '../figures'
-import { exploreHref } from '../explore/routes'
+import { exploreHref, marketsNetworkHref } from '../explore/routes'
 import { TokenLabel } from '../read/TokenLabel'
 import { TokenMark } from '../TokenIcon'
 import { Button, Skeleton } from '../ui'
 
 type Step = 'first' | 'more' | 'restart'
+
+/**
+ * Added 2026-11-06 (the owner's replica rule; R-07): the wallet's tokens on Base and Arbitrum One, watched from the V2 lists'
+ * chunk (src/v2in/walletNetworks/WalletNetworks.tsx, re-exported by src/v2in/lists/OwnedRows.tsx, which Positions loads for its
+ * list anyway; it draws nothing and tells the card each view, lib/walletNetworks.ts), in a build that carries V2. Everywhere
+ * else, and until it answers, the view is `off` and the card is Robinhood Chain's as before.
+ */
+const WalletNetworksWatch = __DOMINO_V2__ ? lazy(recovering(() => import('../../v2in/lists/OwnedRows').then((module) => ({ default: module.WalletNetworksWatch })), () => ({ default: () => null }))) : null
+/** Robinhood Chain as a row names its network, once the card lists another network's tokens too (R-07). */
+const ROBINHOOD_NETWORK = { chainId: ROBINHOOD_ID, name: networkName(ROBINHOOD_ID) }
+/**
+ * Added 2026-11-06 (review of R-07): each address's last whole view of the other networks in this page (lowercase), so a
+ * card opened again (back to Positions) starts from it, as its own list starts from its memory: its first figure is the
+ * one it showed, never Robinhood Chain's alone for a moment before the watcher's first word.
+ */
+const NETWORKS_SEEN = new Map<string, WalletNetworksView>()
 type SettledList = { snap: WalletSnapshot; unread: number; at: number }
 
 const addressOf = (token: TokenDisplay) => (token.origin === 'read' ? token.address : '')
@@ -123,7 +144,7 @@ function valueTitle(holding: Holding, unasked = false): string | undefined {
  * while its price is `due` on the wire). A symbol another listed holding
  * shares is followed by its short address.
  */
-function HoldingRow({ holding, due, unasked, cached }: { holding: Holding; due: boolean; unasked: boolean; cached?: Holding }) {
+function HoldingRow({ holding, due, unasked, cached, network }: { holding: Holding; due: boolean; unasked: boolean; cached?: Holding; network?: { chainId: number; name: string } }) {
   const { row, twin } = holding
   // Use the earlier complete observation as a whole; never reprice an old balance with a newer quote.
   const previous = row.old && cached?.row.raw === row.raw && cached.value !== null ? cached : undefined
@@ -146,6 +167,7 @@ function HoldingRow({ holding, due, unasked, cached }: { holding: Holding; due: 
               {shortAddress(row.token.address)}
             </span>
           )}
+          {network && <NetworkLabel {...network} />}
         </span>
       </span>
       {value === null && due && !row.old ? (
@@ -160,6 +182,65 @@ function HoldingRow({ holding, due, unasked, cached }: { holding: Holding; due: 
       ) : (
         <span className="dm-acct-token-usd tnum" data-usd="" data-wallet-value-snapshot={previous ? '' : undefined} title={previous ? valueTitle(previous) : valueTitle(holding)}>
           {usdText(value)}
+        </span>
+      )}
+    </li>
+  )
+}
+
+/**
+ * A row's network, in Your positions' marker (its dot and its name): said once the card lists more than one network. A
+ * network drawn from its own file (lib/chainMarks.ts: none today, Elysium on the day the build's switch says it is live)
+ * takes it here too, as Your positions' marker does; the others keep the stylesheet's drawing (added 2026-11-06, Elysium
+ * readiness and the Elysium surface).
+ */
+function NetworkLabel({ chainId, name }: { chainId: number; name: string }) {
+  return (
+    <span className="dm-acct-token-network" data-v2-chain={chainId} {...chainMarkProps(chainId)}>
+      {name}
+    </span>
+  )
+}
+
+/**
+ * Added 2026-11-06 (R-07): a token held on Base or Arbitrum One (lib/walletNetworks.ts), drawn as HoldingRow draws Robinhood
+ * Chain's: its mark, its symbol linked to its pools on Markets on its own network (its native currency plain), its amount
+ * with every digit in the title, its network, and its USD value right-aligned (how it is priced in the title), or an empty
+ * value slot with Robinhood Chain's words for a token with no price.
+ */
+function NetworkRow({ holding }: { holding: NetworkHolding }) {
+  const { token } = holding
+  const amount = tokenAmount(holding.raw, token.address, [token])
+  // Changed on purpose 2026-11-07 (Elysium's screens): any V2 network beside Robinhood Chain (Elysium too where served).
+  const network = isOtherV2ChainId(holding.chainId) ? holding.chainId : null
+  const linked = token.address !== NATIVE_CURRENCY && network !== null
+  return (
+    <li className="dm-acct-token" data-wallet-row={token.address} data-wallet-row-chain={holding.chainId} data-wallet-priced={holding.value === null ? undefined : ''}>
+      <TokenMark token={token} size={32} ring="var(--card)" monogram />
+      <span className="dm-acct-token-id">
+        {linked ? (
+          <a href={marketsNetworkHref(network!, token.address)} className="dm-acct-token-name dm-acct-token-link" title="Pools for this token on Markets">
+            <TokenLabel token={token} />
+          </a>
+        ) : (
+          <span className="dm-acct-token-name">
+            <TokenLabel token={token} />
+          </span>
+        )}
+        <span className="dm-acct-token-sub">
+          <span className="dm-acct-token-units tnum" data-balance={amount.text === null ? 'raw' : 'value'} title={amount.exact ?? `Raw amount ${holding.raw}: the token’s decimals were not read`}>
+            {amount.text}
+          </span>
+          <NetworkLabel chainId={holding.chainId} name={holding.network} />
+        </span>
+      </span>
+      {holding.value === null ? (
+        <span className="dm-acct-token-usd dm-acct-token-none" data-no-price="" title="No market price found for this token. Not counted in the total.">
+          <span className="sr-only">No price</span>
+        </span>
+      ) : (
+        <span className="dm-acct-token-usd tnum" data-usd="" title={holding.priceTitle ?? undefined}>
+          {usdText(holding.value)}
         </span>
       )}
     </li>
@@ -322,10 +403,31 @@ const wholenessOf = (snap: WalletSnapshot, unread: number, reading: boolean): Li
  *   longer withholds it, nor does a list longer than the card reads. While the
  *   load's prices are on their way, the figure holds its place (or the last
  *   one shown stays), as before.
+ *
+ * Changed on purpose 2026-11-06 (the owner's replica rule: Base and Arbitrum
+ * One show what Robinhood Chain shows; R-07): in a build with V2 the card also
+ * lists the address's tokens on Base and Arbitrum One that Domino's service
+ * reads (lib/walletNetworks.ts, src/v2in/walletNetworks), in the same rows, by value
+ * among Robinhood Chain's, behind the same "Show all", each row then naming its
+ * network; the one figure counts them only from a read of every network whole.
+ * With none of their tokens held, or their read off, the card is exactly as
+ * before.
  */
 export function PortfolioTokens({ address }: { address: string }) {
   const source = useReadSource()
   const [tokens, setTokens] = useState<string[]>([])
+  // Added 2026-11-06 (R-07): this address's tokens on Base and Arbitrum One, as WalletNetworksWatch tells them.
+  const [networks, setNetworks] = useState<WalletNetworksView>(() => (__DOMINO_V2__ ? (NETWORKS_SEEN.get(address.toLowerCase()) ?? NETWORKS_OFF) : NETWORKS_OFF))
+  const onNetworks = useCallback(
+    (view: WalletNetworksView) => {
+      if (view.state === 'ready') NETWORKS_SEEN.set(address.toLowerCase(), view)
+      setNetworks(view)
+    },
+    [address],
+  )
+  // The card has shown its figure: from then on the other networks' first read never takes it back to a resting bar (before
+  // that, a first visit's figure waits for that read, three seconds at most, rather than show Robinhood Chain's alone first).
+  const [figured, setFigured] = useState(false)
   // The last whole read of this address's list: remembered in this browser, then each read of it to its end.
   const [recalled] = useState(() => recallWallet(address))
   const [memory, setMemory] = useState<RememberedList | null>(recalled)
@@ -661,15 +763,29 @@ export function PortfolioTokens({ address }: { address: string }) {
   // cut list no longer adds " · more not listed" (the owner: nothing says something is not shown; the approved card reads
   // "Total of priced tokens · 61 not priced" only). The line still says the total is of the priced tokens; the card keeps
   // data-wallet-capped and data-wallet-partial.
-  const unpriced = previousTotal !== null ? (complete.snapshot?.unpriced ?? 0) : leaves.unpriced
+  const ownUnpriced = previousTotal !== null ? (complete.snapshot?.unpriced ?? 0) : leaves.unpriced
+  // Added 2026-11-06 (R-07): the other networks' tokens join the list and the one figure (lib/walletNetworks.ts): with none
+  // the figure, its resting bar and its note are Robinhood Chain's as before; their first read holds the figure's place
+  // only until the card has shown one.
+  const others = networkHoldings(networks)
+  // A build without V2 has no other network (the define folds this away there): Robinhood Chain's figure as it was.
+  const figure = __DOMINO_V2__ ? cardTotal({ total: displayedTotal, holdPlace, withheld, unpriced: ownUnpriced }, figured && networks.state === 'reading' ? NETWORKS_OFF : networks) : { total: displayedTotal, holdPlace, unpriced: ownUnpriced }
+  if (figure.total !== null && !figured) setFigured(true)
+  const unpriced = figure.unpriced
   const totalNote = unpriced > 0 || leaves.cut ? `Total of priced tokens${unpriced > 0 ? ` · ${unpriced} not priced` : ''}` : null
+  // The networks the figure counts, for its title, once the card lists another network's tokens: Robinhood Chain's first.
+  const spans = __DOMINO_V2__ && others.length > 0 ? networksText([...(holdings.all.length > 0 ? [ROBINHOOD_NETWORK.name] : []), ...[...others].sort((a, b) => a.chainId - b.chainId).map((holding) => holding.network)]) : null
   // "Show all" prices the rest of the list, a page of PRICED_PER_LOAD once the page before it is answered (2026-10-14, D2).
   if (expanded && !pending && order.length > askedList.length && askedList.length >= bound && bound < PRICED_AT_MOST) setPricedPages(pricedPages + 1)
   const askedSet = new Set(askedList)
-  const shown = waiting ? [] : holdings.all.slice(0, SHOWN_HOLDINGS)
-  const rest = waiting ? [] : holdings.all.slice(SHOWN_HOLDINGS)
+  // Added 2026-11-06 (R-07): one list of Robinhood Chain's holdings and the other networks', by value (mergeCardRows).
+  const merged: CardRow<Holding>[] = __DOMINO_V2__ ? mergeCardRows(holdings.all, others) : holdings.all.map((holding) => ({ kind: 'robinhood', holding }))
+  const shown = waiting ? [] : merged.slice(0, SHOWN_HOLDINGS)
+  const rest = waiting ? [] : merged.slice(SHOWN_HOLDINGS)
   const visible = expanded ? [...shown, ...rest] : shown
-  const firstUnpriced = visible.findIndex((holding) => holding.rank === null)
+  const firstUnpriced = visible.findIndex((entry) => (entry.kind === 'robinhood' ? entry.holding.rank === null : entry.holding.value === null))
+  // Each row names its network once the card lists another network's tokens.
+  const labelled = __DOMINO_V2__ && others.length > 0
   // `failed`: the last answer left a token it asked for without one (2026-10-14, D2: no longer every held token unpriced).
   const pricesState = ask === '' ? 'none' : pending ? 'pending' : pricesFailed ? 'failed' : 'ok'
   const showLoadMore = Boolean(view && view.pages > 0 && (canAskMore || loading) && failure !== null)
@@ -715,7 +831,9 @@ export function PortfolioTokens({ address }: { address: string }) {
       data-wallet-shown={waiting ? undefined : visible.length}
       data-wallet-priced={waiting ? undefined : holdings.valued}
       data-wallet-asked={askedList.length}
-      data-wallet-total-withheld={waiting || total !== null ? undefined : (withheld ?? undefined)}
+      data-wallet-total-withheld={waiting || figure.total !== null ? undefined : (withheld ?? undefined)}
+      data-wallet-networks={networks.state === 'off' ? undefined : networks.state}
+      data-wallet-networks-held={others.length > 0 ? others.length : undefined}
     >
       {/* (QA round 2, N64) The provider's listing count is data only now: hidden for the eye already, "101 tokens listed · page
           5 of up to 5 · more tokens not listed" was still read out like a debug line, and is not on the approved card. Hidden,
@@ -738,32 +856,36 @@ export function PortfolioTokens({ address }: { address: string }) {
       <p role="status" aria-live="polite" className="sr-only" data-wallet-said="" />
 
       {/* The total of the priced holdings on the card, the ones behind "Show all" included, when the balances are whole, with one line under it when it leaves held tokens out; its skeleton holds the place while the list is first read. */}
-      {displayedTotal !== null ? (
+      {figure.total !== null ? (
         // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): the last complete total is shown as it is: its title said "Last complete valuation. Balances and prices are being checked again.", and a screen reader "Last known total value" and "Previous complete valuation. Refreshing balances and prices." (data-wallet-total-snapshot and data-wallet-total-updating still mark it).
-        <p className="dm-acct-total" data-wallet-total="" data-wallet-total-snapshot={previousTotal !== null ? '' : undefined} title={`The sum of the tokens on this card${totalNote ? ' that have a price' : ''}, at provider-reported prices with USDG at $1. Indicative, not a quote.`}>
+        <p className="dm-acct-total" data-wallet-total="" data-wallet-total-snapshot={previousTotal !== null ? '' : undefined} title={spans ? `The sum of the tokens on this card${totalNote ? ' that have a price' : ''}, on ${spans}. Indicative, not a quote.` : `The sum of the tokens on this card${totalNote ? ' that have a price' : ''}, at provider-reported prices with USDG at $1. Indicative, not a quote.`}>
           <span className="sr-only">Total value </span>
-          <LiveFigure value={usdText(displayedTotal)} mode="digits" dimCents className="dm-fig-xl" />
+          <LiveFigure value={usdText(figure.total)} mode="digits" dimCents className="dm-fig-xl" />
           {previousTotal !== null && <span hidden data-wallet-total-updating="" />}
           {totalNote && <span className="dm-hint block" data-wallet-total-note="">{totalNote}</span>}
         </p>
       ) : (
         // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): no title ("The wallet total is unavailable until the balances can be verified.") and no "Wallet value unavailable." for a screen reader.
-        <p className="dm-acct-total" data-wallet-value-unavailable={!holdPlace ? '' : undefined}>
-          {holdPlace ? <Skeleton className="dm-acct-total-skel" /> : withheld === 'nothing_valued' ? <span className="sr-only">No priced tokens.</span> : null}
+        <p className="dm-acct-total" data-wallet-value-unavailable={!figure.holdPlace ? '' : undefined}>
+          {figure.holdPlace ? <Skeleton className="dm-acct-total-skel" /> : withheld === 'nothing_valued' && others.every((holding) => holding.value === null) ? <span className="sr-only">No priced tokens.</span> : null}
         </p>
       )}
 
       {(visible.length > 0 || waiting) && (
         <ul className="dm-acct-token-list" aria-label="Tokens held by this address" aria-busy={waiting || undefined} data-expanded={expanded && rest.length > 0 ? '' : undefined}>
-          {visible.map((holding, index) => (
-            <Fragment key={holding.row.key}>
+          {visible.map((entry, index) => (
+            <Fragment key={entry.kind === 'robinhood' ? entry.holding.row.key : `network:${entry.holding.key}`}>
               {/* In the whole list, one quiet line before the tokens no market prices (and no earlier price places). */}
               {expanded && index > 0 && index === firstUnpriced && (
                 <li className="dm-acct-token-group" data-wallet-unpriced-note="">
                   No price
                 </li>
               )}
-              <HoldingRow holding={holding} due={due && holding.due && askedSet.has(priceSource(holding.row) ?? '')} unasked={holding.due && !askedSet.has(priceSource(holding.row) ?? '')} cached={previousTotal !== null ? complete.snapshot?.holdings.get(holding.row.key) : undefined} />
+              {entry.kind === 'robinhood' ? (
+                <HoldingRow holding={entry.holding} due={due && entry.holding.due && askedSet.has(priceSource(entry.holding.row) ?? '')} unasked={entry.holding.due && !askedSet.has(priceSource(entry.holding.row) ?? '')} cached={previousTotal !== null ? complete.snapshot?.holdings.get(entry.holding.row.key) : undefined} network={labelled ? ROBINHOOD_NETWORK : undefined} />
+              ) : __DOMINO_V2__ ? (
+                <NetworkRow holding={entry.holding} />
+              ) : null}
             </Fragment>
           ))}
           {waiting &&
@@ -781,7 +903,7 @@ export function PortfolioTokens({ address }: { address: string }) {
       )}
 
       {/* An empty list stays said while it is read again; a list asked for anew (tokens someone typed) waits for its answer. */}
-      {!waiting && holdings.all.length === 0 && snap !== null && settledOnce && (
+      {!waiting && holdings.all.length === 0 && others.length === 0 && snap !== null && settledOnce && (
         // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a list that failed shows nothing, its reason as data; it said "Your tokens couldn’t be loaded right now.", with why in its title.
         <p className="dm-acct-tokens-empty" data-wallet-empty={failure ? 'failed' : 'listed'} data-wallet-block={block ?? undefined} title={failure ? undefined : block ? `Balances at block ${block}.` : undefined}>
           {failure ? null : NONE_LISTED}
@@ -793,7 +915,7 @@ export function PortfolioTokens({ address }: { address: string }) {
         <div className="dm-acct-tokens-actions">
           {rest.length > 0 && (
             <Button type="button" variant="ghost" size="sm" aria-expanded={expanded} onClick={() => setExpanded(!expanded)} data-wallet-show-all="">
-              {expanded ? 'Show less' : `Show all ${holdings.all.length}`}
+              {expanded ? 'Show less' : `Show all ${merged.length}`}
             </Button>
           )}
           {showLoadMore && (
@@ -813,6 +935,11 @@ export function PortfolioTokens({ address }: { address: string }) {
 
       {/* Kept through quiet re-reads, with what was typed in it; Check balances asks for a new list. */}
       {snap && settledOnce && (snap.emptyHint || tokens.length > 0) && <TokensForm onCheck={check} />}
+      {WalletNetworksWatch && (
+        <Suspense fallback={null}>
+          <WalletNetworksWatch address={address} onView={onNetworks} />
+        </Suspense>
+      )}
     </div>
   )
 }

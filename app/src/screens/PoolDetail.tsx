@@ -1,9 +1,13 @@
 // The screens' own styles (styles/screens.css, F8): loaded with the first screen that needs them, never on Home's first paint.
 import '../styles/screens.css'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { exploreHref, newPositionHref, parsePoolHash } from '../components/explore/routes'
+import { exploreHref, newNetworkHref, newPositionHref, parsePoolHash } from '../components/explore/routes'
+import { parsePoolNetworkHash, type PoolNetworkLocation } from '../components/explore/poolNetwork'
 import { useHash } from '../components/explore/useHash'
 import { IconChevronLeft } from '../components/icons'
+import { useNetworkToken } from '../components/read/screens/NetworkTokenExplorer'
+import { OtherNetworks } from '../components/read/screens/OtherNetworks'
+import { useNetworkPools } from '../components/read/screens/PoolPicker'
 import { PoolWorkspace } from '../components/read/screens/PoolWorkspace'
 import { TokenMarkPair } from '../components/TokenIcon'
 import { EmptyState, LinkButton, Skeleton, Stat, StatStrip } from '../components/ui'
@@ -14,13 +18,15 @@ import { verifyCandidate } from '../lib/read/screens/catalogueSession'
 import { overviewPoolOption, paintedPool } from '../lib/read/publicOverview'
 import { failureText } from '../lib/read/screens/copy'
 import { parseAddressInput, poolIdKey, shortAddress } from '../lib/read/screens/identity'
-import { poolWarning, warningText } from '../lib/read/screens/lookalike'
+import { poolWarning, tokenWarning, warningText } from '../lib/read/screens/lookalike'
 import { optionUsableForDomino, type PoolOption } from '../lib/read/screens/poolsList'
 import { useReadSource } from '../lib/read/screens/readContext'
 import { askAgainLater, readWithin } from '../lib/read/screens/screenRead'
 import { whenVisibleAfter } from '../lib/read/screens/quietRead'
 import { isTransient } from '../lib/read/screens/transient'
-import type { TokenDisplay } from '../lib/read/types'
+import type { TokenChainId, TokenDisplay } from '../lib/read/types'
+import type { OtherChains } from '../lib/create/otherChains'
+import { networkMarketRow } from '../lib/read/networkMarkets'
 import { quoteIndex } from '../lib/read/orientation'
 import { networkName } from '../lib/networkName'
 import { useRouteTitle } from '../lib/routeTitle'
@@ -84,11 +90,16 @@ const catalogueMark = (entry: PoolCatalogueEntry, side: 0 | 1): TokenDisplay => 
  * not collected yet. Open it again later."). `data-pool-verification` keeps
  * the state, as data.
  */
-function Pending({ id, entry, verifying = true, reason }: { id: string; entry?: PoolCatalogueEntry; verifying?: boolean; reason?: { code: string; text: string } }) {
+/*
+ * Changed on purpose 2026-11-06 (the replica rule): a Base or Arbitrum One pool rests the same way (`chainId`), without
+ * the blocks its page leaves out (`history` false: no chart and no recent activity, what Domino can do here resting
+ * beside the estimate instead, as the verified page lays it out). Robinhood Chain's resting page is unchanged.
+ */
+function Pending({ id, entry, verifying = true, reason, chainId = 4663, history = true }: { id: string; entry?: PoolCatalogueEntry; verifying?: boolean; reason?: { code: string; text: string }; chainId?: TokenChainId; history?: boolean }) {
   // A resting bubble while verifying; the same box, empty, once verification has no answer.
   const bubble = (name: string) => <span aria-hidden="true" className={verifying ? `dm-skel ${name}` : name} />
   return (
-    <div aria-busy={verifying || undefined} data-pool-verification={verifying ? 'verifying' : reason?.code} className="dm-pool-layout" data-pool-pending={id}>
+    <div aria-busy={verifying || undefined} data-pool-verification={verifying ? 'verifying' : reason?.code} className={history ? 'dm-pool-layout' : 'dm-pool-layout dm-pool-layout--network'} data-pool-pending={id}>
       <div className="dm-pool-head dm-pool-a-head animate-rise">
         <div className="dm-pool-title">
           <span className="dm-pool-marks">
@@ -102,7 +113,7 @@ function Pending({ id, entry, verifying = true, reason }: { id: string; entry?: 
               {/* The fee is the verified pool's to state: until then the chip names the protocol only. QA round 2, Q23: and the
                   network, which the route already fixes (Robinhood Chain), so the header does not change when it lands. */}
               <span className="dm-chip">Uniswap</span>
-              <span className="dm-chip" data-chain-chip={4663}>{networkName(4663)}</span>
+              <span className="dm-chip" data-chain-chip={chainId}>{networkName(chainId)}</span>
             </div>
           </div>
         </div>
@@ -123,7 +134,7 @@ function Pending({ id, entry, verifying = true, reason }: { id: string; entry?: 
       {/* The chart card at the verified card's height, row for row: the title and the window switch, the price and its
           line, the plot, its time axis and the switch under it. Bubbles while verifying; once verification has no
           answer, the same rows hold their place, empty. */}
-      <div className="dm-card dm-pool-chart dm-pool-a-chart animate-rise [--delay:80ms]">
+      {history && <div className="dm-card dm-pool-chart dm-pool-a-chart animate-rise [--delay:80ms]">
         <div className="dm-pool-chart-head">
           <h2 className="dm-title">Price history</h2>
           {bubble('dm-pool-skel-seg')}
@@ -143,7 +154,7 @@ function Pending({ id, entry, verifying = true, reason }: { id: string; entry?: 
           {bubble('dm-pool-skel-tick')}
         </div>
         <div aria-hidden="true" className="dm-pool-skel-quiet">{bubble('dm-pool-skel-seg')}</div>
-      </div>
+      </div>}
       {/* The estimate and the recent activity beside the chart, at their loaded heights. */}
       <div aria-hidden="true" className="dm-card dm-pool-card dm-pool-a-earn dm-pool-skel-card animate-rise [--delay:120ms]">
         <h2 className="dm-title">Estimate your earnings</h2>
@@ -154,11 +165,17 @@ function Pending({ id, entry, verifying = true, reason }: { id: string; entry?: 
         {/* The second Create a position's place on a one-column page (QA round 2, N84; v4-pool.css shows it there only). */}
         {entry && <span className="dm-pool-earn-action">{bubble('dm-pool-skel-earn-action')}</span>}
       </div>
-      <div aria-hidden="true" className="dm-card dm-pool-card dm-pool-a-recent dm-pool-skel-card animate-rise [--delay:160ms]">
+      {history ? <div aria-hidden="true" className="dm-card dm-pool-card dm-pool-a-recent dm-pool-skel-card animate-rise [--delay:160ms]">
         <h2 className="dm-title">Recent activity</h2>
         {bubble('dm-pool-skel-summary')}
         {bubble('dm-pool-skel-summary')}
-      </div>
+      </div> : <div aria-hidden="true" className="dm-pool-a-auto animate-rise [--delay:160ms]">
+        <div className="dm-card dm-pool-card dm-pool-skel-card">
+          <h2 className="dm-title">What you can do here</h2>
+          {bubble('dm-pool-skel-summary')}
+          {bubble('dm-pool-skel-summary')}
+        </div>
+      </div>}
     </div>
   )
 }
@@ -190,6 +207,35 @@ function pairTitle(option: PoolOption): string {
   const quote = quoteIndex(first.address, second.address)
   const name = (token: { symbol?: string | null; address: string }) => (token.symbol ?? shortAddress(token.address)).slice(0, 14)
   return quote === 1 ? `${name(first)} / ${name(second)}` : `${name(second)} / ${name(first)}`
+}
+
+/**
+ * V4: the verified page that replaces a pool's resting page takes its load moment over where it stands, before it is
+ * painted (a mutation observer's answer comes before the frame): the time the moment has run (the back link's rise is
+ * its clock) goes to --dm-moment-shift, so nothing rises twice and nothing pops in; once the moment is over, its
+ * animations are simply done (v4-pool.css). Presentation only: nothing here touches what the page reads or shows. Moved
+ * here from PoolDetail on purpose 2026-11-06, unchanged, so a Base or Arbitrum One pool's page plays it the same way.
+ */
+const watchMoment = (host: HTMLDivElement | null) => {
+  if (!host || typeof MutationObserver === 'undefined') return
+  let shown = host.firstElementChild
+  const watch = new MutationObserver(() => {
+    const layout = host.firstElementChild
+    const before = shown
+    if (layout === before) return
+    shown = layout
+    if (!(layout instanceof HTMLElement) || !(before instanceof HTMLElement)) return
+    const pool = layout.getAttribute('data-pool-workspace')?.toLowerCase()
+    if (!pool || layout.hasAttribute('data-pool-moment') || before.getAttribute('data-pool-pending')?.toLowerCase() !== pool) return
+    if (document.documentElement.classList.contains('dm-booted')) return
+    const clock = host.parentElement?.querySelector('.dm-pool-breadcrumb')?.getAnimations?.().find((item) => item instanceof CSSAnimation && item.animationName === 'dm-v4-up')
+    const now = document.timeline?.currentTime
+    const ran = !clock ? 60000 : typeof clock.startTime === 'number' && typeof now === 'number' ? Math.max(0, now - clock.startTime) : 0
+    layout.style.setProperty('--dm-moment-shift', `${-Math.round(ran)}ms`)
+    layout.setAttribute('data-pool-moment', '')
+  })
+  watch.observe(host, { childList: true })
+  return () => watch.disconnect()
 }
 
 export function PoolDetail({ poolId }: { poolId: string }) {
@@ -334,31 +380,7 @@ export function PoolDetail({ poolId }: { poolId: string }) {
   const [claimed, setClaimed] = useState<{ key: string; layout: 'pending' | 'workspace' | 'other' } | null>(null)
   if (claimed?.key !== poolId) setClaimed({ key: poolId, layout })
   const moment = layout === 'workspace' && (claimed?.key === poolId ? claimed.layout : layout) === 'workspace'
-  // V4: the verified page that replaces this pool's resting page takes its load moment over where it stands, before it is
-  // painted (a mutation observer's answer comes before the frame): the time the moment has run (the back link's rise is
-  // its clock) goes to --dm-moment-shift, so nothing rises twice and nothing pops in; once the moment is over, its
-  // animations are simply done (v4-pool.css). Presentation only: nothing here touches what the page reads or shows.
-  const followMoment = useCallback((host: HTMLDivElement | null) => {
-    if (!host || typeof MutationObserver === 'undefined') return
-    let shown = host.firstElementChild
-    const watch = new MutationObserver(() => {
-      const layout = host.firstElementChild
-      const before = shown
-      if (layout === before) return
-      shown = layout
-      if (!(layout instanceof HTMLElement) || !(before instanceof HTMLElement)) return
-      const pool = layout.getAttribute('data-pool-workspace')?.toLowerCase()
-      if (!pool || layout.hasAttribute('data-pool-moment') || before.getAttribute('data-pool-pending')?.toLowerCase() !== pool) return
-      if (document.documentElement.classList.contains('dm-booted')) return
-      const clock = host.parentElement?.querySelector('.dm-pool-breadcrumb')?.getAnimations?.().find((item) => item instanceof CSSAnimation && item.animationName === 'dm-v4-up')
-      const now = document.timeline?.currentTime
-      const ran = !clock ? 60000 : typeof clock.startTime === 'number' && typeof now === 'number' ? Math.max(0, now - clock.startTime) : 0
-      layout.style.setProperty('--dm-moment-shift', `${-Math.round(ran)}ms`)
-      layout.setAttribute('data-pool-moment', '')
-    })
-    watch.observe(host, { childList: true })
-    return () => watch.disconnect()
-  }, [])
+  // V4: the verified page that replaces this pool's resting page takes its load moment over where it stands (watchMoment).
 
   let body: React.ReactNode
   if (!id) {
@@ -449,7 +471,125 @@ export function PoolDetail({ poolId }: { poolId: string }) {
           Markets
         </a>
       </nav>
-      <div className="mt-4" ref={followMoment}>{body}</div>
+      <div className="mt-4" ref={watchMoment}>{body}</div>
+    </main>
+  )
+}
+
+/** Nothing to do when a network pool's figures change: they are the network's own read, not this page's (PoolWorkspace). */
+const keepOption = () => undefined
+
+/**
+ * One pool of Base or Arbitrum One, found in its network's pools read for the token the link names, as Robinhood Chain's
+ * pool page shows one of its own (PoolWorkspace with its figures handed in, lib/read/networkMarkets.ts): its price and
+ * fee from the read, TVL, 24h volume and the APR estimate from DEX Screener's figures, the earnings estimate, the typical
+ * range, what Domino can do here and Technical details; its Create a position opens New position on that network with
+ * the pool proposed (#/new/network/<chain>/<token>/<pool>, which New position checks against its own read). A pool whose
+ * token passes for one of the network's own currencies, or with a misleading name, says so first and has no way there,
+ * as on Robinhood Chain; every pool says what Robinhood Chain's page says of a pool off Domino's list (these networks
+ * have no list yet). `onName`: the pair, for the tab.
+ */
+function NetworkPoolFound({ location, token, others, network, onName }: { location: PoolNetworkLocation; token: TokenDisplay; others: OtherChains; network: string; onName: (name: string | null) => void }) {
+  const source = useReadSource()
+  const { result, options, waiting, readingAgain } = useNetworkPools((signal) => others.pools(token, signal), { keep: location.pool })
+  const option = options.find((entry) => entry.key.toLowerCase() === location.pool) ?? null
+  const name = option ? pairTitle(option) : null
+  useEffect(() => {
+    onName(name)
+  }, [name, onName])
+  const settled = (result.kind === 'ok' && !waiting) || (result.kind === 'failed' && !readingAgain)
+  if (!option || !source) {
+    if (!settled || !source) return <Pending id={location.pool} chainId={location.chainId} history={false} />
+    if (result.kind === 'failed') return <Pending id={location.pool} chainId={location.chainId} history={false} verifying={false} reason={{ code: result.code, text: result.reason }} />
+    return (
+      <div className="dm-card animate-rise" data-pool-network-missing="">
+        <h1 className="sr-only">Pool</h1>
+        {/* Robinhood Chain's words for a link that names no pool (QA round 2, N101), with this link's network. */}
+        <EmptyState
+          mark="domino"
+          title="We couldn’t find this pool"
+          body={`There’s no pool at this link on ${network}. The link may be wrong.`}
+          action={<LinkButton variant="outline" size="sm" href={exploreHref()}>Back to Markets</LinkButton>}
+        />
+      </div>
+    )
+  }
+  const main = result.kind === 'ok' ? (result.warnedAs?.[option.key] ?? (result.warned?.includes(option.key) ? 'token' : null)) : null
+  // A misleading name (Robinhood Chain's rule, lib/read/screens/lookalike.ts), never its look-alike check, which names
+  // Robinhood Chain's own tokens: this network's look-alikes are its read's own (`warnedAs`).
+  const unsafe = option.currencies.map(tokenWarning).find((said) => said?.kind === 'unsafe') ?? null
+  const warning = main !== null ? { kind: 'lookalike' as const, address: '', main } : unsafe
+  const notice = warning ? (
+    <p role="alert" className="dm-pool-warning" data-pool-warning={warning.kind}>{warningText(warning)}</p>
+  ) : (
+    <p className="dm-pool-offlist" data-pool-offlist="">
+      Not on Domino’s list. Before adding money, check both tokens’ contracts: <span className="font-mono break-all">{option.currencies[0].address}</span> and <span className="font-mono break-all">{option.currencies[1].address}</span>.
+    </p>
+  )
+  const openable = optionUsableForDomino(option) && !warning
+  const href = newNetworkHref(location.chainId, token.address, option.key)
+  return (
+    <PoolWorkspace
+      source={source}
+      option={option}
+      onOption={keepOption}
+      figures={{ row: networkMarketRow(option), loading: false }}
+      notice={notice}
+      actions={openable ? <LinkButton href={href} size="lg" className="dm-pool-new" data-new-position="">Create a position</LinkButton> : undefined}
+      earnAction={openable ? <LinkButton href={href} variant="outline" size="lg" data-new-position-again="">Create a position</LinkButton> : undefined}
+    />
+  )
+}
+
+/**
+ * The page's body for a network pool: its token read on its network first (NetworkTokenExplorer's useNetworkToken: the
+ * same read, kept 20 s, its pools read then reuses), then the pool. It rests as Robinhood Chain's page rests while it is
+ * read, and once nothing will come (a token that did not read after its quiet re-asks, one that passes for one of the
+ * network's own currencies, a network closed where the page is served) the same resting page has dashes, saying nothing.
+ */
+function NetworkPool({ location, others, checking }: { location: PoolNetworkLocation; others: OtherChains | null; checking: boolean }) {
+  const { token, network, resting } = useNetworkToken({ chainId: location.chainId, token: location.token }, others, checking)
+  const [name, setName] = useState<string | null>(null)
+  useRouteTitle(name ?? 'Pool')
+  if (!token || !others) return <Pending id={location.pool} chainId={location.chainId} history={false} verifying={resting} />
+  return <NetworkPoolFound location={location} token={token} others={others} network={network ?? networkName(location.chainId)} onName={setName} />
+}
+
+/**
+ * A Base or Arbitrum One pool's page (added 2026-11-06, the owner's replica rule: "Base and Arbitrum are an exact copy of
+ * Robinhood Chain's screens; only the network changes"): `#/pool/network/<chain>/<pool>/<token>`, Robinhood Chain's pool
+ * page fed from the network's own reads (read-v6 chain-pools through V2's discovery, never a wallet, and DEX Screener's
+ * figures the app already reads there), with the blocks no read has data for on those networks yet left out. Routed by
+ * App.tsx in a build that carries V2 only.
+ */
+export function NetworkPoolDetail() {
+  const location = parsePoolNetworkHash(useHash())
+  return (
+    <main className="dm-page dm-page--pool" data-pool-page={location?.pool ?? ''}>
+      <nav aria-label="Breadcrumb" className="dm-pool-breadcrumb">
+        <a href={exploreHref()} className="dm-pool-back">
+          <IconChevronLeft size={14} />
+          Markets
+        </a>
+      </nav>
+      <div className="mt-4" ref={watchMoment}>
+        {location ? (
+          <OtherNetworks fallback={<Pending id={location.pool} chainId={location.chainId} history={false} />}>
+            {(others, checking) => <NetworkPool key={`${location.chainId}:${location.pool}:${location.token.toLowerCase()}`} location={location} others={others} checking={checking} />}
+          </OtherNetworks>
+        ) : (
+          // A link that is not a Base or Arbitrum One pool's: Robinhood Chain's words for a link that names no pool.
+          <div className="dm-card animate-rise">
+            <h1 className="sr-only">Pool</h1>
+            <EmptyState
+              mark="domino"
+              title="That isn’t a pool id"
+              body="This link doesn’t name a pool. Open a pool from Markets and the address bar carries the right one."
+              action={<LinkButton href={exploreHref()} variant="outline">Go to Markets</LinkButton>}
+            />
+          </div>
+        )}
+      </div>
     </main>
   )
 }

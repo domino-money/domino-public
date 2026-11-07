@@ -156,6 +156,9 @@ test('the menu links the section from the chain\'s identity and the section\'s m
   const mode = valueCode(readFileSync(join(APP, 'src/chains/elysium/mode.ts'), 'utf8'));
   assert.deepEqual([...mode.matchAll(/^\s*(?:import|export\s[^;]*\sfrom)\s.*$/gm)].map((m) => m[0]), [], 'the mode imports nothing at run time');
   const identity = strip(readFileSync(join(APP, 'src/config/chainIdentity.ts'), 'utf8'));
-  assert.doesNotMatch(identity, /^\s*(?:import|export\s[^;]*\sfrom)\s/m, 'the identities import nothing: literals only');
+  // Changed on purpose 2026-11-07 (Elysium as a fourth V2 chain): one import, Elysium's literals (its id and the build's
+  // switch, src/lib/elysiumIdentity.ts), so V2's chain list follows the switch; that file imports nothing at all.
+  assert.deepEqual([...identity.matchAll(/^\s*(?:import|export\s[^;]*\sfrom)\s.*$/gm)].map((m) => m[0].trim()), ["import { ELYSIUM_LIVE, ELYSIUM_V2_ID } from '../lib/elysiumIdentity'"], 'the identities import Elysium\'s literals alone');
+  assert.doesNotMatch(strip(readFileSync(join(APP, 'src/lib/elysiumIdentity.ts'), 'utf8')), /^\s*(?:import|export\s[^;]*\sfrom)\s/m, 'which import nothing: literals only');
   assert.doesNotMatch(identity, /kinetiq|https?:\/\/[^'\n]*elysium/i, 'no Elysium endpoint rides in every page');
 });

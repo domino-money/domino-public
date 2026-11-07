@@ -1,6 +1,7 @@
 import { ActChevron } from '../../components/automate-v4/RowIcons'
 import { Button, LinkButton } from '../../components/ui'
-import { gateOpen, useGate } from './gate'
+import { ELYSIUM_LIVE } from '../../lib/elysiumIdentity'
+import { gateOpen, useElysiumGate, useGate } from './gate'
 
 /**
  * Automate's way to Auto-exit (Domino V2 integration; spec F7 §4.1, §5.1; decisions #18, #25), beside the plain position
@@ -9,7 +10,9 @@ import { gateOpen, useGate } from './gate'
  * Changed on purpose 2026-10-06 (the owner's point 5; rugged97: "this stop loss-take profit product was named wrong. It is
  * AUTO-EXIT. When the price hits the edge of the range we close the position automatically and send the tokens to the
  * wallet"): its name and one line, and shown wherever Domino's automation and auto-exit are open on any of its three
- * networks. The dedicated picker uses those same networks and opens the existing V2 Auto-exit dialog.
+ * networks. The dedicated picker uses those same networks and opens the existing V2 Auto-exit dialog. Changed on purpose
+ * 2026-11-07 (Elysium's screens): and on Elysium where the build serves it (./gate.tsx useElysiumGate, no hook elsewhere),
+ * as ./ProtectionSetup.tsx picks there.
  */
 export default function AutomateProtection() {
   const vault4663 = useGate('vault', 4663)
@@ -18,8 +21,10 @@ export default function AutomateProtection() {
   const exit8453 = useGate('autoExit', 8453)
   const vault42161 = useGate('vault', 42161)
   const exit42161 = useGate('autoExit', 42161)
-  const anywhere = (gateOpen(vault4663) && gateOpen(exit4663)) || (gateOpen(vault8453) && gateOpen(exit8453)) || (gateOpen(vault42161) && gateOpen(exit42161))
-  const pending = [vault4663, exit4663, vault8453, exit8453, vault42161, exit42161].some((gate) => gate === null)
+  const vault99901 = useElysiumGate('vault')
+  const exit99901 = useElysiumGate('autoExit')
+  const anywhere = (gateOpen(vault4663) && gateOpen(exit4663)) || (gateOpen(vault8453) && gateOpen(exit8453)) || (gateOpen(vault42161) && gateOpen(exit42161)) || (ELYSIUM_LIVE && gateOpen(vault99901) && gateOpen(exit99901))
+  const pending = [vault4663, exit4663, vault8453, exit8453, vault42161, exit42161, ...(ELYSIUM_LIVE ? [vault99901, exit99901] : [])].some((gate) => gate === null)
   return (
     <>
       {/* Changed on purpose 2026-10-30 (QA round 2, the owner's Q33): named as its two siblings and the page it opens

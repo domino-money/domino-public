@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react'
+import { chainMarkProps } from '../../../lib/chainMarks'
 import { reasonText } from '../../../lib/read/describe'
 import { aprDigits } from '../../../lib/format/apr'
 import { feeWords } from '../../../lib/format/fee'
@@ -86,7 +87,7 @@ function PoolRow({ option, checked, onPick, name, compact = false, open = false,
             the row's width; it goes under the network's where both do not fit, and a phone keeps it in the corner. */}
         {network !== null && (
           <span className="dm-flow-pool-chips">
-            <span className="dm-chip dm-flow-pool-net" data-chain-chip={option.currencies[0].chainId}>{network}</span>
+            <span className="dm-chip dm-flow-pool-net" data-chain-chip={option.currencies[0].chainId} {...chainMarkProps(option.currencies[0].chainId)}>{network}</span>
             {fee}
           </span>
         )}
@@ -699,6 +700,92 @@ const READ_AGAIN_MS = [2_000, 5_000, 15_000, 30_000] as const
 const READ_AGAIN_CODES: readonly string[] = ['network_search_unavailable', 'unavailable']
 
 /**
+ * A token's pools on another network, as its list draws them (moved out of NetworkPoolPicker on purpose 2026-11-06, no
+ * change of behaviour, so the token's Markets page and a pool's page read them the same way, the replica rule): `read`
+ * as it was handed in when the caller mounted (the caller remounts it, by its key, for another token), read again when the
+ * wallet connects or changes; a read that did not answer for a reason that can pass is read again quietly, a few times
+ * (READ_AGAIN_MS), on every list since 2026-11-06 (O-16: New position's too, as Robinhood Chain's). The rows carry DEX
+ * Screener's figures, drawn again as they arrive and aged on this hook's own clock (lib/create/otherChains.ts
+ * networkRows, figuresShownUntil), and rest a moment while DEX Screener has not answered for the token
+ * (FIGURES_WAIT_MS). `keep`: the row that stays whatever its twin's figures say (the pool chosen, or the one a page is
+ * about).
+ */
+export function useNetworkPools(read: (signal: AbortSignal) => Promise<NetworkPools>, { keep = null }: { keep?: string | null } = {}) {
+  // The read as it was handed in when this list mounted: the caller remounts the list (its key) for another token.
+  const reader = useRef(read)
+  // Read again when the wallet connects or changes, the pools being read through it: an answer for another wallet is
+  // never shown.
+  const identity = useWalletIdentity()
+  const owner = identity.kind === 'connected' ? identity.address.toLowerCase() : null
+  const [answer, setAnswer] = useState<{ owner: string | null; result: NetworkPools } | null>(null)
+  const result: NetworkPools | { kind: 'loading' } = answer !== null && answer.owner === owner ? answer.result : { kind: 'loading' }
+  // Quiet re-asks spent on a failure a later read can clear (QA round 2 review; New position's list too since 2026-11-06, O-16).
+  const [attempt, setAttempt] = useState(0)
+  useEffect(() => {
+    const controller = new AbortController()
+    void reader.current(controller.signal).then(
+      (pools) => {
+        if (!controller.signal.aborted) setAnswer({ owner, result: pools })
+      },
+      () => {
+        if (!controller.signal.aborted) setAnswer({ owner, result: { kind: 'failed', code: 'unavailable', reason: 'Pools are temporarily unavailable.' } })
+      },
+    )
+    return () => controller.abort()
+  }, [owner, attempt])
+  // A list that failed for a reason that can pass (the service, not the token or the network's gate) is asked again,
+  // quietly, while the page is visible; it rests as rows meanwhile. On a token's page and a pool's page, and in New
+  // position since 2026-11-06 (O-16), as Robinhood Chain's New position list asks a busy or briefly unavailable read again.
+  const failedCode = result.kind === 'failed' ? result.code : null
+  const readingAgain = failedCode !== null && READ_AGAIN_CODES.includes(failedCode) && attempt < READ_AGAIN_MS.length
+  useEffect(() => {
+    if (!readingAgain) return
+    return whenVisibleAfter(READ_AGAIN_MS[attempt], () => { setAnswer(null); setAttempt((value) => value + 1) })
+  }, [readingAgain, attempt])
+  // DEX Screener's figures arriving draw the rows again (2026-10-06).
+  useSyncExternalStore(dexStore.subscribe, dexStore.version, dexStore.version)
+  // The clock the rows' ten minutes count on (Added 2026-10-06, rugged97's delta of 6 Oct §4): read when the list mounts,
+  // and again just after the first figure shown may no longer be (below).
+  const [clock, setClock] = useState(readNow)
+  const chainId = result.kind === 'ok' ? (result.options[0]?.currencies[0].chainId ?? null) : null
+  const subject = result.kind === 'ok' ? (result.subject ?? null) : null
+  // The token's figures, asked again when the store holds none fresh (at most once a minute, the store's own limit).
+  const stale = chainId !== null && subject !== null && dexStore.chainToken(chainId, subject) === null
+  // An answer about the token read in the last ten minutes: a pool it does not name has no pair at DEX Screener (2026-10-06).
+  const listed = chainId !== null && subject !== null && !stale
+  useEffect(() => {
+    if (stale && chainId !== null && subject !== null) dexStore.askOn(chainId, subject)
+  }, [stale, chainId, subject])
+  // Changed on purpose 2026-10-06 (review of the same day): the rows rest a moment more while DEX Screener has not answered
+  // for the token (asked beside the pools, so it usually has), at most FIGURES_WAIT_MS, so they are drawn once, in their
+  // order and with their figures, and a row is chosen with the figures it showed (the chosen pool keeps the ones it had).
+  const [waited, setWaited] = useState<NetworkPools | null>(null)
+  const answered = result.kind === 'ok' ? result : null
+  const waiting = answered !== null && stale && waited !== answered
+  useEffect(() => {
+    if (!waiting || answered === null) return
+    const timer = setTimeout(() => setWaited(answered), FIGURES_WAIT_MS)
+    return () => clearTimeout(timer)
+  }, [waiting, answered])
+  const options = result.kind === 'ok' && !waiting ? networkRows(result.options, (chain, name) => dexStore.chainPoolSeen(chain, name), result.facts, keep, { nowS: Math.floor(clock.wall / 1000), listed }) : []
+  // Drawn again just after the first figure shown may no longer be, and its token asked about again a minute before, so
+  // fresh figures usually arrive first (Added 2026-10-06, rugged97's delta of 6 Oct §4). `clock` is a dependency so a
+  // wall clock that stepped back is waited out, never left behind.
+  const until = figuresShownUntil(options)
+  useEffect(() => {
+    if (until === null) return
+    const after = (seconds: number) => Math.max(0, seconds * 1000 - Date.now())
+    const renew = chainId !== null && subject !== null ? setTimeout(() => dexStore.askOn(chainId, subject), after(until - 60)) : null
+    const wake = setTimeout(() => setClock(readNow()), after(until + 1))
+    return () => {
+      if (renew !== null) clearTimeout(renew)
+      clearTimeout(wake)
+    }
+  }, [until, chainId, subject, clock])
+  return { result, options, waiting, readingAgain }
+}
+
+/**
  * New position's pool list for a token of another network (2026-10-05, the owner: New position on Base and Arbitrum One;
  * lib/create/otherChains.ts): the same container, rows, legend, preview handlers and empty line as PoolPicker's
  * `create` variant, every row with its network's tag. The pools come from `read`, through the wallet on that network
@@ -711,6 +798,15 @@ const READ_AGAIN_CODES: readonly string[] = ['network_search_unavailable', 'unav
  * (READ_AGAIN_MS) while the page is visible; after the last one it says "No pools to show for this token.", as the
  * Robinhood Chain list does, the code kept as data. It used to print the reason ("Pools are temporarily unavailable.",
  * "Pool search on Base is unavailable right now."). New position's list (`create`) keeps its line.
+ *
+ * Changed on purpose 2026-11-06 (the replica rule, O-16: Base and Arbitrum One are Robinhood Chain's screens, only the
+ * network changes): New position's list says what Robinhood Chain's New position list says (PoolPicker's `create`
+ * variant above): it rests and is read again on its own, quietly, after a failure a later read can clear, as a token's
+ * page does; then, or after any other failure, the one muted line "No pools to show for this token.". The reason ("Connect
+ * your wallet to see the pools on Base.", "Search for this token again to see its pools on Base.", a wallet's own refusal)
+ * is no longer drawn: it stays in the visually hidden live region, as Robinhood Chain's list tells assistive technology
+ * why it has nothing to choose, and its code in `data-pools-unavailable`. A wallet connected or changed still reads the
+ * list again (below).
  *
  * Changed on purpose 2026-10-06 (the owner's point 3: these rows came "dry"; "like Robinhood Chain"): each row shows DEX
  * Screener's TVL and 24h volume where the provider lists that pool, and the APR worked out from them, drawn again as the
@@ -757,76 +853,7 @@ export function NetworkPoolPicker({
    */
   hintRefused?: string | null
 }) {
-  // The read as it was handed in when this list mounted: the caller remounts the list (its key) for another token.
-  const reader = useRef(read)
-  // Read again when the wallet connects or changes, the pools being read through it: an answer for another wallet is
-  // never shown.
-  const identity = useWalletIdentity()
-  const owner = identity.kind === 'connected' ? identity.address.toLowerCase() : null
-  const [answer, setAnswer] = useState<{ owner: string | null; result: NetworkPools } | null>(null)
-  const result: NetworkPools | { kind: 'loading' } = answer !== null && answer.owner === owner ? answer.result : { kind: 'loading' }
-  // Quiet re-asks spent on a token's page (`browse`, QA round 2 review); New position's list asks once.
-  const [attempt, setAttempt] = useState(0)
-  useEffect(() => {
-    const controller = new AbortController()
-    void reader.current(controller.signal).then(
-      (pools) => {
-        if (!controller.signal.aborted) setAnswer({ owner, result: pools })
-      },
-      () => {
-        if (!controller.signal.aborted) setAnswer({ owner, result: { kind: 'failed', code: 'unavailable', reason: 'Pools are temporarily unavailable.' } })
-      },
-    )
-    return () => controller.abort()
-  }, [owner, attempt])
-  // A list that failed for a reason that can pass (the service, not the token or the network's gate) is asked again on a
-  // token's page, quietly, while the page is visible; it rests as rows meanwhile.
-  const failedCode = result.kind === 'failed' ? result.code : null
-  const readingAgain = browse && failedCode !== null && READ_AGAIN_CODES.includes(failedCode) && attempt < READ_AGAIN_MS.length
-  useEffect(() => {
-    if (!readingAgain) return
-    return whenVisibleAfter(READ_AGAIN_MS[attempt], () => { setAnswer(null); setAttempt((value) => value + 1) })
-  }, [readingAgain, attempt])
-  // DEX Screener's figures arriving draw the rows again (2026-10-06).
-  useSyncExternalStore(dexStore.subscribe, dexStore.version, dexStore.version)
-  // The clock the rows' ten minutes count on (Added 2026-10-06, rugged97's delta of 6 Oct §4): read when the list mounts,
-  // and again just after the first figure shown may no longer be (below).
-  const [clock, setClock] = useState(readNow)
-  const chainId = result.kind === 'ok' ? (result.options[0]?.currencies[0].chainId ?? null) : null
-  const subject = result.kind === 'ok' ? (result.subject ?? null) : null
-  // The token's figures, asked again when the store holds none fresh (at most once a minute, the store's own limit).
-  const stale = chainId !== null && subject !== null && dexStore.chainToken(chainId, subject) === null
-  // An answer about the token read in the last ten minutes: a pool it does not name has no pair at DEX Screener (2026-10-06).
-  const listed = chainId !== null && subject !== null && !stale
-  useEffect(() => {
-    if (stale && chainId !== null && subject !== null) dexStore.askOn(chainId, subject)
-  }, [stale, chainId, subject])
-  // Changed on purpose 2026-10-06 (review of the same day): the rows rest a moment more while DEX Screener has not answered
-  // for the token (asked beside the pools, so it usually has), at most FIGURES_WAIT_MS, so they are drawn once, in their
-  // order and with their figures, and a row is chosen with the figures it showed (the chosen pool keeps the ones it had).
-  const [waited, setWaited] = useState<NetworkPools | null>(null)
-  const answered = result.kind === 'ok' ? result : null
-  const waiting = answered !== null && stale && waited !== answered
-  useEffect(() => {
-    if (!waiting || answered === null) return
-    const timer = setTimeout(() => setWaited(answered), FIGURES_WAIT_MS)
-    return () => clearTimeout(timer)
-  }, [waiting, answered])
-  const options = result.kind === 'ok' && !waiting ? networkRows(result.options, (chain, name) => dexStore.chainPoolSeen(chain, name), result.facts, pending?.key ?? null, { nowS: Math.floor(clock.wall / 1000), listed }) : []
-  // Drawn again just after the first figure shown may no longer be, and its token asked about again a minute before, so
-  // fresh figures usually arrive first (Added 2026-10-06, rugged97's delta of 6 Oct §4). `clock` is a dependency so a
-  // wall clock that stepped back is waited out, never left behind.
-  const until = figuresShownUntil(options)
-  useEffect(() => {
-    if (until === null) return
-    const after = (seconds: number) => Math.max(0, seconds * 1000 - Date.now())
-    const renew = chainId !== null && subject !== null ? setTimeout(() => dexStore.askOn(chainId, subject), after(until - 60)) : null
-    const wake = setTimeout(() => setClock(readNow()), after(until + 1))
-    return () => {
-      if (renew !== null) clearTimeout(renew)
-      clearTimeout(wake)
-    }
-  }, [until, chainId, subject, clock])
+  const { result, options, waiting, readingAgain } = useNetworkPools(read, { keep: pending?.key ?? null })
   // QA round 2, N5: the proposed pool, chosen once when this network's own read lists it, and never over a choice made.
   const hinted = useRef(false)
   // Changed on purpose 2026-11-02 (review M1): never one with a token that passes for one of the network's own currencies
@@ -857,9 +884,10 @@ export function NetworkPoolPicker({
       {/* Review M1: the link's pool refused, said as StageToken says a Robinhood Chain link's (data-preselect-withdrawn). */}
       {refusedHint && pending === null && hintRefused && <p className="text-caption text-fg-muted" data-preselect-withdrawn="">{hintRefused}</p>}
       {(result.kind === 'loading' || waiting || readingAgain) && <RestingCreateRows />}
+      {/* O-16 (2026-11-06): Robinhood Chain's line in New position too; the reason only in the live region above. */}
       {result.kind === 'failed' && !readingAgain && (
         <p className="px-1 py-4 text-center text-body text-fg-muted" data-pools-unavailable={result.code}>
-          {browse ? COPY.picker.poolsNone : result.reason}
+          {COPY.picker.poolsNone}
         </p>
       )}
       {result.kind === 'ok' && !waiting && options.length === 0 && (

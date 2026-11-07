@@ -6,7 +6,8 @@ import { IconPlus } from '../../components/icons'
 import { EmptyState, LinkButton, Skeleton } from '../../components/ui'
 import { useCreatedPositions, useKeyedLatest } from '../lists/hooks'
 import { OWN_PORTFOLIO } from '../lists/source'
-import { gateOpen, useGate } from './gate'
+import { ELYSIUM_LIVE, ELYSIUM_V2_ID } from '../../lib/elysiumIdentity'
+import { gateOpen, useElysiumGate, useGate } from './gate'
 import { setupIntent, setupKey } from './intent'
 import { SetupFlow, type SetupGates } from './SetupFlow'
 import { setupPositions, setupRetryDelay, setupWaiting, useSetupWaitOver } from './setupPositions'
@@ -19,10 +20,13 @@ export default function SetupEntry({ owner, intent }: {
   const vault4663 = useGate('vault', 4663), exit4663 = useGate('autoExit', 4663)
   const vault8453 = useGate('vault', 8453), exit8453 = useGate('autoExit', 8453)
   const vault42161 = useGate('vault', 42161), exit42161 = useGate('autoExit', 42161)
-  const gates: SetupGates = { 4663: vault4663, 8453: vault8453, 42161: vault42161 }
-  const exitGates: SetupGates = { 4663: exit4663, 8453: exit8453, 42161: exit42161 }
-  const gate = [vault4663, vault8453, vault42161].find(gateOpen) ?? null
-  const pending = [vault4663, vault8453, vault42161].some((value) => value === null)
+  // Changed on purpose 2026-11-07 (Elysium as a fourth V2 chain): Elysium's gates, where the build serves it.
+  const vault99901 = useElysiumGate('vault'), exit99901 = useElysiumGate('autoExit')
+  const gates = { 4663: vault4663, 8453: vault8453, 42161: vault42161, ...(ELYSIUM_LIVE ? { [ELYSIUM_V2_ID]: vault99901 } : {}) } as SetupGates
+  const exitGates = { 4663: exit4663, 8453: exit8453, 42161: exit42161, ...(ELYSIUM_LIVE ? { [ELYSIUM_V2_ID]: exit99901 } : {}) } as SetupGates
+  const vaults = ELYSIUM_LIVE ? [vault4663, vault8453, vault42161, vault99901] : [vault4663, vault8453, vault42161]
+  const gate = vaults.find(gateOpen) ?? null
+  const pending = vaults.some((value) => value === null)
   const [own] = useState(() => setupIntent(typeof window === 'undefined' ? `#/sequence/${intent.mode ?? ''}/${intent.tokenId ?? ''}` : window.location.hash))
   const wallet = owner.toLowerCase()
   const answer = useKeyedLatest(OWN_PORTFOLIO, gateOpen(gate) ? wallet : null)

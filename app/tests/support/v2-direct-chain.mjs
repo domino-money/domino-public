@@ -29,6 +29,8 @@ const PROFILES = {
   4663: require('../../../api-contracts/v2/chains/robinhood-4663.json'),
   8453: require('../../../api-contracts/v2/chains/base-8453.json'),
   42161: require('../../../api-contracts/v2/chains/arbitrum-42161.json'),
+  // Added 2026-11-07 (Elysium's screens): Elysium as the builds forcing it on serve it, Uniswap v4 alone (no v3 here).
+  99901: require('../fixtures/v2-chains/elysium-99901.json'),
 };
 export const OWNER_KEY = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
 const lower = (value) => String(value).toLowerCase();
@@ -61,10 +63,10 @@ export function createDirectChain({ chainId = 4663, key = OWNER_KEY, v4 = [], v3
   const profile = PROFILES[chainId];
   const at = {
     v4PositionManager: lower(profile.uniswap.v4.positionManager), v4StateView: lower(profile.uniswap.v4.stateView), poolManager: lower(profile.uniswap.v4.poolManager),
-    v3PositionManager: lower(profile.uniswap.v3.positionManager), v3Factory: lower(profile.uniswap.v3.factory),
+    v3PositionManager: profile.uniswap.v3 ? lower(profile.uniswap.v3.positionManager) : null, v3Factory: profile.uniswap.v3 ? lower(profile.uniswap.v3.factory) : null,
   };
-  const code = new Map([[at.v4PositionManager, CODE.v4PositionManager], [at.v4StateView, CODE.v4StateView], [at.v3PositionManager, CODE.v3PositionManager], [at.v3Factory, CODE.v3Factory]]);
-  const tiers = new Map(Object.entries({ ...profile.uniswap.v3.tickSpacingByFee, ...(chainId === 8453 ? { 200: 4, 300: 6, 400: 8 } : {}) }).map(([fee, spacing]) => [Number(fee), spacing]));
+  const code = new Map([[at.v4PositionManager, CODE.v4PositionManager], [at.v4StateView, CODE.v4StateView], ...(at.v3PositionManager ? [[at.v3PositionManager, CODE.v3PositionManager], [at.v3Factory, CODE.v3Factory]] : [])]);
+  const tiers = new Map(Object.entries({ ...(profile.uniswap.v3?.tickSpacingByFee ?? {}), ...(chainId === 8453 ? { 200: 4, 300: 6, 400: 8 } : {}) }).map(([fee, spacing]) => [Number(fee), spacing]));
   const poolAddress = (token0, token1, fee) => lower(getContractAddress({ opcode: 'CREATE2', from: profile.uniswap.v3.factory, salt: keccak256(encodeAbiParameters([{ type: 'address' }, { type: 'address' }, { type: 'uint24' }], [token0, token1, fee])), bytecodeHash: profile.uniswap.v3.poolInitCodeHash }));
   let world = {
     eth: new Map([[owner, 10n ** 19n]]),

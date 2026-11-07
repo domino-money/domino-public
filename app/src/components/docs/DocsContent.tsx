@@ -4,6 +4,7 @@ import { docGroupOf, tocOf } from '../../lib/docs/registry'
 import { SHOTS, type Shot } from '../../lib/docs/shots'
 import type { Block, DocChain, DocPage, DocSection, Inline } from '../../lib/docs/types'
 import { ROBINHOOD_EXPLORER } from '../../config/chainIdentity'
+import { ELYSIUM_EXPLORER, ELYSIUM_EXPLORER_NAME, ELYSIUM_LIVE, ELYSIUM_V2_ID } from '../../lib/elysiumIdentity'
 import { RoadmapPill } from '../automate/RoadmapPill'
 import { docsHref } from '../explore/routes'
 import { IconInfo } from '../icons'
@@ -21,12 +22,15 @@ const PHONE_MEDIA = '(max-width: 639px)'
  * Where an address row opens (2026-10-30, QA round 2, the owner's decision on N24: a small explorer link beside each
  * address on Contracts). Links only, a person's own click, never a read: the hosts are v2/explorers.ts's, kept here so the
  * docs chunk does not carry V2's chain profiles. Domino's own contracts open Robin Etherscan on Robinhood Chain, whose
- * Blockscout shows them as bytecode; every other address opens Blockscout there.
+ * Blockscout shows them as bytecode; every other address opens Blockscout there. Changed on purpose 2026-11-07 (Elysium
+ * as a fourth V2 chain): Elysium's explorer where it is live and has one (lib/elysiumIdentity.ts ELYSIUM_EXPLORER, none
+ * known today); a row's network with no explorer here draws no link, never another network's.
  */
-const EXPLORERS: Readonly<Record<DocChain, { name: string; host: string }>> = {
+const EXPLORERS: Readonly<Partial<Record<number, { name: string; host: string }>>> = {
   4663: { name: 'Robinhood explorer', host: ROBINHOOD_EXPLORER },
   8453: { name: 'Basescan', host: 'https://basescan.org' },
   42161: { name: 'Arbiscan', host: 'https://arbiscan.io' },
+  ...(ELYSIUM_LIVE && ELYSIUM_EXPLORER !== null ? { [ELYSIUM_V2_ID]: { name: ELYSIUM_EXPLORER_NAME, host: ELYSIUM_EXPLORER } } : {}),
 }
 const ROBIN_ETHERSCAN = 'https://robin.etherscan.io'
 
@@ -35,14 +39,16 @@ function ExplorerLinks({ name, address, chains, domino }: { name: string; addres
   return (
     <span className="dm-docs-addr-links">
       {chains.map((chain) => {
+        const explorer = EXPLORERS[chain]
+        if (!explorer) return null
         const etherscan = domino && chain === 4663
         // Changed on purpose 2026-10-31 (QA round 2 follow-ups, R4): a link opening Robin Etherscan says so, as
         // Non-custodial names it; "Robinhood explorer" stays the name of Blockscout there.
-        const label = etherscan ? 'Robin Etherscan' : EXPLORERS[chain].name
+        const label = etherscan ? 'Robin Etherscan' : explorer.name
         return (
           <a
             key={chain}
-            href={`${etherscan ? ROBIN_ETHERSCAN : EXPLORERS[chain].host}/address/${address}`}
+            href={`${etherscan ? ROBIN_ETHERSCAN : explorer.host}/address/${address}`}
             target="_blank"
             rel="noreferrer noopener"
             className="dm-docs-link"

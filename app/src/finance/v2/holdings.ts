@@ -13,6 +13,9 @@
  * read-only module admitted by tests/session.source-guard.test.mjs for the one read method it names.
  */
 
+import { ELYSIUM_FUNDS_FROM, ELYSIUM_NAME, ELYSIUM_V2_ID } from '../../lib/elysiumIdentity'
+import { v2Chain } from '../../v2/chains'
+
 /** A network the scan looks at, with the tokens read there. Addresses lowercase; address(0) is the chain's ETH. */
 export interface OriginCandidate {
   chainId: number
@@ -28,11 +31,26 @@ const usdc = (address: string) => Object.freeze({ address, symbol: 'USDC', decim
 const USDG = Object.freeze({ address: '0x5fc5360d0400a0fd4f2af552add042d716f1d168', symbol: 'USDG', decimals: 6 })
 
 /**
+ * Elysium as an origin (added 2026-11-07, Elysium's screens): only where funds can come from it (lib/elysiumIdentity.ts
+ * ELYSIUM_FUNDS_FROM: Elysium is live and crosschain-v1 pins Relay or Across for chain 99901; false on 6 Nov 2026), last,
+ * with its HYPE, WHYPE and dollar token from its own profile (src/v2/chains.ts). None anywhere else, so no build where
+ * funds cannot come from it ever looks there.
+ */
+function elysiumOrigin(): OriginCandidate[] {
+  if (!ELYSIUM_FUNDS_FROM) return []
+  const chain = v2Chain(ELYSIUM_V2_ID)
+  const stable = chain.chargeCurrencies.find((currency) => currency.rank === 1 && currency.address !== ZERO)
+  const own = (address: string, symbol: string, decimals: number) => Object.freeze({ address: address.toLowerCase(), symbol, decimals })
+  return [{ chainId: ELYSIUM_V2_ID, name: ELYSIUM_NAME, tokens: [own(ZERO, chain.nativeSymbol, 18), own(chain.wrappedNative.address, chain.wrappedNative.symbol, chain.wrappedNative.decimals), ...(stable ? [own(stable.address, stable.symbol, stable.decimals)] : [])] }]
+}
+
+/**
  * The networks looked at while the origins listing cannot be asked: the spec's three (spec F7 §3.1: a deposit arrives on
  * Robinhood Chain, Base or Arbitrum One, from any other), their WETH, USDC and USDG the chain profiles' own
  * (api-contracts/v2/chains/*.json), then Ethereum and OP Mainnet, every one ETH-native. The destination itself is never
  * looked at (Holdings.tsx). Changed on purpose 2026-10-05 (the owner: a position on Base or Arbitrum One funded from the
  * other two networks too): Robinhood Chain is an origin as well, for a deposit that arrives on Base or Arbitrum One.
+ * Changed on purpose 2026-11-07 (Elysium's screens): and Elysium, last, only where funds can come from it (elysiumOrigin).
  */
 export const CANDIDATE_ORIGINS: readonly OriginCandidate[] = Object.freeze([
   { chainId: 4663, name: 'Robinhood Chain', tokens: [ETH, weth('0x0bd7d308f8e1639fab988df18a8011f41eacad73'), USDG] },
@@ -40,6 +58,7 @@ export const CANDIDATE_ORIGINS: readonly OriginCandidate[] = Object.freeze([
   { chainId: 8453, name: 'Base', tokens: [ETH, weth('0x4200000000000000000000000000000000000006'), usdc('0x833589fcd6edb6e08f4c7c32d4f71b54bda02913')] },
   { chainId: 42161, name: 'Arbitrum One', tokens: [ETH, weth('0x82af49447d8a07e3bd95bd0d56f35241523fbab1'), usdc('0xaf88d065e77c8cc2239327c5edb3a432268e5831')] },
   { chainId: 10, name: 'OP Mainnet', tokens: [ETH, weth('0x4200000000000000000000000000000000000006'), usdc('0x0b2c639c533813f4aa9d7837caf62653d097ff85')] },
+  ...elysiumOrigin(),
 ])
 
 /** The connected wallet as this module takes it: the owner whose balances are read, and the wallet's own provider. */

@@ -6,6 +6,7 @@ import { Segmented, Select } from '../../components/ui'
 import { rootScale } from '../../lib/rootScale'
 import { awayShort } from '../../lib/create/plain'
 import { priceText, rangeBothWays } from '../../v2/plan/present'
+import { inChainCurrency, v2Chain } from '../../v2/chains'
 import { ZERO_ADDRESS, type Address } from '../../v2/types'
 import { RANGE_PRESETS, type Share } from './constants'
 import { COPY } from './copy'
@@ -156,7 +157,7 @@ export function AmountsField({ chainId, position, book, value, onChange }: { cha
           )
         })}
       </div>
-      {tokens.some((token) => token === ZERO_ADDRESS) && <Note>{COPY.review.ethDirect}</Note>}
+      {tokens.some((token) => token === ZERO_ADDRESS) && <Note>{inChainCurrency(COPY.review.ethDirect, v2Chain(chainId))}</Note>}
     </div>
   )
 }

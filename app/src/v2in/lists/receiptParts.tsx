@@ -4,6 +4,7 @@ import { CopyButton } from '../../components/read/screens/CopyButton'
 import { v2TxUrl } from '../../v2/explorers'
 import { IconCheck, IconChevronDown } from '../../components/icons'
 import { Pill } from '../../components/ui'
+import { chainMarkProps } from '../../lib/chainMarks'
 import { shortDate, shortTime } from '../../lib/format/time'
 import { chainNotes, effectTitled, partialSentence, type ShownReceipt } from './model'
 import { RECEIPT_WORDS, receiptStatus } from './words'
@@ -64,7 +65,7 @@ export function ReceiptRow({ view, effects = [view], showGas = true, children, p
     ? positionItem.successor ? `Position #${positionItem.successor.tokenId} opened automatically` : `Fees added back · #${positionItem.compounded.tokenId}`
     : view.what.includes('raw units') ? view.what.split(':')[0] : view.what
   const raw = view.amount?.includes('raw units') === true
-  return <li data-v2-receipt={view.id} data-v2-receipt-kind={view.kind} data-v2-receipt-chain={view.chainId} data-v2-finality={finalized ? 'finalized' : confirmed ? 'included' : 'sent'} data-v2-receipt-tone={outside(effects) ? 'neutral' : undefined}
+  return <li data-v2-receipt={view.id} data-v2-receipt-kind={view.kind} data-v2-receipt-chain={view.chainId} {...chainMarkProps(view.chainId)} data-v2-finality={finalized ? 'finalized' : confirmed ? 'included' : 'sent'} data-v2-receipt-tone={outside(effects) ? 'neutral' : undefined}
     data-position-activity-item={positionItem?.id} data-position-activity-action={positionItem?.kind === 's1_action' ? positionItem.action : undefined} data-receipt-effects={effects.length}>
     <details className="dm-rcpt-row dm-rcpt-operation">
       <summary>
@@ -72,7 +73,7 @@ export function ReceiptRow({ view, effects = [view], showGas = true, children, p
           <span className="dm-receipt-title">{confirmed && !claim && <span className="dm-receipt-check" role="img" aria-label={RECEIPT_WORDS.confirmed}><IconCheck size={14} /></span>}<span>{what}</span></span>
           {(!confirmed || claim) && <Pill tone={claim ? 'wait' : 'neutral'} dot className="dm-receipt-exception">{claim ? 'Delivery deferred' : RECEIPT_WORDS.confirming}</Pill>}
           {/* (2026-10-15, pack 8): a session receipt whose block time the money client's read did not name draws no time (never this page's clock); the network as the setup's session row says it. */}
-          <span className="dm-activity-time">{view.at === null ? view.chainId !== 4663 && <span className="dm-activity-chain" data-activity-chain={view.chainId}>{view.chain}</span> : <><time dateTime={new Date(view.at * 1000).toISOString()}>{timeWords(view.at)}</time>{view.chainId !== 4663 && <> · <span className="dm-activity-chain" data-activity-chain={view.chainId}>{view.chain}</span></>}</>}</span>
+          <span className="dm-activity-time">{view.at === null ? view.chainId !== 4663 && <span className="dm-activity-chain" data-activity-chain={view.chainId} {...chainMarkProps(view.chainId)}>{view.chain}</span> : <><time dateTime={new Date(view.at * 1000).toISOString()}>{timeWords(view.at)}</time>{view.chainId !== 4663 && <> · <span className="dm-activity-chain" data-activity-chain={view.chainId} {...chainMarkProps(view.chainId)}>{view.chain}</span></>}</>}</span>
         </span>
         {/* (QA round 2, SWEEP) A dash is a dash: no title saying token details are unavailable (the exact amounts are in the receipt). */}
         <span className="dm-rcpt-amount tnum" data-v2-receipt-amount="">{raw ? '—' : view.amount ? <AmountInks text={view.amount} /> : ''}</span>

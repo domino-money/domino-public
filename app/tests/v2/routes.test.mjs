@@ -77,7 +77,11 @@ test('end to end, every state of both routes, through the real forwarder and Wor
   for (const [route, env, expected] of cases) {
     const seen = [];
     assert.deepEqual(await askV2Route(route, pageGet(env, seen)), expected, `${route} ${JSON.stringify(Object.keys(env))} ${JSON.stringify(expected)}`);
-    assert.equal(seen.length, 1);
+    // Changed on purpose 2026-11-06 (read-v6 1.2.0-rc.1's window, src/v2/routes.ts): the read route is asked in 1.2.0-rc.1
+    // first; a Worker that does not speak it (this branch's, which refuses it with a 502) is asked again in 1.1.0-rc.1.
+    const versions = seen.map(({ options }) => options.headers[V2_ROUTE_SPECS[route].header]);
+    if (route === 'readV6') assert.ok(versions.length === 1 ? versions[0] === '1.2.0-rc.1' : versions.join() === '1.2.0-rc.1,1.1.0-rc.1', versions.join());
+    else assert.deepEqual(versions, [V2_ROUTE_SPECS[route].version]);
   }
   assert.deepEqual(upstream, []);
 });
@@ -88,9 +92,13 @@ test('askV2Route sends one GET of the route\'s capabilities, in its contract\'s 
     ['crosschain', '/api/crosschain/v1/capabilities', 'X-Domino-Crosschain-Contract', XC_VERSION]]) {
     const seen = [];
     const controller = new AbortController();
-    await askV2Route(route, async (...args) => { seen.push(args); return { kind: 'network' }; }, controller.signal);
-    assert.equal(seen.length, 1);
-    const [askedPath, options] = seen[0];
+    // Changed on purpose 2026-11-06: read-v6's 1.2.0-rc.1 first, then its own version, as before (src/v2/routes.ts), once
+    // its Worker refused the first in its own version (review F2: a GET no Worker answered is not asked twice).
+    const refusal = { kind: 'reply', reply: { status: 502, opaqueRedirect: false, contentType: 'application/json', contractHeader: V6_VERSION, requestIdHeader: null, retryAfterHeader: null, body: { kind: 'text', text: '{"error":"upstream_contract_mismatch"}' } } };
+    await askV2Route(route, async (...args) => { seen.push(args); return route === 'readV6' && seen.length === 1 ? refusal : { kind: 'network' }; }, controller.signal);
+    assert.equal(seen.length, route === 'readV6' ? 2 : 1);
+    const [askedPath, options] = seen.at(-1);
+    if (route === 'readV6') assert.deepEqual(seen[0][1].headers, { Accept: 'application/json', [header]: '1.2.0-rc.1' });
     assert.equal(askedPath, path);
     assert.deepEqual(options.headers, { Accept: 'application/json', [header]: version });
     assert.equal(options.contractHeader, header);
@@ -190,11 +198,15 @@ test('the probe keeps a settled answer a minute (the read route said on: five), 
   let clock = 1_000;
   const answers = { readV6: [v6(V6_ON)], plan: [{ kind: 'network' }, plan(PLAN_LIVE)] };
   const asked = [];
-  const probe = createV2RouteProbe({ now: () => clock, get: async (path) => {
+  // Changed on purpose 2026-11-06: the read Worker answers in the version asked, as it does in read-v6 1.2.0-rc.1's window.
+  const inVersion = (result, version) => (result.kind === 'reply' && version !== V6_VERSION
+    ? json({ ...JSON.parse(result.reply.body.text), contractVersion: version }, { status: result.reply.status, contractHeader: version }) : result);
+  const probe = createV2RouteProbe({ now: () => clock, get: async (path, options) => {
     const route = path.includes('/read/v6/') ? 'readV6' : 'plan';
     asked.push(route);
     await Promise.resolve();
-    return answers[route].length > 1 ? answers[route].shift() : answers[route][0];
+    const answer = answers[route].length > 1 ? answers[route].shift() : answers[route][0];
+    return route === 'readV6' ? inVersion(answer, options.headers['X-Domino-Read-Contract']) : answer;
   } });
   // Two asks at once: one GET.
   const [first, second] = await Promise.all([probe.state('readV6'), probe.state('readV6')]);

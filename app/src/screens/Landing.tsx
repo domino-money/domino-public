@@ -2,7 +2,7 @@ import { useEffect, useRef, type ReactNode } from 'react'
 import { IconTile } from '../components/figures'
 import { MarketsTable } from '../components/MarketsTable'
 import { RangeSimulator } from '../components/RangeSimulator'
-import { FUNDING_NETWORKS, HomeCapabilities, NetworkMark } from '../components/home/HomeCapabilities'
+import { FUNDING_ROW, HomeCapabilities, NetworkMark, POSITION_ROW } from '../components/home/HomeCapabilities'
 import { FeatureCards } from '../components/home/FeatureCards'
 import { HeroArt } from '../components/home/HeroArt'
 import { useHomeLight } from '../components/home/HomeLight'
@@ -14,6 +14,7 @@ import { GlyphKey, GlyphLoop, GlyphRange, GlyphValue } from '../components/home/
 import { useInView } from '../components/home/Vignettes'
 import { IconChevronRight } from '../components/icons'
 import { Display, LinkButton, PageShell, cx } from '../components/ui'
+import { ELYSIUM_LIVE } from '../lib/elysiumIdentity'
 import { useRouteTitle } from '../lib/routeTitle'
 
 /*
@@ -99,8 +100,16 @@ function Hero() {
             Home's own section on bringing funds (same look), and the group's name is announced. */}
         <div className="dm-hero-funding dm-k-up2" role="group" aria-label="Networks to bring funds from">
           <span>Bring funds from</span>
-          <ul>{FUNDING_NETWORKS.map(network => <li key={network}><a href="#/#funding"><NetworkMark network={network} variant="v4" /><span>{network}</span></a></li>)}</ul>
+          <ul>{FUNDING_ROW.map(network => <li key={network}><a href="#/#funding"><NetworkMark network={network} variant="v4" /><span>{network}</span></a></li>)}</ul>
         </div>
+        {/* Added 2026-11-07 (the owner's order of 6 Nov: Elysium's mark on Home): where positions open, with Elysium last, in
+            the funding row's own chips; each leads to New position. Only where the build serves Elysium (POSITION_ROW).
+            Changed on purpose 2026-11-07 (review finding E/P9): behind the build's own fact too, so a build where Elysium is
+            off carries none of the row (its length alone does not fold). */}
+        {ELYSIUM_LIVE && POSITION_ROW.length > 0 && <div className="dm-hero-funding dm-hero-networks dm-k-up2" role="group" aria-label="Networks to open positions on">
+          <span>Open positions on</span>
+          <ul>{POSITION_ROW.map(network => <li key={network}><a href="#/new"><NetworkMark network={network} variant="v4" /><span>{network}</span></a></li>)}</ul>
+        </div>}
       </div>
       <div className="dm-hero-band">
         <HeroArt running={inView} />

@@ -1,5 +1,5 @@
 import type { ActivityResponse } from 'api-contracts/read-v6/types'
-import { isV2ChainId, v2Chain } from '../../v2/chains'
+import { isV2ChainId, positionManagerOf, positionManagerOrNull, v2Chain } from '../../v2/chains'
 import type { V2ChainId } from '../../v2/types'
 import type { ActivityPosition } from './activityModel'
 
@@ -72,7 +72,7 @@ export function validSessionReceipt(value: unknown, wallet: string, now: number)
   if (!value || typeof value !== 'object') return false
   const item = value as SessionReceipt
   return address(item.wallet) && item.wallet.toLowerCase() === wallet && isV2ChainId(item.chainId) && (item.dex === 3 || item.dex === 4)
-    && typeof item.positionManager === 'string' && item.positionManager.toLowerCase() === v2Chain(item.chainId).uniswap[item.dex === 3 ? 'v3' : 'v4'].positionManager
+    && typeof item.positionManager === 'string' && item.positionManager.toLowerCase() === positionManagerOrNull(v2Chain(item.chainId), item.dex)
     && typeof item.hash === 'string' && HASH.test(item.hash) && typeof item.blockHash === 'string' && HASH.test(item.blockHash)
     && Number.isSafeInteger(item.block) && item.block > 0 && (item.at === null || (Number.isSafeInteger(item.at) && item.at > 0))
     && Number.isSafeInteger(item.observedAt) && item.observedAt <= now && now - item.observedAt < KEEP
@@ -212,7 +212,7 @@ export function sessionReceiptOfZap(input: { wallet: string; chainId: V2ChainId;
   const tokens = lines.flatMap((line) => line.kind === 'swapped' ? [line.tokenIn, line.tokenOut] : line.kind === 'paid-in' || line.kind === 'returned' ? [line.token] : line.amounts.map((entry) => entry.token))
   const previous = read.summary.previousTokenId > 0n && read.summary.previousTokenId !== read.summary.tokenId ? read.summary.previousTokenId.toString() : null
   return {
-    wallet: input.wallet.toLowerCase(), chainId: input.chainId, dex: input.dex, positionManager: v2Chain(input.chainId).uniswap[input.dex === 3 ? 'v3' : 'v4'].positionManager,
+    wallet: input.wallet.toLowerCase(), chainId: input.chainId, dex: input.dex, positionManager: positionManagerOf(v2Chain(input.chainId), input.dex),
     hash: input.hash.toLowerCase(), block: Number(receipt.blockNumber), blockHash: receipt.blockHash.toLowerCase(), at: atOf(receipt), observedAt: input.now ?? Date.now(),
     state: receipt.state, action, tokenId: read.summary.tokenId.toString(), previousTokenId: previous, lines,
     fee: read.fee ? { token: read.fee.token.toLowerCase(), amount: read.fee.amount.toString() } : null,
@@ -229,7 +229,7 @@ export function sessionReceiptOfDirect(input: { wallet: string; chainId: V2Chain
     ? [{ kind: 'collected', tokenId, amounts: input.paid.map((entry) => ({ token: entry.token.toLowerCase(), amount: entry.amount!.toString() })) }]
     : input.paid.map((entry) => ({ kind: 'returned' as const, token: entry.token.toLowerCase(), amount: entry.amount === null ? null : entry.amount.toString() }))
   return {
-    wallet: input.wallet.toLowerCase(), chainId: input.chainId, dex: input.dex, positionManager: v2Chain(input.chainId).uniswap[input.dex === 3 ? 'v3' : 'v4'].positionManager,
+    wallet: input.wallet.toLowerCase(), chainId: input.chainId, dex: input.dex, positionManager: positionManagerOf(v2Chain(input.chainId), input.dex),
     hash: input.hash.toLowerCase(), block: Number(receipt.blockNumber), blockHash: receipt.blockHash.toLowerCase(), at: atOf(receipt), observedAt: input.now ?? Date.now(),
     state: receipt.state, action: input.kind === 'collect' ? 'collect' : 'exit', tokenId, previousTokenId: null, lines, fee: null,
     gas: gasOf(input.wallet, receipt), tokens: namesOf(input.tokens, input.paid.map((entry) => entry.token).filter((token) => token !== ZERO)),

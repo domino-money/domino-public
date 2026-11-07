@@ -6,6 +6,8 @@
  * sees New position, on Robinhood Chain (no network choice: the owner, 2026-10-02). The Uniswap version is never a word
  * on screen (the lists' rule, lists/parts.tsx), apart from the pool finder's own control, which finds a pool by it.
  */
+import { ELYSIUM_LIVE } from '../../lib/elysiumIdentity'
+
 export const JOURNEY = {
   step: {
     /** The pool step's lead on a network where the person names the pool. */
@@ -275,3 +277,16 @@ export const JOURNEY = {
     turnOn: 'Turn on',
   },
 } as const
+
+/**
+ * The pool step's two leads on a network with Uniswap v4 alone, where there is no version to pick (added 2026-11-07,
+ * Elysium's screens): the finder's own line, and "Create a new pool (advanced)"'s (review finding P5: it still named "the
+ * Uniswap version" there). Elysium is the one such network, so this is null in a build where it is off, which then carries
+ * neither sentence (review finding E); every other network says JOURNEY.pool.findLead and advancedLead.
+ */
+export const ONE_VERSION = ELYSIUM_LIVE
+  ? Object.freeze({
+      findLead: 'Pick two tokens and the fee. The pool is read through your wallet.',
+      advancedLead: "A pool Domino doesn't list yet, or one that doesn't exist: pick its two tokens and the fee, and Domino reads it through your wallet. A pool with no price yet can be created here.",
+    })
+  : null

@@ -1,4 +1,4 @@
-import { v2Chain } from '../../../v2/chains'
+import { chainHasDex, isV2ChainId, v2Chain } from '../../../v2/chains'
 import { feeTierText } from '../../../v2/plan/present'
 import { ZERO_ADDRESS, type Address, type Dex, type Hex, type PoolRef, type V2ChainId } from '../../../v2/types'
 import { JOURNEY_HOOKED_POOLS_SHOWN, V4_NEW_POOL_TIERS } from '../constants'
@@ -50,7 +50,8 @@ export function poolOf(dex: Dex, a: Address, b: Address, fee: number, tickSpacin
  */
 export function tiersOf(chainId: V2ChainId, dex: Dex): { fee: number; tickSpacing: number }[] {
   if (dex === 4) return [...V4_NEW_POOL_TIERS]
-  const table = v2Chain(chainId).uniswap.v3.tickSpacingByFee
+  // None on a chain without v3 (Elysium launches with v4 only): no v3 tier is ever offered there.
+  const table = v2Chain(chainId).uniswap.v3?.tickSpacingByFee ?? {}
   return Object.entries(table).map(([fee, tickSpacing]) => ({ fee: Number(fee), tickSpacing })).sort((x, y) => x.fee - y.fee)
 }
 
@@ -64,6 +65,13 @@ export function samePool(a: PoolRef, b: PoolRef): boolean {
 
 /** A key for a pool on a network: chain, DEX, currencies, fee, spacing. */
 export const poolKey = (chainId: V2ChainId, pool: PoolRef): string => `${chainId}:${pool.dex}:${lower(pool.currency0)}:${lower(pool.currency1)}:${pool.fee}:${pool.tickSpacing}`
+
+/**
+ * Whether a pool's chips name its DEX ("Uniswap", ../parts.tsx PoolChips): only a v3 pool on Robinhood Chain, where every
+ * listed pool is v4 and carries none. Changed on purpose 2026-11-06 (the replica rule, O-17): never on Base or Arbitrum
+ * One, whose New position Review said "Uniswap" on every pool where Robinhood Chain's says nothing.
+ */
+export const dexChipShown = (chainId: V2ChainId, dex: Dex): boolean => chainId === 4663 && dex !== 4
 
 /** "Uniswap v3" / "Uniswap v4": for a `title`, a data attribute, and the pool finder's own control alone (never a word on screen otherwise). */
 export const dexName = (dex: Dex): string => `Uniswap v${dex}`
@@ -106,7 +114,10 @@ export function poolFromList(option: {
   const [a, b] = option.currencies
   const dex: Dex = option.dex ?? 4
   const chainId = (a.chainId ?? 4663) as V2ChainId
-  if (![4663, 8453, 42161].includes(chainId) || (b.chainId ?? 4663) !== chainId) return null
+  // Any V2 chain the build serves (Changed on purpose 2026-11-07, Elysium's screens: the three were written out).
+  if (!isV2ChainId(chainId) || (b.chainId ?? 4663) !== chainId) return null
+  // A pool of a version the network lacks (v3 on a chain with v4 alone) is never offered.
+  if (!chainHasDex(chainId, dex)) return null
   const pool = poolOf(dex, a.address as Address, b.address as Address, option.feePips, option.tickSpacing)
   if (!pool || pool.currency0 !== lower(a.address)) return null
   if (!/^0x[0-9a-fA-F]{64}$/.test(option.key)) return null

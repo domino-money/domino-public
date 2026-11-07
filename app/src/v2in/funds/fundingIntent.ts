@@ -5,6 +5,7 @@ import type { CrosschainRequests, QuotePlan } from '../../v2/crosschain/types'
 import { SEND_MARGIN_MS } from '../../v2/crosschain/steps'
 import { quoteRequestOf, sendable, sentRaw } from './model'
 import { FUNDS_DEFAULT_SLIPPAGE_BPS } from './constants'
+import { ELYSIUM_FUNDS_FROM, ELYSIUM_V2_ID } from '../../lib/elysiumIdentity'
 
 /** Quotes are memory-only. Storage keeps intent and public tracking references, never signing material. */
 export interface FundingLeg {
@@ -268,6 +269,11 @@ const RAW = /^[1-9][0-9]{0,77}$/
 const ZERO = '0x0000000000000000000000000000000000000000'
 export const ETHEREUM_RETRY_RESERVE = 6_000_000_000_000_000n
 const STATES = new Set<FundingLeg['state']>(['ready', 'sending', 'unknown', 'sent', 'settled', 'stopped'])
+/**
+ * The origins a stored leg may name: Ethereum, OP Mainnet and Domino's three, and Elysium only where funds can come from it
+ * (lib/elysiumIdentity.ts ELYSIUM_FUNDS_FROM; added 2026-11-07). Destinations stay crosschain's three (FundingIntent).
+ */
+const ORIGINS: readonly number[] = ELYSIUM_FUNDS_FROM ? [1, 10, 4663, 8453, 42161, ELYSIUM_V2_ID] : [1, 10, 4663, 8453, 42161]
 export const fundingStorageKey = (owner: string, destination: number) => `domino.funding.v1:${owner.toLowerCase()}:${destination}`
 
 /** Stored values are untrusted hints. A restored sending leg is UNKNOWN, never automatically resent. */
@@ -280,7 +286,7 @@ export function parseFunding(raw: string | null, owner: string, destination: num
       typeof value.scope !== 'string' || value.scope.length > 4_000 || !RAW.test(value.requiredRaw) ||
       !Number.isFinite(value.createdAt) || !Array.isArray(value.legs) || value.legs.length < 1 || value.legs.length > 8) return null
     if (value.legs.some((leg) => typeof leg.id !== 'string' || leg.id.length > 150 || !Number.isSafeInteger(leg.originChainId) ||
-      ![1, 10, 4663, 8453, 42161].includes(leg.originChainId) || leg.originChainId === destination || !ADDRESS.test(leg.originToken) ||
+      !ORIGINS.includes(leg.originChainId) || leg.originChainId === destination || !ADDRESS.test(leg.originToken) ||
       typeof leg.symbol !== 'string' || leg.symbol.length > 24 || !Number.isInteger(leg.decimals) || leg.decimals < 0 || leg.decimals > 36 ||
       !RAW.test(leg.maxInputRaw) || !RAW.test(leg.minimumOutputRaw) || !STATES.has(leg.state) || typeof leg.destinationGas !== 'boolean' ||
       (leg.depositTxHash !== null && !HASH.test(leg.depositTxHash)))) return null

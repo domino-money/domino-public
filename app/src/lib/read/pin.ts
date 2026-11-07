@@ -224,7 +224,10 @@ export const READ_V2_PIN = {
   // Changed on purpose (data) 2026-11-04 (launch round P3): read_api.py, read_gateway.py, bridge_http.py,
   // bridge_identity.py, hop_log.py and bridge/src/worker.mjs: listed preview origins in the Worker and the listeners,
   // and read-v6's position-fees window; no read-v2 route, schema, reason code or version moved.
-  manifestSha256: '739db3dff7d5cf8804e1f9d594c7057bf3d49f3083c3ca3b0d47fc7f0fdb8fe7',
+  // Changed on purpose (data) 2026-11-07 (W-01, the read Worker): bridge/src/worker.mjs answers capabilities per
+  // requested read-v6 version and serves position-fees only in 1.2.0-rc.1, and its capabilities name read-v6's own
+  // chain list; no read-v2 route, schema, reason code or version moved.
+  manifestSha256: 'e4754f9bcd7e1f8f585f97be74d5c7ac7983f3f02891c5d22636e71e054a040c',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */

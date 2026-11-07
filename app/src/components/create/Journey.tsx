@@ -34,6 +34,8 @@ import {
   validateBudget,
 } from '../../lib/create/journey'
 import { useOtherChains } from '../../lib/create/otherChains'
+import { ELYSIUM_LIVE, fundsBroughtTo } from '../../lib/elysiumIdentity'
+import { nativeWords } from '../../lib/nativeWords'
 import { payFunding } from '../../lib/create/payFunding'
 import type { PayFacts } from '../../lib/create/poolPrices'
 import { lacksOne, reviewPlan } from '../../lib/create/reviewPlan'
@@ -738,10 +740,17 @@ export function Journey({
   }, [current, creating, balanceKey, balanceRevision, unreadHold])
   // Changed on purpose 2026-10-30 (QA round 2 review, the sweep): a balance not read yet holds Continue as a balance being
   // checked, never as one that "could not be checked"; it is read again quietly (RETRY_MS, above).
+  // Changed on purpose 2026-11-07 (review finding P1): on a network funds are not brought to (Elysium, where the build
+  // serves it: lib/elysiumIdentity.ts fundsBroughtTo), nothing is offered below the amounts but paying with another token
+  // the wallet holds there (`pay`, the funding line's own facts); without one, the reason is Robinhood Chain's own way on.
+  // Changed on purpose 2026-11-07 (review finding P6): the network fee's reason in that network's currency (HYPE on Elysium).
+  const poolChainId = state.pool?.currencies[0].chainId
+  const noBringing = ELYSIUM_LIVE && !fundsBroughtTo(poolChainId)
+  const shortReason = (offered: boolean) => (noBringing && !offered ? 'Lower the amount, or add tokens to your wallet.' : 'Choose how to fund this amount below.')
   const fundingCheck: Check = paidFunding && paidFunding.kind !== 'ready'
-    ? fail(paidFunding.kind === 'short' ? 'Choose how to fund this amount below.' : paidFunding.kind === 'gas' ? 'Add ETH for the network fee to continue.' : CREATE.amount.pairReading)
+    ? fail(paidFunding.kind === 'short' ? shortReason(false) : paidFunding.kind === 'gas' ? nativeWords('Add ETH for the network fee to continue.', poolChainId) : CREATE.amount.pairReading)
     : __DOMINO_V2__ && !state.payWith && pair.status !== 'disconnected' && (!pairFunding?.plan || pairFunding.plan.kind === 'short')
-      ? fail(pairFunding?.plan?.kind === 'short' ? 'Choose how to fund this amount below.' : CREATE.amount.pairReading)
+      ? fail(pairFunding?.plan?.kind === 'short' ? shortReason(!!pay) : CREATE.amount.pairReading)
       : priceReading ? fail('Checking the price…') : amountCheck
 
   // Added 2026-10-30 (QA round 2, N54, the owner's decision): US$ 1 at least, by the total the step shows (or the amount
@@ -959,9 +968,10 @@ export function Journey({
           return (
             <div className="dm-flow-stack" data-pool-stage="">
               <StageToken source={source} state={state} preselect={preselect} candidates={candidates} onCandidates={setCandidates} onToken={setToken} onPool={pickPool} onPreview={setPreview} others={others} top={topPools} topServer={topServer} initialPool={initialPool} />
+              {/* Changed on purpose 2026-11-06 (O-15): the finder of the chosen token's network (Robinhood Chain before one). */}
               {!state.pool && (
                 <Suspense fallback={null}>
-                  <V2PoolAdvanced />
+                  <V2PoolAdvanced chainId={state.token?.token.chainId ?? 4663} />
                 </Suspense>
               )}
             </div>

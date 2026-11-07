@@ -7,7 +7,7 @@ import { CANDIDATE_ORIGINS, type Holding } from '../../finance/v2/holdings'
 import { signInWithWallet } from '../../finance/signedOut'
 import { REVIEW_GAS_RESERVE_WEI } from '../../lib/create/reviewPlan'
 import type { FundingContinuation } from '../../lib/create/fundingContext'
-import { v2Chain } from '../../v2/chains'
+import { nativeSymbolOf, v2Chain } from '../../v2/chains'
 import { quoteDeadlineMono } from '../../v2/crosschain/client'
 import { naming, originGasDetail, presentQuote, shortAmountText } from '../../v2/crosschain/present'
 import type { CrosschainRequests, OriginsList } from '../../v2/crosschain/types'
@@ -15,7 +15,7 @@ import { SEND_MARGIN_MS, type CrosschainJournalRecord } from '../../v2/crosschai
 import type { V2Gate } from '../../v2/gate'
 import { readChainBalances } from '../../v2/read/v6'
 import { routeServes } from '../../v2/routes'
-import type { V2ChainId } from '../../v2/types'
+import { isS2Destination, type S2DestinationChainId, type V2ChainId } from '../../v2/types'
 import { switchToOrigin } from '../../wallet/port'
 import { v2Transports } from '../transports'
 import { FUNDS_AUTO_RETRIES, FUNDS_RECEIPT_POLL_MS, FUNDS_TYPED_QUOTE_DEBOUNCE_MS } from './constants'
@@ -101,12 +101,18 @@ export interface BringFundsProps {
   onTrackingChange?: (active: boolean) => void
 }
 
-/** One proposal; validated independent transfers into the same wallet. Never an atomic cross-chain promise. */
+/**
+ * One proposal; validated independent transfers into the same wallet. Never an atomic cross-chain promise. Changed on
+ * purpose 2026-11-07 (Elysium as a fourth V2 chain): only to a chain a deposit can reach (v2/types.ts
+ * S2_DESTINATION_CHAIN_IDS); its gate is off on any other (v2/gate.ts s2Gate), so nothing is drawn there.
+ */
 export function BringFunds(props: BringFundsProps) {
-  return <FundingOffer key={`${props.wallet.toLowerCase()}:${props.chainId}`} {...props} />
+  const chainId = props.chainId
+  if (!isS2Destination(chainId)) return null
+  return <FundingOffer key={`${props.wallet.toLowerCase()}:${chainId}`} {...props} chainId={chainId} />
 }
 
-function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, lacks, nativeOnDestination, poolTokens, intentKey, selectionKey, remoteBudget = null, discreet = false, optional = false, checking = false, keep = null, takes = null, onUse, onUseToken, onRemoteUse, onArrived, continuation, onUseAvailable, onContinuationChange, onTrackingChange }: BringFundsProps) {
+function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, lacks, nativeOnDestination, poolTokens, intentKey, selectionKey, remoteBudget = null, discreet = false, optional = false, checking = false, keep = null, takes = null, onUse, onUseToken, onRemoteUse, onArrived, continuation, onUseAvailable, onContinuationChange, onTrackingChange }: BringFundsProps & { chainId: S2DestinationChainId }) {
   const live = gate.mode === 'live' && services !== null
   const ready = access.startsWith('ready:')
   const destination = v2Chain(chainId)
@@ -164,7 +170,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
   const knownNative = rawValue(nativeOnDestination) ?? (balances ? nativeOn(balances, chainId) : null)
   const gasOnly = !discreet && lacks.length === 0 && knownNative !== null && knownNative < REVIEW_GAS_RESERVE_WEI
   const observedLack: Lack | null = lacks.find((lack) => lack.shortRaw !== null && lack.shortRaw > 0n) ?? (gasOnly ? {
-    side: 0, token: ZERO, symbol: 'ETH', decimals: 18, haveRaw: knownNative ?? 0n, shortRaw: REVIEW_GAS_RESERVE_WEI - (knownNative ?? 0n),
+    side: 0, token: ZERO, symbol: destination.nativeSymbol, decimals: 18, haveRaw: knownNative ?? 0n, shortRaw: REVIEW_GAS_RESERVE_WEI - (knownNative ?? 0n),
   } : null)
   const [previousLack, setPreviousLack] = useState<{ scope: string; lack: Lack | null }>({ scope, lack: observedLack })
   if (!checking && (previousLack.scope !== scope || previousLack.lack?.token !== observedLack?.token || previousLack.lack?.shortRaw !== observedLack?.shortRaw || previousLack.lack?.haveRaw !== observedLack?.haveRaw)) setPreviousLack({ scope, lack: observedLack })
@@ -538,7 +544,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
             if (retry) accepted = retry
             save(accepted, leg.id)
             const code = result.kind === 'error' ? result.code : result.kind === 'switch' ? `switch_${result.outcome}` : result.kind
-            throw new FundingError(retry ? GAS_RECOVERY_COPY : unknown ? 'Check the open request in your wallet. We will not send it again while its result is unknown.' : result.kind === 'expired' ? 'Your quote expired while the wallet was open. Continue to refresh it within the same spending limit.' : result.kind === 'error' ? senderCopy(result.code, { origin: originName(leg.originChainId), native: 'ETH' }) : 'Transfer paused. Received funds stay in your wallet.', retry ? 'funding_gas_retry' : code)
+            throw new FundingError(retry ? GAS_RECOVERY_COPY : unknown ? 'Check the open request in your wallet. We will not send it again while its result is unknown.' : result.kind === 'expired' ? 'Your quote expired while the wallet was open. Continue to refresh it within the same spending limit.' : result.kind === 'error' ? senderCopy(result.code, { origin: originName(leg.originChainId), native: nativeSymbolOf(leg.originChainId) }) : 'Transfer paused. Received funds stay in your wallet.', retry ? 'funding_gas_retry' : code)
           }
         }
       }, () => { throw new FundingError('This transfer is being handled in another tab. Return there to continue.', 'funding_other_tab') })
@@ -548,7 +554,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
         if (recovery && intentRef.current?.gasRecovery?.reviewNeeded) setProposal(null)
         const failure = error instanceof FundingError ? error : error instanceof Error && error.message === 'funding_storage_unavailable'
           ? new FundingError('This browser could not save your transfer progress. No further transfer will be sent. Keep this page open to follow anything already sent.', 'funding_storage_unavailable')
-          : new FundingError(error instanceof OriginStepError ? senderCopy(error.code, { origin: 'this network', native: 'ETH' }) : 'Your transfer is paused. No further transfer will be sent.', error instanceof OriginStepError ? error.code : 'funding_paused')
+          : new FundingError(error instanceof OriginStepError ? senderCopy(error.code, { origin: 'this network', native: nativeSymbolOf(latest.current.walletChainId ?? 0) }) : 'Your transfer is paused. No further transfer will be sent.', error instanceof OriginStepError ? error.code : 'funding_paused')
         setNotice({ copy: failure.copy, code: failure.code }); setScreen('paused')
       }
     } finally { running.current = false; if (mounted.current) { setRun(false); setStage(null); setRevision((n) => n + 1) } }
@@ -745,7 +751,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
       {/* Added 2026-11-02 (review A2): a deposit the chain may have taken with no hash this page could follow (V1's held
           card before #393): said, and removed by the person, which ends the transfer it belonged to. */}
       {!run && held.filter((entry) => entry.state === 'passed').map((entry) => <div key={`held-${entry.originChainId}`} className="dm-funding-held" data-funds-held={entry.originChainId} data-funds-held-state="passed">
-        <p role="status" className="dm-funding-notice" data-error-code="deposit_may_have_gone">{senderCopy('deposit_may_have_gone', { origin: originName(entry.originChainId), native: 'ETH' })}</p>
+        <p role="status" className="dm-funding-notice" data-error-code="deposit_may_have_gone">{senderCopy('deposit_may_have_gone', { origin: originName(entry.originChainId), native: nativeSymbolOf(entry.originChainId) })}</p>
         <Button variant="ghost" size="sm" data-funds-held-remove="" onClick={() => void removePassed(entry.originChainId)}>{FUNDS_TEXT.remove}</Button>
       </div>)}
       {live && !run && ready && !intent && !foreignPending && !proposal && !needsReview && readDone && (screen === 'unavailable' || screen === 'paused' || notice?.code === 'funding_insufficient') && /* Changed on purpose 2026-10-30 (QA round 2, SWEEP): a transfer to check again only; a balance read that came back short is read again on its own (every 30 s and on focus), with no button. */ <Button variant="outline" size="sm" data-funds-renew="" onClick={() => { attempted.current = ''; automaticAttempts.current = 0; setNotice(null); setRevision((n) => n + 1); setPrepareRevision((n) => n + 1) }}>Check again</Button>}

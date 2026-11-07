@@ -10,6 +10,7 @@ import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import * as runtime from '../../../api-contracts/read-v6/runtime.mjs';
+import { CONSTANTS as READ_V6_CONSTANTS } from '../../../api-contracts/read-v6/schema-data.mjs';
 import * as planRuntime from '../../../api-contracts/position-plan-v1/runtime.mjs';
 
 const require = createRequire(import.meta.url);
@@ -130,11 +131,39 @@ test('a busy reader\'s 429 keeps the Retry-After it named (1 to 60 s); a missing
   assert.deepEqual(await readPortfolio(transport, runtime, WALLET), { kind: 'unavailable', reason: 'read_capacity_busy', retryAfterSeconds: 3 }, 'the stored routes too');
 });
 
+// Added 2026-11-07 (review finding P3): read-v6 holds a portfolio's or activity's chains to its own list exactly (the
+// schema's one-per-chain count and api-contracts/read-v6/runtime.mjs envelope), so a package whose list moves without a new
+// contract version refuses the answers of a read gateway, or read Worker, still on the old list, and the reverse: on day 9
+// the app, the read Worker and rugged97's gateway move together, or through a new version served beside the old one
+// (docs/ELYSIUM_DAY9.md, "Order").
+test('read-v6 takes a portfolio or activity answer only when its chains are exactly the package\'s: one more or one fewer is refused', () => {
+  for (const route of ['portfolio', 'activity']) {
+    const body = fixture(`valid/${route}.json`);
+    assert.equal(runtime.validateResponse(route, body), true, route);
+    assert.deepEqual(body.chains.map((c) => c.chainId), [...READ_V6_CONSTANTS.chainIds], `${route}: the package's own chains, in order`);
+    const fewer = { ...body, chains: body.chains.slice(0, -1) };
+    assert.equal(runtime.validateResponse(route, fewer), false, `${route}: one of the package's chains missing`);
+    const more = { ...body, chains: [...body.chains, { ...body.chains.at(-1), chainId: 999 }] };
+    assert.equal(runtime.validateResponse(route, more), false, `${route}: a chain beyond the package's`);
+  }
+});
+
+// Changed on purpose 2026-11-07 (review finding C): the sentence is about Domino's three, so the package's answer is cut to
+// them first, as the app's own servedOnly does with a chain it does not serve: rugged97's day-9 fixtures name Elysium
+// (99901) too, every chain the package names, and the words below are the three's whatever the build serves.
+const THREE = [4663, 8453, 42161];
 test('one chain out is said as out, and never empties the others (§6.3)', () => {
-  const chains = fixture('valid/portfolio-behind.json').chains;
+  const chains = fixture('valid/portfolio-behind.json').chains.filter((c) => THREE.includes(c.chainId));
+  assert.deepEqual(chains.map((c) => c.chainId), THREE);
   const out = (ids) => chains.map((c) => (ids.includes(c.chainId) ? { ...c, status: 'unavailable', reason: 'never_indexed' } : { ...c, status: 'current', reason: null }));
   // Changed on purpose 2026-10-06 (the owner: one name for one network): Arbitrum One, as every other screen names it.
   assert.equal(coverageNote(out([4663])), 'Showing Base and Arbitrum One. Robinhood Chain is unavailable right now.');
   assert.equal(coverageNote(out([])), null);
   assert.equal(coverageNote(out([4663, 8453, 42161])), 'Robinhood Chain, Base and Arbitrum One are unavailable right now.');
+  // Added 2026-11-07 (review finding D): a chain the app names nowhere (HyperEVM, 999) is left out of the sentence, out or
+  // shown, never a blank or "undefined".
+  const stranger = (status) => ({ ...chains[0], chainId: 999, status, reason: status === 'unavailable' ? 'never_indexed' : null });
+  assert.equal(coverageNote([...out([4663]), stranger('current')]), 'Showing Base and Arbitrum One. Robinhood Chain is unavailable right now.');
+  assert.equal(coverageNote([...out([4663]), stranger('unavailable')]), 'Showing Base and Arbitrum One. Robinhood Chain is unavailable right now.');
+  assert.equal(coverageNote([...out([]), stranger('unavailable')]), null, 'only a chain it does not name is out: nothing to say');
 });

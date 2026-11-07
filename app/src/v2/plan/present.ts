@@ -7,7 +7,7 @@
  * Pure: no viem, no wallet.
  */
 import { readFigure, type Decimal } from '../../lib/create/typedFigure'
-import { ZERO_ADDRESS, type Address, type PoolRef, type SwapLeg, type TokenAmount } from '../types'
+import { ZERO_ADDRESS, type Address, type NativeSymbol, type PoolRef, type SwapLeg, type TokenAmount } from '../types'
 
 const MIN_TICK = -887272
 const MAX_TICK = 887272
@@ -111,9 +111,12 @@ export function slippageBpsOf(text: string, min: number, max: number): number | 
 /** "0x1234…abcd". */
 export const shortAddress = (address: string): string => `${address.slice(0, 6)}…${address.slice(-4)}`
 
-/** A token's label: its symbol (untrusted text, already cleaned by the read parser), "ETH" for native, else its short address. */
-export function tokenText(token: { address: Address; symbol: string | null }): string {
-  if (token.address.toLowerCase() === ZERO_ADDRESS) return token.symbol ?? 'ETH'
+/**
+ * A token's label: its symbol (untrusted text, already cleaned by the read parser), the chain's native symbol for its
+ * native currency ("ETH"; `native` on a HYPE-native chain, 2026-11-06), else its short address.
+ */
+export function tokenText(token: { address: Address; symbol: string | null }, native: NativeSymbol = 'ETH'): string {
+  if (token.address.toLowerCase() === ZERO_ADDRESS) return token.symbol ?? native
   return token.symbol ?? shortAddress(token.address)
 }
 
@@ -281,25 +284,29 @@ export function spanText(seconds: number): string {
   return minutes % 60 ? `${hours} h ${minutes % 60} min` : `${hours} h`
 }
 
-/** Wei as ETH, for a network fee ("0.000048 ETH"): rounded UP at 8 decimals, so a ceiling is never shown lower. */
-export function ethText(wei: bigint): string {
-  if (wei <= 0n) return '0 ETH'
+/**
+ * Wei as ETH, for a network fee ("0.000048 ETH"): rounded UP at 8 decimals, so a ceiling is never shown lower.
+ * Changed on purpose 2026-11-06 (Elysium readiness): in the chain's own native currency, `symbol` (a V2 chain's
+ * nativeSymbol: ETH, or HYPE on a HYPE-native chain, whose network fees are paid in HYPE); ETH when none is given.
+ */
+export function ethText(wei: bigint, symbol: NativeSymbol = 'ETH'): string {
+  if (wei <= 0n) return `0 ${symbol}`
   const step = 10n ** 10n
   const up = ((wei + step - 1n) / step) * step
-  return `${formatUnitsText(up, 18, 8)} ETH`
+  return `${formatUnitsText(up, 18, 8)} ${symbol}`
 }
 
 /**
  * Added 2026-10-06 (the owner's point 4: little text): wei as ETH for an estimate said "about" (Review's one network fee
  * line): three significant digits, rounded to the nearest ("about 0.0001 ETH", not "0.00010002"). A ceiling keeps
- * ethText, which is never shown lower.
+ * ethText, which is never shown lower. In the chain's own native currency, `symbol`, as ethText (2026-11-06).
  */
-export function ethAboutText(wei: bigint): string {
-  if (wei <= 0n) return '0 ETH'
+export function ethAboutText(wei: bigint, symbol: NativeSymbol = 'ETH'): string {
+  if (wei <= 0n) return `0 ${symbol}`
   const drop = wei.toString(10).length - 3
-  if (drop <= 0) return `${formatUnitsText(wei, 18, EXACT_FRACTION)} ETH`
+  if (drop <= 0) return `${formatUnitsText(wei, 18, EXACT_FRACTION)} ${symbol}`
   const unit = 10n ** BigInt(drop)
-  return `${formatUnitsText(((wei + unit / 2n) / unit) * unit, 18, EXACT_FRACTION)} ETH`
+  return `${formatUnitsText(((wei + unit / 2n) / unit) * unit, 18, EXACT_FRACTION)} ${symbol}`
 }
 
 /**

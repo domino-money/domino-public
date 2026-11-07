@@ -2,7 +2,8 @@ import { useEffect, useReducer, useRef } from 'react'
 import { readZapReceipt, type ZapReceipt } from '../../finance/v2/receipt'
 import type { PreparedV2, SignedNonce, V2Receipt } from '../../finance/v2/transact'
 import type { ZapBatch, ZapReview, ZapStep } from '../../finance/v2/zap'
-import { v2Chain } from '../../v2/chains'
+import { positionManagerOf, positionManagers, v2Chain } from '../../v2/chains'
+import { planDex } from '../../v2/plan/client'
 import type { ConsentChoice } from '../../v2/plan/consent'
 import { readFeesToCome } from '../../v2/plan/present'
 import { planTargetOf } from '../../v2/plan/route'
@@ -195,9 +196,10 @@ export function useActionRun(input: RunInput) {
       // The answer is held to this wallet, the chain's pinned zaps and the profile's Uniswap and Permit2 (rev2 §2.4).
       const context = {
         owner: zap.owner,
-        zaps: { 3: gate.contracts.addresses.zapV3.toLowerCase() as Address, 4: gate.contracts.addresses.zapV4.toLowerCase() as Address },
+        // The zaps and managers of the chain's versions: no v3 on a chain with v4 alone, so a v3 answer there is refused.
+        zaps: { ...(gate.contracts.addresses.zapV3 ? { 3: gate.contracts.addresses.zapV3.toLowerCase() as Address } : {}), 4: gate.contracts.addresses.zapV4.toLowerCase() as Address },
         permit2: chain.permit2,
-        managers: { 3: chain.uniswap.v3.positionManager, 4: chain.uniswap.v4.positionManager },
+        managers: positionManagers(chain),
       }
       let consent = chosen
       let asked = request(consent.planConsent)
@@ -209,7 +211,7 @@ export function useActionRun(input: RunInput) {
         result = await askLivePlan(gate, asked, context)
       }
       if (gen !== generation.current) return
-      if (result.kind !== 'ok') throw new PlanFailure(planFailure(result, gate.chainId, latest.current.label))
+      if (result.kind !== 'ok') throw new PlanFailure(planFailure(result, gate.chainId, latest.current.label, planDex(asked)))
       // What the person asked for (rev2 review, F1): the money client ties the plan's swaps to it.
       const target = planTargetOf(asked)
       if (!target) throw new Error('plan_target')
@@ -425,7 +427,7 @@ export function useActionRun(input: RunInput) {
         const chain = v2Chain(reviewed.review.chainId)
         const intent = reviewed.review.plan.plan.intent
         const tokenIds = [...new Set([intent.tokenId, read?.summary.tokenId, read?.summary.previousTokenId].filter((id): id is bigint => id !== undefined && id > 0n).map(String))]
-        const positionManager = intent.pool.dex === 4 ? chain.uniswap.v4.positionManager : chain.uniswap.v3.positionManager
+        const positionManager = positionManagerOf(chain, intent.pool.dex)
         positionChanged({ chainId: chain.chainId, positionManager, wallet: reviewed.review.owner, tokenIds, block: current.blockNumber, blockHash: current.blockHash, burnedTokenIds: burnedPositionIds(current.logs, positionManager) })
         // Added (2026-10-15, pack 8): the receipt is a row of Receipts and of the position's Activity at once, and a new
         // range's NFT a row of the Positions list, until read-v6 lists them (../lists/sessionReceipts.ts, createdPositions.ts).

@@ -14,6 +14,10 @@ dist/
 .preview-v2-dist/
 # Changed on purpose (data) 2026-10-02 (Domino V2 integration): wallet-test with V2 compiled in, for the browser suites only
 .wallet-test-v2-dist/
+# Added 2026-11-06 (the Elysium surface): a test build with Elysium forced on writes beside its mode's usual directory
+# (scripts/elysium-switch.mjs), never deployed, kept out of Tailwind's scan like the others
+.*-dist-elysium/
+.*-dist-elysium-funds/
 # Links and config copies tests/build-guard.test.mjs makes; removed after each test
 .guard-link-*
 .guard-config-*

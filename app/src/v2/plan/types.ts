@@ -73,11 +73,14 @@ export interface S1PlanValidators {
 export interface S1PlanContext {
   /** The connected wallet (lowercase): the session's, the plan's owner and recipient. */
   owner: Address
-  /** The chain's pinned Domino zaps (the manifest's), by DEX. */
-  zaps: Readonly<Record<Dex, Address>>
-  /** The chain profile's Permit2 and Uniswap position managers (api-contracts/v2/chains), never the answer's. */
+  /**
+   * The chain's pinned Domino zaps (the manifest's), by DEX. Changed on purpose 2026-11-06 (Elysium readiness): those of
+   * the chain's versions only, so an answer about a version the chain lacks (v3 on a chain with v4 alone) is refused.
+   */
+  zaps: Readonly<Partial<Record<Dex, Address>>>
+  /** The chain profile's Permit2 and Uniswap position managers (api-contracts/v2/chains), never the answer's; by version, as `zaps`. */
   permit2: Address
-  managers: Readonly<Record<Dex, Address>>
+  managers: Readonly<Partial<Record<Dex, Address>>>
   /** Unix seconds now. */
   now: number
 }

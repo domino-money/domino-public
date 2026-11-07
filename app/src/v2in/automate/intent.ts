@@ -4,6 +4,7 @@
  * `#/sequence/protection[/<id>]`, which V1's reading leaves out. A link only names the person's own choice: nothing is
  * chosen for them (decision #12). Pure.
  */
+import { chainHasDex } from '../../v2/chains'
 import { parseV2PositionParam, v2PositionHref, type V2PositionRef } from '../route'
 
 export type SetupMode = 'compound' | 'domino' | 'protection'
@@ -17,8 +18,10 @@ export function setupIntent(hash: string): SetupIntent {
   const isMode = (value: string): value is SetupMode => ['compound', 'domino', 'protection'].includes(value)
   const mode = isMode(first) ? first : isMode(second) ? second : null
   const param = isMode(first) ? second : first
-  const position = parseV2PositionParam(param) ?? (/^[1-9]\d{0,28}$/.test(param) && BigInt(param) < 1n << 96n
+  const named = parseV2PositionParam(param) ?? (/^[1-9]\d{0,28}$/.test(param) && BigInt(param) < 1n << 96n
     ? { chainId: 4663 as const, dex: 4 as const, tokenId: BigInt(param) } : null)
+  // Never a setup for a version its network lacks (v3 on a chain with v4 alone).
+  const position = named && chainHasDex(named.chainId, named.dex) ? named : null
   return { mode, tokenId: position?.tokenId.toString() ?? null, position }
 }
 

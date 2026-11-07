@@ -25,6 +25,11 @@
  *     salt for each of the 11 CREATE3 components, each raw salt `deployer ‖ 0x00 ‖ …` (the rest needs keccak, below);
  *   - the eleven dependencies, nonzero; a nonzero runtime code hash for each of the 13 contracts and 11 dependencies;
  *     two or more distinct charge currencies, ranks 1..255;
+ *   - changed on purpose 2026-11-06 (Elysium readiness; #459, backend `manifest_dexes`): "the 13", "the 11" and "the
+ *     eleven" are those of a chain with both Uniswap versions. A manifest records the components, salts, receipts,
+ *     dependencies and code hashes of exactly the versions whose vault it records (`vault.v3`, `vault.v4` in `contracts`):
+ *     a chain with v4 only has nine contracts (the common four and v4's five), eight CREATE3 components and seven
+ *     dependencies; `contractNames` still names all 13;
  *   - the fixed compiler profile, the source hashes' paths under src/v2/ or deploy-fixtures/, a 64-hex sourceTreeSha256;
  *   - verified: one distinct receipt for each of the 11 deployed components, each in a block ≥ 1, no zero hash, one hash
  *     per block; a verification record ('exact_precomputed_immutable_runtime', 'checked') at or after every receipt,
@@ -36,7 +41,9 @@
  * any address of a set reaches a money client.
  *
  * `checkV2Deployment` (backend `checked_deployment`): bound to the app's chain profile (api-contracts/v2/chains): the
- * chain id, and outside local-test its name and native symbol; the dependencies at the profile's addresses; the profile's
+ * chain id, and outside local-test its name and native symbol; the manifest's Uniswap versions exactly the chain's (both
+ * on Robinhood Chain, Base and Arbitrum One, so a manifest without v3 is refused there; v4 alone only for a chain whose
+ * profile names `uniswap.v3` null); the dependencies at the profile's addresses; the profile's
  * CreateX, and outside local-test its verified code hash, the dependencies' verified code hashes and the profile's charge
  * currencies; then the admission:
  *   - `production`: verified, environment public-chain-preparation, built from committed sources
@@ -63,12 +70,15 @@ import arbitrumProfile from '../../../api-contracts/v2/chains/arbitrum-42161.jso
 import robinhood4663 from '../../../docs/deployments/v2-robinhood-4663-2026-10-04/deployment.json'
 import base8453 from '../../../docs/deployments/v2-base-8453-2026-10-04/deployment.json'
 import arbitrum42161 from '../../../docs/deployments/v2-arbitrum-42161-2026-10-04/deployment.json'
+import { ELYSIUM_LIVE, ELYSIUM_V2_ID } from '../lib/elysiumIdentity'
 import { isV2ChainId, v2Chain, type V2Chain } from './chains'
+import { ELYSIUM_DEPLOYMENT, ELYSIUM_DEPLOYMENT_PIN, ELYSIUM_PROFILE } from './elysiumFiles'
 import { V2_FIXTURE_SETS_TAKEN, V2_ON } from './flag'
 import {
   V2_FEES,
   V2_WINDOWS,
   type Address,
+  type Dex,
   type Hex,
   type V2Admission,
   type V2ChainId,
@@ -144,9 +154,44 @@ export const MANIFEST_POLICIES = Object.freeze({
 export const MANIFEST_DEPENDENCIES = Object.freeze(['v3Factory', 'v3PositionManager', 'v3Quoter', 'v3SwapRouter', 'v4PoolManager', 'v4PositionManager', 'v4StateView', 'v4Quoter', 'universalRouter', 'permit2', 'wrappedNative'] as const)
 export type V2Dependency = (typeof MANIFEST_DEPENDENCIES)[number]
 
+/*
+ * A chain with one Uniswap version (added 2026-11-06, Elysium readiness; #459: backend/v2_manifest.py DEX_COMPONENTS,
+ * DEX_DEPENDENCIES and their functions, deploy.mjs's, rule for rule). Each version owns its contracts and dependencies;
+ * the other four contracts and three dependencies are every chain's. A manifest records those of the versions whose
+ * vault it records, in the order above: both give today's 13, 11 and 11; v4 alone gives 9, 8 and 7.
+ */
+const DEXES: readonly Dex[] = Object.freeze([3, 4] as const)
+export const DEX_COMPONENTS: Readonly<Record<Dex, readonly V2ManifestContract[]>> = Object.freeze({
+  3: Object.freeze(['vault.v3', 'vaultFactory.v3', 'zap.v3', 'vaultExecutor.v3'] as const),
+  4: Object.freeze(['vault.v4', 'vaultFactory.v4', 'zap.v4.steps', 'zap.v4', 'vaultExecutor.v4'] as const),
+})
+export const DEX_DEPENDENCIES: Readonly<Record<Dex, readonly V2Dependency[]>> = Object.freeze({
+  3: Object.freeze(['v3Factory', 'v3PositionManager', 'v3Quoter', 'v3SwapRouter'] as const),
+  4: Object.freeze(['v4PoolManager', 'v4PositionManager', 'v4StateView', 'v4Quoter'] as const),
+})
+const servedBy = (dexes: readonly Dex[]) => (name: string): boolean => {
+  const owner = DEXES.find((dex) => (DEX_COMPONENTS[dex] as readonly string[]).includes(name) || (DEX_DEPENDENCIES[dex] as readonly string[]).includes(name))
+  return owner === undefined || dexes.includes(owner)
+}
+/** deploy.mjs `componentsFor`: a deployment's contracts for these versions, executors included, in the manifest's order. */
+export const componentsFor = (dexes: readonly Dex[]): readonly V2ManifestContract[] => MANIFEST_CONTRACTS.filter(servedBy(dexes))
+/** deploy.mjs `deployOrderFor`: its CREATE3 components for these versions, in DEPLOY_ORDER. */
+export const deployOrderFor = (dexes: readonly Dex[]): readonly V2DeployedComponent[] => DEPLOY_ORDER.filter(servedBy(dexes))
+/** deploy.mjs `dependenciesFor`: its dependencies for these versions, in the recorded order. */
+export const dependenciesFor = (dexes: readonly Dex[]): readonly V2Dependency[] => MANIFEST_DEPENDENCIES.filter(servedBy(dexes))
+/** deploy.mjs `manifestDexes`: the versions whose vault a manifest records, ascending; none for a manifest that records neither. */
+export function manifestDexes(manifest: unknown): readonly Dex[] {
+  const contracts = isObject(manifest) ? manifest.contracts : undefined
+  return DEXES.filter((dex) => isObject(contracts) && Object.hasOwn(contracts, `vault.v${dex}`))
+}
+const sameDexes = (a: readonly Dex[], b: readonly Dex[]): boolean => a.length === b.length && a.every((dex, index) => dex === b[index])
+
 export const ENVIRONMENTS: readonly V2Environment[] = Object.freeze(['public-chain-preparation', 'local-test', 'fork-rehearsal'] as const)
-/** The chains a manifest outside local-test may name. */
-export const ENABLED_CHAINS: readonly number[] = Object.freeze([4663, 8453, 42161])
+/**
+ * The chains a manifest outside local-test may name. Changed on purpose 2026-11-07 (Elysium as a fourth V2 chain): and
+ * Elysium (99901) where it is live, as scripts/v2/deploy.mjs ENABLED_CHAINS names it.
+ */
+export const ENABLED_CHAINS: readonly number[] = Object.freeze(ELYSIUM_LIVE ? [4663, 8453, 42161, ELYSIUM_V2_ID] : [4663, 8453, 42161])
 export const ADMISSIONS: readonly V2Admission[] = Object.freeze(['production', 'fork-rehearsal', 'local-test'] as const)
 /** The compiler profile every V2 build uses. */
 export const BUILD_PROFILE = Object.freeze({ version: '0.8.26+commit.8a97fa7a', optimizerRuns: 200, viaIR: true, evmVersion: 'cancun', bytecodeHash: 'none' })
@@ -198,17 +243,18 @@ export interface V2Manifest {
   readonly sourceCommit: string
   readonly releaseTag: string
   readonly contractNames: Readonly<Record<V2ManifestContract, string>>
-  readonly contracts: Readonly<Record<V2ManifestContract, Address>>
-  readonly dependencies: Readonly<Record<V2Dependency, Address>>
+  /** Those of the versions it records (`componentsFor(manifestDexes(m))`): all 13, or the nine of a chain with v4 alone. */
+  readonly contracts: Readonly<Partial<Record<V2ManifestContract, Address>>>
+  readonly dependencies: Readonly<Partial<Record<V2Dependency, Address>>>
   readonly roles: Readonly<Record<V2Role, Address>>
   readonly policies: typeof MANIFEST_POLICIES
   readonly chargeCurrencies: readonly { readonly token: Address; readonly rank: number }[]
-  readonly runtimeCodeHashes: Readonly<Record<V2ManifestContract | V2Dependency, Hex>>
+  readonly runtimeCodeHashes: Readonly<Partial<Record<V2ManifestContract | V2Dependency, Hex>>>
   readonly createx: {
     readonly address: Address
     readonly runtimeCodeHash: Hex
-    readonly salts: Readonly<Record<V2DeployedComponent, Hex>>
-    readonly guardedSalts: Readonly<Record<V2DeployedComponent, Hex>>
+    readonly salts: Readonly<Partial<Record<V2DeployedComponent, Hex>>>
+    readonly guardedSalts: Readonly<Partial<Record<V2DeployedComponent, Hex>>>
   }
   readonly build: typeof BUILD_PROFILE & {
     readonly sourceTreeSha256: string
@@ -376,8 +422,10 @@ function zonedTime(value: unknown): boolean {
  * The backend's `checked_manifest` (and #302's validateManifest plus the structural schema), every rule but the two that
  * need a hash function: the CREATE3 prediction of `contracts` and the salts, and `build.sourceTreeSha256`, which
  * finance/v2/deployment.ts `checkV2Prediction` checks. Throws a ManifestError; returns the manifest as given.
+ * `enabled`: the chain ids a manifest outside local-test may name (the backend's `enabled`), ENABLED_CHAINS unless the
+ * binding below adds the chain it binds to.
  */
-export function checkV2Manifest(raw: unknown): V2Manifest {
+export function checkV2Manifest(raw: unknown, enabled: readonly number[] = ENABLED_CHAINS): V2Manifest {
   const m = exactKeys(raw, TOP_LEVEL, 'manifest_fields_invalid', 'manifest')
   ensure(m.schemaVersion === MANIFEST_SCHEMA_VERSION && m.kind === MANIFEST_KIND && (m.status === 'prepared' || m.status === 'verified'), 'manifest_identity_invalid', 'schemaVersion, kind, status')
 
@@ -385,7 +433,7 @@ export function checkV2Manifest(raw: unknown): V2Manifest {
   ensure(isInteger(chain.chainId) && chain.chainId > 0 && typeof chain.name === 'string' && chain.name !== ''
     && typeof chain.nativeCurrency === 'string' && chain.nativeCurrency !== '', 'manifest_chain_invalid', 'chain')
   ensure((ENVIRONMENTS as readonly unknown[]).includes(m.environment), 'manifest_environment_invalid', 'environment')
-  ensure(m.environment === 'local-test' || ENABLED_CHAINS.includes(chain.chainId as number), 'manifest_chain_not_enabled', `chain.chainId ${String(chain.chainId)}`)
+  ensure(m.environment === 'local-test' || enabled.includes(chain.chainId as number), 'manifest_chain_not_enabled', `chain.chainId ${String(chain.chainId)}`)
   ensure(typeof m.sourceCommit === 'string' && COMMIT.test(m.sourceCommit) && typeof m.releaseTag === 'string' && RELEASE_TAG.test(m.releaseTag), 'manifest_source_invalid', 'sourceCommit, releaseTag')
   ensure(canonical(m.contractNames) === canonical(CONTRACT_NAMES), 'manifest_contracts_or_policy_changed', 'contractNames')
   ensure(canonical(m.policies) === canonical(MANIFEST_POLICIES), 'manifest_contracts_or_policy_changed', 'policies')
@@ -399,11 +447,17 @@ export function checkV2Manifest(raw: unknown): V2Manifest {
   }
   ensure(roles.operator !== roles.publisher, 'manifest_operator_publisher_conflict', 'roles.operator, roles.publisher')
 
-  // Contracts: the 13, well formed and distinct. That each is the CREATE3 prediction for roles.deployer is
+  // Contracts: those of the versions whose vault the manifest records (the 13 with both, the nine with v4 alone), never
+  // a part of one, well formed and distinct. That each is the CREATE3 prediction for roles.deployer is
   // finance/v2/deployment.ts checkV2Prediction's (it needs keccak256).
-  const contracts = exactKeys(m.contracts, MANIFEST_CONTRACTS, 'manifest_addresses_invalid', 'contracts')
-  for (const name of MANIFEST_CONTRACTS) ensure(isAddress(contracts[name]) && !isZero(contracts[name] as string), 'manifest_addresses_invalid', `contracts.${name}`)
-  ensure(new Set(Object.values(contracts)).size === MANIFEST_CONTRACTS.length, 'manifest_addresses_invalid', 'contracts: two at one address')
+  const dexes = manifestDexes(m)
+  ensure(dexes.length > 0, 'manifest_addresses_invalid', 'contracts: no vault of either version')
+  const recorded = componentsFor(dexes)
+  const order = deployOrderFor(dexes)
+  const needed = dependenciesFor(dexes)
+  const contracts = exactKeys(m.contracts, recorded, 'manifest_addresses_invalid', 'contracts')
+  for (const name of recorded) ensure(isAddress(contracts[name]) && !isZero(contracts[name] as string), 'manifest_addresses_invalid', `contracts.${name}`)
+  ensure(new Set(Object.values(contracts)).size === recorded.length, 'manifest_addresses_invalid', 'contracts: two at one address')
   const components = new Set(Object.values(contracts))
   for (const name of ROLE_NAMES) ensure(!components.has(roles[name]) && roles[name] !== CREATE_X, 'manifest_role_component_conflict', `roles.${name}`)
 
@@ -411,17 +465,17 @@ export function checkV2Manifest(raw: unknown): V2Manifest {
   // deployer and the zero chain byte; the rest of it, and the guarded salt, are checkV2Prediction's.
   const createx = exactKeys(m.createx, ['address', 'runtimeCodeHash', 'salts', 'guardedSalts'], 'manifest_createx_invalid', 'createx')
   ensure(createx.address === CREATE_X && createx.runtimeCodeHash === CREATE_X_CODE_HASH, 'manifest_createx_changed', 'createx.address, createx.runtimeCodeHash')
-  const salts = exactKeys(createx.salts, DEPLOY_ORDER, 'manifest_createx_changed', 'createx.salts')
-  const guarded = exactKeys(createx.guardedSalts, DEPLOY_ORDER, 'manifest_createx_changed', 'createx.guardedSalts')
-  for (const name of DEPLOY_ORDER) {
+  const salts = exactKeys(createx.salts, order, 'manifest_createx_changed', 'createx.salts')
+  const guarded = exactKeys(createx.guardedSalts, order, 'manifest_createx_changed', 'createx.guardedSalts')
+  for (const name of order) {
     ensure(isHash(salts[name]) && (salts[name] as string).startsWith(`${roles.deployer as string}00`), 'manifest_createx_changed', `createx.salts.${name}`)
     ensure(isHash(guarded[name]), 'manifest_createx_changed', `createx.guardedSalts.${name}`)
   }
 
   // Dependencies, code hashes, charge currencies.
-  const dependencies = exactKeys(m.dependencies, MANIFEST_DEPENDENCIES, 'manifest_dependencies_invalid', 'dependencies')
-  for (const name of MANIFEST_DEPENDENCIES) ensure(isAddress(dependencies[name]) && !isZero(dependencies[name] as string), 'manifest_dependency_address_invalid', `dependencies.${name}`)
-  const codeHashes = exactKeys(m.runtimeCodeHashes, [...MANIFEST_CONTRACTS, ...MANIFEST_DEPENDENCIES], 'manifest_codehash_keys_invalid', 'runtimeCodeHashes')
+  const dependencies = exactKeys(m.dependencies, needed, 'manifest_dependencies_invalid', 'dependencies')
+  for (const name of needed) ensure(isAddress(dependencies[name]) && !isZero(dependencies[name] as string), 'manifest_dependency_address_invalid', `dependencies.${name}`)
+  const codeHashes = exactKeys(m.runtimeCodeHashes, [...recorded, ...needed], 'manifest_codehash_keys_invalid', 'runtimeCodeHashes')
   for (const [name, value] of Object.entries(codeHashes)) ensure(isHash(value) && !isZero(value), 'manifest_codehash_invalid', `runtimeCodeHashes.${name}`)
   const charge = m.chargeCurrencies
   ensure(Array.isArray(charge) && charge.length >= 2, 'manifest_currencies_invalid', 'chargeCurrencies')
@@ -451,9 +505,9 @@ export function checkV2Manifest(raw: unknown): V2Manifest {
     ensure(verification === null && Object.keys(receipts as Json).length === 0, 'manifest_prepared_has_receipts', 'deploymentReceipts, verification')
     return raw as V2Manifest
   }
-  exactKeys(receipts, DEPLOY_ORDER, 'manifest_receipts_incomplete', 'deploymentReceipts')
+  exactKeys(receipts, order, 'manifest_receipts_incomplete', 'deploymentReceipts')
   const blocks = new Map<number, string>()
-  for (const name of DEPLOY_ORDER) {
+  for (const name of order) {
     const receipt = exactKeys((receipts as Json)[name], RECEIPT_KEYS, 'manifest_receipt_invalid', `deploymentReceipts.${name}`)
     ensure(isHash(receipt.transactionHash) && isHash(receipt.blockHash) && isInteger(receipt.blockNumber)
       && typeof receipt.gasUsed === 'string' && DECIMAL.test(receipt.gasUsed)
@@ -464,7 +518,7 @@ export function checkV2Manifest(raw: unknown): V2Manifest {
     ensure(block >= 1 && !isZero(receipt.transactionHash as string) && !isZero(hash) && (blocks.get(block) ?? hash) === hash, 'manifest_receipt_invalid', `deploymentReceipts.${name}`)
     blocks.set(block, hash)
   }
-  ensure(new Set(DEPLOY_ORDER.map((name) => ((receipts as Json)[name] as Json).transactionHash)).size === DEPLOY_ORDER.length, 'manifest_receipt_invalid', 'deploymentReceipts: one transaction twice')
+  ensure(new Set(order.map((name) => ((receipts as Json)[name] as Json).transactionHash)).size === order.length, 'manifest_receipt_invalid', 'deploymentReceipts: one transaction twice')
   const record = exactKeys(verification, VERIFICATION_KEYS, 'manifest_verification_invalid', 'verification')
   ensure(isInteger(record.blockNumber) && isHash(record.blockHash) && typeof record.blockTag === 'string'
     && record.codeHashes === 'exact_precomputed_immutable_runtime' && record.wiring === 'checked', 'manifest_verification_invalid', 'verification')
@@ -484,12 +538,16 @@ export function checkV2Manifest(raw: unknown): V2Manifest {
 interface ProfileBinding {
   readonly name: string
   readonly nativeSymbol: string
-  /** deploy.mjs `dependencyMap`: the dependencies a deployment on this chain is built against, lower case. */
-  readonly dependencies: Readonly<Record<V2Dependency, string>>
+  /**
+   * deploy.mjs `dependencyMap`: the dependencies a deployment on this chain is built against, lower case: those of the
+   * Uniswap versions the profile has (changed on purpose 2026-11-06, Elysium readiness: no v3 keys where its
+   * `uniswap.v3` is null, the backend's `profile_dependencies`).
+   */
+  readonly dependencies: Readonly<Partial<Record<V2Dependency, string>>>
   readonly createx: string
   readonly createxCodeHash: string
   /** The code hash the profile's verification list recorded at each dependency's address; null if none, or absent. */
-  readonly dependencyCodeHashes: Readonly<Record<V2Dependency, string | null>>
+  readonly dependencyCodeHashes: Readonly<Partial<Record<V2Dependency, string | null>>>
   /** The charge currencies in the profile's order, as deploy.mjs writes them into a manifest. */
   readonly chargeCurrencies: readonly { readonly token: string; readonly rank: number }[]
 }
@@ -498,11 +556,15 @@ function bindingOf(profile: unknown): ProfileBinding {
   // A missing field reads as a value no manifest holds, so a broken profile refuses every manifest (never throws here).
   const at = (value: unknown, ...path: string[]): unknown => path.reduce<unknown>((node, key) => (isObject(node) ? node[key] : undefined), value)
   const lower = (value: unknown): string => (typeof value === 'string' ? value.toLowerCase() : '!')
-  const dependencies: Record<V2Dependency, string> = {
+  // Only a `null` v3 is "no v3": a missing or broken one reads as '!', which no manifest holds.
+  const v3 = at(profile, 'uniswap', 'v3') === null ? {} : {
     v3Factory: lower(at(profile, 'uniswap', 'v3', 'factory')),
     v3PositionManager: lower(at(profile, 'uniswap', 'v3', 'positionManager')),
     v3Quoter: lower(at(profile, 'uniswap', 'v3', 'quoterV2')),
     v3SwapRouter: lower(at(profile, 'uniswap', 'v3', 'swapRouter02')),
+  }
+  const dependencies: Partial<Record<V2Dependency, string>> = {
+    ...v3,
     v4PoolManager: lower(at(profile, 'uniswap', 'v4', 'poolManager')),
     v4PositionManager: lower(at(profile, 'uniswap', 'v4', 'positionManager')),
     v4StateView: lower(at(profile, 'uniswap', 'v4', 'stateView')),
@@ -527,16 +589,22 @@ function bindingOf(profile: unknown): ProfileBinding {
     dependencies: Object.freeze(dependencies),
     createx: lower(at(profile, 'deployer', 'address')),
     createxCodeHash: typeof createxCodeHash === 'string' ? createxCodeHash : '!',
-    dependencyCodeHashes: Object.freeze(Object.fromEntries(MANIFEST_DEPENDENCIES.map((key) => [key, verified(dependencies[key])])) as Record<V2Dependency, string | null>),
+    dependencyCodeHashes: Object.freeze(Object.fromEntries((Object.keys(dependencies) as V2Dependency[]).map((key) => [key, verified(dependencies[key] as string)])) as Partial<Record<V2Dependency, string | null>>),
     chargeCurrencies: Object.freeze(Array.isArray(charge) ? charge.map((c: unknown) => ({ token: lower(at(c, 'address')), rank: at(c, 'rank') as number })) : []),
   })
 }
 
+/**
+ * Each served chain's profile, as a manifest is bound to it. Changed on purpose 2026-11-07 (Elysium as a fourth V2
+ * chain): Elysium's where it is live, from the profile the build hands in (./elysiumFiles.ts); a profile that is not
+ * there binds no manifest (bindingOf reads every missing field as a value no manifest holds).
+ */
 const BINDINGS: Readonly<Record<V2ChainId, ProfileBinding>> = Object.freeze({
   4663: bindingOf(robinhoodProfile),
   8453: bindingOf(baseProfile),
   42161: bindingOf(arbitrumProfile),
-})
+  ...(ELYSIUM_LIVE ? { [ELYSIUM_V2_ID]: bindingOf(ELYSIUM_PROFILE) } : {}),
+} as Record<V2ChainId, ProfileBinding>)
 
 /**
  * The facts a set carries from its manifest, for finance/v2/deployment.ts's keccak checks and the other contracts.
@@ -544,8 +612,12 @@ const BINDINGS: Readonly<Record<V2ChainId, ProfileBinding>> = Object.freeze({
  * whole `checked_manifest`); the app reaches it through the parsers below only.
  */
 export function manifestFacts(m: V2Manifest, admission: V2Admission): V2DeploymentFacts {
-  const pick = <K extends string, V>(source: Readonly<Record<string, V>>, keys: readonly K[]) =>
+  const pick = <K extends string, V>(source: Readonly<Partial<Record<string, V>>>, keys: readonly K[]) =>
     Object.freeze(Object.fromEntries(keys.map((key) => [key, source[key]]))) as Readonly<Record<K, V>>
+  // The versions it records (both, or v4 alone), as checkV2Manifest held its keys to them.
+  const dexes = manifestDexes(m)
+  const recorded = componentsFor(dexes)
+  const order = deployOrderFor(dexes)
   return Object.freeze({
     environment: m.environment,
     admission,
@@ -553,10 +625,10 @@ export function manifestFacts(m: V2Manifest, admission: V2Admission): V2Deployme
     sourceCommit: m.sourceCommit,
     deployer: m.roles.deployer,
     createx: m.createx.address,
-    contracts: pick(m.contracts, MANIFEST_CONTRACTS),
-    codeHashes: pick(m.runtimeCodeHashes, MANIFEST_CONTRACTS),
-    salts: pick(m.createx.salts, DEPLOY_ORDER),
-    guardedSalts: pick(m.createx.guardedSalts, DEPLOY_ORDER),
+    contracts: pick(m.contracts, recorded),
+    codeHashes: pick(m.runtimeCodeHashes, recorded),
+    salts: pick(m.createx.salts, order),
+    guardedSalts: pick(m.createx.guardedSalts, order),
     sourceHashes: Object.freeze({ ...m.build.sourceHashes }),
     sourceTreeSha256: m.build.sourceTreeSha256,
   })
@@ -570,17 +642,41 @@ export function manifestFacts(m: V2Manifest, admission: V2Admission): V2Deployme
 function checkV2Deployment(raw: unknown, chainId: number, admission: V2Admission): V2Contracts {
   ensure((ADMISSIONS as readonly unknown[]).includes(admission), 'manifest_admission_invalid', String(admission))
   if (!isV2ChainId(chainId)) return fail('manifest_chain_unsupported', String(chainId))
-  const m = checkV2Manifest(raw)
-  const chain: V2Chain = v2Chain(chainId)
-  const profile = BINDINGS[chainId]
+  return bound(raw, v2Chain(chainId), BINDINGS[chainId], admission)
+}
+
+/**
+ * The same binding for a chain and its profile handed in (added 2026-11-06, Elysium readiness), so the tests prove it on
+ * a chain the app does not serve yet: a v4-only fixture profile (tests/fixtures/v2-chains), served by ./chains.ts
+ * chainsFrom with its own row. `chain` must be the record built from `profile`. The app never calls it: its sets come
+ * from parseV2Manifest and parseV2FixtureManifest, and a money client takes only a set of a chain the app serves
+ * (finance/v2/deployment.ts admitV2Contracts). Refused outright, as the test admissions are, by a build that takes
+ * production manifests only (`manifest_fixture_refused`).
+ */
+export function bindV2Deployment(raw: unknown, chain: V2Chain, profile: unknown, admission: V2Admission): V2Contracts {
+  if (!TEST_ADMISSIONS) return fail('manifest_fixture_refused', 'a deployable build binds the pinned map only')
+  ensure((ADMISSIONS as readonly unknown[]).includes(admission), 'manifest_admission_invalid', String(admission))
+  return bound(raw, chain, bindingOf(profile), admission)
+}
+
+function bound(raw: unknown, chain: V2Chain, profile: ProfileBinding, admission: V2Admission): V2Contracts {
+  const chainId = chain.chainId
+  // The chain bound to is an enabled one, as the backend's ChainProfile always is.
+  const m = checkV2Manifest(raw, ENABLED_CHAINS.includes(chainId) ? ENABLED_CHAINS : [...ENABLED_CHAINS, chainId])
   const local = m.environment === 'local-test'
   ensure(m.chain.chainId === chain.chainId, 'manifest_chain_mismatch', `chain.chainId ${m.chain.chainId}, asked ${chainId}`)
   ensure(local || (m.chain.name === profile.name && m.chain.nativeCurrency === profile.nativeSymbol), 'manifest_chain_mismatch', `chain.name ${m.chain.name}, chain.nativeCurrency ${m.chain.nativeCurrency}`)
+  // Changed on purpose 2026-11-06 (Elysium readiness): the versions the manifest records are exactly the chain's, from
+  // its profile and its row (./chains.ts): both on Robinhood Chain, Base and Arbitrum One, so a manifest without v3 is
+  // refused there; v4 alone only where the profile names `uniswap.v3` null. The backend refuses the same manifests as
+  // a dependency mismatch (its profile's dependencies hold the other version's keys).
+  const dexes = manifestDexes(m)
+  ensure(sameDexes(dexes, chain.dexes), 'manifest_dependency_mismatch', `Uniswap versions ${dexes.join('+')}, the chain's ${chain.dexes.join('+')}`)
   // The deployment went through the profile's CreateX, and outside a local test its verified code.
   ensure(canonical(m.dependencies) === canonical(profile.dependencies), 'manifest_dependency_mismatch', 'dependencies')
   ensure(profile.createx === CREATE_X && (local || profile.createxCodeHash === CREATE_X_CODE_HASH), 'manifest_dependency_mismatch', 'the profile\'s CreateX')
   if (!local) {
-    for (const name of MANIFEST_DEPENDENCIES) ensure(m.runtimeCodeHashes[name] === profile.dependencyCodeHashes[name], 'manifest_dependency_mismatch', `runtimeCodeHashes.${name}`)
+    for (const name of dependenciesFor(dexes)) ensure(m.runtimeCodeHashes[name] === profile.dependencyCodeHashes[name], 'manifest_dependency_mismatch', `runtimeCodeHashes.${name}`)
     ensure(canonical(m.chargeCurrencies) === canonical(profile.chargeCurrencies), 'manifest_dependency_mismatch', 'chargeCurrencies')
   }
   ensure(m.status === 'verified', 'manifest_not_executed', 'status')
@@ -592,11 +688,12 @@ function checkV2Deployment(raw: unknown, chainId: number, admission: V2Admission
   }[admission]
   ensure(!refused, 'manifest_not_admitted', `${admission}: environment ${m.environment}`)
 
-  const app = Object.entries(APP_COMPONENTS) as [V2Component, V2ManifestContract][]
+  // The components of the chain's versions: all seven with both; no zapV3 or vaultFactoryV3 with v4 alone.
+  const app = (Object.entries(APP_COMPONENTS) as [V2Component, V2ManifestContract][]).filter(([, key]) => Object.hasOwn(m.contracts, key))
   return Object.freeze({
     chainId,
-    addresses: Object.freeze(Object.fromEntries(app.map(([name, key]) => [name, m.contracts[key]])) as Record<V2Component, Address>),
-    codeHashes: Object.freeze(Object.fromEntries(app.map(([name, key]) => [name, m.runtimeCodeHashes[key]])) as Record<V2Component, Hex>),
+    addresses: Object.freeze(Object.fromEntries(app.map(([name, key]) => [name, m.contracts[key]])) as V2Contracts['addresses']),
+    codeHashes: Object.freeze(Object.fromEntries(app.map(([name, key]) => [name, m.runtimeCodeHashes[key]])) as V2Contracts['codeHashes']),
     fixture: admission !== 'production',
     deployment: manifestFacts(m, admission),
   })
@@ -652,16 +749,28 @@ export interface ManifestPin {
  * The money clients run the prediction again before taking the set and check each component's runtime code on chain
  * before the session's first write (src/finance/v2/deployment.ts), and a feature is switched on per chain only with its
  * backend capability (spec §1.1).
+ *
+ * Changed on purpose 2026-11-07 (Elysium as a fourth V2 chain, switched on by itself): Elysium's record is not imported
+ * (it does not exist until rugged97's day-9 pull request, and an import of a missing file breaks every build), and its
+ * pin is not written here. scripts/elysium-switch.mjs reads the record by directory and hashes its exact bytes against
+ * the pin a person wrote there (ELYSIUM_RECORD_PIN, the same review as the three pins below); only a record that matches
+ * it, with every other day-9 piece, turns Elysium on, and the build then hands in that very text and its pin
+ * (./elysiumFiles.ts). Here it joins the map and the pins like the others, and is parsed under the production admission
+ * like them: a record that fails any check leaves Elysium's V2 "Not available on Elysium yet". Off, neither is here.
  */
+const ELYSIUM_RECORD: Partial<Record<V2ChainId, unknown>> = ELYSIUM_DEPLOYMENT !== null && ELYSIUM_DEPLOYMENT_PIN !== null ? { [ELYSIUM_V2_ID]: ELYSIUM_DEPLOYMENT } : {}
+const ELYSIUM_PIN: Partial<Record<V2ChainId, ManifestPin>> = ELYSIUM_DEPLOYMENT !== null && ELYSIUM_DEPLOYMENT_PIN !== null ? { [ELYSIUM_V2_ID]: ELYSIUM_DEPLOYMENT_PIN } : {}
 export const V2_DEPLOYMENTS: Readonly<Partial<Record<V2ChainId, unknown>>> = Object.freeze({
   4663: robinhood4663,
   8453: base8453,
   42161: arbitrum42161,
+  ...ELYSIUM_RECORD,
 })
 export const V2_MANIFEST_PINS: Readonly<Partial<Record<V2ChainId, ManifestPin>>> = Object.freeze({
   4663: { path: 'docs/deployments/v2-robinhood-4663-2026-10-04/deployment.json', sha256: '3f07f48cac98b8bc61851736a3332ac4b972069bb7b57401c816bfbcfd6e0f0d' },
   8453: { path: 'docs/deployments/v2-base-8453-2026-10-04/deployment.json', sha256: '48c409dfd5b0c25a85ce71f61b795a716fbe9e0615aa24e50f4fe3ef99f07b56' },
   42161: { path: 'docs/deployments/v2-arbitrum-42161-2026-10-04/deployment.json', sha256: '0ed3a7965bd4d56dff66ef1012ea8a84b2473d902506b0664baf90f7e0bef39d' },
+  ...ELYSIUM_PIN,
 })
 
 export type V2Availability =

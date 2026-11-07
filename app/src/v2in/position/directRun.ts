@@ -6,7 +6,7 @@ import { actionError, type ActionError } from './errors'
 import type { ActionPosition } from './model'
 import { connectPosition, type OpenGate, type PositionConnection } from './wallet'
 import { positionChanged } from '../lists/positionSync'
-import { v2Chain } from '../../v2/chains'
+import { positionManagerOf, v2Chain } from '../../v2/chains'
 import { RECEIPT_STILL_WAITING_MS, receiptPause, receiptWalletAway } from '../receiptWait'
 import { RECEIPT_FOLLOW } from '../journey/receiptFollow'
 import type { V2Receipt } from '../../finance/v2/transact'
@@ -127,7 +127,7 @@ export function useDirectExit(gate: OpenGate, position: ActionPosition, label: (
     setState((now) => ({ ...now, stage: 'sent', hash }))
     const chain = v2Chain(gate.chainId)
     /** The lists hear of the exit once, at its block. */
-    const announced = (block: bigint) => positionChanged({ chainId: gate.chainId, positionManager: position.dex === 4 ? chain.uniswap.v4.positionManager : chain.uniswap.v3.positionManager, tokenIds: [position.tokenId.toString()], wallet: connection.wallet.owner, block })
+    const announced = (block: bigint) => positionChanged({ chainId: gate.chainId, positionManager: positionManagerOf(chain, position.dex), tokenIds: [position.tokenId.toString()], wallet: connection.wallet.owner, block })
     /**
      * Added (2026-10-15, pack 8): its receipt, read from Uniswap's own logs, is a row of Receipts and of the position's
      * Activity at once (../lists/sessionReceipts.ts): read-v6 lists no exit made straight at Uniswap, so the row stays for

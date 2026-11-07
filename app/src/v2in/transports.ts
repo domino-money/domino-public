@@ -28,7 +28,7 @@ import { livePlanTransport, liveReadV6Transport, v2RouteProbe } from '../finance
 import type { GateRoutes, V2Gate } from '../v2/gate'
 import { POSITION_PLAN_RUNTIME } from '../v2/plan/contract'
 import type { ReadV6Validators } from '../v2/read/v6'
-import type { V2RouteProbe } from '../v2/routes'
+import { routeServes, type V2RouteProbe } from '../v2/routes'
 import { createV2ReadTransports, createV2Transports, type V2DataScript, type V2Transports, type V2ReadTransports } from './dataSource'
 
 export { type V2DataSource, type V2Transports, type V2ReadTransports } from './dataSource'
@@ -62,6 +62,14 @@ export function v2Transports(gate: V2Gate): V2Transports | null {
 
 export function v2ReadTransports(): V2ReadTransports {
   return createV2ReadTransports({ runtimes: RUNTIMES, live: () => ({ read: liveReadV6Transport(), plan: livePlanTransport(), probe: (probe ??= v2RouteProbe()) }), script })
+}
+
+/** Whether the read route is known to serve `position-fees` now, asking nothing: the page's first draw (its portfolio's read asked the route already). */
+export function positionFeesServedNow(): boolean {
+  const scripted = script()
+  if (scripted) return scripted.read6?.['position-fees'] !== undefined
+  const state = probe?.known?.('readV6') ?? null
+  return state !== null && routeServes(state, 'position-fees')
 }
 
 /** Forget the routes' kept answers (a session or page change that may change them). */

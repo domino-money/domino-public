@@ -5,6 +5,8 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { defineConfig, type Plugin, type Rollup } from 'vite'
 import { PREVIEW_SITE_FORBIDDEN, TEXT_FILE, assertDeployable, findForbidden } from './scripts/deploy-markers.mjs'
+import { elysiumSwitch, switchDiagnostic } from './scripts/elysium-switch.mjs'
+import { moduleSource, rehearsePlan, rehearseReadV6, type SchemaData } from './scripts/elysium-rehearsal.mjs'
 import { ROUTES } from './src/routeTable'
 import { bootTags, type BootData } from './functions/_lib/boot'
 
@@ -54,6 +56,12 @@ const reactDomRoot = here('./node_modules/react-dom')
  *
  * Wallet sign-in itself is not a mode: the deployable modes carry it, because
  * it is part of what the site does. Only its probes are a mode of their own.
+ *
+ * Changed on purpose 2026-11-06 (the Elysium surface): one environment variable is read, by the test builds alone:
+ * DOMINO_TEST_ELYSIUM_PROFILE (with DOMINO_TEST_ELYSIUM_FUNDS_FROM), which turns Elysium on with a fixture profile for
+ * the browser suites and their pictures (scripts/elysium-switch.mjs). The deployable modes, preview-v2 and every other
+ * build ignore it and read Elysium's switch from the repository alone; a forced build writes to `<outDir>-elysium` (or
+ * `-elysium-funds`), beside its mode's own directory.
  *
  * Only a deployable mode may write to dist, which is what Pages deploys; the
  * guard below refuses any other there. No mode has sample data: there is none.
@@ -354,6 +362,30 @@ function v2ScreensCss(): Plugin {
  * and a deployable build that ever compiled V2 in fails its own bundle check. A page without its root element fails the
  * build rather than going unmarked.
  */
+/**
+ * Day 9 rehearsed (added 2026-11-07, Elysium's screens): in a test build that forces Elysium on, and only there, the
+ * read-v6 and position-plan-v1 packages' data as rugged97's day-9 versions have it, naming chain 99901
+ * (scripts/elysium-rehearsal.mjs), served in place of each package's `schema-data.mjs`; their runtimes are the packages'
+ * own. `profile`: the forced profile's text. Every other build bundles the packages as they are.
+ */
+function elysiumRehearsal(profile: string): Plugin {
+  const parsed = JSON.parse(profile) as Record<string, unknown>
+  const packages: readonly [RegExp, string, typeof rehearseReadV6][] = [
+    [/[\\/]api-contracts[\\/]read-v6[\\/]schema-data\.mjs$/, '../api-contracts/read-v6/schema-data.mjs', rehearseReadV6],
+    [/[\\/]api-contracts[\\/]position-plan-v1[\\/]schema-data\.mjs$/, '../api-contracts/position-plan-v1/schema-data.mjs', rehearsePlan],
+  ]
+  return {
+    name: 'domino:elysium-rehearsal',
+    enforce: 'pre',
+    async load(id) {
+      const found = packages.find(([path]) => path.test(id.split('?')[0]))
+      if (!found) return null
+      const data = (await import(new URL(found[1], import.meta.url).href)) as SchemaData
+      return moduleSource(found[2](data, parsed))
+    },
+  }
+}
+
 export const V2_BUILD_MARK = 'data-v2-build'
 function v2BuildMark(mode: string): Plugin {
   return {
@@ -396,11 +428,22 @@ export default defineConfig(({ mode, command }) => {
     : MODES[mode as keyof typeof MODES]
   // The page is the real site for V1 (the MODES note): the deployable builds, and preview-v2.
   const site = settings.deployable || settings.site
+  // Changed on purpose 2026-11-06 (the Elysium surface): Elysium's switch (scripts/elysium-switch.mjs); a live build
+  // without its official mark fails. Changed on purpose 2026-11-07 (Elysium as a fourth V2 chain, switched on by itself):
+  // live once every day-9 piece is in the repository (rugged97's enabled profile and deployment record, our pin of the
+  // record, read-v6 and position-plan naming 99901), or, in a test build only, with a fixture profile the suite names. The
+  // app's V2 chain list follows it (src/config/chainIdentity.ts V2_CHAIN_IDS), so it is no longer handed in. A missing
+  // piece never fails the build: once anything of day 9 is there, the build says what Elysium still waits for.
+  const elysium = elysiumSwitch({ row: settings, env: process.env, appRoot: here('.') })
+  const elysiumWaits = switchDiagnostic(elysium)
+  if (elysiumWaits !== null) console.warn(elysiumWaits)
   return {
     // Changed on purpose 2026-10-04 (the owner: the site runs on Domino V2): a deployable build carries V2's screens but
     // never the V2 build mark, which marks the builds that take V2's test data (preview-v2, the test builds) and which
     // every release refuses.
-    plugins: [react(), ...(settings.v2 ? [v2ScreensCss(), ...(settings.deployable ? [] : [v2BuildMark(mode)])] : []), tailwindcss(), boot(!localLive && site && settings.pools === 'selected'), ...(localLive ? [{ name: 'domino:local-live-launcher-only', configResolved(config: { server: { middlewareMode: unknown } }) { if (!config.server.middlewareMode) throw new Error('Use npm run dev:live; local-live requires the guarded launcher.') } }] : [deployableOnlyInDist(mode, settings.deployable)]), deployableBundleCheck(mode, settings.deployable), previewSiteBundleCheck(mode, !localLive && !settings.deployable && settings.site)],
+    // Changed on purpose 2026-11-07 (Elysium's screens): last, a test build forcing Elysium on rehearses day 9's read-v6 and
+    // plan packages too (elysiumRehearsal, which loads before Vite's own loader).
+    plugins: [react(), ...(settings.v2 ? [v2ScreensCss(), ...(settings.deployable ? [] : [v2BuildMark(mode)])] : []), tailwindcss(), boot(!localLive && site && settings.pools === 'selected'), ...(localLive ? [{ name: 'domino:local-live-launcher-only', configResolved(config: { server: { middlewareMode: unknown } }) { if (!config.server.middlewareMode) throw new Error('Use npm run dev:live; local-live requires the guarded launcher.') } }] : [deployableOnlyInDist(mode, settings.deployable)]), deployableBundleCheck(mode, settings.deployable), previewSiteBundleCheck(mode, !localLive && !settings.deployable && settings.site), ...(elysium.forced && elysium.profile !== null ? [elysiumRehearsal(elysium.profile)] : [])],
     define: {
       __DOMINO_READ_MODE__: JSON.stringify(settings.read),
       __DOMINO_POOL_SET__: JSON.stringify(settings.pools),
@@ -425,6 +468,19 @@ export default defineConfig(({ mode, command }) => {
       // Changed on purpose (data) 2026-10-02 (Domino V2 integration): whether the build takes V2's FIXTURE contract sets
       // (src/v2/flag.ts): the builds that carry V2 and are not deployable. Written for every mode.
       __DOMINO_V2_FIXTURE_SETS__: JSON.stringify(settings.v2 && !settings.deployable),
+      // Added 2026-11-06 (the Elysium surface): whether Elysium is live, and whether funds can come from it
+      // (src/lib/elysiumIdentity.ts ELYSIUM_LIVE, ELYSIUM_FUNDS_FROM). Literals, so every Elysium branch leaves a build
+      // where it is off. Written for every mode.
+      __DOMINO_ELYSIUM_LIVE__: JSON.stringify(elysium.live),
+      __DOMINO_ELYSIUM_FUNDS_FROM__: JSON.stringify(elysium.fundsFrom),
+      // Its Uniswap v4 PositionManager and Permit2 from its profile, for the docs' Contracts page (src/lib/docs/elysium.ts).
+      __DOMINO_ELYSIUM_UNISWAP__: JSON.stringify(elysium.uniswap),
+      // Added 2026-11-07 (Elysium as a fourth V2 chain): where it is live, its profile's text and its pinned deployment
+      // record's text with its pin (src/v2/elysiumFiles.ts), each a string literal the app parses once; null elsewhere, so
+      // a build where Elysium is off carries none of them. Written for every mode.
+      __DOMINO_ELYSIUM_PROFILE__: JSON.stringify(elysium.profile),
+      __DOMINO_ELYSIUM_DEPLOYMENT__: JSON.stringify(elysium.deployment === null ? null : elysium.deployment.text),
+      __DOMINO_ELYSIUM_DEPLOYMENT_PIN__: JSON.stringify(elysium.deployment === null ? null : { path: elysium.deployment.path, sha256: elysium.deployment.sha256 }),
     },
     resolve: {
       dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime'],
@@ -443,7 +499,8 @@ export default defineConfig(({ mode, command }) => {
       fs: { allow: [here('.'), here('../web'), here('../api-contracts')] },
     },
     build: {
-      outDir: settings.outDir,
+      // A build that forces Elysium on (a test build only) writes beside the usual one, never over it.
+      outDir: `${settings.outDir}${elysium.outDirSuffix}`,
       emptyOutDir: true,
       // The consumer-test build records which chunk holds which module, so
       // tests/consumer.bundle.test.mjs can scan the preview and deposit chunks

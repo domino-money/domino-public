@@ -1,5 +1,5 @@
 import { TokenIcon } from '../../components/TokenIcon'
-import { FUNDING_NETWORKS, NetworkMark } from '../../components/home/HomeCapabilities'
+import { MARKED_NETWORKS, NetworkMark } from '../../components/home/HomeCapabilities'
 import { useInView } from '../../components/home/Vignettes'
 import { bundledTokenArtwork } from '../../lib/bundledTokenArtwork'
 import { networkName } from '../../lib/networkName'
@@ -21,7 +21,7 @@ export interface TransferRouteProps {
 
 function Port({ chainId, side }: { chainId: number; side: 'origin' | 'destination' }) {
   const name = networkName(chainId)
-  const known = FUNDING_NETWORKS.find((network) => network === name)
+  const known = MARKED_NETWORKS.find((network) => network === name)
   return <div className={`dm-funds-route-port dm-funds-route-${side}`}>
     <span className="dm-funds-route-platform" />
     <span className="dm-funds-route-network">

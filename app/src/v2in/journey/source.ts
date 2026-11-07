@@ -1,5 +1,6 @@
+import { V2_CHAIN_IDS } from '../../config/chainIdentity'
 import { livePlanTransport as sitePlanTransport } from '../../finance/v2/http'
-import { v2Chain } from '../../v2/chains'
+import { positionManagers, v2Chain } from '../../v2/chains'
 import { v2Gate, type GateRoutes, type V2Gate } from '../../v2/gate'
 import { v2PageProbe } from '../transports'
 import { POSITION_PLAN_RUNTIME } from '../../v2/plan/contract'
@@ -21,7 +22,12 @@ import type { Address, V2ChainId, V2Contracts } from '../../v2/types'
  */
 export type JourneyGates = Readonly<Record<V2ChainId, V2Gate>>
 
-const CHAINS: readonly V2ChainId[] = [4663, 8453, 42161]
+/**
+ * Every network New position plans on: the app's V2 chains (config/chainIdentity.ts V2_CHAIN_IDS). Changed on purpose
+ * 2026-11-07 (Elysium as a fourth V2 chain): the list, which names Elysium where the build serves it, in place of the three
+ * written out; the same three, in the same order, everywhere else.
+ */
+const CHAINS: readonly V2ChainId[] = V2_CHAIN_IDS as readonly V2ChainId[]
 
 /** The S1 gate of every network at the page's origin. */
 export async function journeyGates(): Promise<JourneyGates> {
@@ -47,7 +53,7 @@ export async function journeyGatesRead(): Promise<{ gates: JourneyGates; again: 
     }
   }
   const gates = await Promise.all(CHAINS.map((chainId) => v2Gate('s1', chainId, undefined, routes)))
-  return { gates: Object.freeze({ 4663: gates[0], 8453: gates[1], 42161: gates[2] }), again }
+  return { gates: Object.freeze(Object.fromEntries(CHAINS.map((chainId, index) => [chainId, gates[index]])) as Record<V2ChainId, V2Gate>), again }
 }
 
 export const planRuntime: S1PlanValidators = POSITION_PLAN_RUNTIME
@@ -97,8 +103,9 @@ export function liveContext(chainId: V2ChainId, owner: Address, contracts: V2Con
   const chain = v2Chain(chainId)
   return {
     owner,
-    zaps: { 3: contracts.addresses.zapV3.toLowerCase() as Address, 4: contracts.addresses.zapV4.toLowerCase() as Address },
+    // The zaps and managers of the chain's versions: no v3 on a chain with v4 alone, so a v3 answer there is refused.
+    zaps: { ...(contracts.addresses.zapV3 ? { 3: contracts.addresses.zapV3.toLowerCase() as Address } : {}), 4: contracts.addresses.zapV4.toLowerCase() as Address },
     permit2: chain.permit2,
-    managers: { 3: chain.uniswap.v3.positionManager, 4: chain.uniswap.v4.positionManager },
+    managers: positionManagers(chain),
   }
 }

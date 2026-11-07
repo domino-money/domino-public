@@ -10,6 +10,7 @@
 import { CONTRACTS_NOT_LIVE, contractsNotLiveCopy } from '../../finance/v2/liveLock'
 import { capacityBusyWait, isCapacityBusy } from '../../finance/v2/requestCoordinator'
 import { v2Chain } from '../../v2/chains'
+import { versionOffChain } from '../../v2/plan/client'
 import { GENERIC_COPY, decodeRevertData, decodeV2Error, type ErrorLabels, type Recovery } from '../../v2/errors'
 import type { S1PlanResult } from '../../v2/plan/types'
 import type { Address, V2ChainId } from '../../v2/types'
@@ -89,14 +90,14 @@ function clientCopy(code: string, chainId: V2ChainId): { copy: string; recovery:
     case 'close_request_unsettled': return { copy: CLOSE_UNSETTLED_COPY(chain), recovery: 'none' }
     case 'zap_action_unsettled': return { copy: UNSETTLED_COPY(chain), recovery: 'none' }
     case 'wallet_result_unknown': return { copy: COPY.wallet.sentUnknown, recovery: 'none' }
-    case 'native_gas_reserve_insufficient': return { copy: 'Not enough ETH for the network fee.', recovery: 'none' }
+    case 'native_gas_reserve_insufficient': return { copy: `Not enough ${v2Chain(chainId).nativeSymbol} for the network fee.`, recovery: 'none' }
     case 'gas_budget_exceeded': return { copy: 'This would cost more network fee than allowed. Review again.', recovery: 'requote' }
     case 'position_not_found': return { copy: 'This position doesn’t belong to the selected pool, or it was closed.', recovery: 'reread-position' }
     case 'position_not_owned': return { copy: 'Only the wallet that holds this position can do this.', recovery: 'switch-account' }
     case 'position_pool_has_hooks': return { copy: HOOKED_COPY, recovery: 'none' }
     case 'position_already_empty': return { copy: 'This position has nothing left to withdraw.', recovery: 'none' }
     case 'pool_not_initialized': return { copy: 'This pool has no price yet.', recovery: 'other-pool' }
-    case 'native_eth_refused': return { copy: 'Your account can’t receive ETH directly. Use another account.', recovery: 'none' }
+    case 'native_eth_refused': return { copy: `Your account can’t receive ${v2Chain(chainId).nativeSymbol} directly. Use another account.`, recovery: 'none' }
     case 'nft_approval_missing': return { copy: 'Approve Domino to manage this position first.', recovery: 'approve-position' }
     case 'batch_simulation_reverted': return { copy: GENERIC_COPY, recovery: 'requote' }
     case 'signature_journal_unavailable': case 'signature_journal_full': case 'wallet_nonce_coordination_unavailable': return { copy: 'This browser can’t keep track of your wallet requests. Use another browser.', recovery: 'none' }
@@ -114,9 +115,15 @@ function clientCopy(code: string, chainId: V2ChainId): { copy: string; recovery:
  * A plan answer that is not a plan, said (rev2 §2.4's table of the plan API's codes; the server's simulation's revert
  * through the §2.12 decoder; anything this app does not accept as `invalid`).
  */
-export function planFailure(result: Exclude<S1PlanResult, { kind: 'ok' }>, chainId: V2ChainId, token?: (address: Address) => string): ActionError {
+export function planFailure(result: Exclude<S1PlanResult, { kind: 'ok' }>, chainId: V2ChainId, token?: (address: Address) => string, dex?: number): ActionError {
   const chain = v2Chain(chainId).name
   const E = COPY.planErrors
+  // Changed on purpose 2026-11-06 (Elysium readiness): the service's `invalid_request` for a version the chain lacks (v3
+  // on a chain with v4 alone; ../../v2/plan/client.ts gives it without asking) is "Not available on {chain} right now.",
+  // as a chain the planner does not serve, never asked again; any other `invalid_request` is said as before.
+  if (result.kind === 'refused' && result.code === 'invalid_request' && versionOffChain(chainId, dex)) {
+    return { copy: E.not_available(chain), code: 'position_plan_dex_not_on_chain', recovery: 'none' }
+  }
   const tidy = (raw: string) => raw.replace(/[^a-z0-9_]/gi, '_').toLowerCase().slice(0, 64)
   switch (result.kind) {
     case 'expired': return { copy: EXPIRED_COPY, code: 'plan_answer_expired', recovery: 'quiet-requote' }

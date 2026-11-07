@@ -5,7 +5,7 @@ import { createAutoExitClient, type MandateStatusView } from '../../finance/v2/a
 import { browserSignatureJournal } from '../../finance/v2/signatureJournal'
 import { v2Wallet } from '../../finance/v2/wallet'
 import { useWalletIdentity } from '../../lib/walletIdentity'
-import { v2Chain } from '../../v2/chains'
+import { positionManagerOrNull, v2Chain } from '../../v2/chains'
 import type { ErrorLabels } from '../../v2/errors'
 import type { V2Gate } from '../../v2/gate'
 import type { PriceOrientation } from '../../v2/trigger'
@@ -135,7 +135,7 @@ function ModuleOnDialog({ target, vault, order, gate, labels, onTurnOff, onDone,
       lockedCopy={gate.mode === 'preview' ? gate.lockedCopy : ''}
       context="vault"
       labels={labels}
-      affected={{ positionManager: v2Chain(target.chainId).uniswap[target.dex === 3 ? 'v3' : 'v4']?.positionManager, tokenIds: [target.tokenId.toString()], vault }}
+      affected={{ positionManager: positionManagerOrNull(v2Chain(target.chainId), target.dex) ?? undefined, tokenIds: [target.tokenId.toString()], vault }}
       held={past && !acknowledged}
       prepare={async (session) => {
         // Unread here: nothing is said yet; the step reads it again right before the wallet, and says a failure there.
@@ -437,7 +437,7 @@ export function AutoExitCard({ target, orders, mine, credits, gate, owner, orien
           lockedCopy={lockedCopy}
           context="autoExit"
           labels={labels}
-          affected={{ positionManager: chain.uniswap[target.dex === 3 ? 'v3' : 'v4']?.positionManager, tokenIds: [target.tokenId.toString()], ...(vault ? { vault } : {}) }}
+          affected={{ positionManager: positionManagerOrNull(chain, target.dex) ?? undefined, tokenIds: [target.tokenId.toString()], ...(vault ? { vault } : {}) }}
           prepare={async (session) => {
             // The order's status read on chain first (§4.5): only an active order of this wallet is cancelled.
             const status: MandateStatusView = await session.serial(() => session.autoExit.status(dialog.id))

@@ -40,6 +40,7 @@ const { launchBrowser } = await import('../support/s1-browser.mjs');
 const { createV2Chain } = await import('../support/v2-chain.mjs');
 const { createDirectChain } = await import('../support/v2-direct-chain.mjs');
 const { openPositionPage } = await import('../support/position-v2-page.mjs');
+const { createChainReads } = await import('../support/chain-reads.mjs');
 const { FAKE } = await import('../v2/support/plans.mjs');
 
 const require = createRequire(import.meta.url);
@@ -102,6 +103,19 @@ const READ6 = {
   }),
   activity: activityOf({ wallet: OWNER, items: [s1Action({ chainId: 8453, wallet: OWNER, zap: ZAP_V4, action: 'increase', tokenId: 5_100_001, previousTokenId: 5_100_001, pool: POOL, inputs: [{ token: USDC, amount: '100000000' }], legs: [{ kind: 'v4_pool', tokenIn: USDC, tokenOut: ZERO, venue: '0x' + '1'.repeat(40), amountIn: '50000000', amountOut: '20000000000000000' }], tariffs: [{ kind: 'assisted_swap', rateBps: 65, token: USDC, amount: '325000', deferred: '0' }] })] }),
 };
+/**
+ * Added 2026-11-06 (review F1, UI-2): read-v6 chain-pools on Base, answered from `pools` as the contract allows
+ * (tests/support/chain-reads.mjs), each request kept in `asked`: a `prepare` for openPositionPage. Details' Pool and
+ * New position in this pool appear on Base only once this read lists the position's pool.
+ */
+const basePools = (pools, tokens, asked = []) => async (context) => {
+  const reads = createChainReads({ chainId: 8453, tokens, pools });
+  await context.exposeFunction('__positionChainPools', (request) => { asked.push(request); return reads.answer('chain-pools', request); });
+  await context.addInitScript(() => { window.__dominoV2Test.read6['chain-pools'] = (request) => window.__positionChainPools(request); });
+};
+const ETH_USDC = [{ address: ZERO, symbol: 'ETH', name: 'Ether', decimals: 18 }, { address: USDC, symbol: 'USDC', name: 'USD Coin', decimals: 6 }];
+const POOL_LISTED = [{ pool: POOL, sqrtPriceX96: SQRT, tick: TICK, liquidity: 10n ** 18n }];
+
 const chainOf = (over = {}) => createV2Chain({ chainId: 8453, timestamp: now(), positions: CHAIN_POSITIONS, pools: [{ pool: POOL, sqrtPriceX96: SQRT, tick: TICK, liquidity: 10n ** 16n }], vaults: [VAULT], ...over });
 
 test('multichain sync: detail updates from the shared portfolio and charts only timestamped observed balances without extra reads', async () => {
@@ -237,7 +251,8 @@ test('(a) with the gate closed the route is V1\'s: a V2 position\'s address show
 
 test('(b) live on Base: the same page from read-v6, no USD and no APR; Domino\'s approval in Details, and Revoke sends approve(address(0), tokenId)', async () => {
   const chain = chainOf();
-  const s = await openPositionPage(browser, chain, { hash: '#/positions/base-v4-5100001', read6: READ6 });
+  const asked = [];
+  const s = await openPositionPage(browser, chain, { hash: '#/positions/base-v4-5100001', read6: READ6, prepare: basePools(POOL_LISTED, ETH_USDC, asked) });
   try {
     const page = s.page;
     const detail = page.locator('[data-position-detail][data-position-v2="base-v4"][data-position-id="5100001"]');
@@ -248,9 +263,22 @@ test('(b) live on Base: the same page from read-v6, no USD and no APR; Domino\'s
     assert.doesNotMatch(await text(detail), /v4|v3/, 'the version is never text on screen');
     assert.equal(await detail.locator('.dm-pos-chips [title="Uniswap v4"]').count(), 1);
     assert.doesNotMatch(await text(detail), /Test data/, 'real data: nothing marked as test data');
-    assert.match(await detail.locator('[data-position-details] [data-stat="principal"]').textContent(), /ETH.*USDC/);
-    assert.match(await detail.locator('[data-position-details] [data-stat="fees"]').textContent(), /0\.001\s+ETH.*2\.5\s+USDC/);
+    // Changed on purpose 2026-11-06 (O-07, O-08, O-13; the owner: every chain the same as Robinhood Chain): Robinhood
+    // Chain's tiles. With no dollar figure the two token amounts are the tile's figure, and Details holds no copy of them.
+    assert.match(await detail.locator('[data-cell="principal"] [data-usd-amounts="principal"]').textContent(), /ETH.*USDC/);
+    assert.match(await detail.locator('[data-cell="fees"] [data-usd-amounts="fees"]').textContent(), /0\.001\s+ETH.*2\.5\s+USDC/);
+    assert.equal(await detail.locator('[data-position-details] [data-stat="principal"], [data-position-details] [data-stat="fees"]').count(), 0, 'no token amounts in Details, as on Robinhood Chain');
+    assert.equal(await detail.locator('[data-position-stats]').getAttribute('title'), null, 'no "Read at block" on the strip');
+    // The price tile: Robinhood Chain's range bar, its two ends and whether it earns.
+    const range = detail.locator('[data-cell="price"] [data-stat="range"]');
+    assert.equal(await range.count(), 1);
+    assert.match(await text(range.locator('.dm-pos-span-ends')), /^\S+ Your range \S+$/);
+    assert.equal(await range.locator('.sr-only[data-in="true"]').textContent(), 'In range: earning fees');
     assert.equal(await detail.locator('[data-cell="apr"] [data-figure="none"]').count(), 1, 'no APR without a qualified source: a dash');
+    assert.equal(await detail.locator('[data-recorded-fees]').count(), 1, "the route does not serve position-fees: the session's readings, as before");
+    assert.equal(await detail.locator('[data-position-insights] + .dm-pos-grid').count(), 1, "the charts before the grid of Activity and Details, as Robinhood Chain's page");
+    assert.equal(await detail.locator('[data-position-v2-action="collect"]').isDisabled(), false, 'fees to collect: Collect fees on');
+    assert.equal(await detail.locator('[data-fees-card]').count(), 0);
     // Changed on purpose 2026-10-03: the price's two sides are the app's one way round (lib/read/orientation.ts), as its
     // figure and the Price range chart are; the tile wrote the pool's order beside it ("1 ETH = 0.000333 USDC").
     // Changed on purpose 2026-10-05 (New position on Base and Arbitrum One): Base's USDC is a quote there as USDG is on
@@ -271,7 +299,23 @@ test('(b) live on Base: the same page from read-v6, no USD and no APR; Domino\'s
     await page.keyboard.press('Escape');
       // Details: the custody, the Uniswap version, and "Domino can manage this position for you when you ask." with Revoke (read through the wallet).
     await detail.locator('[data-position-details] summary').click();
-    assert.equal(await text(detail.locator('[data-position-custody]')), 'Your position stays in your wallet.');
+    // Changed on purpose 2026-11-06 (O-12, O-13): Robinhood Chain's Details. A plain position has no Held line there; the
+    // pool's id has its own name, no "Read at block", and New position in this pool by Base's own link.
+    assert.equal(await detail.locator('[data-position-custody]').count(), 0, "a plain position: no Held line, as Robinhood Chain's page");
+    const facts = await text(detail.locator('[data-position-details] .dm-pos-facts'));
+    assert.match(facts, /Pool id 0x/);
+    assert.doesNotMatch(facts, /Read at block|Tokens in this position|Fees ready to collect|Fees history/);
+    // Changed on purpose 2026-11-06 (review F1, UI-2): once Base's pools read for USDC lists this ETH/USDC pool.
+    await detail.locator('[data-position-pool-link]').waitFor({ timeout: 30_000 });
+    assert.ok(asked.some((request) => request.chainId === 8453 && request.token === USDC && request.pairedToken === undefined), 'USDC\'s pools read, the one the pool page reads');
+    assert.match(await detail.locator('[data-position-new-in-pool]').getAttribute('href'), /^#\/new\/network\/8453\/0x833589fcd6edb6e08f4c7c32d4f71b54bda02913\/0x[0-9a-f]{64}$/);
+    assert.equal(await text(detail.locator('[data-position-new-in-pool]')), 'New position in this pool');
+    // Changed on purpose 2026-11-06 (INT-1): the Pool button, as Robinhood Chain's Details, opens Base's own pool page:
+    // the same pool and token as New position's link, the Pool button first.
+    const newIn = /^#\/new\/network\/8453\/(0x[0-9a-f]{40})\/(0x[0-9a-f]{64})$/.exec(await detail.locator('[data-position-new-in-pool]').getAttribute('href'));
+    assert.equal(await detail.locator('[data-position-pool-link]').getAttribute('href'), `#/pool/network/8453/${newIn[2]}/${newIn[1]}`);
+    assert.equal(await text(detail.locator('[data-position-pool-link]')), 'Pool');
+    assert.deepEqual(await detail.locator('.dm-pos-links > a').evaluateAll((links) => links.map((link) => link.hasAttribute('data-position-pool-link') ? 'pool' : 'new')), ['pool', 'new']);
     assert.equal(await text(detail.locator('[data-position-dex]')), 'v4');
     const approval = detail.locator('[data-position-zap-approval="approved"]');
     await approval.waitFor({ timeout: 30_000 });
@@ -930,7 +974,8 @@ test('(f0) Close position, as on Robinhood (the owner, 2026-10-15): last in the 
     assert.match(await text(dialog), /Your tokens and fees return to your wallet\. The position, now empty, stays in your wallet\./);
     assert.equal(await dialog.locator('[data-position-continue], [data-position-review-back], .dm-pa-share').count(), 0, 'no form: straight on its review');
     await dialog.locator('[data-position-direct="ready"]').waitFor({ timeout: 30_000 });
-    assert.match(await text(dialog.locator('[data-position-receive="close"]')), /^You receive .*ETH.*USDC At least .*ETH.*USDC Domino fee No Domino fee Network fee Up to [\d.]+ ETH$/);
+    // Changed on purpose 2026-11-06 (O-10): Robinhood Chain's Close position says no Domino fee line.
+    assert.match(await text(dialog.locator('[data-position-receive="close"]')), /^You receive .*ETH.*USDC At least .*ETH.*USDC Network fee Up to [\d.]+ ETH$/);
     assert.equal(await dialog.locator('[data-close-advanced]').count(), 1, 'its slippage under Advanced');
     const send = dialog.locator('[data-position-send="close"]:not([disabled])');
     assert.equal(await text(send), 'Close in wallet');
@@ -1084,7 +1129,7 @@ test('V2 Auto-exit on Base, preview: current custody opens the range\'s exact ed
 // Added 2026-10-06 (rugged97's delta of 5 Oct, item 4: read-v6 1.1.0-rc.1's qualified USD): with its tokens priced, the
 // page shows what the position holds and its fees in dollars, as V1's page does, the token amounts under each figure;
 // still no APR. Base's ETH at the fixtures' Chainlink round, its USDC at 1.
-test('(b3) live on Base with qualified prices: fixed USD figures, token amounts in Details, still no APR', async () => {
+test('(b3) live on Base with qualified prices: fixed USD figures, token amounts under each, still no APR', async () => {
   const pools = JSON.parse(readFileSync(new URL('../../../api-contracts/read-v6/fixtures/valid/chain-pools.json', import.meta.url), 'utf8'));
   const priced = (token, symbol) => ({ ...token, price: pools.tokens.find((one) => one.symbol === symbol).price, priceReason: null });
   const portfolio = portfolioOf({ wallet: OWNER, tokens: [priced(TOKENS[0], 'ETH'), priced(TOKENS[1], 'USDC')], positions: [live(5_100_001, { approved: ZAP_V4 })] });
@@ -1095,11 +1140,18 @@ test('(b3) live on Base with qualified prices: fixed USD figures, token amounts 
     const holds = detail.locator('[data-cell="principal"]');
     await holds.locator('[data-usd="principal"]').waitFor({ timeout: 30_000 });
     assert.match((await holds.locator('[data-usd="principal"]').textContent()).trim(), /^\$[\d,]+(\.\d{2})?$/, 'what it holds, in dollars; read the exact value across its animated digit spans');
-    assert.equal(await holds.locator('[data-stat="principal"]').count(), 0, 'the headline layout remains USD only');
-    assert.match(await detail.locator('[data-position-details] [data-stat="principal"]').textContent(), /ETH.*USDC/, 'its token amounts remain in Details');
+    // Changed on purpose 2026-11-06 (O-07): as on Robinhood Chain, the token amounts under a closed "Token amounts" in each
+    // tile, the value's with its split bar; Details holds no copy of them.
+    const amounts = holds.locator('details.dm-position-figure-detail');
+    assert.equal(await text(amounts.locator('summary')), 'Token amounts');
+    assert.equal(await amounts.getAttribute('open'), null, 'closed until asked for');
+    assert.match(await holds.locator('[data-stat="principal"]').textContent(), /ETH.*USDC/);
+    assert.equal(await holds.locator('.dm-pos-split').count(), 1, 'both tokens held: the split bar');
+    assert.equal(await detail.locator('[data-position-details] [data-stat="principal"]').count(), 0);
     // 0.001 ETH at $4,000.12 and 2.5 USDC at $1: $6.50.
     assert.equal(await text(detail.locator('[data-cell="fees"] [data-usd="fees"]')), '$6.50');
-    assert.match(await detail.locator('[data-position-details] [data-stat="fees"]').textContent(), /0\.001\s+ETH.*2\.5\s+USDC/);
+    assert.equal(await text(detail.locator('[data-cell="fees"] details.dm-position-figure-detail summary')), 'Token amounts');
+    assert.match(await detail.locator('[data-cell="fees"] [data-stat="fees"]').textContent(), /0\.001\s+ETH.*2\.5\s+USDC/);
     assert.equal(await detail.locator('[data-cell="apr"] [data-figure="none"]').count(), 1, 'still no APR');
     for (const width of [1280, 390, 320]) {
       await s.page.setViewportSize({ width, height: 960 });
@@ -1108,6 +1160,271 @@ test('(b3) live on Base with qualified prices: fixed USD figures, token amounts 
       assert.equal(await holds.locator('.dm-tick-d').evaluateAll((digits) => new Set(digits.map((digit) => Math.round(digit.getBoundingClientRect().top))).size), 1, `the qualified dollar value stays on one line at ${width}px`);
       await detail.screenshot({ path: join(shots(), `position-base-qualified-${width}.png`), animations: 'disabled' });
     }
+  } finally { await s.close(); }
+});
+
+// Added 2026-11-04 (the owner: every chain the same as Robinhood Chain; docs/v2/V2_FEES.md): read-v6's stored fee history draws
+// Robinhood Chain's own card and tile. Without the route, test (b) above: today's page.
+test('(b4) live on Base with read-v6\'s stored fee history: Fees earned and Your APR as on Robinhood Chain, in USD', async () => {
+  const read = (path) => JSON.parse(readFileSync(new URL(`../../../api-contracts/read-v6/fixtures/${path}`, import.meta.url), 'utf8'));
+  const pools = read('valid/chain-pools.json');
+  const priced = (token, symbol) => ({ ...token, price: pools.tokens.find((one) => one.symbol === symbol).price, priceReason: null });
+  const portfolio = portfolioOf({ wallet: OWNER, tokens: [priced(TOKENS[0], 'ETH'), priced(TOKENS[1], 'USDC')], positions: [live(5_100_001, { approved: ZAP_V4 })] });
+  const stored = read('1.2.0-rc.1/valid/position-fees.json');
+  // The fixture's pool price is a raw 2,500; here the page's own pool, at the page's own price.
+  const body = { ...stored, positions: [{ ...stored.positions[0], tokenId: '5100001', now: { ...stored.positions[0].now, pool: POOL, sqrtPriceX96: SQRT.toString(), tick: TICK, ...RANGE, inRange: true } }] };
+  assert.equal(readV6.validateExchange('position-fees', { chainId: 8453, positions: [{ dex: 4, tokenId: '5100001' }] }, body), true);
+  const s = await openPositionPage(browser, chainOf(), { hash: '#/positions/base-v4-5100001', read6: { ...READ6, portfolio, 'position-fees': { status: 200, body } } });
+  try {
+    const detail = s.page.locator('[data-position-detail][data-position-v2="base-v4"][data-position-id="5100001"]');
+    await detail.waitFor({ timeout: 30_000 });
+    const card = detail.locator('[data-fees-card][data-fees-state="verified"]');
+    await card.waitFor({ timeout: 30_000 });
+    assert.equal(await detail.locator('[data-recorded-fees]').count(), 0, 'Robinhood Chain\'s card in place of the session\'s readings');
+    assert.equal(await text(card.locator('h2')), 'Fees earned');
+    // 0.001193 ETH and 2.841 USDC, at this pool's price and USDC's $1.
+    assert.match(await text(card.locator('.dm-fees-hero')), /^\$5\.\d\d/, 'in dollars, at read-v6\'s qualified price');
+    assert.equal(await card.locator('.dm-fees-plot').count(), 1, 'its chart is drawn');
+    const apr = detail.locator('[data-cell="apr"]');
+    assert.equal(await apr.getAttribute('data-apr'), 'ready');
+    assert.match(await text(apr), /Your APR.*%/);
+    for (const width of [1280, 390, 320]) {
+      await s.page.setViewportSize({ width, height: 960 });
+      await s.page.screenshot({ path: join(shots(), `position-base-fees-${width}.png`), fullPage: true, animations: 'disabled' });
+      assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `the card fits ${width}px`);
+    }
+    // The Positions list's cell, from the same read: as on Robinhood Chain's rows.
+    await s.page.setViewportSize({ width: 1280, height: 960 });
+    await s.page.evaluate(() => { location.hash = '#/positions'; });
+    const cell = s.page.locator('[data-cell="apr"][data-apr="ready"]').first();
+    await cell.waitFor({ timeout: 30_000 });
+    assert.match(await text(cell), /Your APR.*%/);
+    await s.page.screenshot({ path: join(shots(), 'positions-base-apr-1280.png'), animations: 'disabled' });
+  } finally { await s.close(); }
+});
+
+// Added 2026-11-06 (O-06, O-11, O-12; the owner: every chain the same as Robinhood Chain): a position a Domino-compound vault
+// holds, with read-v6's stored history: the automation's lines and chart marks in the Fees earned card, Activity's
+// settlements (outside changes included) with the automatic one named, and the Details' Fees history line.
+test('(b5) live on Base with a stored history under Domino-compound: the automation\'s lines, Activity\'s settlements, Fees history in Details', async () => {
+  const read = (path) => JSON.parse(readFileSync(new URL(`../../../api-contracts/read-v6/fixtures/${path}`, import.meta.url), 'utf8'));
+  const pools = read('valid/chain-pools.json');
+  const priced = (token, symbol) => ({ ...token, price: pools.tokens.find((one) => one.symbol === symbol).price, priceReason: null });
+  const portfolio = portfolioOf({
+    wallet: OWNER, tokens: [priced(TOKENS[0], 'ETH'), priced(TOKENS[1], 'USDC')],
+    positions: [live(5_100_001, { approved: VAULT, subscriber: VAULT, vault: { address: VAULT, role: 'root' } })],
+    vaults: [vaultOf({ wallet: OWNER, chainId: 8453, address: VAULT, rootTokenId: 5_100_001, pool: POOL })],
+  });
+  const stored = read('1.2.0-rc.1/valid/position-fees.json');
+  const body = { ...stored, positions: [{ ...stored.positions[0], tokenId: '5100001', now: { ...stored.positions[0].now, pool: POOL, sqrtPriceX96: SQRT.toString(), tick: TICK, ...RANGE, inRange: true } }] };
+  assert.equal(readV6.validateExchange('position-fees', { chainId: 8453, positions: [{ dex: 4, tokenId: '5100001' }] }, body), true);
+  const auto = body.positions[0].events.find((event) => event.auto);
+  const s = await openPositionPage(browser, chainOf(), { hash: '#/positions/base-v4-5100001', read6: { ...READ6, portfolio, activity: activityOf({ wallet: OWNER }), 'position-fees': { status: 200, body } }, prepare: basePools(POOL_LISTED, ETH_USDC) });
+  try {
+    const detail = s.page.locator('[data-position-detail][data-position-v2="base-v4"][data-position-id="5100001"]');
+    await detail.waitFor({ timeout: 30_000 });
+    const card = detail.locator('[data-fees-card][data-fees-state="verified"]');
+    await card.waitFor({ timeout: 30_000 });
+    // Under the card's closed Breakdown, as on Robinhood Chain's page.
+    await card.locator('details.dm-position-fee-breakdown > summary').click();
+    const impact = card.locator('[data-automation-impact="domino"]');
+    await impact.waitFor({ timeout: 30_000 });
+    assert.match(await text(impact.locator('[data-impact="added"]')), /^Domino-compound added \$[\d.,]+ back · 1 time$/, 'Robinhood Chain\'s line, from the stored automatic compound');
+    assert.equal(await impact.locator('[data-impact="growth"]').count(), 1, 'and how much the position grew from fees');
+    // Activity: every stored settlement, the automatic one named, beside Domino's receipts.
+    const activity = detail.locator('[data-position-activity]');
+    await activity.locator(`[data-position-ledger-transaction="${auto.tx}"]`).waitFor({ timeout: 30_000 });
+    assert.match(await text(activity.locator(`[data-position-ledger-transaction="${auto.tx}"]`)), /by Domino-compound/);
+    assert.ok(await activity.locator('[data-position-ledger-transaction]').count() >= 2, 'the collect made outside Domino is listed too');
+    await detail.locator('[data-position-details] summary').click();
+    const facts = await text(detail.locator('[data-position-details] .dm-pos-facts'));
+    assert.match(facts, /Fees history Every settlement of this position from its own events, through block \d+, and the fees ready to collect at block \d+\. Measured at each compound or collect and once an hour; the line between points is a guide, not a measurement\./);
+    assert.equal(await text(detail.locator('[data-position-custody]')), 'Your automation reinvests this position’s fees. If you change it, move it or approve another app, it stops for this position until you turn it back on.', 'a vault holds it: its Held line, as on Robinhood Chain');
+    // Robinhood Chain's links at the foot of Details, inside the card once it has opened (its 0.45 s block-size transition).
+    await detail.locator('[data-position-new-in-pool]').waitFor({ timeout: 30_000 });
+    await s.page.waitForTimeout(700);
+    const link = await detail.locator('[data-position-new-in-pool]').boundingBox();
+    const box = await detail.locator('[data-position-details]').boundingBox();
+    assert.ok(link && box && link.y + link.height <= box.y + box.height, 'New position in this pool is inside the Details card');
+    await s.page.screenshot({ path: join(shots(), 'position-base-automation-1280.png'), fullPage: true, animations: 'disabled' });
+  } finally { await s.close(); }
+});
+
+// Added 2026-11-06 (review F1, UI-2): a Base v3 WETH/AERO position. WETH sorts first, but Base's pools read for WETH lists
+// WETH against USDC only, so a link naming WETH opened "We couldn't find this pool". Details' links name AERO, whose read
+// lists the pool, and appear only once that read does; a read that does not list it (no active liquidity there) leaves
+// both out, as Robinhood Chain shows none for a pool it cannot open.
+test('(b11) a Base WETH/AERO v3 position: Pool and New position name AERO once its pools read lists the pool; neither when it does not', async () => {
+  const { v3PoolAddress } = require('../../.test-build/app/src/finance/v2/direct.js');
+  const chains = require('../../.test-build/app/src/v2/chains.js');
+  const WETH = '0x4200000000000000000000000000000000000006';
+  const AERO = '0x940181a94a35a4569e4529a3cdfb74e38fd98631';
+  const manager = '0x03a520b32c04bf3beef7beb72e919cf822ed34f1';
+  const pool = { dex: 3, currency0: WETH, currency1: AERO, fee: 3000, tickSpacing: 60, hooks: ZERO };
+  const address = v3PoolAddress(chains.v2Chain(8453), WETH, AERO, 3000).toLowerCase();
+  const word = `0x${address.slice(2).padStart(64, '0')}`;
+  const tokens = [{ address: WETH, symbol: 'WETH', name: 'Wrapped Ether', decimals: 18 }, { address: AERO, symbol: 'AERO', name: 'Aerodrome', decimals: 18 }];
+  const position = livePosition({ chainId: 8453, dex: 3, manager, tokenId: '6238158', owner: OWNER, pool,
+    tickLower: -60, tickUpper: 60, liquidity: '1000000000', sqrtPriceX96: String(2n ** 96n), tick: 0,
+    principal: ['2000000', '3000000'], feesOwed: ['250000', '500000'] });
+  const portfolio = portfolioOf({ wallet: OWNER, tokens: [indexedToken(8453, WETH, 'WETH', 18), indexedToken(8453, AERO, 'AERO', 18)], positions: [position] });
+  const chainFor = () => createV2Chain({ chainId: 8453, timestamp: now(), positions: [{ dex: 3, tokenId: 6_238_158n, pool,
+    tickLower: -60, tickUpper: 60, liquidity: 1_000_000_000n, principal: [2_000_000n, 3_000_000n], fees: [250_000n, 500_000n] }],
+    pools: [{ pool, sqrtPriceX96: 2n ** 96n, tick: 0, liquidity: 1_000_000_000n }] });
+  for (const listed of [true, false]) {
+    const asked = [];
+    const pools = listed ? [{ pool, address, sqrtPriceX96: 2n ** 96n, tick: 0, liquidity: 10n ** 18n }] : [];
+    const s = await openPositionPage(browser, chainFor(), { hash: '#/positions/base-v3-6238158', read6: { portfolio, activity: activityOf({ wallet: OWNER }) }, prepare: basePools(pools, tokens, asked) });
+    try {
+      const detail = s.page.locator('[data-position-detail][data-position-id="6238158"]');
+      await detail.waitFor({ timeout: 30_000 });
+      await detail.locator('[data-position-details] summary').click();
+      for (let wait = 0; wait < 60 && !asked.some((request) => request.token === AERO); wait++) await s.page.waitForTimeout(250);
+      assert.ok(asked.some((request) => request.chainId === 8453 && request.token === AERO), 'AERO\'s pools read is asked');
+      if (listed) {
+        const link = detail.locator('[data-position-pool-link]');
+        await link.waitFor({ timeout: 30_000 });
+        assert.equal(await link.getAttribute('href'), `#/pool/network/8453/${word}/${AERO}`, 'the pool page by AERO, whose read lists the pool');
+        assert.equal(await detail.locator('[data-position-new-in-pool]').getAttribute('href'), `#/new/network/8453/${AERO}/${word}`);
+      } else {
+        await s.page.waitForTimeout(1500);
+        assert.equal(await detail.locator('[data-position-pool-link], [data-position-new-in-pool]').count(), 0, 'no way to a pool the read does not list');
+      }
+    } finally { await s.close(); }
+  }
+});
+
+// Added 2026-11-06 (O-14): an NFT the stored history says is burned, not in the wallet's list: Robinhood Chain's own page.
+test('(b6) an NFT read-v6\'s stored history says is burned: "This position NFT no longer exists", as on Robinhood Chain', async () => {
+  const burned = JSON.parse(readFileSync(new URL('../../../api-contracts/read-v6/fixtures/1.2.0-rc.1/valid/position-fees-burned.json', import.meta.url), 'utf8'));
+  const body = { ...burned, positions: [{ ...burned.positions[0], tokenId: '5100009' }] };
+  assert.equal(readV6.validateExchange('position-fees', { chainId: 8453, positions: [{ dex: 4, tokenId: '5100009' }] }, body), true);
+  const s = await openPositionPage(browser, chainOf(), { hash: '#/positions/base-v4-5100009', read6: { ...READ6, 'position-fees': { status: 200, body } } });
+  try {
+    const gone = s.page.locator('[data-empty="position-gone"][data-position-reason="burned"]');
+    await gone.waitFor({ timeout: 30_000 });
+    assert.equal(await text(gone.locator('h2, h1, [data-empty-title], .dm-empty-title').first()), 'This position NFT no longer exists');
+    assert.match(await text(gone), new RegExp(`NFT #5100009 was not found at block ${burned.positions[0].through.number}\\.`));
+    assert.equal(await gone.locator('a[href="#/positions"]').count(), 1, 'the way back to Positions');
+    assert.doesNotMatch(await text(s.page.locator('main')), /isn’t in your wallet’s list/);
+  } finally { await s.close(); }
+  // Without the route (today), the same link says what it says today.
+  const today = await openPositionPage(browser, chainOf(), { hash: '#/positions/base-v4-5100009', read6: READ6 });
+  try {
+    await today.page.locator('[data-empty="position-v2"][data-position-reason="position_not_listed"]').waitFor({ timeout: 30_000 });
+    assert.equal(await today.page.locator('[data-empty="position-gone"]').count(), 0);
+  } finally { await today.close(); }
+});
+
+// Added 2026-11-06 (O-09): Robinhood Chain's own rule (components/positions/PositionActions.tsx): nothing to collect, the
+// button is off, with why; an empty collect would only cost gas.
+test('(b7) Collect fees with nothing to collect is off, with its reason, as on Robinhood Chain', async () => {
+  const read6 = { ...READ6, portfolio: portfolioOf({ wallet: OWNER, tokens: TOKENS, positions: [live(5_100_005, { feesOwed: ['0', '0'] })] }) };
+  const s = await openPositionPage(browser, chainOf(), { hash: '#/positions/base-v4-5100005', read6 });
+  try {
+    const detail = s.page.locator('[data-position-detail][data-position-id="5100005"]');
+    await detail.waitFor({ timeout: 30_000 });
+    const collect = detail.locator('[data-position-v2-action="collect"]');
+    assert.equal(await collect.isDisabled(), true);
+    assert.equal(await collect.getAttribute('title'), 'No fees to collect yet.');
+    assert.equal(await collect.getAttribute('data-position-collect-off'), 'no_fees');
+    assert.equal(await detail.locator('[data-position-action="close"]').isDisabled(), false, 'Close position stays on');
+    const { entries } = await openMenu(detail);
+    assert.deepEqual(entries.map(([key, , disabled]) => [key, disabled]), [['increase', false], ['changeRange', false], ['exit', false]], 'the menu is unchanged');
+  } finally { await s.close(); }
+  // (Review) Closed, with nothing to collect: Robinhood Chain's own reason, never "yet".
+  const closed = { ...READ6, portfolio: portfolioOf({ wallet: OWNER, tokens: TOKENS, positions: [live(5_100_005, { liquidity: 0n, principal: ['0', '0'], feesOwed: ['0', '0'] })] }) };
+  const c = await openPositionPage(browser, chainOf(), { hash: '#/positions/base-v4-5100005', read6: closed });
+  try {
+    const collect = c.page.locator('[data-position-detail][data-position-id="5100005"] [data-position-v2-action="collect"]');
+    await collect.waitFor({ timeout: 30_000 });
+    assert.equal(await collect.isDisabled(), true);
+    assert.equal(await collect.getAttribute('title'), 'This position is closed: it holds no liquidity.');
+    assert.equal(await collect.getAttribute('data-position-collect-off'), 'closed');
+  } finally { await c.close(); }
+});
+
+// Added 2026-11-06 (O-10): Collect fees says what it pays in USD beside "You receive", at read-v6's qualified prices, and no
+// Domino fee line, as Robinhood Chain's own dialog.
+test('(b8) Collect fees on Base: "You receive" in USD at qualified prices, and no Domino fee line', async () => {
+  const pools = JSON.parse(readFileSync(new URL('../../../api-contracts/read-v6/fixtures/valid/chain-pools.json', import.meta.url), 'utf8'));
+  const priced = (token, symbol) => ({ ...token, price: pools.tokens.find((one) => one.symbol === symbol).price, priceReason: null });
+  const sqrt = position.sqrtPriceAtTick(-199500);
+  const V4 = { tokenId: 5_100_001n, pool: { currency0: ZERO, currency1: USDC, fee: 500, tickSpacing: 10 }, ...RANGE, liquidity: LIQUIDITY,
+    sqrtPriceX96: sqrt, tick: -199500, growthLast: [5n << 128n, 7n << 128n], growthNow: [(5n << 128n) + (10n ** 12n << 128n) / 10n ** 15n + 1n, (7n << 128n) + (3_000_000n << 128n) / 10n ** 15n + 1n] };
+  const chain = createDirectChain({ chainId: 8453, v4: [V4], timestamp: now() });
+  const read6 = { portfolio: portfolioOf({ wallet: OWNER, tokens: [priced(TOKENS[0], 'ETH'), priced(TOKENS[1], 'USDC')], positions: [live(5_100_001, { sqrtPriceX96: sqrt, tick: -199500 })] }) };
+  const s = await openPositionPage(browser, chain, { hash: '#/positions/base-v4-5100001', read6, s1: { directCode: { 8453: chain.codeHashes } } });
+  try {
+    const detail = s.page.locator('[data-position-detail][data-position-id="5100001"]');
+    await detail.waitFor({ timeout: 30_000 });
+    await detail.locator('[data-position-v2-action="collect"]').click();
+    const dialog = s.page.locator('[role="dialog"][data-position-dialog="v2-collect"]');
+    await dialog.locator('[data-position-direct="ready"]').waitFor({ timeout: 30_000 });
+    const usd = dialog.locator('[data-position-receive-usd]');
+    // 0.000001 ETH at $4,000.12 and 3 USDC at $1.
+    assert.match(await text(usd), /^\$3\.\d\d$/);
+    assert.equal(await usd.getAttribute('data-position-receive-usd'), 'qualified-prices');
+    assert.equal(await usd.getAttribute('title'), null, 'qualified prices: no title');
+    assert.match(await text(dialog.locator('[data-position-receive="collect"]')), /^You receive \$3\.\d\d .*ETH.*USDC Network fee Up to [\d.]+ ETH$/);
+    assert.doesNotMatch(await text(dialog), /Domino fee/);
+    assert.equal(chain.sends.length, 0, 'nothing sent by reading it');
+  } finally { await s.close(); }
+});
+
+// Added 2026-11-06 (O-05; the owner: every chain the same as Robinhood Chain, whose page anyone reads): a position opened
+// from another address's list (View address), with no wallet connected: its figures, charts and Activity, read from that
+// address's portfolio as its list read it; no action, and Robinhood Chain's line saying whose they are.
+test('(b9) a position opened from View address, with no wallet: the page as the owner sees it, with no action', async () => {
+  const s = await openPositionPage(browser, chainOf(), { hash: `#/portfolio/${OWNER}`, read6: READ6, connect: false, intercept: (method) => (method === 'eth_accounts' ? { result: [] } : undefined) });
+  try {
+    const link = s.page.locator('a[href="#/positions/base-v4-5100001"]').first();
+    await link.waitFor({ timeout: 30_000 });
+    await link.click();
+    const detail = s.page.locator('[data-position-detail][data-position-v2="base-v4"][data-position-id="5100001"]');
+    await detail.waitFor({ timeout: 30_000 });
+    assert.equal(await detail.getAttribute('data-position-read'), 'viewed');
+    assert.match(await detail.locator('[data-cell="principal"] [data-usd-amounts="principal"]').textContent(), /ETH.*USDC/);
+    assert.equal(await detail.locator('[data-position-actions], [data-position-v2-action], [data-position-action="close"]').count(), 0, 'no action: they are the owner\'s');
+    assert.match(await text(detail.locator('[data-position-owner-only="no-wallet"]')), /^Connect the owner wallet 0x7099…79c8\b.* to collect fees, add or close\.$/);
+    await detail.locator('[data-position-activity-item]').first().waitFor({ timeout: 30_000 });
+    assert.equal(await s.page.locator('[data-empty="position-v2"]').count(), 0, 'never "Connect wallet" in place of the page');
+    assert.equal(await text(s.page.locator('a.dm-pos-back')), 'Positions');
+    assert.equal(await s.page.locator('a.dm-pos-back').getAttribute('href'), `#/portfolio/${OWNER}`, 'back to the list it was opened from');
+  } finally { await s.close(); }
+});
+
+// Added 2026-11-06 (O-05, review): the same page with another wallet connected. Robinhood Chain's page draws nothing of the
+// owner's automation for anyone else (components/positions/PositionActions.tsx, v2in/automate/PositionAutomation.tsx reads
+// the connected wallet's own portfolio there): no Automation control, no Auto-exit card, no permission row, no action.
+test('(b10) a position opened from View address, with another wallet connected: no action and none of the owner\'s automation', async () => {
+  const OTHER = '0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc';
+  const answers = { owner: OWNER, portfolio: READ6.portfolio, activity: READ6.activity, otherPortfolio: portfolioOf({ wallet: OTHER, tokens: TOKENS }), otherActivity: activityOf({ wallet: OTHER }) };
+  const prepare = (context) => context.addInitScript((given) => {
+    const read6 = window.__dominoV2Test.read6;
+    const own = (request) => String(request.wallet).toLowerCase() === given.owner;
+    read6.portfolio = (request) => (own(request) ? given.portfolio : given.otherPortfolio);
+    read6.activity = (request) => (own(request) ? given.activity : given.otherActivity);
+  }, answers);
+  const intercept = (method) => (method === 'eth_accounts' || method === 'eth_requestAccounts' ? { result: [OTHER] } : undefined);
+  const s = await openPositionPage(browser, chainOf(), { hash: `#/portfolio/${OWNER}`, read6: READ6, prepare, intercept });
+  try {
+    const link = s.page.locator('a[href="#/positions/base-v4-5100002"]').first();
+    await link.waitFor({ timeout: 30_000 });
+    await link.click();
+    const detail = s.page.locator('[data-position-detail][data-position-v2="base-v4"][data-position-id="5100002"]');
+    await detail.waitFor({ timeout: 30_000 });
+    assert.equal(await detail.getAttribute('data-position-read'), 'viewed');
+    await s.page.locator('[data-position-owner-only="other-wallet"]').waitFor({ timeout: 30_000 });
+    assert.match(await text(detail.locator('[data-position-owner-only]')), /^Only the owner wallet 0x7099…79c8\b.* can collect fees, add or close\.$/);
+    await detail.locator('[data-position-activity]').waitFor({ timeout: 30_000 });
+    assert.equal(await detail.locator('[data-position-actions], [data-position-v2-action], [data-position-action="close"]').count(), 0, 'no action: they are the owner\'s');
+    assert.equal(await detail.locator('[data-v2in-position], [data-automation-control], [data-automation-exit-entry], [data-v2in-exit]').count(), 0, 'none of the owner\'s automation for this wallet');
+    await detail.locator('[data-position-details] summary').click();
+    assert.equal(await detail.locator('[data-position-zap-approval]').count(), 0, 'no permission read for a position this wallet does not hold');
+    // Its Held line speaks to the owner ("Your automation reinvests…"), and Robinhood Chain's Details have none: not here.
+    assert.equal(await detail.locator('[data-position-custody]').count(), 0, 'no "Your automation" line on another address\'s position');
+    assert.match(await text(detail.locator('[data-position-details] .dm-pos-facts')), /Pool id 0x/);
   } finally { await s.close(); }
 });
 
@@ -1187,8 +1504,11 @@ for (const variant of [
     }
     const details = detail.locator('[data-position-details]');
     await details.locator('summary').click();
-    assert.match(await details.locator('[data-stat="principal"]').textContent(), /2\s+USDC.*3\s+TEST/);
-    assert.match(await details.locator('[data-stat="fees"]').textContent(), /0\.25\s+USDC.*0\.5\s+TEST/);
+    // Changed on purpose 2026-11-06 (O-07): the token amounts are the tiles' own (under Token amounts beside a dollar
+    // figure), as on Robinhood Chain, and Details holds no copy of them.
+    assert.match(await detail.locator('[data-cell="principal"]').locator('[data-stat="principal"], [data-usd-amounts="principal"]').first().textContent(), /2\s+USDC.*3\s+TEST/);
+    assert.match(await detail.locator('[data-cell="fees"]').locator('[data-stat="fees"], [data-usd-amounts="fees"]').first().textContent(), /0\.25\s+USDC.*0\.5\s+TEST/);
+    assert.equal(await details.locator('[data-stat="principal"], [data-stat="fees"]').count(), 0);
     if (variant.usd) assert.match(await details.innerText(), /pool price/i);
     assert.equal(chain.sends.length, 0, 'reading a pool mark never sends a transaction');
     assert.equal(s.planned.length, 0, 'reading a pool mark never asks for a transaction plan');
@@ -1221,8 +1541,8 @@ test('a completed unqualified USD read shows the token amounts and explains the 
     const details = detail.locator('[data-position-details]');
     await details.locator('summary').click();
     assert.doesNotMatch(await details.innerText(), /price source has not verified enough liquidity for a USD estimate/);
-    assert.match(await details.locator('[data-stat="principal"]').textContent(), /ETH.*USDC/);
-    assert.match(await details.locator('[data-stat="fees"]').textContent(), /0\.001\s+ETH.*2\.5\s+USDC/);
+    // Changed on purpose 2026-11-06 (O-07): no copy of the tiles' token amounts in Details, as on Robinhood Chain.
+    assert.equal(await details.locator('[data-stat="principal"], [data-stat="fees"]').count(), 0);
     for (const width of [1280, 390, 320]) {
       await s.page.setViewportSize({ width, height: 960 });
       assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `token amounts fit ${width}px`);

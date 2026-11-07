@@ -166,19 +166,31 @@ test('the gate decides the chains, and a Robinhood Chain v4 NFT V1 already lists
   assert.ok(model.positionRows(other, ALL, ['7']).some((row) => row.tokenId === '7'));
 });
 
+// Changed on purpose 2026-11-07 (review finding C): the package's answers are cut to Domino's three first (the chains these
+// sentences are about), as the app's servedOnly does with a chain it does not serve: rugged97's day-9 fixtures name every
+// chain his package names, Elysium (99901) too.
+const THREE = [4663, 8453, 42161];
+function threeOnly(body) {
+  const kept = { ...body };
+  for (const key of ['chains', 'tokens', 'vaults', 'positions', 'mandates', 'credits', 'items']) {
+    if (Array.isArray(body[key])) kept[key] = body[key].filter((entry) => THREE.includes(entry.chainId));
+  }
+  kept.coverage = kept.chains.every((chain) => chain.status === 'current') ? 'complete' : 'partial';
+  return kept;
+}
 test('§6.3: a chain out is the partial sentence and never empties the others; each chain’s state before its values', () => {
-  const body = valid('portfolio', fixture('portfolio.json'));
+  const body = threeOnly(valid('portfolio', fixture('portfolio.json')));
   // Changed on purpose 2026-10-06 (the owner: one name for one network): Arbitrum One, as every other screen names it.
   assert.equal(model.partialSentence(body.chains), 'Showing Robinhood Chain and Base. Arbitrum One is unavailable right now.');
   const notes = model.chainNotes(body);
   assert.deepEqual(notes.map((note) => [note.chainId, note.state, note.age]), [[4663, 'current', null], [8453, 'stale', 'updated 6 min ago'], [42161, 'unavailable', null]]);
   assert.equal(model.positionRows(body, ALL).length, 5, 'Arbitrum out leaves Robinhood Chain’s rows');
-  const behind = valid('portfolio', fixture('portfolio-behind.json'));
+  const behind = threeOnly(valid('portfolio', fixture('portfolio-behind.json')));
   assert.equal(model.partialSentence(behind.chains), 'Showing Robinhood Chain. Base and Arbitrum One are unavailable right now.');
-  const empty = valid('portfolio', fixture('portfolio-empty.json'));
+  const empty = threeOnly(valid('portfolio', fixture('portfolio-empty.json')));
   assert.equal(model.partialSentence(empty.chains), 'Robinhood Chain, Base and Arbitrum One are unavailable right now.');
   assert.deepEqual(model.positionRows(empty, ALL), []);
-  const complete = valid('portfolio', fixture('portfolio-complete.json'));
+  const complete = threeOnly(valid('portfolio', fixture('portfolio-complete.json')));
   assert.equal(model.partialSentence(complete.chains), null);
 });
 

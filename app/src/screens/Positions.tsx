@@ -3,6 +3,7 @@ import '../styles/screens.css'
 import { lazy, Suspense, useCallback, useEffect, useState, type ComponentType, type CSSProperties, type ReactNode } from 'react'
 import { deferred } from '../components/Deferred'
 import { recovering } from '../lib/staleRelease'
+import { ELYSIUM_LIVE } from '../lib/elysiumIdentity'
 import PortfolioBody from '../components/portfolio/PortfolioBody'
 import { automateHref, marketsHref, newPositionHref } from '../components/explore/routes'
 import { IconChevronLeft, IconWallet } from '../components/icons'
@@ -467,6 +468,12 @@ function PositionsList() {
  * automation receipts; anything else after `#/positions/` (a list of ids
  * included: there is no lookup any more) is the list.
  */
+/**
+ * A V2 position's route (`<network>-v<dex>-<id>`, src/v2in/route.ts writes it). Changed on purpose 2026-11-07 (Elysium's
+ * screens): Elysium's slug too, where the build serves it, as that route's own parser reads it; the three otherwise.
+ */
+const V2_POSITION_PARAM = ELYSIUM_LIVE ? /^(robinhood|base|arbitrum|elysium)-v[34]-[1-9][0-9]{0,77}$/ : /^(robinhood|base|arbitrum)-v[34]-[1-9][0-9]{0,77}$/
+
 export function Positions({ param = '' }: { param?: string }) {
   // Robinhood V4 aliases use the same public read page as numeric ids, even when S1 writes are unavailable.
   const detail = positionDetailId(__DOMINO_V2__ ? param.replace(/^robinhood-v4-/, '') : param)
@@ -474,7 +481,7 @@ export function Positions({ param = '' }: { param?: string }) {
   // The tab's name (lib/routeTitle.ts, audit E11): the list, its receipts, or one position by its number.
   useRouteTitle(param === 'receipts' ? 'Receipts' : detail ? `Position #${detail}` : 'Positions')
   if (param === 'receipts') return <ReceiptsPage />
-  if (!detail && __DOMINO_V2__ && V2Position && /^(robinhood|base|arbitrum)-v[34]-[1-9][0-9]{0,77}$/.test(param)) return <V2Position param={param} list={<PositionsList />} fallback={<DetailWaiting />} />
+  if (!detail && __DOMINO_V2__ && V2Position && V2_POSITION_PARAM.test(param)) return <V2Position param={param} list={<PositionsList />} fallback={<DetailWaiting />} />
   if (!detail) return <PositionsList />
   return (
     <Suspense fallback={<DetailWaiting />}>

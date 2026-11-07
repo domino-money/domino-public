@@ -28,21 +28,38 @@
 import robinhood from './fixtures/manifest.robinhood-4663.fixture.json'
 import base from './fixtures/manifest.base-8453.fixture.json'
 import arbitrum from './fixtures/manifest.arbitrum-42161.fixture.json'
+import elysium from './fixtures/manifest.elysium-99901.fixture.json'
+import { ELYSIUM_LIVE, ELYSIUM_V2_ID } from '../lib/elysiumIdentity'
 import { parseV2FixtureManifest, type ManifestPin } from './manifest'
 import type { V2ChainId, V2Contracts } from './types'
 
 /** The admission the fixtures pass: #302's fork rehearsal. */
 export const FIXTURE_ADMISSION = 'fork-rehearsal' as const
 
+/**
+ * Elysium's fixture (added 2026-11-07, Elysium as a fourth V2 chain), where it is live: not one of #302's files (no fork
+ * rehearsal of chain 99901 exists yet), but Arbitrum One's rehearsal moved to the synthetic Elysium profile the forced
+ * test builds serve (tests/fixtures/v2-chains/elysium-99901.json), exactly as deploy.mjs writes a chain with Uniswap v4
+ * alone: nine contracts, `contractNames` the 13, v4's dependencies at that profile's addresses with its verified code
+ * hashes, its charge currencies (tests/v2/support/v4-only.mjs v4OnlyManifest, which tests/v2/elysium-chain.test.mjs holds
+ * it to). Its addresses are the owner's CREATE3 addresses, as every rehearsal's. It binds to that synthetic profile only;
+ * against rugged97's real one ./gate.ts previewSet falls back to Elysium's pinned production set.
+ */
+const ELYSIUM_FIXTURE: Partial<Record<V2ChainId, unknown>> = ELYSIUM_LIVE ? { [ELYSIUM_V2_ID]: elysium } : {}
+const ELYSIUM_FIXTURE_PIN: Partial<Record<V2ChainId, ManifestPin>> = ELYSIUM_LIVE
+  ? { [ELYSIUM_V2_ID]: { path: 'app/src/v2/fixtures/manifest.elysium-99901.fixture.json', sha256: '6d16910207bd70a5ed72c090307266f3314949d6ef54caea0875ac85334168b7' } }
+  : {}
+
 /** chainId → that chain's fixture manifest, as the file holds it. */
-export const FIXTURE_MANIFESTS: Readonly<Record<V2ChainId, unknown>> = Object.freeze({ 4663: robinhood, 8453: base, 42161: arbitrum })
+export const FIXTURE_MANIFESTS: Readonly<Record<V2ChainId, unknown>> = Object.freeze({ 4663: robinhood, 8453: base, 42161: arbitrum, ...ELYSIUM_FIXTURE } as Record<V2ChainId, unknown>)
 
 /** chainId → the fixture file and the SHA-256 of its exact bytes, checked by tests/v2/manifest-pin.test.mjs. */
 export const FIXTURE_PINS: Readonly<Record<V2ChainId, ManifestPin>> = Object.freeze({
   4663: { path: 'app/src/v2/fixtures/manifest.robinhood-4663.fixture.json', sha256: 'c0e7e2efe74670655a36a317756e6600dc9e79a7d1693db45c7ec88682906f6a' },
   8453: { path: 'app/src/v2/fixtures/manifest.base-8453.fixture.json', sha256: '1eb710c45a71012fd8799b26ab3ddde0131514238b9a94498ffaa143d5bef19b' },
   42161: { path: 'app/src/v2/fixtures/manifest.arbitrum-42161.fixture.json', sha256: 'b29f180ce6dd5fa14d260851055d5debec4d33f32da06073e3941fb064b12b8d' },
-})
+  ...ELYSIUM_FIXTURE_PIN,
+} as Record<V2ChainId, ManifestPin>)
 
 /** A fixture manifest, checked as a deployment manifest is, for the chain asked, under the fork-rehearsal admission. */
 export function parseFixtureManifest(raw: unknown, chainId: number): V2Contracts {

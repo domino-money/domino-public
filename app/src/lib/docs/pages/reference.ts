@@ -1,13 +1,18 @@
 import { CAPABILITIES } from '../../capabilities'
 import { CREATE } from '../../create/copy'
 import { b, doc, p } from '../blocks'
-import type { DocPage } from '../types'
+// 2026-11-06: Elysium's words where it is live (../elysium.ts).
+import { ELYSIUM_LINKED, ELYSIUM_LIVE, ELYSIUM_PERMIT2, ELYSIUM_POSITION_MANAGER, ELYSIUM_V2_ID, GAS_IN, NETWORKS, NETWORKS_OR, OTHERS } from '../elysium'
+import type { DocChain, DocPage } from '../types'
 
 const { feeLabels, feeValues } = CREATE.review
 
-/** 2026-10-30 (QA2 N24): the networks an address row's explorer links name. */
-const EVERY_NETWORK = [4663, 8453, 42161] as const
+/** 2026-10-30 (QA2 N24): the networks an address row's explorer links name; 2026-11-07: Elysium once linked. */
+const EVERY_NETWORK: readonly DocChain[] = ELYSIUM_LINKED ? [4663, 8453, 42161, ELYSIUM_V2_ID as DocChain] : [4663, 8453, 42161]
+/** 2026-11-06: Domino's v3 contracts' networks; a v4-only one never joins (docs/ELYSIUM_DAY9.md). */
+const V3_NETWORKS: readonly DocChain[] = [4663, 8453, 42161]
 const ROBINHOOD = [4663] as const
+const PERMIT2 = '0x000000000022d473030f116ddee9f6b43ac78ba3'
 
 /**
  * Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): Domino's five fees (spec F7 §1.6), each with when
@@ -65,7 +70,7 @@ export const FEES: DocPage = {
       id: 'network-gas',
       title: 'Network gas',
       // Changed on purpose 2026-10-01 (audit E24). 2026-10-04 (the owner: docs revalidated for V2): on each network, and Base's L1 data fee.
-      blocks: [p('Gas is paid in ETH on the network of the transaction, by the wallet that sends it, which shows it before you sign. On Base it includes the L1 data fee, for storing the transaction on Ethereum.')],
+      blocks: [p(`Gas is paid ${ELYSIUM_LIVE ? 'in ETH, or in HYPE on Elysium,' : 'in ETH'} on the network of the transaction, by the wallet that sends it, which shows it before you sign. On Base it includes the L1 data fee, for storing the transaction on Ethereum.`)],
     },
     {
       id: 'pool-trading-fee',
@@ -93,7 +98,8 @@ export const FIGURES: DocPage = {
       blocks: [
         p('Pool prices, ticks, fee tiers, protocol fees, tick spacings and hooks, position NFTs and token balances are read from Robinhood Chain. Each names the block it was read at.'),
         // 2026-10-04 (the owner: docs revalidated for V2): read-v6, the record of Domino's new contracts on the three networks.
-        p('Positions on Base and Arbitrum One, and in Uniswap v3 pools, come from Domino’s record of its contracts, read at a named block. Their amounts are in tokens, with no dollar value or APR.'),
+        // Changed on purpose 2026-11-06 (O-19, R-07): read-v6's dollars; position-fees, worded to hold before and after it opens.
+        p(`Positions on ${OTHERS}, and in Uniswap v3 pools, come from Domino’s record of its contracts, read at a named block. Their dollar values use prices Domino reads on each network, or the pool’s own price when a token has none. Their Fees earned and APR come from Domino’s record of their fees, where it follows them.`),
         p('A pool’s activity and the positions in it come from indexed chain events, up to a named block; activity indexed too far behind shows dashes.'),
       ],
     },
@@ -154,25 +160,25 @@ export const FIGURES: DocPage = {
 export const CONTRACTS: DocPage = {
   slug: 'contracts',
   title: 'Contracts',
-  summary: 'Domino’s contracts on its three networks, Domino V1 on Robinhood Chain, and the Uniswap contracts behind every position.',
+  summary: `Domino’s contracts on its ${ELYSIUM_LIVE ? 'four' : 'three'} networks, Domino V1 on Robinhood Chain, and the Uniswap contracts behind every position.`,
   sections: [
     {
       id: 'new-contracts',
       title: 'Domino’s contracts',
       blocks: [
-        p('Domino’s contracts run on Robinhood Chain, Base and Arbitrum One, each at one address on every network, so check the network as well as the address.'),
+        p(`Domino’s contracts run on ${NETWORKS}, each at one address on every network, so check the network as well as the address.${ELYSIUM_LIVE ? ' Elysium has Uniswap v4 only, so the Uniswap v3 ones are not on it.' : ''}`),
         {
           kind: 'addresses',
           rows: [
             { label: 'DominoZapV4', role: 'Create, add, change range and withdraw, in Uniswap v4', address: '0x376b92929bbe778c6dd64e8d73f8688686288e8a', chains: EVERY_NETWORK, domino: true },
             { label: 'DominoZapV4Steps', role: 'DominoZapV4’s helper', address: '0x355b0997d5e04392862a8e8d21d911851b2eefbe', chains: EVERY_NETWORK, domino: true },
-            { label: 'DominoZapV3', role: 'The same in Uniswap v3', address: '0xe30d7e07a67198c45d4c7b67d8423cbb6c7ea5a0', chains: EVERY_NETWORK, domino: true },
+            { label: 'DominoZapV3', role: 'The same in Uniswap v3', address: '0xe30d7e07a67198c45d4c7b67d8423cbb6c7ea5a0', chains: V3_NETWORKS, domino: true },
             { label: 'DominoV2VaultFactory', role: 'Makes each automation contract (vault), Uniswap v4', address: '0xc71a561853514efc2271f1d10c13ec95834792ba', chains: EVERY_NETWORK, domino: true },
-            { label: 'DominoV2VaultFactory', role: 'The same, Uniswap v3', address: '0xa7dfb61a6597d09742cb7f9a8780c9c74ebc34f4', chains: EVERY_NETWORK, domino: true },
+            { label: 'DominoV2VaultFactory', role: 'The same, Uniswap v3', address: '0xa7dfb61a6597d09742cb7f9a8780c9c74ebc34f4', chains: V3_NETWORKS, domino: true },
             { label: 'DominoV2VaultV4', role: 'What each Uniswap v4 automation copies', address: '0xa3ff8d74e4ec4a19f35d92b7eec852ba6f7e2bbb', chains: EVERY_NETWORK, domino: true },
-            { label: 'DominoV2VaultV3', role: 'What each Uniswap v3 automation copies', address: '0xd55c0f5ff8ad1ded828edb36be77e0f3677ad4a4', chains: EVERY_NETWORK, domino: true },
+            { label: 'DominoV2VaultV3', role: 'What each Uniswap v3 automation copies', address: '0xd55c0f5ff8ad1ded828edb36be77e0f3677ad4a4', chains: V3_NETWORKS, domino: true },
             { label: 'DominoV2VaultExecutorV4', role: 'Runs automation steps, Uniswap v4', address: '0xf3f68d8461c2071e2b8d88a60ce64f527f1d6639', chains: EVERY_NETWORK, domino: true },
-            { label: 'DominoV2VaultExecutorV3', role: 'The same, Uniswap v3', address: '0xd8d3bf832b234855fee2ac36ac4803aa7f9adca9', chains: EVERY_NETWORK, domino: true },
+            { label: 'DominoV2VaultExecutorV3', role: 'The same, Uniswap v3', address: '0xd8d3bf832b234855fee2ac36ac4803aa7f9adca9', chains: V3_NETWORKS, domino: true },
             { label: 'DominoV2VaultSwapModule', role: 'Automation swaps', address: '0xbf22a36bbb419846e073cf0c6c729f669d7f348a', chains: EVERY_NETWORK, domino: true },
             { label: 'DominoAutoExit', role: 'Carries out Auto-exit; 0.2% when it closes a position', address: '0x6109fc514a88a8e85e6e5c863238ddba9a98be36', chains: EVERY_NETWORK, domino: true },
             { label: 'DominoRegistry', role: 'Fee currencies, swap routes, and stopping automation for safety', address: '0x25d4f013ecff3790e384e16ca9951bba6cd715fa', chains: EVERY_NETWORK, domino: true },
@@ -231,9 +237,10 @@ export const CONTRACTS: DocPage = {
             { label: 'NonfungiblePositionManager', role: 'Base, Uniswap v3', address: '0x03a520b32c04bf3beef7beb72e919cf822ed34f1', chains: [8453] },
             { label: 'PositionManager', role: 'Arbitrum One, Uniswap v4', address: '0xd88f38f930b7952f2db2432cb002e7abbf3dd869', chains: [42161] },
             { label: 'NonfungiblePositionManager', role: 'Arbitrum One, Uniswap v3', address: '0xc36442b4a4522e871399cd717abdd847ab11fe88', chains: [42161] },
+            ...(ELYSIUM_LIVE && ELYSIUM_POSITION_MANAGER ? [{ label: 'PositionManager', role: 'Elysium, Uniswap v4', address: ELYSIUM_POSITION_MANAGER, ...(ELYSIUM_LINKED ? { chains: [ELYSIUM_V2_ID as DocChain] } : {}) }] : []),
           ],
         },
-        p('Permit2 has the same address on all three networks.'),
+        p(!ELYSIUM_LIVE ? 'Permit2 has the same address on all three networks.' : ELYSIUM_PERMIT2 === PERMIT2 ? 'Permit2 has the same address on all four networks.' : 'Permit2 has the same address on Robinhood Chain, Base and Arbitrum One.'),
       ],
     },
     {
@@ -246,7 +253,7 @@ export const CONTRACTS: DocPage = {
             { label: 'Robinhood Chain', value: `Chain ID ${CAPABILITIES.chainId}` },
             { label: 'Base', value: 'Chain ID 8453' },
             { label: 'Arbitrum One', value: 'Chain ID 42161' },
-            { label: 'Gas token', value: 'ETH, on each' },
+            ...(ELYSIUM_LIVE ? [{ label: 'Elysium', value: `Chain ID ${ELYSIUM_V2_ID}` }, { label: 'Gas token', value: 'ETH, and HYPE on Elysium' }] : [{ label: 'Gas token', value: 'ETH, on each' }]),
           ],
         },
       ],
@@ -272,7 +279,7 @@ export const GLOSSARY: DocPage = {
             { id: 'position', term: 'Position', text: ['Your tokens in one pool, between the lowest and highest price you chose.'] },
             { id: 'apr', term: 'APR', text: ['A yearly rate: a period’s fees scaled to a year. It describes the past, not a promise.'] },
             { id: 'slippage', term: 'Slippage tolerance', text: ['How far the price may move against you before a step stops instead of going through.'] },
-            { id: 'gas', term: 'Gas', text: ['The network fee every transaction pays, in ETH.'] },
+            { id: 'gas', term: 'Gas', text: [`The network fee every transaction pays, ${GAS_IN}.`] },
             { id: 'smart-contract', term: 'Smart contract', text: ['A program on the chain that anyone can read.'] },
           ],
         },
@@ -285,7 +292,7 @@ export const GLOSSARY: DocPage = {
         {
           kind: 'terms',
           items: [
-            { id: 'network', term: 'Network', text: ['A blockchain Domino works on: Robinhood Chain, Base or Arbitrum One.'] },
+            { id: 'network', term: 'Network', text: [`A blockchain Domino works on: ${NETWORKS_OR}.`] },
             { id: 'pool', term: 'Pool', text: ['Where two tokens are traded for each other.'] },
             { id: 'pool-id', term: 'Pool id', text: ['A pool’s identifier. Domino names pools by id, never by symbol.'] },
             { id: 'fee-tier', term: 'Fee tier', text: ['The share of every swap a pool charges, paid to its liquidity providers.'] },

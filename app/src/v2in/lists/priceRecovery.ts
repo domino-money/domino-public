@@ -1,7 +1,10 @@
 import type { PortfolioResponse } from 'api-contracts/read-v6/types'
+import { V2_CHAIN_IDS } from '../../config/chainIdentity'
+import type { V2ChainId } from '../../v2/types'
 
 /** A targeted survey can fill the existing backend price cache when a portfolio exhausted its shared read budget. */
-export interface PriceRecoveryTarget { wallet: string; chainId: 4663 | 8453 | 42161; address: string }
+/** `chainId`: any V2 chain the build serves (config/chainIdentity.ts V2_CHAIN_IDS; Changed on purpose 2026-11-07: the three were written out). */
+export interface PriceRecoveryTarget { wallet: string; chainId: V2ChainId; address: string }
 const TRANSIENT = new Set(['price_read_failed', 'pricing_limit_reached'])
 const PER_PASS = 3
 const PER_WINDOW = 6
@@ -15,7 +18,7 @@ export function priceRecoveryTargets(answer: PortfolioResponse): PriceRecoveryTa
   const wanted = new Map<string, PriceRecoveryTarget>()
   for (const position of answer.positions) {
     const state = position.state, chainId = position.chainId
-    if (![4663, 8453, 42161].includes(chainId) || state.status !== 'live' || state.freshness.status !== 'fresh'
+    if (!V2_CHAIN_IDS.includes(chainId) || state.status !== 'live' || state.freshness.status !== 'fresh'
       || answer.chains.find(chain => chain.chainId === chainId)?.status !== 'current') continue
     for (const [index, address] of [state.pool.currency0, state.pool.currency1].entries()) {
       if (BigInt(state.principalAtSpot[index] ?? '0') === 0n && BigInt(state.feesOwed[index] ?? '0') === 0n) continue

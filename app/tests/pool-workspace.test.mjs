@@ -119,6 +119,8 @@ function load(name, dependencies, expose = '') {
     // 2026-10-30 (QA round 2): the network's name on every pool (Q23), the real table; the fee chip's title (Q28); and the
     // Markets rows a token page already holds (N10), none here unless a test says so.
     networkName: require('../.test-build/app/src/lib/networkName.js').networkName, FEE_MEANING: 'What the fee is.', useKnownMarkets: () => null,
+    // 2026-11-06 (Elysium readiness): a network drawn from its own file, the real table (none today).
+    chainMarkProps: require('../.test-build/app/src/lib/chainMarks.js').chainMarkProps,
     // 2026-10-30 (QA round 2, final review read-1): the pool page's fee segment is the button of its (i) tip; here a button
     // with the tip's words as data (InfoTip's own behaviour is the shell's).
     InfoTip: function InfoTip({ label, text, children }) { return React.createElement('button', { type: 'button', 'aria-label': label, 'data-info-tip': text }, children) },
@@ -370,6 +372,40 @@ test('workspace requests one lean market read and aborts/discards its result on 
   assert.equal(fixture.reads[0].options.signal.aborted, true)
   fixture.reads[0].resolve({ state: 'ok', data: { poolId: id('a') } }); await flush()
   assert.equal(host.writes, before)
+})
+
+// Added 2026-11-06 (the owner's replica rule, O-01): Robinhood Chain's pool page for a Base or Arbitrum One pool, its
+// figures handed in (lib/read/networkMarkets.ts). It asks the read service nothing (no capabilities, no market, history,
+// activity or positions read: none of them describes that network), draws the same figures, estimate, range and choices,
+// and leaves out the chart, the recent activity and Domino's own history, with no word about them.
+test('replica (O-01): with its figures handed in, the pool page reads nothing of its own and leaves out the blocks no read has for its network', async () => {
+  const fixture = workspace({ listed: ['markets-snapshot', 'pool-metrics', 'pool-activity', 'pool-positions', 'overview'] })
+  const based = (letter) => ({ ...token(letter), chainId: 8453 })
+  const pool = { ...option('a'), currencies: [based('1'), based('2')] }
+  const figures = { ...row(id('a')), key: `8453:${id('a')}`, tokens: { base: based('1'), quote: based('2') }, feeAprPercent: { value: null, state: 'unavailable', reason: 'fee_apr_not_provided' }, aprFallback: { percent: '27.56', asOf: 1000, basis: 'discovered' } }
+  const host = mount(fixture.PoolWorkspace, { ...fixture.props, option: pool, figures: { row: figures, loading: false } })
+  await flush(); host.render(); await flush(); host.render()
+  assert.deepEqual(fixture.checks, [], 'no capabilities asked')
+  assert.deepEqual(fixture.reads, [], 'no read of its own')
+  for (const name of ['PoolHistoryChart', 'PoolActivitySummary', 'PoolActivityCard', 'PoolPositionsCard']) assert.equal(part(host, name), undefined, `${name} left out`)
+  assert.equal(elements(host.tree, (node) => node.props?.['data-history-apr'] !== undefined).length, 0, 'no Domino history line')
+  const earnings = part(host, 'PoolEarnings')
+  assert.equal(earnings.props.apr, 27.56, 'the estimate the page shows')
+  assert.equal(earnings.props.tvl, 42, 'the TVL handed in')
+  assert.equal(earnings.props.loading, false)
+  assert.ok(elements(host.tree, (node) => node.type === parts.FallbackApr).length >= 2, 'the APR tile and Technical details say the same estimate')
+  assert.ok(part(host, 'PoolAutomation'), 'what Domino can do here')
+  assert.ok(part(host, 'PoolRangeGuide'), 'the typical range')
+  const layout = elements(host.tree, (node) => node.props?.['data-pool-workspace'] !== undefined)[0]
+  assert.equal(layout.props['data-pool-network'], 8453)
+  assert.match(layout.props.className, /dm-pool-layout--network/)
+  host.unmount()
+  // While they are on their way, the figures rest; Robinhood Chain's own page is unchanged by any of it (the tests above).
+  const waiting = workspace()
+  const resting = mount(waiting.PoolWorkspace, { ...waiting.props, option: pool, figures: { row: null, loading: true } })
+  assert.equal(waiting.reads.length, 0)
+  assert.ok(elements(resting.tree, (node) => node.type === parts.Skeleton).length > 0, 'figures rest while they are read')
+  resting.unmount()
 })
 
 test('the chart receives the answered market without dispatching another market read', async () => {
@@ -1427,7 +1463,7 @@ const READ_AGAIN_MS = [2_000, 5_000, 15_000, 30_000]
 
 // Added 2026-10-30 (QA round 2 review, the owner's rule: no "unavailable" line on a read surface): a Base or Arbitrum One
 // token page's pools list that did not read said "Pool search on Base is unavailable right now." and was never read again.
-test('a Base or Arbitrum One token page’s pools that did not read rest and are read again quietly, then say there are none to show; New position’s list keeps its line', async () => {
+test('a Base or Arbitrum One token page’s pools that did not read rest and are read again quietly, then say there are none to show; New position’s list says the same (O-16)', async () => {
   hooks.useSyncExternalStore ??= (_subscribe, snapshot) => snapshot()
   const { waits, whenVisibleAfter } = quietWaits()
   const { NetworkPoolPicker } = load('PoolPicker', {
@@ -1462,11 +1498,32 @@ test('a Base or Arbitrum One token page’s pools that did not read rest and are
   assert.equal(pickerLine(stuck).props.children, 'No pools to show for this token.')
   assert.equal(waits.length, READ_AGAIN_MS.length)
   stuck.unmount()
+  // Changed on purpose 2026-11-06 (the replica rule, O-16): New position's list says Robinhood Chain's New position line
+  // too, its reason only in the visually hidden live region (as PoolPicker's `create` variant says it there), and a failure
+  // a later read can clear is read again quietly first, as on a token's page.
   const create = mount(NetworkPoolPicker, { read, network: 'Base', pending: null, onPending() {} })
-  reads.at(-1).resolve({ kind: 'failed', code: 'connect_wallet', reason: 'Connect a wallet to see pools on Base.' }); await flush(); create.render()
-  assert.equal(pickerLine(create).props.children, 'Connect a wallet to see pools on Base.', 'the person’s to act on, in New position')
-  assert.equal(waits.length, READ_AGAIN_MS.length, 'New position’s list is asked once')
+  reads.at(-1).resolve({ kind: 'failed', code: 'connect_wallet', reason: 'Connect your wallet to see the pools on Base.' }); await flush(); create.render()
+  assert.equal(pickerLine(create).props.children, 'No pools to show for this token.', 'Robinhood Chain’s line, never the reason')
+  assert.equal(pickerLine(create).props['data-pools-unavailable'], 'connect_wallet', 'the code, for data')
+  const live = renderToStaticMarkup(create.tree)
+  assert.match(live, /<p role="status" aria-live="polite" class="sr-only">Connect your wallet to see the pools on Base\.<\/p>/, 'the reason for assistive technology only')
+  assert.doesNotMatch(live.replace(/<p role="status"[^>]*>.*?<\/p>/gs, ''), /Connect your wallet/, 'nothing of it on screen')
+  assert.equal(waits.length, READ_AGAIN_MS.length, 'a wallet to connect is not read again on a timer (a wallet connected reads it again)')
   create.unmount()
+  const passing = mount(NetworkPoolPicker, { read, network: 'Base', pending: null, onPending() {} })
+  const before = waits.length
+  for (const [attempt, ms] of READ_AGAIN_MS.entries()) {
+    reads.at(-1).resolve({ kind: 'failed', code: 'network_search_unavailable', reason: 'Search for this token again to see its pools on Base.' }); await flush(); passing.render()
+    assert.equal(pickerLine(passing), undefined, 'New position’s list: nothing said while it will be read again')
+    assert.ok(resting(passing), 'its rows rest meanwhile')
+    assert.equal(waits.at(-1).ms, ms)
+    waits.at(-1).run(); passing.render()
+    assert.equal(waits.length, before + attempt + 1)
+  }
+  reads.at(-1).resolve({ kind: 'failed', code: 'network_search_unavailable', reason: 'Search for this token again to see its pools on Base.' }); await flush(); passing.render()
+  assert.equal(pickerLine(passing).props.children, 'No pools to show for this token.', 'after its last wait, Robinhood Chain’s line')
+  assert.doesNotMatch(renderToStaticMarkup(passing.tree).replace(/<p role="status"[^>]*>.*?<\/p>/gs, ''), /Search for this token again/, 'the old way-on sentence is gone from the screen')
+  passing.unmount()
 })
 
 // Added 2026-10-30 (QA round 2 review): the Base and Arbitrum One token page rests while its token is read or read again
@@ -1476,7 +1533,7 @@ test('a Base or Arbitrum One token page rests while its token is read again, the
   const { NetworkTokenExplorer } = load('NetworkTokenExplorer', { whenVisibleAfter, Display: Container, NetworkPoolPicker: stub('NetworkPoolPicker') })
   const resolves = []
   const others = { name: () => 'Base', tokens: () => [], resolve: () => { const pending = deferred(); resolves.push(pending); return pending.promise }, pools: () => new Promise(() => {}) }
-  const props = { location: { chainId: 8453, token: addr('c') }, others, checking: false, navigation: null, actions: () => null }
+  const props = { location: { chainId: 8453, token: addr('c') }, others, checking: false, navigation: null }
   const skeletons = (host) => elements(host.tree, (node) => node.type === parts.Skeleton).length
   const words = (host) => renderToStaticMarkup(React.createElement(Container, null, host.tree)).replace(/<[^>]+>/g, ' ')
   const host = mount(NetworkTokenExplorer, props)
@@ -1815,8 +1872,28 @@ test('a token a search already read for exactly this address is shown as handed 
 
 // --- the routes Markets and the pool page read for themselves ---
 
+// Changed on purpose 2026-11-07 (Elysium's screens): the network routes read their network from the app's chain list
+// (src/config/chainIdentity.ts OTHER_V2_CHAIN_IDS), handed in here as the build has it: today's, with Elysium off, and a
+// build that serves Elysium (tests/v2/support/elysium-live.mjs ELYSIUM_FORCED).
+const chainList = (live = false) => {
+  if (!live) return { isOtherV2ChainId: require('../.test-build/app/src/config/chainIdentity.js').isOtherV2ChainId }
+  const ours = (key) => key.includes('.test-build')
+  const saved = Object.entries(require.cache).filter(([key]) => ours(key))
+  for (const [key] of saved) delete require.cache[key]
+  globalThis.__DOMINO_ELYSIUM_LIVE__ = true
+  try {
+    return { isOtherV2ChainId: require('../.test-build/app/src/config/chainIdentity.js').isOtherV2ChainId }
+  } finally {
+    delete globalThis.__DOMINO_ELYSIUM_LIVE__
+    for (const key of Object.keys(require.cache)) if (ours(key)) delete require.cache[key]
+    for (const [key, value] of saved) require.cache[key] = value
+  }
+}
+const ROUTES_TODAY = chainList()
+const ROUTES_ELYSIUM = chainList(true)
+
 test('hash routes: a token or a pool id is taken only in its exact shape, and older section links are forwarded', () => {
-  const routes = load('src/components/explore/routes.ts', {})
+  const routes = load('src/components/explore/routes.ts', ROUTES_TODAY)
   const upper = `0x${'A'.repeat(40)}`
   assert.deepEqual(routes.parseExploreHash(`#/markets/${upper}`), { token: upper, linkedPool: null }, 'as written, case kept')
   assert.deepEqual(routes.parseExploreHash('#/markets'), { token: null, linkedPool: null })
@@ -1854,8 +1931,37 @@ test('hash routes: a token or a pool id is taken only in its exact shape, and ol
   }
 })
 
+// Added 2026-11-06 (the owner's replica rule, O-01): a Base or Arbitrum One pool's page by its network, its key and the
+// token its pools were read for; every Robinhood Chain pool link reads exactly as before.
+test('network pool routes name the network, the pool and its token, and never become a Robinhood Chain pool', () => {
+  const routes = { ...load('src/components/explore/routes.ts', ROUTES_TODAY), ...load('src/components/explore/poolNetwork.ts', ROUTES_TODAY) }
+  const token = `0x${'A'.repeat(40)}`
+  const v3 = `0x${'0'.repeat(24)}${'c'.repeat(40)}`
+  for (const chainId of [8453, 42161]) {
+    for (const pool of [id('B'), v3]) {
+      const href = routes.poolNetworkHref(chainId, pool, token)
+      assert.equal(href, `#/pool/network/${chainId}/${pool}/${token}`)
+      assert.deepEqual(routes.parsePoolNetworkHash(href), { chainId, pool: pool.toLowerCase(), token }, 'what a row writes, the page reads back')
+      assert.deepEqual(routes.parsePoolHash(href), { poolId: null, token: null }, 'never a Robinhood Chain pool')
+      assert.equal(routes.parseMarketsNetworkHash(href), null)
+      assert.equal(routes.parseNewNetworkHash(href), null)
+    }
+  }
+  for (const suffix of [`4663/${id('b')}/${token}`, `1/${id('b')}/${token}`, `08453/${id('b')}/${token}`, `8453/${id('b')}`, `8453/0x1234/${token}`, `8453/${id('b')}/0x1234`, `8453/${id('b')}/${token}/extra`, `8453/${token}/${id('b')}`]) {
+    assert.equal(routes.parsePoolNetworkHash(`#/pool/network/${suffix}`), null, suffix)
+  }
+  // A section after a second `#` reads as the route's own section does (./routes.ts hashParts); anything else is no route.
+  assert.deepEqual(routes.parsePoolNetworkHash(`#/pool/network/8453/${id('b')}/${token}#details`), { chainId: 8453, pool: id('b'), token })
+  for (const other of [`#/pool/network/8453/${id('b')}/${token}/`, `#/pools/network/8453/${id('b')}/${token}`, `#/x/pool/network/8453/${id('b')}/${token}`]) assert.equal(routes.parsePoolNetworkHash(other), null, other)
+  // Robinhood Chain's links are untouched, with or without a token, and are never a network pool.
+  for (const href of [routes.poolHref(id('a')), routes.poolHref(id('a'), token)]) {
+    assert.equal(routes.parsePoolNetworkHash(href), null)
+    assert.equal(routes.parsePoolHash(href).poolId, id('a'))
+  }
+})
+
 test('network token routes keep identical addresses on different chains distinct and reject malformed handoffs', () => {
-  const routes = load('src/components/explore/routes.ts', {})
+  const routes = load('src/components/explore/routes.ts', ROUTES_TODAY)
   const token = `0x${'A'.repeat(40)}`
   for (const chainId of [8453, 42161]) {
     const markets = routes.marketsNetworkHref(chainId, token)
@@ -1880,6 +1986,29 @@ test('network token routes keep identical addresses on different chains distinct
   assert.deepEqual(routes.parseNewNetworkHash(proposed), { chainId: 8453, token, pool: id('b') })
   assert.equal(routes.parseMarketsNetworkHash(`#/markets/network/8453/${token}/${id('b')}`), null, 'Markets takes no pool')
   assert.equal(routes.parseNewNetworkHash(`#/new/network/8453/${token}/${id('b')}/extra`), null)
+  // Changed on purpose 2026-11-07 (Elysium's screens): Elysium's id is no network route where the build does not serve it.
+  for (const href of [`#/markets/network/99901/${token}`, `#/new/network/99901/${token}`]) {
+    assert.equal(routes.parseMarketsNetworkHash(href), null, href)
+    assert.equal(routes.parseNewNetworkHash(href), null, href)
+  }
+})
+
+// Added 2026-11-07 (Elysium's screens): where the build serves Elysium, its token, New position and pool links are network
+// routes as Base's and Arbitrum One's are, by its plain id; Robinhood Chain's and any id the build does not serve are not.
+test('network routes name Elysium (99901) where the build serves it, as they name Base and Arbitrum One', () => {
+  const routes = { ...load('src/components/explore/routes.ts', ROUTES_ELYSIUM), ...load('src/components/explore/poolNetwork.ts', ROUTES_ELYSIUM) }
+  const token = `0x${'A'.repeat(40)}`
+  for (const chainId of [8453, 42161, 99901]) {
+    assert.deepEqual(routes.parseMarketsNetworkHash(routes.marketsNetworkHref(chainId, token)), { chainId, token })
+    assert.deepEqual(routes.parseNewNetworkHash(routes.newNetworkHref(chainId, token, id('B'))), { chainId, token, pool: id('b') })
+    assert.deepEqual(routes.parsePoolNetworkHash(routes.poolNetworkHref(chainId, id('B'), token)), { chainId, pool: id('b'), token })
+    assert.deepEqual(routes.parsePoolHash(routes.poolNetworkHref(chainId, id('B'), token)), { poolId: null, token: null }, 'never a Robinhood Chain pool')
+  }
+  for (const chain of ['4663', '099901', '99901.0', '999010', '99902', '1']) {
+    assert.equal(routes.parseMarketsNetworkHash(`#/markets/network/${chain}/${token}`), null, chain)
+    assert.equal(routes.parseNewNetworkHash(`#/new/network/${chain}/${token}`), null, chain)
+    assert.equal(routes.parsePoolNetworkHash(`#/pool/network/${chain}/${id('b')}/${token}`), null, chain)
+  }
 })
 
 // Added 2026-09-20. OverviewResponse.acquisitionAccepted is the producer saying

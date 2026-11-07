@@ -3,10 +3,10 @@ import type {
 } from 'api-contracts/read-v6/types'
 import { amountText } from '../../components/positions/walletSteps'
 import { feeFromPips } from '../../lib/read/screens/fee'
-import { isV2ChainId, v2Chain } from '../../v2/chains'
+import { hasDex, isV2ChainId, v2Chain } from '../../v2/chains'
 import { formatUnitsText, groupDigits, shortAddress } from '../../v2/plan/present'
 import { coverageNote } from '../../v2/read/v6'
-import { ZERO_ADDRESS, type Address, type V2ChainId } from '../../v2/types'
+import { ZERO_ADDRESS, type Address, type NativeSymbol, type V2ChainId } from '../../v2/types'
 import { USD_SHOWN } from '../position/constants'
 import { protectionStanding, type ProtectionStanding } from '../autoexit/standing'
 import { exitReceiptOutcome } from '../autoexit/receipt'
@@ -130,10 +130,13 @@ export function amountWords(raw: string | bigint, token: TokenName): string {
   return `${shown ? shown.text : formatUnitsText(magnitude, token.decimals)} ${token.label}`
 }
 
-/** Wei as ETH with every digit kept ("0.00000000015 ETH"): a receipt's own figure, never rounded. */
-export function weiWords(wei: string | bigint): string {
+/**
+ * Wei as ETH with every digit kept ("0.00000000015 ETH"): a receipt's own figure, never rounded. In the chain's own
+ * native currency, `symbol` (changed on purpose 2026-11-06, Elysium readiness: HYPE on a HYPE-native chain).
+ */
+export function weiWords(wei: string | bigint, symbol: NativeSymbol = 'ETH'): string {
   const value = BigInt(wei)
-  return `${formatUnitsText(value, 18, 18)} ETH`
+  return `${formatUnitsText(value, 18, 18)} ${symbol}`
 }
 
 /** A gas price in gwei with every digit kept ("0.02 gwei"). */
@@ -418,7 +421,8 @@ function vaultBadge(position: V6Position, vaults: readonly Vault[], mandates: re
 }
 
 function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 'tokens' | 'vaults' | 'servedAt'> & Partial<Pick<PortfolioResponse, 'mandates' | 'wallet'>>, name: ReturnType<typeof tokenNamer>, automation: ReturnType<typeof automationState>, valuations: PositionValuations | null): PositionRowView | null {
-  if (!isV2ChainId(position.chainId)) return null
+  // A position of a version its network lacks (v3 on a chain with v4 alone) is none of that network's: never a row.
+  if (!isV2ChainId(position.chainId) || !hasDex(v2Chain(position.chainId), position.dex)) return null
   const chainId = position.chainId
   const chain = answer.chains.find((c) => c.chainId === chainId)
   const chainStale = chain?.status === 'stale' ? (chainNotes({ chains: [chain], servedAt: answer.servedAt })[0]?.age ?? 'stale') : null
@@ -703,7 +707,7 @@ function receiptOf(item: Item, owner: string, name: ReturnType<typeof tokenNamer
     // it serves is in a block with success, whatever its finality; a reorganised one was withdrawn above.
     confirmed: true,
     finalized: proved === 'finalized' || item.tx.finality === 'finalized',
-    gas: gas ? { sender: gas.sender.toLowerCase(), gasUsed: groupDigits(gas.gasUsed), gasPrice: gweiWords(gas.effectiveGasPriceWei), l1Fee: gas.l1FeeWei === null ? null : weiWords(gas.l1FeeWei) } : null,
+    gas: gas ? { sender: gas.sender.toLowerCase(), gasUsed: groupDigits(gas.gasUsed), gasPrice: gweiWords(gas.effectiveGasPriceWei), l1Fee: gas.l1FeeWei === null ? null : weiWords(gas.l1FeeWei, v2Chain(chainId).nativeSymbol) } : null,
   }
   const sender = gas ? gas.sender.toLowerCase() : null
   const vaultTokens = (vault: string): readonly [TokenName, TokenName] | null => {
@@ -907,7 +911,7 @@ export function sessionReceiptView(entry: SessionReceipt, tokens: readonly Index
     id: `session:${chainId}:${entry.hash}`, chainId, chain: chainName(chainId), kind: 's1_action',
     what: entry.action === 'collect' ? 'Fees collected' : S1_WHAT[entry.action](entry.tokenId),
     amount: movedWords(moved, order, token), lines, fees,
-    gas: gas ? { sender: gas.sender, gasUsed: groupDigits(gas.gasUsed), gasPrice: gweiWords(gas.effectiveGasPrice), l1Fee: gas.l1Fee === null ? null : weiWords(gas.l1Fee) } : null,
+    gas: gas ? { sender: gas.sender, gasUsed: groupDigits(gas.gasUsed), gasPrice: gweiWords(gas.effectiveGasPrice), l1Fee: gas.l1Fee === null ? null : weiWords(gas.l1Fee, v2Chain(chainId).nativeSymbol) } : null,
     hash: entry.hash, block: entry.block, at: entry.at, confirmed: true,
     finalized: entry.state === 'finalized' || finality?.(chainId, entry.hash, entry.blockHash) === 'finalized',
   }

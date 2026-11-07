@@ -2,7 +2,7 @@ import type {
   ActivityResponse, AutoExit, AutoExitEvent, ChainStatus, Credit, IndexedToken, Mandate, PortfolioResponse, ReservesReturned, Tariff, Vault, VaultCreated, VaultEvent, VaultExecution, Waiting,
 } from 'api-contracts/read-v6/types'
 import { automationFeeText, VAULT_TEXT, type VaultMember, type VaultSnapshot } from '../../finance/v2/vault'
-import { v2Chain, type V2Chain } from '../../v2/chains'
+import { hasDex, positionManagerOf, v2Chain, type V2Chain } from '../../v2/chains'
 import { AUTO_EXIT_WAITING, decodeRevertData } from '../../v2/errors'
 import { chainState, coverageNote } from '../../v2/read/v6'
 import { ZERO_ADDRESS, type Address, type V2ChainId } from '../../v2/types'
@@ -246,6 +246,8 @@ export const rawAmounts = (amounts: readonly string[]): bigint[] => amounts.map(
  */
 export function snapshotFromRead6(listed: Vault, body: PortfolioResponse, chainId: V2ChainId, wallet: Address): VaultSnapshot | null {
   if (listed.state.status !== 'read' || listed.chainId !== chainId) return null
+  // A vault of a version the chain lacks (v3 on a chain with v4 alone) is none of this chain's.
+  if (!hasDex(v2Chain(chainId), listed.dex)) return null
   const s = listed.state
   const low = (address: string) => address.toLowerCase() as Address
   const vault = low(listed.address)
@@ -277,7 +279,7 @@ export function snapshotFromRead6(listed: Vault, body: PortfolioResponse, chainI
     owner,
     ownedByWallet: owner === wallet.toLowerCase(),
     pool: { dex: s.pool.dex, currency0: low(s.pool.currency0), currency1: low(s.pool.currency1), fee: s.pool.fee, tickSpacing: s.pool.tickSpacing, hooks: low(s.pool.hooks) },
-    root: { dex, positionManager: rootPosition ? low(rootPosition.positionManager) : dex === 4 ? profile.uniswap.v4.positionManager : profile.uniswap.v3.positionManager, tokenId: BigInt(listed.rootTokenId) },
+    root: { dex, positionManager: rootPosition ? low(rootPosition.positionManager) : positionManagerOf(profile, dex), tokenId: BigInt(listed.rootTokenId) },
     positions: members.filter((m) => m.active).sort((a, b) => (a.role === 'root' ? -1 : b.role === 'root' ? 1 : 0)).map((m) => m.tokenId),
     members,
     policy: { mode: s.policy.mode === 'domino' ? 2 : 1, triggerDistanceBps: s.policy.triggerDistanceBps, maxOverlapBps: s.policy.maxOverlapBps, minimumIntervalSeconds: s.policy.minimumIntervalSeconds, maxPositions: s.policy.maxPositions },

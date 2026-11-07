@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { PortfolioResponse, Position } from 'api-contracts/read-v6/types'
 import type { WalletPosition } from '../../lib/walletPositions'
-import { v2Chain } from '../../v2/chains'
+import { positionManagerOrNull, v2Chain } from '../../v2/chains'
 import { ZERO_ADDRESS } from '../../v2/types'
 import { walletPositionOf } from '../position/card'
 import { findPosition, isLive, tokensOf } from '../position/model'
@@ -19,8 +19,9 @@ export type SetupEligibility = 'eligible' | 'unavailable' | 'unsupported' | 'not
 export function setupEligibility(body: PortfolioResponse, owner: string, item: Position): SetupEligibility {
   if (body.wallet.toLowerCase() !== owner.toLowerCase()) return 'unavailable'
   const chain = v2Chain(item.chainId)
-  const manager = item.dex === 4 ? chain.uniswap.v4.positionManager : chain.uniswap.v3.positionManager
-  if (item.positionManager.toLowerCase() !== manager || BigInt(item.tokenId) <= 0n || BigInt(item.tokenId) >= 1n << 96n) return 'unsupported'
+  // A position of a version the chain lacks (v3 on a chain with v4 alone) is never offered automation.
+  const manager = positionManagerOrNull(chain, item.dex)
+  if (manager === null || item.positionManager.toLowerCase() !== manager || BigInt(item.tokenId) <= 0n || BigInt(item.tokenId) >= 1n << 96n) return 'unsupported'
   const state = item.state
   if (body.chains.find((one) => one.chainId === item.chainId)?.status !== 'current' || state.status !== 'live' || state.freshness.status !== 'fresh') return 'unavailable'
   if (state.pool.dex !== item.dex || state.pool.hooks.toLowerCase() !== ZERO_ADDRESS) return 'unsupported'

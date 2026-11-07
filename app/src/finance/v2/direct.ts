@@ -2,7 +2,7 @@ import { decodeAbiParameters, decodeEventLog, decodeFunctionData, decodeFunction
 import v3FactoryAbi from '../../../../api-contracts/v2/abi/IUniswapV3FactoryMinimal.json'
 import v3PoolAbi from '../../../../api-contracts/v2/abi/IUniswapV3PoolMinimal.json'
 import v4StateViewAbi from '../../../../api-contracts/v2/abi/IV4StateViewMinimal.json'
-import { isV2ChainId, v2Chain, type V2Chain } from '../../v2/chains'
+import { hasDex, isV2ChainId, positionManagerOf, v2Chain, v3Of, type V2Chain } from '../../v2/chains'
 import { V2_FIXTURE_SETS_TAKEN } from '../../v2/flag'
 import { ZERO_ADDRESS, type Dex, type PoolRef, type V2ChainId } from '../../v2/types'
 import { closeData, closeMinimums, collectData, decodePositionInfo, decreaseParameters, takePairParameters, unlockParameters, feesOwed, principalAt, MAX_TICK, MIN_TICK } from '../position'
@@ -160,7 +160,8 @@ const POOL_KEY = [{ type: 'tuple', components: [
 /** The v3 pool's address for its tokens and tier: CREATE2 of the chain's factory with the profile's init code hash. */
 export function v3PoolAddress(chain: V2Chain, token0: Address, token1: Address, fee: number): Address {
   const salt = keccak256(encodeAbiParameters([{ type: 'address' }, { type: 'address' }, { type: 'uint24' }], [token0, token1, fee]))
-  return getContractAddress({ opcode: 'CREATE2', from: chain.uniswap.v3.factory, salt, bytecodeHash: chain.uniswap.v3.poolInitCodeHash }).toLowerCase() as Address
+  const v3 = v3Of(chain)
+  return getContractAddress({ opcode: 'CREATE2', from: v3.factory, salt, bytecodeHash: v3.poolInitCodeHash }).toLowerCase() as Address
 }
 
 /** v3 close: decreaseLiquidity (all, with the principal's minimums) then collect everything to the owner, in one multicall. */
@@ -183,7 +184,12 @@ export function createDirectClient(wallet: V2Wallet, chain: V2Chain, now: () => 
   if (!chain || !isV2ChainId(chain.chainId) || chain !== v2Chain(chain.chainId)) fail('deployment_chain_mismatch')
   if (code !== chain.verifiedCode && DEPLOYABLE) fail('deployment_fixture_refused')
   const expected = Object.freeze({ ...code })
-  for (const hash of Object.values(expected)) if (!/^0x[0-9a-f]{64}$/.test(hash)) fail('deployment_invalid')
+  // Every hash of the chain's versions; the v3 two are null only on a chain without v3 (changed on purpose 2026-11-06,
+  // Elysium readiness), where nothing of v3 is ever read.
+  for (const [name, hash] of Object.entries(expected)) {
+    if (hash === null && name.startsWith('v3') && !hasDex(chain, 3)) continue
+    if (typeof hash !== 'string' || !/^0x[0-9a-f]{64}$/.test(hash)) fail('deployment_invalid')
+  }
   // Changed on purpose (data) 2026-10-02 (Domino V2 integration): a direct exit uses no Domino contract, but it is a V2 option
   // like the others: sent only once Domino's contracts are live on this chain (./liveLock.ts), refused before any wallet request.
   const t = createTransactor(wallet, chain, now, () => refuseUnlessLive(chain.chainId, null))
@@ -202,7 +208,8 @@ export function createDirectClient(wallet: V2Wallet, chain: V2Chain, now: () => 
   const inFlight = new Map<string, { kind: DirectKind; liquidity: bigint; block: bigint; hash: Hex | null; data?: Hex; nonce?: Hex }>()
   const flightKey = (dex: Dex, tokenId: bigint) => `${chain.chainId}|${owner}|${dex}|${tokenId}`
 
-  const managerOf = (dex: Dex): Address => (dex === 3 ? chain.uniswap.v3.positionManager : chain.uniswap.v4.positionManager)
+  // A version the chain lacks (v3 on a chain with v4 alone) is no position of it, refused before any read.
+  const managerOf = (dex: Dex): Address => (hasDex(chain, dex) ? positionManagerOf(chain, dex) : fail('invalid_position_id'))
   /**
    * What the close journal (./closeJournal.ts) holds of these positions on this chain: nothing; a close that is not
    * settled (`held`: handed to the wallet with its hash, or in a block and not final yet); or the intent of a close whose
@@ -321,14 +328,15 @@ export function createDirectClient(wallet: V2Wallet, chain: V2Chain, now: () => 
   /** The DEX's Uniswap contracts hold the code the chain profile verified, once per client. */
   async function verify(rpc: Rpc, dex: Dex): Promise<void> {
     if (verified.has(dex)) return
-    const checks: [Address, Hex][] = dex === 4
+    if (!hasDex(chain, dex)) fail('invalid_position_id')
+    const checks: [Address, Hex | null][] = dex === 4
       ? [[chain.uniswap.v4.positionManager, expected.v4PositionManager], [chain.uniswap.v4.stateView, expected.v4StateView]]
-      : [[chain.uniswap.v3.positionManager, expected.v3PositionManager], [chain.uniswap.v3.factory, expected.v3Factory]]
+      : [[v3Of(chain).positionManager, expected.v3PositionManager], [v3Of(chain).factory, expected.v3Factory]]
     for (const [address, hash] of checks) {
       const found = await rpc('eth_getCode', [address, 'latest'])
       if (typeof found !== 'string' || !/^0x(?:[0-9a-fA-F]{2})*$/.test(found)) fail('deployment_read_invalid')
       if (found === '0x') fail('deployment_missing')
-      if (keccak256((found as string).toLowerCase() as Hex) !== hash) fail('deployment_code_changed')
+      if (hash === null || keccak256((found as string).toLowerCase() as Hex) !== hash) fail('deployment_code_changed')
     }
     verified.add(dex)
   }
@@ -336,7 +344,7 @@ export function createDirectClient(wallet: V2Wallet, chain: V2Chain, now: () => 
   /** The position now, every read pinned to the latest block; the wallet must hold it. */
   async function readPosition(rpc: Rpc, dex: Dex, tokenId: bigint, at?: Awaited<ReturnType<typeof t.latestBlock>>, groupVerified = false): Promise<DirectPosition> {
     if (!groupVerified) await t.identity(rpc)
-    if ((dex !== 3 && dex !== 4) || typeof tokenId !== 'bigint' || tokenId <= 0n || tokenId > MAX_UINT256) return fail('invalid_position_id')
+    if (!hasDex(chain, dex) || typeof tokenId !== 'bigint' || tokenId <= 0n || tokenId > MAX_UINT256) return fail('invalid_position_id')
     if (!groupVerified) await verify(rpc, dex)
     const block = at ?? await t.latestBlock(rpc)
     const manager = managerOf(dex)
@@ -386,9 +394,10 @@ export function createDirectClient(wallet: V2Wallet, chain: V2Chain, now: () => 
     const tickUpper = Number(row[6])
     const liquidity = row[7]
     if (tickLower >= tickUpper || tickLower < MIN_TICK || tickUpper > MAX_TICK) fail('invalid_position_identity')
-    let spacing: number | null = Object.hasOwn(chain.uniswap.v3.tickSpacingByFee, fee) ? chain.uniswap.v3.tickSpacingByFee[fee] : null
+    const v3 = v3Of(chain)
+    let spacing: number | null = Object.hasOwn(v3.tickSpacingByFee, fee) ? v3.tickSpacingByFee[fee] : null
     // A tier outside the profile's table (spec §1.4): its spacing is the verified factory's.
-    if (spacing === null) spacing = Number(await read<number>(rpc, chain.uniswap.v3.factory, V3_FACTORY_ABI, 'feeAmountTickSpacing', [fee], block.tag))
+    if (spacing === null) spacing = Number(await read<number>(rpc, v3.factory, V3_FACTORY_ABI, 'feeAmountTickSpacing', [fee], block.tag))
     if (!spacing) fail('invalid_position_identity')
     const pool: PoolRef = { dex: 3, currency0: token0, currency1: token1, fee, tickSpacing: spacing, hooks: ZERO_ADDRESS }
     // The pool is the verified factory's CREATE2 address for these tokens and tier: its price is that pool's.
@@ -701,7 +710,7 @@ export function readDirectReceipt(input: { chainId: V2ChainId; kind: DirectKind;
   const owner = input.owner.toLowerCase()
   const costs = gasCost(chain.chainId, { gasUsed: receipt.gasUsed, effectiveGasPrice: receipt.effectiveGasPrice, l1Fee: receipt.l1Fee })
   if (input.dex === 3) {
-    const manager = chain.uniswap.v3.positionManager
+    const manager = v3Of(chain).positionManager
     const collects = receipt.logs.filter((log) => log.address === manager && log.topics.length === 2 && log.topics[0] === keccak256(new TextEncoder().encode('Collect(uint256,address,uint256,uint256)')))
     const ours = collects.map((log) => {
       try {

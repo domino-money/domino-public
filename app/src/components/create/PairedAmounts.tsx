@@ -10,6 +10,8 @@ import { shortAmount } from '../../lib/format/amount'
 import { formatUsdFloor } from '../../lib/format/usd'
 import { formatUnits } from '../../lib/read/decimal'
 import { NATIVE_CURRENCY } from '../../lib/read/screens/identity'
+import { ELYSIUM_LIVE, fundsBroughtTo } from '../../lib/elysiumIdentity'
+import { nativeWords } from '../../lib/nativeWords'
 import { useMarketOption } from '../../lib/read/screens/knownMarkets'
 import type { TokenCandidate } from '../../lib/read/screens/tokens'
 import { useNow } from '../../lib/read/useNow'
@@ -203,6 +205,9 @@ export function PairedAmounts({
   const only = takesOnly(state)
   // How the wallet funds it, from the balances the read service reported (Review's own reading, lib/create/reviewPlan.ts).
   const plan = reviewPlan(state, rawBalances(balances))?.plan ?? null
+  // Whether an offer to bring funds from another network sits below a short amount (V2's, with onPayWith): not on a network
+  // funds are not brought to (review finding P1, 2026-11-07; lib/elysiumIdentity.ts fundsBroughtTo).
+  const bringsFunds = !!onPayWith && !(ELYSIUM_LIVE && !fundsBroughtTo(pool.currencies[0].chainId))
   // The same qualified estimate as Review and the live preview. No new prices or money calculations.
   const held = heldAmounts(state, balances)
   const total = held !== null && held.sides.every((side) => side.usd !== null) ? held.total : null
@@ -391,7 +396,8 @@ export function PairedAmounts({
             <strong className="tnum">{total !== null ? <Figure text={formatUsdFloor(total)} /> : CREATE.page.notChosen}</strong>
           </div>
           <p>
-            {held.estimate ? CREATE.amount.totalSwapNote : held.only !== null ? CREATE.amount.totalOneNote : CREATE.amount.totalNote}
+            {/* Changed on purpose 2026-11-07 (Elysium's screens): in the pool's network's own currency (lib/nativeWords.ts). */}
+            {nativeWords(held.estimate ? CREATE.amount.totalSwapNote : held.only !== null ? CREATE.amount.totalOneNote : CREATE.amount.totalNote, pool.currencies[0].chainId)}
             {sizeLine && (
               <>
                 {' '}
@@ -474,9 +480,12 @@ export function PairedAmounts({
           )}
         </p>
       )}
+      {/* Changed on purpose 2026-11-07 (review finding P1): "needs more funds on this network" points at the offer below to
+          bring them; on a network funds are not brought to (Elysium: lib/elysiumIdentity.ts fundsBroughtTo), with no other
+          token to pay with, the line is Robinhood Chain's own (lower it, or add tokens to your wallet). */}
       {plan && plan.kind === 'short' && (
-        <p id={shortId} role="status" className={pay ? 'sr-only' : 'dm-flow-position'} data-tone={onPayWith ? 'neutral' : 'warn'} data-amount-short={plan.token}>
-          {pay ? 'Choose a funding option below.' : onPayWith ? 'This amount needs more funds on this network.' : CREATE.amount.shortOf(pool.currencies[plan.token].symbol ?? '', pool.currencies[plan.token === 0 ? 1 : 0].symbol ?? '')}
+        <p id={shortId} role="status" className={pay ? 'sr-only' : 'dm-flow-position'} data-tone={bringsFunds ? 'neutral' : 'warn'} data-amount-short={plan.token}>
+          {pay ? 'Choose a funding option below.' : bringsFunds ? 'This amount needs more funds on this network.' : CREATE.amount.shortOf(pool.currencies[plan.token].symbol ?? '', pool.currencies[plan.token === 0 ? 1 : 0].symbol ?? '')}
         </p>
       )}
     </div>

@@ -19,6 +19,8 @@ import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { keccak256, stringToHex } from 'viem';
+import { elysiumSwitch } from '../../scripts/elysium-switch.mjs';
+import { loadWith } from './support/elysium-live.mjs';
 
 const require = createRequire(import.meta.url);
 const manifest = require('../../.test-build/app/src/v2/manifest.js');
@@ -32,6 +34,16 @@ const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const gitBlob = (bytes) => createHash('sha1').update(Buffer.concat([Buffer.from(`blob ${bytes.length}\0`), bytes])).digest('hex');
 const CHAINS = [4663, 8453, 42161];
 const SLUGS = { 4663: 'robinhood', 8453: 'base', 42161: 'arbitrum' };
+
+/**
+ * Changed on purpose 2026-11-06 (review of the v4-only build, F3): two records agree on every contract both hold, and each
+ * holds exactly its own versions' (13 with Uniswap v3 and v4, nine with v4 alone: src/v2/manifest.ts componentsFor), so a
+ * chain with v4 alone (Elysium, docs/ELYSIUM_DAY9.md) fits beside the three without editing these checks.
+ */
+function sameWhereShared(a, b, what) {
+  for (const key of Object.keys(a).filter((name) => Object.hasOwn(b, name))) assert.deepEqual(a[key], b[key], `${what}: ${key}`);
+}
+const ownComponents = (raw) => [...manifest.componentsFor(manifest.manifestDexes(raw))].sort();
 
 /** What the backend's parse_manifest and the pin need of a file's bytes: LF, the bound, and one value per key. */
 function wellFormedFile(bytes, path) {
@@ -60,8 +72,9 @@ test('every deployable manifest is pinned, its file hashes to the pin, it is the
     deployment.admitV2Contracts(chains.v2Chain(chainId), contracts);
     assert.equal(manifest.v2Availability(chainId).available, true);
   }
-  const addresses = deployed.map((chainId) => JSON.stringify(manifest.parseV2Manifest(manifest.V2_DEPLOYMENTS[chainId], chainId).deployment.contracts));
-  assert.equal(new Set(addresses).size <= 1, true, 'every deployed chain shows the same Domino addresses');
+  const records = deployed.map((chainId) => manifest.parseV2Manifest(manifest.V2_DEPLOYMENTS[chainId], chainId).deployment.contracts);
+  for (const [index, chainId] of deployed.entries()) assert.deepEqual(Object.keys(records[index]).sort(), ownComponents(manifest.V2_DEPLOYMENTS[chainId]), `${chainId}: its versions' contracts`);
+  for (const record of records.slice(1)) sameWhereShared(record, records[0], 'every deployed chain shows the same Domino addresses');
 });
 
 test('every fixture file hashes to its pin, is #302\'s own file byte for byte, and the module holds the file\'s content', () => {
@@ -86,9 +99,12 @@ test('every fixture file hashes to its pin, is #302\'s own file byte for byte, a
 
 test('the fixtures keep CREATE3\'s property: the same 13 addresses and salts on every chain, from the owner\'s deployer: production\'s own addresses', () => {
   const raws = CHAINS.map((chainId) => fixtures.FIXTURE_MANIFESTS[chainId]);
+  for (const raw of raws) assert.deepEqual(Object.keys(raw.contracts).sort(), ownComponents(raw));
   for (const raw of raws.slice(1)) {
-    assert.deepEqual(raw.contracts, raws[0].contracts);
-    assert.deepEqual(raw.createx, raws[0].createx);
+    sameWhereShared(raw.contracts, raws[0].contracts, 'contracts');
+    assert.deepEqual([raw.createx.address, raw.createx.runtimeCodeHash], [raws[0].createx.address, raws[0].createx.runtimeCodeHash]);
+    sameWhereShared(raw.createx.salts, raws[0].createx.salts, 'salts');
+    sameWhereShared(raw.createx.guardedSalts, raws[0].createx.guardedSalts, 'guardedSalts');
     assert.deepEqual(raw.roles, raws[0].roles);
   }
   const [robinhood, base, arbitrum] = CHAINS.map((chainId) => fixtures.fixtureContracts(chainId));
@@ -110,10 +126,47 @@ test('the fixtures keep CREATE3\'s property: the same 13 addresses and salts on 
 test('every fixture salt is deployer ‖ 0x00 ‖ bytes11(keccak256("domino.v2.<component>")) (F0 "Deterministic deployment")', () => {
   for (const chainId of CHAINS) {
     const raw = fixtures.FIXTURE_MANIFESTS[chainId];
-    assert.deepEqual(Object.keys(raw.createx.salts), [...manifest.DEPLOY_ORDER]);
+    assert.deepEqual(Object.keys(raw.createx.salts), [...manifest.deployOrderFor(manifest.manifestDexes(raw))]);
     for (const [component, salt] of Object.entries(raw.createx.salts)) {
       const tail = keccak256(stringToHex(`domino.v2.${component}`)).slice(2, 24);
       assert.equal(salt, `${raw.roles.deployer}00${tail}`, component);
     }
+  }
+});
+
+// Added 2026-11-07 (Elysium as a fourth V2 chain; docs/ELYSIUM_DAY9.md section 2, step 9): the checks above, on
+// rugged97's real record, once the repository turns Elysium on (scripts/elysium-switch.mjs). The compiled modules are
+// loaded with the very defines the release build writes (its profile, its pinned record's text and pin), so the map
+// holds the pinned file, it passes the production admission for 99901, the CREATE3 prediction and the money clients'
+// admission, holds its nine contracts, and shows the same Domino addresses as the other three where both hold one.
+// Until then it is skipped, naming what is still to come.
+test('Elysium\'s pinned record, once day 9 is in the repository: the file the pin names, admitted for production on 99901, the same addresses', (t) => {
+  const repository = elysiumSwitch({ row: { testHooks: false, deployable: true, site: true }, appRoot: resolve(REPO, 'app') });
+  if (!repository.live) return t.skip(`Elysium is off; still to come: ${repository.missing.map((entry) => entry.piece).join(', ')}`);
+  const flags = {
+    __DOMINO_ELYSIUM_LIVE__: true,
+    __DOMINO_ELYSIUM_PROFILE__: repository.profile,
+    __DOMINO_ELYSIUM_DEPLOYMENT__: repository.deployment.text,
+    __DOMINO_ELYSIUM_DEPLOYMENT_PIN__: { path: repository.deployment.path, sha256: repository.deployment.sha256 },
+  };
+  const on = loadWith(require, flags, () => ({
+    manifest: require('../../.test-build/app/src/v2/manifest.js'),
+    deployment: require('../../.test-build/app/src/finance/v2/deployment.js'),
+    chains: require('../../.test-build/app/src/v2/chains.js'),
+  }));
+  const pin = on.manifest.V2_MANIFEST_PINS[99901];
+  assert.match(pin.path, /^docs\/deployments\/v2-elysium-99901-\d{4}-\d{2}-\d{2}\/deployment\.json$/, pin.path);
+  const bytes = readFileSync(join(REPO, pin.path));
+  assert.equal(sha256(bytes), pin.sha256, `${pin.path} drifted from its pin`);
+  assert.deepEqual(on.manifest.V2_DEPLOYMENTS[99901], wellFormedFile(bytes, pin.path), 'the map holds the pinned file');
+  const contracts = on.manifest.parseV2Manifest(on.manifest.V2_DEPLOYMENTS[99901], 99901);
+  assert.deepEqual([contracts.fixture, contracts.deployment.admission], [false, 'production']);
+  on.deployment.checkV2Prediction(contracts.deployment);
+  on.deployment.admitV2Contracts(on.chains.v2Chain(99901), contracts);
+  assert.equal(on.manifest.v2Availability(99901).available, true);
+  assert.deepEqual(Object.keys(contracts.deployment.contracts).sort(), ownComponents(on.manifest.V2_DEPLOYMENTS[99901]));
+  assert.equal(Object.keys(contracts.deployment.contracts).length, 9, 'Uniswap v4 alone: nine contracts');
+  for (const chainId of CHAINS) {
+    sameWhereShared(contracts.deployment.contracts, on.manifest.parseV2Manifest(on.manifest.V2_DEPLOYMENTS[chainId], chainId).deployment.contracts, `99901 and ${chainId}: the same Domino addresses`);
   }
 });

@@ -31,6 +31,13 @@
  *   - `aborted`: the caller gave the question up.
  * Only a capabilities answer with the exact version and `dataMode` live is "on", with the routes it names.
  *
+ * Added 2026-11-06 (read-v6 1.2.0-rc.1's window, docs/v2/V2_FEES.md): the read route's capabilities are asked in
+ * 1.2.0-rc.1 first. Its answer stands only in that version (header and body); any other answer of the Worker (today's
+ * refuses the version with a 502) is asked again in 1.1.0-rc.1, read exactly as before, and the probe asks 1.1.0-rc.1
+ * alone for the rest of the page load. No Worker's answer at all (no reply, a reply without the contract header) is the
+ * same in either version: said at once, with no second GET (review F2, 2026-11-06). `position-fees` is on only from a 1.2.0-rc.1 answer; named in a 1.1.0-rc.1 one it is known (so
+ * it never turns the reads off) and dropped. A route this app does not know is still refused as `invalid`.
+ *
  * The GET itself is injected (`RawGet`), as src/v2/plan/httpTransport.ts takes its POST: src/v2 may not import the
  * consumer directories (tests/consumer.guard.test.mjs), and only the reviewed clients send requests
  * (tests/read.test.mjs). A V2 transport hands in lib/http's reading of a same-origin GET (rawReplyOf over the page's
@@ -40,7 +47,7 @@
  */
 import { CROSSCHAIN_CONTRACT, CROSSCHAIN_HEADER } from './crosschain/version'
 import { S1_PLAN_CONTRACT_VERSION, S1_PLAN_HEADER } from './plan/types'
-import { READ_V6_CONTRACT_VERSION, READ_V6_HEADER } from './read/v6'
+import { READ_V6_CONTRACT_VERSION, READ_V6_HEADER, READ_V6_NEXT_CONTRACT_VERSION } from './read/v6'
 
 export type V2Route = 'readV6' | 'plan' | 'crosschain'
 
@@ -70,22 +77,57 @@ export type RawGet = (
   options: { headers: Record<string, string>; contractHeader: string; maxBytes: number; timeoutMs: number; signal?: AbortSignal },
 ) => Promise<TransportResult>
 
+/**
+ * A version a route's Worker may speak beside its own while a package's window is open (read-v6 1.2.0-rc.1, launch round
+ * P3; asked this way since 2026-11-06, the owner: nothing pending on our side). The probe asks it first; an answer that is
+ * not this version's own capabilities (today's Worker refuses the version with a 502, a body that fails the shape below,
+ * an answer in the older version) is asked again in `version`, exactly as before the window; no Worker's answer (no
+ * reply, a reply without the contract header) is not (askV2Route).
+ */
+interface NextVersion {
+  readonly version: string
+  /** The routes its capabilities may name. */
+  readonly known: readonly string[]
+  /** The routes it alone serves: an answer in the route's own version may name one, and it is never on from that answer. */
+  readonly only: readonly string[]
+}
+
 interface RouteSpec {
   readonly path: string
   readonly header: string
   readonly version: string
   /** The routes the capabilities may name, in the Worker's order. */
   readonly known: readonly string[]
+  readonly next?: NextVersion
 }
 
+const READ_V6_ROUTES = Object.freeze(['portfolio', 'activity', 'chain-pools', 'chain-balances', 'chain-tokens', 'position-fees'])
+
 export const V2_ROUTE_SPECS: Readonly<Record<V2Route, RouteSpec>> = Object.freeze({
-  readV6: Object.freeze({ path: '/api/read/v6/capabilities', header: READ_V6_HEADER, version: READ_V6_CONTRACT_VERSION, known: Object.freeze(['portfolio', 'activity', 'chain-pools', 'chain-balances', 'chain-tokens']) }),
+  readV6: Object.freeze({
+    path: '/api/read/v6/capabilities', header: READ_V6_HEADER, version: READ_V6_CONTRACT_VERSION, known: READ_V6_ROUTES,
+    next: Object.freeze({ version: READ_V6_NEXT_CONTRACT_VERSION, known: READ_V6_ROUTES, only: Object.freeze(['position-fees']) }),
+  }),
   plan: Object.freeze({ path: '/api/position-plan/v1/capabilities', header: S1_PLAN_HEADER, version: S1_PLAN_CONTRACT_VERSION, known: Object.freeze(['plan']) }),
   crosschain: Object.freeze({ path: '/api/crosschain/v1/capabilities', header: CROSSCHAIN_HEADER, version: CROSSCHAIN_CONTRACT, known: Object.freeze(['origins', 'quote', 'status']) }),
 })
 
 /** read-v6's three chains, in the order every answer lists them (Robinhood Chain, Base, Arbitrum One). */
 const V6_CHAIN_IDS = [4663, 8453, 42161] as const
+
+/**
+ * Whether a capabilities answer's `chainIds` are read-v6's: the three, all of them, in their order, as before. Changed on
+ * purpose 2026-11-07 (Elysium as a fourth V2 chain): beside them, other chains, each a distinct positive integer: read-v6
+ * names Elysium (99901) from rugged97's day-9 version, which a Worker may answer before or after this app serves Elysium,
+ * and a forced test build serves Elysium against a Worker that does not name it yet. Those ids are ignored here: whether a
+ * chain is read is each answer's own per-chain status (./read/v6.ts), as on the three, so an answer naming a chain this
+ * app does not serve no longer turns every read off, and one without Elysium leaves Elysium's reads "not available yet".
+ */
+function v6Chains(chains: unknown): boolean {
+  if (!Array.isArray(chains) || chains.some((id) => !Number.isSafeInteger(id) || (id as number) < 1) || new Set(chains).size !== chains.length) return false
+  const ours = chains.filter((id) => (V6_CHAIN_IDS as readonly unknown[]).includes(id))
+  return ours.length === V6_CHAIN_IDS.length && ours.every((id, index) => id === V6_CHAIN_IDS[index])
+}
 /** A capabilities answer is a few hundred bytes. */
 export const V2_ROUTE_MAX_BYTES = 4 * 1024
 export const V2_ROUTE_TIMEOUT_MS = 10_000
@@ -128,35 +170,51 @@ function routeList(value: unknown, known: readonly string[]): readonly string[] 
   return new Set(value).size === value.length ? Object.freeze([...(value as string[])]) : null
 }
 
-/** The capabilities answer, read: on with its routes, `disabled`, or null when it is not the contract's shape. */
-function capabilitiesOf(route: V2Route, value: unknown): V2RouteState | null {
+/** Which of a route's versions was asked: its own (`version`), or the one its package's window adds (`next`). */
+export type V2RouteVersion = 'version' | 'next'
+
+/** The version asked, the routes its answer may name, and those it may name but never serves (the next version's own). */
+function versionOf(route: V2Route, asked: V2RouteVersion): { version: string; known: readonly string[]; dropped: readonly string[] } {
   const spec = V2_ROUTE_SPECS[route]
-  if (!isRecord(value) || value.contractVersion !== spec.version) return null
+  if (asked === 'next' && spec.next) return { version: spec.next.version, known: spec.next.known, dropped: [] }
+  return { version: spec.version, known: spec.known, dropped: spec.next?.only ?? [] }
+}
+
+/** The capabilities answer, read: on with its routes, `disabled`, or null when it is not the contract's shape. */
+function capabilitiesOf(route: V2Route, value: unknown, asked: V2RouteVersion): V2RouteState | null {
+  const { version, known, dropped } = versionOf(route, asked)
+  if (!isRecord(value) || value.contractVersion !== version) return null
   if (route === 'readV6') {
     if (!exactKeys(value, ['contractVersion', 'dataMode', 'chainIds', 'enabledReads', 'walletAuthentication', 'privateAccounts', 'ownerTransactions', 'automation'])) return null
     if (value.walletAuthentication !== false || value.privateAccounts !== false || value.ownerTransactions !== false || value.automation !== false) return null
-    const chains = value.chainIds
-    if (!Array.isArray(chains) || chains.length !== V6_CHAIN_IDS.length || chains.some((id, index) => id !== V6_CHAIN_IDS[index])) return null
-    const reads = routeList(value.enabledReads, spec.known)
-    if (reads === null) return null
-    if (value.dataMode === 'disabled') return reads.length === 0 ? off('disabled') : null
-    return value.dataMode === 'live_read_only' && reads.length > 0 ? Object.freeze({ on: true, routes: reads }) : null
+    if (!v6Chains(value.chainIds)) return null
+    const named = routeList(value.enabledReads, known)
+    if (named === null) return null
+    if (value.dataMode === 'disabled') return named.length === 0 ? off('disabled') : null
+    if (value.dataMode !== 'live_read_only' || named.length === 0) return null
+    // A route the window's version alone serves, named in this version: known, so never a reason to turn the reads off,
+    // and never on from here (2026-11-06: `position-fees` is asked in 1.2.0-rc.1 only).
+    const reads = Object.freeze(named.filter((name) => !dropped.includes(name)))
+    return reads.length > 0 ? Object.freeze({ on: true, routes: reads }) : off('disabled')
   }
   if (!exactKeys(value, ['contractVersion', 'dataMode', 'enabledRoutes'])) return null
-  const routes = routeList(value.enabledRoutes, spec.known)
+  const routes = routeList(value.enabledRoutes, known)
   if (routes === null) return null
   if (value.dataMode === 'disabled') return routes.length === 0 ? off('disabled') : null
   return value.dataMode === 'live' && routes.length > 0 ? Object.freeze({ on: true, routes }) : null
 }
 
-/** What one capabilities exchange says about `route` (see the module comment for each reason). */
-export function routeStateOf(route: V2Route, result: TransportResult): V2RouteState {
+/**
+ * What one capabilities exchange says about `route` (see the module comment for each reason). `asked` (2026-11-06): the
+ * version the GET named, whose header and `contractVersion` the answer must carry.
+ */
+export function routeStateOf(route: V2Route, result: TransportResult, asked: V2RouteVersion = 'version'): V2RouteState {
   if (result.kind === 'aborted') return off('aborted')
   if (result.kind !== 'reply') return off('unavailable')
   const reply = result.reply
-  const spec = V2_ROUTE_SPECS[route]
+  const { version } = versionOf(route, asked)
   if (reply.opaqueRedirect) return off('unavailable')
-  const ours = reply.contractHeader === spec.version
+  const ours = reply.contractHeader === version
   if (reply.contractHeader === null && reply.status === 401 && reply.body.kind === 'text' && reply.body.text === GATE_REFUSAL) return off('gate_required')
   if (reply.status === 404 || reply.status === 405) {
     // Without this contract's header: the forwarder's not_found, an older Worker that does not know the protocol.
@@ -171,25 +229,75 @@ export function routeStateOf(route: V2Route, result: TransportResult): V2RouteSt
   }
   if (!ours) return off('invalid')
   if (reply.status !== 200) return off('unavailable')
-  return capabilitiesOf(route, jsonOf(reply)) ?? off('invalid')
+  return capabilitiesOf(route, jsonOf(reply), asked) ?? off('invalid')
 }
 
-/** Ask once: one capabilities GET of `route`, read. */
-export async function askV2Route(route: V2Route, get: RawGet, signal?: AbortSignal): Promise<V2RouteState> {
+/** One capabilities GET of `route` in `version`. Never throws. */
+async function getCapabilities(route: V2Route, version: string, get: RawGet, signal?: AbortSignal): Promise<TransportResult> {
   const spec = V2_ROUTE_SPECS[route]
-  let result: TransportResult
   try {
-    result = await get(spec.path, {
-      headers: { Accept: 'application/json', [spec.header]: spec.version },
+    return await get(spec.path, {
+      headers: { Accept: 'application/json', [spec.header]: version },
       contractHeader: spec.header,
       maxBytes: V2_ROUTE_MAX_BYTES,
       timeoutMs: V2_ROUTE_TIMEOUT_MS,
       signal,
     })
   } catch {
-    result = { kind: 'network' }
+    return { kind: 'network' }
   }
-  return routeStateOf(route, result)
+}
+
+/**
+ * Whether the answer to the next version stands (2026-11-06): the Worker's own word in that version (its header, and not
+ * a body that fails its shape), the caller giving up, or the beta gate, which refuses every version alike. Anything else
+ * is not that version's answer, and the route's own version is asked.
+ */
+function nextStands(route: V2Route, result: TransportResult, state: V2RouteState): boolean {
+  if (!state.on && (state.reason === 'aborted' || state.reason === 'gate_required')) return true
+  const next = V2_ROUTE_SPECS[route].next
+  return next !== undefined && result.kind === 'reply' && result.reply.contractHeader === next.version && (state.on || state.reason !== 'invalid')
+}
+
+/**
+ * Whether a Worker answered at all (review F2, 2026-11-06): a reply that carries the route's contract header. The read
+ * Worker puts its header on every answer, its own failures included (bridge/src/worker.mjs); no reply (the network, the
+ * GET's deadline), an opaque redirect, and a reply without the header (the forwarder's own refusals, which never carry
+ * one and never read the version asked: functions/_lib/bridge.ts; the edge's or the page's HTML) say nothing about a
+ * version, so the route's own version would get the very same.
+ */
+const workerAnswered = (result: TransportResult): boolean => result.kind === 'reply' && !result.reply.opaqueRedirect && result.reply.contractHeader !== null
+
+export interface V2AskOptions {
+  /** false: ask the route's own version alone (the probe learned this page load that its Worker does not speak the next one). */
+  next?: boolean
+  /**
+   * Told when the route's Worker does not speak the next version: it refused it in the route's own version, or the next
+   * version was not answered and the route's own version was, settled (on or `disabled`).
+   */
+  refused?: () => void
+}
+
+/**
+ * Ask once: one capabilities GET of `route`, read. Changed on purpose 2026-11-06 (read-v6's 1.2.0-rc.1 window): a route
+ * with a next version asks it first, and asks again in its own version, as before, when that answer does not stand.
+ * Changed on purpose 2026-11-06 (review F2): only when a Worker answered it. No reply, an opaque redirect or a reply
+ * without the contract header is the answer for either version, said at once with no second GET (an outage cost two GETs
+ * and up to twice V2_ROUTE_TIMEOUT_MS per ask); and a Worker that refused the next version in the route's own version is
+ * known not to speak it, whatever its own version then answers.
+ */
+export async function askV2Route(route: V2Route, get: RawGet, signal?: AbortSignal, options: V2AskOptions = {}): Promise<V2RouteState> {
+  const spec = V2_ROUTE_SPECS[route]
+  if (spec.next && options.next !== false) {
+    const result = await getCapabilities(route, spec.next.version, get, signal)
+    const state = routeStateOf(route, result, 'next')
+    if (nextStands(route, result, state) || !workerAnswered(result)) return state
+    if (result.kind === 'reply' && result.reply.contractHeader === spec.version) options.refused?.()
+    const own = routeStateOf(route, await getCapabilities(route, spec.version, get, signal))
+    if (own.on || own.reason === 'disabled') options.refused?.()
+    return own
+  }
+  return routeStateOf(route, await getCapabilities(route, spec.version, get, signal))
 }
 
 /** Whether `state` serves `name` (a read-v6 read: 'portfolio' or 'activity'; the plan route: 'plan'; the crosschain route: 'origins', 'quote' or 'status'). */
@@ -208,6 +316,8 @@ export interface V2RouteProbe {
    * V2_ROUTE_REUSE_MS from when it came, as every answer did before. Asks nothing by itself.
    */
   shorten?(route: V2Route): void
+  /** The answer kept for `route` now, asking nothing; null when none is. */
+  known?(route: V2Route): V2RouteState | null
 }
 
 /**
@@ -220,13 +330,16 @@ export function createV2RouteProbe({ get, now }: { get: RawGet; now: () => numbe
   // `at`: when the answer came (2026-10-15, pack 7: `shorten` counts the minute from it).
   const kept = new Map<V2Route, { state: V2RouteState; until: number; at: number }>()
   const asking = new Map<V2Route, Promise<V2RouteState>>()
+  // (2026-11-06) The routes whose Worker answered their own version but not the next one: for this page load, asked in
+  // their own version alone, as before the window (one GET, never a refused one first). forget() asks the next again.
+  const ownOnly = new Set<V2Route>()
   return {
     state(route) {
       const memo = kept.get(route)
       if (memo && now() < memo.until) return Promise.resolve(memo.state)
       const pending = asking.get(route)
       if (pending) return pending
-      const question = askV2Route(route, get).then((state) => {
+      const question = askV2Route(route, get, undefined, { next: !ownOnly.has(route), refused: () => ownOnly.add(route) }).then((state) => {
         asking.delete(route)
         const settled = state.on || state.reason === 'disabled' || state.reason === 'not_deployed'
         // (2026-10-15, pack 7): the read route said on is kept V2_READ_ROUTE_REUSE_MS; every other settled answer its minute.
@@ -239,6 +352,11 @@ export function createV2RouteProbe({ get, now }: { get: RawGet; now: () => numbe
     },
     forget() {
       kept.clear()
+      ownOnly.clear()
+    },
+    known(route) {
+      const memo = kept.get(route)
+      return memo && now() < memo.until ? memo.state : null
     },
     shorten(route) {
       const memo = kept.get(route)

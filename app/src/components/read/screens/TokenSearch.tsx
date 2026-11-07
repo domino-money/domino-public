@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type ClipboardEvent, type KeyboardEvent } from 'react'
 import { mainTokenAt } from '../../../config/mainTokens'
+import { chainMarkProps } from '../../../lib/chainMarks'
 import { hitRank, mergeHits, preselectOf, type HitFacts, type NetworkSearch, type NetworkToken } from '../../../lib/create/otherChains'
 import { unreadToken } from '../../../lib/read/project'
 import { formatUsdCompact } from '../../../lib/read/decimal'
@@ -228,7 +229,7 @@ const noVersion = () => 0
 /** A hit's network, in the journey's chip style (2026-10-05, the owner: "the results get the network's tag"). */
 function NetworkTag({ chainId, name }: { chainId: number; name: string }) {
   return (
-    <span className="dm-chip shrink-0" data-chain-chip={chainId}>
+    <span className="dm-chip shrink-0" data-chain-chip={chainId} {...chainMarkProps(chainId)}>
       {name}
     </span>
   )
@@ -236,13 +237,21 @@ function NetworkTag({ chainId, name }: { chainId: number; name: string }) {
 
 /**
  * Another network's token as a hit (2026-10-05, New position on Base and Arbitrum One): its name and address, and its
- * network's tag. No liquidity and no lookalike check here (the network's own warning comes with the row); a pasted
- * address not read on that network is offered as one to look up there. Changed on purpose 2026-10-06 (the owner's point
- * 3: no icon on the other networks): its mark asks DEX Screener for the token's artwork on its network, as a Robinhood
- * Chain token's does (lib/tokenArtwork.ts).
+ * network's tag. No lookalike check here (the network's own warning comes with the row); a pasted address not read on
+ * that network is offered as one to look up there. Changed on purpose 2026-10-06 (the owner's point 3: no icon on the
+ * other networks): its mark asks DEX Screener for the token's artwork on its network, as a Robinhood Chain token's does
+ * (lib/tokenArtwork.ts).
+ *
+ * Changed on purpose 2026-11-06 (the owner's replica rule: the search on Base and Arbitrum One as on Robinhood Chain):
+ * its line says what a Robinhood Chain hit's says (KnownRow), in the same words: its liquidity across its pools on its
+ * network, as DEX Screener reports it (read with its artwork, the figure the list already orders it by), or "No
+ * liquidity found"; and "Same name as another token" when another hit of its network reads as the same name (`twin`),
+ * never for the network's own currency. Nothing while DEX Screener has not answered for it.
  */
-function NetworkRow({ row, prefix }: { row: NetworkToken; prefix?: number }) {
+function NetworkRow({ row, prefix, twin = false }: { row: NetworkToken; prefix?: number; twin?: boolean }) {
   const symbol = row.token.symbol
+  const facts = networkFacts(row)
+  const liquidity = row.unread ? null : liquidityText(facts)
   return (
     <>
       {row.unread ? <span aria-hidden="true" className="dm-flow-hit-blank" /> : <TokenMark token={row.token} size={28} />}
@@ -252,6 +261,18 @@ function NetworkRow({ row, prefix }: { row: NetworkToken; prefix?: number }) {
         </span>
         <span className="dm-flow-hit-meta">
           <Address value={row.token.address} short prefix={prefix} />
+          {liquidity !== null && (
+            <>
+              <span aria-hidden="true">{DOT}</span>
+              <span className="tnum" data-token-liquidity={facts.liquidityUsd ?? undefined} title="Liquidity across this token’s pools, as DEX Screener reports it.">{liquidity}</span>
+            </>
+          )}
+          {twin && row.warning === undefined && (
+            <>
+              <span aria-hidden="true">{DOT}</span>
+              <span data-token-twin="" title="Another token has this name. Check the address before choosing.">Same name as another token</span>
+            </>
+          )}
         </span>
         {/* Added 2026-10-06: a hit that passes for ETH, WETH or USDC there without being it (never chosen). */}
         {row.warning !== undefined && (
@@ -613,6 +634,15 @@ export function TokenSearch({
     return { rank: hitRank(entry.network.token.symbol, query), own: entry.network.own === true, liquidity: facts.liquidityUsd, dead: emptyOf(facts) }
   }
   const { groups, entries: merged } = groupedHits(rankedMerged, home, excluded, standing, rankedPreselectAt < 0 ? undefined : rankedMerged[rankedPreselectAt])
+  // Added 2026-11-06 (the replica rule): another network's hits that read as the same name on that network, as today's
+  // search tells its own apart (lib/read/screens/tokenSearch.ts disambiguate); the network's own currency is never one.
+  const networkName = (row: NetworkToken) => (row.unread || row.token.symbol === null ? null : `${row.chainId}|${symbolReading(row.token.symbol)}`)
+  const namesakes = new Map<string, number>()
+  for (const entry of merged) {
+    const name = 'network' in entry ? networkName(entry.network) : null
+    if (name !== null) namesakes.set(name, (namesakes.get(name) ?? 0) + 1)
+  }
+  const networkTwin = (row: NetworkToken) => row.own !== true && (namesakes.get(networkName(row) ?? '') ?? 0) > 1
   // QA round 2, N30: where two listed addresses would read alike in short ("0x5fc5…d168"), both keep more characters.
   const prefixes = shortPrefixes(merged.map((entry) => ('home' in entry ? (entry.home.kind === 'known' ? entry.home.token.key : entry.home.wire) : entry.network.token.address)))
   const prefixOf = (address: string) => prefixes.get(address.toLowerCase())
@@ -846,7 +876,7 @@ export function TokenSearch({
             {expanded && merged.map((entry, index) => {
               const current = index === highlighted
               const group = groups.find(group => group.entries[0] === entry)
-              const heading = group && (groups.length > 1 || group.key === 'unavailable') ? <div className="dm-v3-token-group" data-token-group={group.key} aria-hidden="true">{group.label}</div> : null
+              const heading = group && (groups.length > 1 || group.key === 'unavailable') ? <div className="dm-v3-token-group" data-token-group={group.key} {...chainMarkProps(group.key)} aria-hidden="true">{group.label}</div> : null
               if ('home' in entry) {
                 const result = entry.home
                 const key = keyOf(result)
@@ -897,7 +927,7 @@ export function TokenSearch({
                     onClick={() => chooseOther(row)}
                     className={cx('dm-flow-hit', row.warning !== undefined && 'dm-flow-hit--off')}
                   >
-                    <NetworkRow row={row} prefix={prefixOf(row.token.address)} />
+                    <NetworkRow row={row} prefix={prefixOf(row.token.address)} twin={networkTwin(row)} />
                   </button>
                 </Fragment>
               )

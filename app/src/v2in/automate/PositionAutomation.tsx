@@ -9,7 +9,7 @@ import { askAutoExitOnArrival, takeAutoExitAsk } from '../../lib/automate/autoEx
 import type { WalletPosition } from '../../lib/walletPositions'
 import type { VaultSnapshot } from '../../finance/v2/vault'
 import { useWalletIdentity } from '../../lib/walletIdentity'
-import { v2Chain } from '../../v2/chains'
+import { positionManagerOrNull, v2Chain } from '../../v2/chains'
 import type { V2Gate } from '../../v2/gate'
 import { ZERO_ADDRESS, type Address, type Dex, type V2ChainId } from '../../v2/types'
 import { exitCardState, withApprovals, withExitModules, withRevoked } from '../autoexit/card'
@@ -225,7 +225,7 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
   const indexedVault = body?.vaults.find(vault => vault.chainId === chainId && vault.address.toLowerCase() === (current?.vault ?? listedPosition?.vault?.address)?.toLowerCase()) ?? null
   const currentRead = current ? fresh.get(current.vault.toLowerCase()) ?? null : null
   const proof = connected ? confirmedPositionAutomation(store, {
-    chainId, positionManager: dex === 4 ? chain.uniswap.v4.positionManager : chain.uniswap.v3.positionManager, tokenId, dex, wallet: connected, vault: indexedVault?.address,
+    chainId, positionManager: positionManagerOrNull(chain, dex) ?? '', tokenId, dex, wallet: connected, vault: indexedVault?.address,
     halted: body?.chains.find(one => one.chainId === chainId)?.automationHalted === true,
     listedBlock: currentRead ? Number(currentRead.blockNumber) : indexedVault?.state.status === 'read' ? indexedVault.state.snapshot.number : null,
     listedNonce: currentRead?.stateNonce ?? (indexedVault?.state.status === 'read' ? idOf(indexedVault.state.stateNonce) : null),

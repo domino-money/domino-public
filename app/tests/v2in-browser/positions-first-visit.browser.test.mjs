@@ -67,7 +67,10 @@ async function firstVisit() {
         if (!url.pathname.startsWith('/api/read/v6/')) return undefined;
         const route = url.pathname.split('/').at(-1);
         const headers = { 'X-Domino-Read-Contract': CONTRACT };
-        if (request.method === 'GET' && route === 'capabilities') return Response.json(CAPABILITIES, { headers });
+        // Changed on purpose 2026-11-06 (read-v6 1.2.0-rc.1's window): the read Worker answers its capabilities in the version
+        // asked (src/v2/routes.ts asks 1.2.0-rc.1 first); the page's reads stay 1.1.0-rc.1.
+        const asked = request.headers.get('X-Domino-Read-Contract');
+        if (request.method === 'GET' && route === 'capabilities') return Response.json({ ...CAPABILITIES, contractVersion: asked }, { headers: { 'X-Domino-Read-Contract': asked } });
         return Response.json(about(route, route === 'activity' ? activity : fixture('portfolio.json')), { headers });
       },
       edge.handle,

@@ -33,6 +33,28 @@ export function createdFullRange(state: Pick<JourneyState, 'pool' | 'range'> | n
 }
 
 /**
+ * Added 2026-11-06 (the replica rule, O-18: Base and Arbitrum One are Robinhood Chain's screens, only the network
+ * changes): a position made on another network gets this same success, handed in by Domino V2's Create position
+ * (src/v2in/journey/JourneyCreateV2.tsx): its links by that network's routes, and only the automations that network's
+ * gates and read-v6 say it takes now. Absent, Robinhood Chain's own links and every choice, exactly as before. V1 names no
+ * V2 module: what is handed in is plain data and callbacks.
+ */
+export interface CreatedWays {
+  /** Where each choice leads: the position's page, or its setup with that mode chosen. */
+  href: (key: FeatureKey) => string
+  /** The position's page is opened from here (the page then waits for read-v6 to list it). */
+  onOpen: () => void
+  /** Auto-exit is chosen: its dialog asked for on the position's page. */
+  onExit: () => void
+  /** Auto-compound and Domino-compound offered. */
+  compound: boolean
+  /** Auto-exit offered (still never for a range that covers every price). */
+  exit: boolean
+  /** The receipt's state, as data only (`data-zap-receipt`). */
+  receipt?: string
+}
+
+/**
  * New position's success (2026-09-24, the owner's three features "totally
  * integrated"): the position is in the wallet, and the natural next step is
  * offered where Create position was pressed, instead of the page leaving on
@@ -49,23 +71,24 @@ export function createdFullRange(state: Pick<JourneyState, 'pool' | 'range'> | n
  * offer it there; not Set up automation, which depends on V1's automation release. Where Auto-exit is not offered, the
  * page is simply the position's.
  */
-export function CreatedNext({ tokenId, state }: { tokenId: string; state?: Pick<JourneyState, 'pool' | 'range'> | null }) {
+export function CreatedNext({ tokenId, state, ways = null }: { tokenId: string; state?: Pick<JourneyState, 'pool' | 'range'> | null; ways?: CreatedWays | null }) {
   const [now] = useState(() => Date.now())
   const beside = createdBeside(state, now)
-  const exit = __DOMINO_V2__ && !createdFullRange(state)
+  const exit = __DOMINO_V2__ && !createdFullRange(state) && (ways === null || ways.exit)
+  const choices = ways === null || ways.compound ? FEATURE_ORDER : FEATURE_ORDER.filter((key) => key === 'plain')
   // Drawn at the top of Review's body (V4: the created block opens above Your position), its tile beside the line.
   return (
     <InCreatedSlot>
-      <section className="dm-created" aria-labelledby="created-title" data-created-position={tokenId}>
+      <section className="dm-created" aria-labelledby="created-title" data-created-position={tokenId} data-zap-receipt={ways?.receipt}>
         <p id="created-title" className="dm-created-line" role="status">
           Position NFT <span translate="no">{tokenId}</span> is in your wallet. <span className="dm-created-q">What should Domino do with it?</span>
         </p>
         <CreatedTile />
         <nav className="dm-created-choices" aria-labelledby="created-title">
-          {FEATURE_ORDER.map((key) => {
+          {choices.map((key) => {
             const feature = FEATURES[key]
             return (
-              <a key={key} href={hrefOf(key, tokenId)} className="dm-created-choice" data-created-next={key}>
+              <a key={key} href={ways ? ways.href(key) : hrefOf(key, tokenId)} onClick={ways && key === 'plain' ? ways.onOpen : undefined} className="dm-created-choice" data-created-next={key}>
                 <span className="dm-created-art" aria-hidden="true">
                   <CreatedArt kind={key} />
                 </span>
@@ -84,8 +107,9 @@ export function CreatedNext({ tokenId, state }: { tokenId: string; state?: Pick<
             )
           })}
           {exit && (
-            // The panel's key for a Robinhood Chain Uniswap v4 position is its bare id (src/v2in/autoexit/entry.ts exitOrderKey).
-            <a href={positionHref(tokenId)} onClick={() => askAutoExitOnArrival(tokenId)} className="dm-created-choice" data-created-next="autoexit" data-created-recommended={beside ? '' : undefined}>
+            // The panel's key for a Robinhood Chain Uniswap v4 position is its bare id (src/v2in/autoexit/entry.ts exitOrderKey);
+            // another network's is the handed-in ask's.
+            <a href={ways ? ways.href('plain') : positionHref(tokenId)} onClick={ways ? ways.onExit : () => askAutoExitOnArrival(tokenId)} className="dm-created-choice" data-created-next="autoexit" data-created-recommended={beside ? '' : undefined}>
               <span className="dm-created-art" aria-hidden="true">
                 <CreatedArt kind="autoexit" />
               </span>

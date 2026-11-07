@@ -11,10 +11,13 @@ import type { JourneyGates } from './source'
 export interface JourneyNetwork {
   chainId: V2ChainId
   /**
-   * On Robinhood Chain while its listed pools keep today's steps: open the zap path's pool finder for a pool today's
-   * journey cannot open (a v3 pool, a pool with no price yet). Null where it is not offered.
+   * The way to the zap path's pool finder on `chainId` ("Create a new pool (advanced)", ./PoolAdvanced.tsx), for a pool
+   * today's journey cannot open (a v3 pool on Robinhood Chain, a pool with no price yet): on Robinhood Chain while its
+   * listed pools keep today's steps; on Base and Arbitrum One while their gate is open (./model/routing.ts finderOpen).
+   * Changed on purpose 2026-11-06 (O-15): by network, the one of the token chosen in step 1; it was Robinhood Chain's
+   * alone, opened whatever token was chosen. Null where that network's finder is not offered, or a finder is open.
    */
-  findOther: (() => void) | null
+  findOther: (chainId: V2ChainId) => (() => void) | null
   /** Back from that finder to today's list (null elsewhere). */
   backToList: (() => void) | null
   /**

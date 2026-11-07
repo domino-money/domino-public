@@ -23,6 +23,7 @@ import { basename, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { gzipSync } from 'node:zlib';
 import { createRequire } from 'node:module';
+import { elysiumSwitch } from '../scripts/elysium-switch.mjs';
 
 const APP = resolve(import.meta.dirname, '..');
 const DIST = join(APP, 'dist');
@@ -340,6 +341,30 @@ test('the lockfile holds no optional connector SDK but WalletConnect\u2019s own 
   const walletConnect = packages.filter((name) => /node_modules\/@walletconnect\//.test(name)).map((name) => name.replace(/^.*node_modules\//, ''));
   assert.ok(walletConnect.includes('@walletconnect/sign-client'));
   assert.ok(!walletConnect.some((name) => /ethereum-provider|universal-provider|modal|appkit/.test(name)), walletConnect.join(', '));
+});
+
+/**
+ * Whether the repository turns Elysium on for these builds (the release build's own switch; the usual test builds read
+ * the repository the same way), and what its rows, profile and pinned record may add then (the 2026-11-07 note below).
+ */
+const ELYSIUM_LIVE = elysiumSwitch({ row: { testHooks: false, deployable: true, site: true }, appRoot: APP }).live;
+const ELYSIUM_ALLOWANCE = Object.freeze({ 'domino v2': 8_500, 'pool history chart': 500 });
+
+// Added 2026-11-07 (ely/money: Elysium as a fourth V2 chain, switched on by itself): while the repository leaves Elysium
+// off (today), the release build and the usual test builds hold nothing of chain 99901: no id, no profile, no record, no
+// fixture, no slug, no WalletConnect chain; every Elysium branch folded away by the build's switch. The day it is live,
+// the forced build's own suites hold what it carries (tests/v2/elysium-chain.test.mjs and the browser suites).
+test('Elysium off: the release build and the usual test builds carry no chain 99901 at all', (t) => {
+  if (ELYSIUM_LIVE) return t.skip('the repository turns Elysium on: its id is in these builds');
+  for (const dir of [DIST, WALLET, WALLET_V2]) {
+    for (const { file, text } of textFiles(dir)) {
+      // Changed on purpose 2026-11-07 (review findings E/P9 and P5): Home's "Open positions on" row and the pool step's
+      // one-version leads too, which only a live build draws.
+      for (const trace of ['99901', '0x1863d', 'WHYPE', 'elysium-99901', 'Elysium explorer', '|elysium)', 'Elysium (synthetic', 'Open positions on', 'Pick two tokens and the fee', 'pick its two tokens and the fee']) {
+        assert.equal(text.includes(trace), false, `${basename(dir)}/${file} carries ${trace}`);
+      }
+    }
+  }
 });
 
 test('what every visitor downloads first, the route screens, the session/read closures and the financial screens each keep a measured budget', (t) => {
@@ -1348,10 +1373,81 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // 41834140551): +3,620 B, 2,696 B over 668,500 B. Every other family moved by under 0.1 kB. Raise domino v2 to
     // 672,000 B: the overshoot rounded up to 0.5 kB plus one more 0.5 kB of headroom. No dependency, every other ceiling
     // unchanged.
-    for (const [family, files, productionBudget] of [['initial entry', first, 242_000], ['route screens', routes, 191_000], ['session/public reads', base, 168_000], ['financial', financial, 347_000], ['pool history chart', poolChart, 13_000], ['all lazy', allLazy, 406_500], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 672_000], ['V2 fixture data', fixtureData, 13_000]]) {
+    // Changed on purpose 2026-11-04 (Base's and Arbitrum's Fees earned and Your APR from read-v6's position-fees, the owner:
+    // every chain the same as Robinhood Chain): Robinhood Chain's card opens lazily, but its tile, the mapping and the read
+    // are on the V2 page, and the modules they share with V1's position page leave its chunk. Measured with gzip 9 on
+    // Windows: domino v2 675,384 B in dist (.wallet-test-v2-dist 673,515 B), 3,384 B over 672,000 B; session/public reads
+    // 169,476 B in .wallet-test-v2-dist (dist 168,923 B), 1,476 B over 168,000 B. Raise domino v2 to 676,000 B and
+    // session/public reads to 170,000 B: each overshoot rounded up to 0.5 kB plus one more 0.5 kB of headroom. No
+    // dependency, every other ceiling unchanged.
+    // Changed on purpose 2026-11-06 (the owner: Base and Arbitrum an exact copy of Robinhood Chain's position page, nothing
+    // pending on our side): the read route's capabilities asked in 1.2.0-rc.1 first with 1.1.0-rc.1 as before behind it
+    // (src/v2/routes.ts); Robinhood Chain's own tile parts (components/positions/keyFigureParts.tsx: Token amounts, the
+    // split bar, the range bar and the price), now shared by both position pages; the stored history's automation lines,
+    // Activity settlements and Fees history line (src/v2in/position/storedFees.ts); the page's View address, burned NFT and
+    // Details links, and the dialogs' USD. Measured with gzip 9 on Windows against the 2026-11-04 work in progress on the
+    // same base (dist 675,393 B, .wallet-test-v2-dist 673,590 B): domino v2 678,888 B in dist (+3,495 B) and 677,042 B in
+    // .wallet-test-v2-dist (+3,452 B), 2,888 B over 676,000 B. Raise domino v2 to 679,500 B: the overshoot rounded up to
+    // 0.5 kB plus one more 0.5 kB of headroom. No dependency, every other ceiling unchanged.
+    // Changed on purpose 2026-11-06 (the replica rule, O-15 and O-18: Base and Arbitrum One are Robinhood Chain's screens):
+    // "Create a new pool (advanced)" opens the chosen token's network's finder (NewPositionV2, PoolAdvanced), and a
+    // position made there gets Robinhood Chain's success with only the automations that network takes now (ReviewStage
+    // CreatedOnNetwork: its gates and one read-v6 portfolio read; CreatedNext's code now shares ReviewStage's chunk).
+    // Measured with gzip 9 on Windows against this branch's parent built the same way: domino v2 675,393 B to 676,131 B
+    // in dist (+738 B, about 100 B of it the hashed chunk names every import carries; .wallet-test-v2-dist 674,413 B),
+    // 131 B over 676,000 B. Raise domino v2 to 677,000 B: the overshoot rounded up to 0.5 kB plus one more 0.5 kB of
+    // headroom. No dependency, every other ceiling unchanged. Its review (2026-11-06: read-v6's word asked about the
+    // wallet that made the position): 676,160 B in dist (+29 B), 674,203 B in .wallet-test-v2-dist; the budget stays.
+    // Changed on purpose 2026-11-06 (R-07, the owner's replica rule: the Wallet card lists the wallet's tokens on Base and
+    // Arbitrum One too): the card's merge, figure and network rows join the Positions chunk, which Your positions' chunk
+    // reaches, so they count in session/public reads; the watcher and its pure model join the V2 lists' chunk (OwnedRows),
+    // no chunk of their own. Behind the V2 define, so the V1 wallet-test build carries almost none of it. Measured with gzip
+    // 9 on Windows against f8825cd5: session/public reads 170,302 B in dist (+1,399 B) and 170,816 B in .wallet-test-v2-dist
+    // (+1,327 B), 816 B over 170,000 B; domino v2 676,488 B in dist (+1,095 B), 488 B over 676,000 B. Raise session/public
+    // reads to 171,500 B and domino v2 to 677,000 B: each overshoot rounded up to 0.5 kB plus one more 0.5 kB of headroom.
+    // No dependency, every other ceiling unchanged.
+    // Changed on purpose 2026-11-06 (Elysium readiness: the chain model that takes a HYPE-native chain and checks each
+    // profile's rank rule, the screens naming the chain's own currency, and the network mark slot): measured with gzip 9
+    // on Windows against this branch's base (f8825cd5, domino v2 675,393 B in dist): domino v2 677,294 B in dist
+    // (+1,901 B; .wallet-test-v2-dist 675,349 B), 1,294 B over 676,000 B. Raise domino v2 to 678,000 B: the overshoot
+    // rounded up to 0.5 kB plus one more 0.5 kB of headroom. No dependency, every other ceiling unchanged.
+    // Changed on purpose 2026-11-06 (integ/replica-elysium: rep/pos, rep/mkt, rep/new, rep/wal and rep/ely merged on
+    // f8825cd5 with main 1c357813, then the v4-only chain, the Base/Arbitrum Pool button and the Wallet card's mark slot).
+    // Each branch above raised a ceiling against the same base on its own; the merge kept the largest (domino v2 679,500 B
+    // from rep/pos), and their sum is over it. Measured with gzip 9 on Windows, clean builds of all three directories. The
+    // merge alone (39f0ea27): domino v2 682,197 B in dist (.wallet-test-v2-dist 680,124 B), 2,697 B over 679,500 B; the
+    // initial entry 242,056 B in dist, 56 B over 242,000 B (the branches' shared screens and rules). This branch's own
+    // addition (the chain model's versions, the nine-component manifest rules, the guards that keep v3 out of a chain
+    // with v4 alone, the invalid_request mapping, the network pool link): domino v2 +1,406 B in dist to 683,603 B
+    // (.wallet-test-v2-dist +1,718 B to 681,842 B), 4,103 B over; the initial entry +12 B to 242,068 B, 68 B over.
+    // Raise domino v2 to 684,500 B and the initial entry to 243,000 B: each overshoot rounded up to 0.5 kB plus one more
+    // 0.5 kB of headroom. No dependency, every other ceiling unchanged.
+    // Changed on purpose 2026-11-06 (the Elysium surface, branch ely/surface): its base, 39f0ea27 (the merge of the six
+    // reviewed branches, each of which raised domino v2 from its own parent), is already over two ceilings: measured with
+    // gzip 9 on Windows, initial entry 242,056 B in dist (56 B over 242,000 B) and domino v2 682,197 B (2,697 B over
+    // 679,500 B). The surface adds 62 B to the entry (Elysium's switch, name and mark rows, Home's sixth place: 242,118 B)
+    // and takes 258 B off domino v2 (681,939 B). Raise the entry to 243,000 B and domino v2 to 682,500 B: each overshoot
+    // rounded up to 0.5 kB plus one more 0.5 kB of headroom. No dependency, every other ceiling unchanged.
+    // Merged 2026-11-07 (ely/surface into integ/replica-elysium): the two raises above were made against the same base,
+    // 39f0ea27, each on its own; the merge keeps the larger of each (domino v2 684,500 B, the initial entry 243,000 B).
+    // Measured on the merge with gzip 9 on Windows, clean builds of all three directories: domino v2 683,379 B in dist
+    // (.wallet-test-v2-dist 681,616 B), the initial entry 242,132 B in dist; inside both, so no ceiling moves.
+    // Changed on purpose 2026-11-07 (ely/money: Elysium as a fourth V2 chain, switched on by itself). Off, as today and in
+    // the release build, measured with gzip 9 on Windows, clean builds of all three directories against 683,379 B: domino
+    // v2 683,799 B in dist (+420 B: the read client leaving out a chain it does not serve, the capabilities' wider chain
+    // check, S2's destinations, the preview's fallback; .wallet-test-v2-dist 682,030 B), the initial entry 242,131 B; inside
+    // every ceiling, so none moves. On, the day the repository holds every day-9 piece (scripts/elysium-switch.mjs), the
+    // build also carries Elysium's rows, its profile and its pinned record: measured on the forced build
+    // (.wallet-test-v2-dist-elysium, the synthetic profile, no record) against .wallet-test-v2-dist, domino v2 +1,745 B,
+    // the pool history chart +9 B (13,000 B), V2 fixture data +510 B (12,906 B), the initial entry +43 B; the record not
+    // in it, its text alone is 6,221 B gzip (the nine-contract fixture's, a bound: beside the other three records it
+    // compresses further). So where the repository's switch is live, and there only, domino v2 may take 8,500 B more
+    // (1,745 + 6,221 rounded up to 0.5 kB, plus one more 0.5 kB of headroom) and the pool history chart 500 B more (its
+    // own measure at the ceiling, plus 0.5 kB). No dependency, no other ceiling, and nothing while Elysium is off.
+    for (const [family, files, productionBudget] of [['initial entry', first, 243_000], ['route screens', routes, 191_000], ['session/public reads', base, 171_500], ['financial', financial, 347_000], ['pool history chart', poolChart, 13_000], ['all lazy', allLazy, 406_500], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 684_500], ['V2 fixture data', fixtureData, 13_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       const testOnly = dir !== DIST && (family === 'financial' || family === 'all lazy');
-      const budget = productionBudget + (testOnly ? 3_000 : 0);
+      const budget = productionBudget + (testOnly ? 3_000 : 0) + (ELYSIUM_LIVE ? ELYSIUM_ALLOWANCE[family] ?? 0 : 0);
       if (dir === DIST) productionBytes.set(family, total);
       // The headroom is a diagnostic only, so the margin stays visible in every run; only the budget itself fails the test.
       t.diagnostic(`${label} ${family}: ${total} bytes gzip (${files.size} scripts; ${budget} budget; ${budget - total} bytes, ${((100 * (budget - total)) / budget).toFixed(1)}% headroom)`);

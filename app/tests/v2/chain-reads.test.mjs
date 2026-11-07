@@ -347,6 +347,8 @@ test('review M1: a token passing for one of the network’s own currencies is ne
   assert.equal(rows.length, 3);
   const warned = reads.lookalikePools(8453, rows);
   assert.deepEqual(warned, [`0x${'ab'.repeat(32)}`]);
+  // Added 2026-11-06 (the replica rule): that pool's page warns in Robinhood Chain's words, naming the currency it passes for.
+  assert.deepEqual(reads.lookalikeMains(8453, rows), { [`0x${'ab'.repeat(32)}`]: 'USDC' });
   assert.deepEqual(otherChains.linkedNetworkPool(rows, `0x${'AB'.repeat(32)}`, warned), { option: rows[2], refused: true });
   assert.deepEqual(otherChains.linkedNetworkPool(rows, rows[1].key, warned), { option: rows[1], refused: false });
   assert.equal(otherChains.linkedNetworkPool(rows, `0x${'cd'.repeat(32)}`, warned), null, 'a pool the read does not list is never chosen');

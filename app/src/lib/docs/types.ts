@@ -26,8 +26,8 @@ export type Block =
   /** A drawing of an idea rather than a screen (components/docs/DocsDiagram.tsx), with its plain description. */
   | { kind: 'diagram'; name: DiagramName; caption: string; alt: string }
 
-/** Robinhood Chain, Base or Arbitrum One. */
-export type DocChain = 4663 | 8453 | 42161
+/** Robinhood Chain, Base or Arbitrum One; Elysium once linked (./elysium.ts, 2026-11-07). */
+export type DocChain = 4663 | 8453 | 42161 | 99901
 
 /** The docs' drawings: how a position earns fees, and the three ways its fees can be used. */
 export type DiagramName = 'earning' | 'three-ways'

@@ -5,8 +5,41 @@ import { ChapterTitle, Stop } from './HomeType'
 import { useInView } from './Vignettes'
 import { useSvgId } from '../charts/series'
 import { homeStory, locOf, useHomeStoryState } from './homeStory'
+import { ELYSIUM_FUNDS_FROM, ELYSIUM_LIVE, ELYSIUM_MARK, ELYSIUM_NAME } from '../../lib/elysiumIdentity'
 
 export const FUNDING_NETWORKS = ['Ethereum', 'Base', 'Arbitrum One', 'OP Mainnet', 'Robinhood Chain'] as const
+
+/**
+ * Every network a mark is drawn for: the five funding networks, and Elysium's slot (added 2026-11-06, Elysium
+ * readiness), whose mark is its own official file (lib/elysiumIdentity.ts ELYSIUM_MARK), never a drawing of ours.
+ */
+export type MarkedNetwork = typeof FUNDING_NETWORKS[number] | typeof ELYSIUM_NAME
+export const MARKED_NETWORKS: readonly MarkedNetwork[] = Object.freeze([...FUNDING_NETWORKS, ELYSIUM_NAME])
+
+/**
+ * Home's "Bring funds from" row: the five, then Elysium on the day funds can come from it (ELYSIUM_FUNDS_FROM, off: no
+ * bridge serves it yet). Changed on purpose 2026-11-06 (the Elysium surface): ELYSIUM_FUNDS_FROM is derived, no longer
+ * written false: Elysium is live (every day-9 piece is in the repository, so V2 serves it; scripts/elysium-switch.mjs) and
+ * crosschain-v1, which the origins listing is read with, pins Relay or Across for it (lib/elysiumIdentity.ts).
+ */
+/**
+ * Home's "Open positions on" row (added 2026-11-07, the owner's order of 6 Nov: Elysium's mark on Home): the networks
+ * Domino opens positions on, in the V2 chains' order (config/chainIdentity.ts V2_CHAIN_IDS), with Elysium last; drawn only
+ * where the build serves Elysium (lib/elysiumIdentity.ts ELYSIUM_LIVE). Empty elsewhere, so Home is what it was: no row.
+ */
+export const POSITION_ROW: readonly MarkedNetwork[] = Object.freeze(ELYSIUM_LIVE ? ['Robinhood Chain', 'Base', 'Arbitrum One', ELYSIUM_NAME] : [])
+
+export const FUNDING_ROW: readonly MarkedNetwork[] = Object.freeze(ELYSIUM_FUNDS_FROM ? [...FUNDING_NETWORKS, ELYSIUM_NAME] : [...FUNDING_NETWORKS])
+
+/**
+ * The funding scene's places, top to bottom (added 2026-11-06, the Elysium surface): the five, and on the day funds can
+ * come from Elysium a sixth, Elysium, in the same column and rhythm (one more chip and route, 44 design px lower).
+ * Robinhood Chain stays last, at the foot of the column, because it is the network "On this network" shows by itself
+ * there; Elysium takes the place just above it (the row above lists it last). Five places today, exactly as before.
+ */
+export const FUNDING_PLACES: readonly MarkedNetwork[] = Object.freeze(ELYSIUM_FUNDS_FROM ? [...FUNDING_NETWORKS.slice(0, 4), ELYSIUM_NAME, FUNDING_NETWORKS[4]] : [...FUNDING_NETWORKS])
+/** The place of the network the scene stands on (Robinhood Chain): the last. */
+const HOME_PLACE = FUNDING_PLACES.length - 1
 
 /** The networks' own marks as V4 draws them (V4 §5.2): each in its own colour, the only place a network's colour shows. */
 function V4Glyph({ network }: { network: typeof FUNDING_NETWORKS[number] }) {
@@ -22,7 +55,11 @@ function V4Glyph({ network }: { network: typeof FUNDING_NETWORKS[number] }) {
  * Identifying marks always have a network name beside them. `variant="v4"` is Home's drawing; the default output is
  * unchanged for the funding screens that share it (v2in/funds/TransferRoute.tsx).
  */
-export function NetworkMark({ network, variant }: { network: typeof FUNDING_NETWORKS[number]; variant?: 'v4' }) {
+export function NetworkMark({ network, variant }: { network: MarkedNetwork; variant?: 'v4' }) {
+  // Elysium's mark is its official file; while the file is not there, nothing is drawn in its place.
+  if (network === ELYSIUM_NAME) {
+    return <span className={variant === 'v4' ? 'dm-network-mark dm-network-mark--v4' : 'dm-network-mark'} data-network={network} aria-hidden="true"><img src={ELYSIUM_MARK} alt="" width={20} height={20} draggable={false} onError={(event) => { event.currentTarget.hidden = true }} /></span>
+  }
   if (variant === 'v4') {
     return <span className="dm-network-mark dm-network-mark--v4" data-network={network} aria-hidden="true"><V4Glyph network={network} /></span>
   }
@@ -39,7 +76,7 @@ export function NetworkMark({ network, variant }: { network: typeof FUNDING_NETW
    story plays once and holds the complete picture: the chosen source's route lights and its token travels to the wallet,
    the wallet takes it, the step lights, two tokens leave for your pair, the pair takes them and its range fills. A source
    chip (across networks) picks the route and starts the story again; so does the switch. */
-const SOURCES = [42, 86, 130, 174, 218] as const
+const SOURCES: readonly number[] = FUNDING_PLACES.map((_, index) => 42 + 44 * index)
 const route = (y: number) => `M184 ${y} C 228 ${y} 232 222 268 222`
 const ACROSS = 'M390 222 C 404 150 444 150 462 226'
 const LOCAL = 'M390 222 L 462 226'
@@ -80,7 +117,7 @@ export function HomeCapabilities() {
   const nodeDrop = useSvgId('funding-node-drop')
   const nodeOut = useSvgId('funding-node-out')
   const discA = useSvgId('funding-disc-a')
-  const source = mode === 'local' ? 4 : picked
+  const source = mode === 'local' ? HOME_PLACE : picked
   // The travelling tile stands on the step from 1280px; its place is lit only while it is away (CSS).
   const here = story.ready && locOf(story.act, story.rangeOpen) === 'fund'
   const choose = (index: number) => {
@@ -106,7 +143,7 @@ export function HomeCapabilities() {
       <div className="dm-funding-copy">
         <p>Use tokens in your wallet, even on another network. Domino finds a route into your chosen pair.</p>
         <LinkButton href="#/positions" variant="ghost" className="dm-home-more">Find your funds <IconChevronRight size={16} /></LinkButton>
-        <details className="dm-funding-details"><summary>Networks and transfers</summary><p>Domino checks Ethereum, Base, Arbitrum One, OP Mainnet and Robinhood Chain. Available transfers depend on the token and destination. Review swaps, transfer costs and network fees before you approve in your wallet.</p></details>
+        <details className="dm-funding-details"><summary>Networks and transfers</summary><p>{ELYSIUM_FUNDS_FROM ? 'Domino checks Ethereum, Base, Arbitrum One, OP Mainnet, Robinhood Chain and Elysium.' : 'Domino checks Ethereum, Base, Arbitrum One, OP Mainnet and Robinhood Chain.'} Available transfers depend on the token and destination. Review swaps, transfer costs and network fees before you approve in your wallet.</p></details>
       </div>
       {/* The card's lit rim sits on this frame, outside the demonstration whose own motion is its story alone. */}
       <div className="dm-funding-card dm-lit">
@@ -124,13 +161,13 @@ export function HomeCapabilities() {
                 outside the list of networks, which then names the current one alone. */}
             {mode === 'local' && (
               <div className="dm-funding-ghosts" aria-hidden="true">
-                {FUNDING_NETWORKS.slice(0, 4).map((network) => <span key={network}><NetworkMark network={network} variant="v4" />{network}</span>)}
+                {FUNDING_PLACES.slice(0, HOME_PLACE).map((network) => <span key={network}><NetworkMark network={network} variant="v4" />{network}</span>)}
               </div>
             )}
-            <div className="dm-funding-networks" aria-label={mode === 'across' ? 'Funding networks' : 'Current network'}>
+            <div className="dm-funding-networks" data-places={FUNDING_PLACES.length > 5 ? FUNDING_PLACES.length : undefined} aria-label={mode === 'across' ? 'Funding networks' : 'Current network'}>
               {mode === 'across'
-                ? FUNDING_NETWORKS.map((network, index) => (
-                  <span key={network} className={returned && index < 4 ? 'is-back' : undefined} role="button" tabIndex={0} aria-pressed={index === source} onMouseEnter={() => hover(index)} onFocus={() => choose(index)} onClick={() => choose(index)}
+                ? FUNDING_PLACES.map((network, index) => (
+                  <span key={network} className={returned && index < HOME_PLACE ? 'is-back' : undefined} role="button" tabIndex={0} aria-pressed={index === source} onMouseEnter={() => hover(index)} onFocus={() => choose(index)} onClick={() => choose(index)}
                     onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose(index) } }}>
                     <NetworkMark network={network} variant="v4" />{network}
                   </span>

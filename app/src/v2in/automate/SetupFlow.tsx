@@ -15,7 +15,7 @@ import { useWalletIdentity } from '../../lib/walletIdentity'
 import { CREATE } from '../../lib/create/copy'
 import { SEQUENCE_DEFAULTS, type SequenceForm } from '../../lib/create/sequenceDefaults'
 import type { WalletPosition } from '../../lib/walletPositions'
-import { v2Chain } from '../../v2/chains'
+import { positionManagerOrNull, v2Chain } from '../../v2/chains'
 import type { V2Gate } from '../../v2/gate'
 import { ZERO_ADDRESS, type Address, type V2ChainId } from '../../v2/types'
 import { autoExitStanding, type AutoExitStanding } from '../autoexit/card'
@@ -214,7 +214,7 @@ function PositionSetup({ positions, portfolio, intent, position, onSelect, gate,
     steps,
     context: 'vault',
     labels,
-    affected: review ? { positionManager: (review.init.root.dex === 3 ? chain.uniswap.v3 : chain.uniswap.v4).positionManager, tokenIds: [review.init.root.tokenId.toString()], vault: review.vault } : { tokenIds: [] },
+    affected: review ? { positionManager: positionManagerOrNull(chain, review.init.root.dex) ?? undefined, tokenIds: [review.init.root.tokenId.toString()], vault: review.vault } : { tokenIds: [] },
     onStepDone: (outcome) => {
       if (!review || !session) return
       if (outcome.receipt) recordVaultEvents(chainId, review.vault, outcome.receipt.events)

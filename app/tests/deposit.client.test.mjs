@@ -7,6 +7,7 @@
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { test } from 'node:test';
 import { build, clone, depositRuntime as runtime, fakeClock, fakePort, fixture, fixtureText, gateAnswer, reply } from './support/consumer-fakes.mjs';
@@ -99,6 +100,44 @@ test("the gate's real 401 and 503 are recognised first", async () => {
   assert.deepEqual(interpretDeposit('get', { kind: 'reply', reply: refused }, runtime, OWNER).failure, { kind: 'gate_required' });
   const broken = await rawReplyOf(await gateAnswer('/api/deposit/v1/get', {}), HEADER, 256 * 1024);
   assert.deepEqual(interpretDeposit('get', { kind: 'reply', reply: broken }, runtime, OWNER).failure, { kind: 'gate_unavailable' });
+});
+
+// Added 2026-11-07 (launch fix L-10): a 503 is the gate only when it is the gate's own page (its marker, as
+// src/lib/read/interpret.ts reads it); any other 503 without the contract header is an outage, read as unrecognised, which
+// every client words as its busy, try-again state and asks again. It was the gate for any 503 that was not JSON.
+test('L-10: only the gate\'s own 503 page is the gate; another 503 without the header is an outage, never "Access is paused"', async () => {
+  const { classifyHeaderless, GATE_PAGE_MARKER } = build('lib/http/rawReply');
+  const { GATE_PAGE_MARKER: READ_MARKER } = build('lib/read/interpret');
+  assert.equal(GATE_PAGE_MARKER, READ_MARKER, 'one marker for the gate page across the clients and the read pipeline');
+  const page = await rawReplyOf(await gateAnswer('/api/deposit/v1/get', {}), HEADER, 256 * 1024);
+  assert.equal(page.status, 503);
+  // Added 2026-11-07 (review finding F): a page is read only up to MAX_PAGE_BYTES, so the gate's one 503 page (its
+  // 'unavailable' state, functions/_middleware.ts) must fit it and carry the marker, or the real gate would be read as an
+  // outage. Read from functions/_lib/gate.ts, not edited. (Its 401 'ask' page goes to navigations only; a fetch gets JSON.)
+  const { MAX_PAGE_BYTES } = build('lib/http/rawReply');
+  const { accessPage } = createRequire(import.meta.url)('../.test-build/app/functions/_lib/gate.js');
+  const unavailable = accessPage('unavailable');
+  assert.ok(Buffer.byteLength(unavailable) < MAX_PAGE_BYTES, `the gate's 503 page is ${Buffer.byteLength(unavailable)} bytes, over the ${MAX_PAGE_BYTES} a client reads`);
+  assert.ok(unavailable.includes(GATE_PAGE_MARKER), 'the gate\'s 503 page carries the marker');
+  assert.equal(page.body.kind, 'text', 'the real gate page is read whole');
+  assert.ok(page.body.text.includes(GATE_PAGE_MARKER), 'the real gate page carries the marker');
+  assert.equal(classifyHeaderless(page), 'gate_unavailable');
+  const outage = (body, contentType) => ({ status: 503, opaqueRedirect: false, contentType, contractHeader: null, requestIdHeader: null, retryAfterHeader: null, body: { kind: 'text', text: body } });
+  for (const [body, type] of [
+    ['<!doctype html><title>Service Unavailable</title>', 'text/html; charset=utf-8'],
+    ['upstream connect error', 'text/plain'],
+    ['', null],
+    [`<p>${GATE_PAGE_MARKER}</p>`, 'text/plain'],
+  ]) {
+    assert.equal(classifyHeaderless(outage(body, type)), 'unrecognised', `${type}: ${body}`);
+    assert.deepEqual(interpretDeposit('get', { kind: 'reply', reply: outage(body, type) }, runtime, OWNER).failure, { kind: 'contract', detail: 'header_missing' }, `${type}: ${body}`);
+  }
+  assert.equal(classifyHeaderless({ ...outage('', null), body: { kind: 'too_large' } }), 'unrecognised');
+  // Everything else reads as before: the gate's 401, a missing route, the SPA's HTML.
+  assert.equal(classifyHeaderless({ ...outage('{"error":"beta_access_required"}', 'application/json'), status: 401 }), 'gate_required');
+  assert.equal(classifyHeaderless({ ...outage('nope', 'text/plain'), status: 404 }), 'feature_unavailable');
+  assert.equal(classifyHeaderless({ ...outage('<!doctype html>', 'text/html'), status: 200 }), 'feature_unavailable');
+  assert.equal(classifyHeaderless(outage('{"error":"upstream_unavailable"}', 'application/json')), 'unrecognised');
 });
 
 test('all 49 errors.json pairs validate and come back as that code; the table covers exactly them (T1)', () => {

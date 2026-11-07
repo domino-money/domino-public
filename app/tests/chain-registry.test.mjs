@@ -290,7 +290,10 @@ test('the registry\'s network: the official RPC for the wallet, the block rate, 
 
 test('the registry\'s own modules import nothing but each other, so the site\'s middleware can build its CSP from them', () => {
   const imports = (path) => [...strip(source(path)).matchAll(/^\s*(?:import|export)\s+(?!type\b)[^;]*?from\s+'([^']+)'/gm)].map((m) => m[1]).sort();
-  assert.deepEqual(imports('src/config/chainIdentity.ts'), []);
+  // Changed on purpose 2026-11-07 (Elysium as a fourth V2 chain): one import, Elysium's literals (an id and the build's
+  // switch; src/lib/elysiumIdentity.ts imports nothing), so V2's chain list follows the switch.
+  assert.deepEqual(imports('src/config/chainIdentity.ts'), ['../lib/elysiumIdentity']);
+  assert.deepEqual(imports('src/lib/elysiumIdentity.ts'), [], 'which imports nothing');
   assert.deepEqual(imports('src/config/chainRobinhood.ts'), ['./chainIdentity']);
   assert.deepEqual(imports('src/config/chainKit.ts'), ['./chainIdentity']);
   assert.deepEqual(imports('src/config/chainElysium.ts'), ['./chainIdentity', './chainKit']);

@@ -21,9 +21,11 @@ import {
   validateResponse as validateV5Response, matchesRequest as matchesV5Request,
 } from '../../api-contracts/read-v5/runtime.mjs';
 import {
-  CONTRACT_VERSION as V6_CONTRACT_VERSION, ERROR_STATUS_BY_CODE as V6_ERROR_STATUS_BY_CODE, ROUTES as V6_ROUTES,
+  CONTRACT_VERSION as V6_CONTRACT_VERSION, CONTRACT_VERSIONS as V6_CONTRACT_VERSIONS, NEXT_VERSION as V6_NEXT_VERSION,
+  ERROR_STATUS_BY_CODE as V6_ERROR_STATUS_BY_CODE, ROUTES as V6_ROUTES, NEXT_ROUTES as V6_NEXT_ROUTES,
   validateRequest as validateV6Request, validateResponse as validateV6Response, validateExchange as validateV6Exchange,
 } from '../../api-contracts/read-v6/runtime.mjs';
+import { CONSTANTS as V6_CONSTANTS } from '../../api-contracts/read-v6/schema-data.mjs';
 
 const CONTRACT_HEADER = 'X-Domino-Read-Contract';
 // Only the exact public path chooses a protocol. Neither deployment variables
@@ -73,13 +75,35 @@ const V5_PROTOCOL = Object.freeze({
 // that. Its request has integers (activity's `limit`), read from their exact lexemes as read-v3's are. The exchange
 // check is the package's own validateExchange: the answer is about the wallet asked for, and a page is no longer than
 // asked.
+//
+// Since 6 Nov 2026 (launch round P3, docs/v2/V2_FEES.md "What the app and the read Worker need"; the read-v6 README's
+// "1.2.0-rc.1: position-fees, and its window") it also speaks 1.2.0-rc.1 and takes both versions (`versions`, as
+// read-v5's protocol does). 1.2.0-rc.1 adds position-fees (NEXT_ROUTES: Fees earned on Base and Arbitrum One) and
+// changes no other answer but its version. Unlike read-v5's window:
+//   - each route names the versions it exists in: 1.1.0-rc.1's five in both, position-fees in 1.2.0-rc.1 alone;
+//   - a request is read, sent upstream and answered in the version it names, else in its route's first, as the reader
+//     and the gateway answer it (backend/v2_read_contract.py answered_version): `answersAsAsked`. A 1.1.0-rc.1 request
+//     is so exactly what it was before, and its answer can never be 1.2.0-rc.1's, which today's app refuses;
+//   - `version` stays 1.1.0-rc.1: what a capabilities GET naming no version, and a refusal written before a request's
+//     version is read, speak, as before. Speaking 1.2.0-rc.1 by default would move those, and every route's upstream
+//     call, to a version today's app and today's gateway do not read;
+//   - position-fees is not there (404 route_not_available, before any other check, as before 1.2.0-rc.1 existed)
+//     unless ENABLED_V6_READS names it and the request is in 1.2.0-rc.1; and the capabilities list only the reads of
+//     the version asked, so a 1.1.0-rc.1 page never meets a route it does not know.
 const V6_PROTOCOL = Object.freeze({
   prefix: '/api/read/v6/', upstreamPrefix: '/internal/read/v6/', version: V6_CONTRACT_VERSION,
+  versions: V6_CONTRACT_VERSIONS, answersAsAsked: true,
   enabledFlag: 'READ_V6_BRIDGE_ENABLED', readsFlag: 'ENABLED_V6_READS',
-  routes: Object.freeze(Object.fromEntries(V6_ROUTES.map((route) => [route, Object.freeze({ schemaVersion: 1 })]))),
+  routes: Object.freeze(Object.fromEntries([
+    ...V6_ROUTES.map((route) => [route, Object.freeze({ schemaVersion: 1, versions: V6_CONTRACT_VERSIONS })]),
+    ...V6_NEXT_ROUTES.map((route) => [route, Object.freeze({ schemaVersion: 1, versions: Object.freeze([V6_NEXT_VERSION]) })]),
+  ])),
   validateRequest: validateV6Request, validateResponse: validateV6Response, errors: V6_ERROR_STATUS_BY_CODE,
   matchesRequest: (request, response, route) => validateV6Exchange(route, request, response),
-  chainIds: Object.freeze([4663, 8453, 42161]),
+  // Changed on purpose 2026-11-07 (Elysium, day 9): the package's own chains (CONSTANTS.chainIds), which its runtime holds
+  // every answer to, not the three written out: read-v6 names Elysium (99901) from rugged97's day-9 version, and this
+  // Worker's capabilities then say so with no edit here. Today the package's list is the three, in this order.
+  chainIds: Object.freeze([...V6_CONSTANTS.chainIds]),
 });
 export const LIMITS = Object.freeze({ requestBytes: 8192, responseBytes: 1024 * 1024, bodyMs: 5000, totalMs: 20000, upstreamMs: 15000 });
 
@@ -89,6 +113,23 @@ export { ERROR_STATUS_BY_CODE };
 // Every contract version a protocol takes in X-Domino-Read-Contract: its own, or
 // the list it declares (read-v5, during its rc.1 to rc.2 transition).
 const acceptedVersions = (protocol) => protocol.versions ?? [protocol.version];
+
+// Whether `route` exists in `version`: the route's own list (read-v6's, during its 1.2.0-rc.1 window), else every
+// version its protocol takes, as before.
+const routeIn = (protocol, route, version) => protocol.routes[route].versions?.includes(version) ?? true;
+
+// The version a request naming none is read in: its route's first (read-v6's position-fees: 1.2.0-rc.1), else the
+// protocol's own, as before.
+const firstVersion = (protocol, route) => protocol.routes[route].versions?.[0] ?? protocol.version;
+
+// Whether a path's route is there for this request. A route of a newer version alone (read-v6's position-fees) is not,
+// exactly as before that version existed, unless the protocol's reads flag names it and the request names one of its
+// versions (or none: its first). Every other route of the protocol is there, as before.
+function routeThere(protocol, route, settings, named) {
+  if (!Object.hasOwn(protocol.routes, route)) return false;
+  if (routeIn(protocol, route, protocol.version)) return true;
+  return settings.enabledReads.includes(route) && routeIn(protocol, route, named ?? firstVersion(protocol, route));
+}
 
 class BridgeError extends Error {
   constructor(code) { super(code); this.code = code; }
@@ -319,7 +360,8 @@ async function upstreamRead(request, body, payload, route, settings, fetchImpl, 
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        [CONTRACT_HEADER]: protocol.version,
+        // read-v6 goes on in the version the request was read in; read-v1 to read-v5 in the protocol's own, as before.
+        [CONTRACT_HEADER]: protocol.answersAsAsked ? version : protocol.version,
         'CF-Access-Client-Id': settings.clientId,
         'CF-Access-Client-Secret': settings.clientSecret,
         'X-Domino-Client-Id': ip,
@@ -339,6 +381,11 @@ async function upstreamRead(request, body, payload, route, settings, fetchImpl, 
     if (!jsonContentType(response.headers)) fail('upstream_unavailable');
     const answered = response.headers.get(CONTRACT_HEADER);
     if (!acceptedVersions(protocol).includes(answered)) fail('upstream_contract_mismatch');
+    // read-v6 answers in the version asked. The gateway writes the refusals it makes before it reads that version (a
+    // route it does not serve, a method) in its first, so a refusal may also speak that one; an answer never does.
+    if (protocol.answersAsAsked && answered !== version && (response.status === 200 || answered !== protocol.version)) {
+      fail('upstream_contract_mismatch');
+    }
     // Native fetch supplies decoded bytes. Identity is explicit on our gateway;
     // reject encoded responses instead of relying on runtime decoding ambiguity.
     const encoding = response.headers.get('Content-Encoding');
@@ -422,21 +469,23 @@ export function createWorker({ fetch: fetchImpl = globalThis.fetch, getClientIp 
         else if (url.pathname.startsWith(V2_PROTOCOL.prefix)) protocol = V2_PROTOCOL;
         const settings = config(env, protocol);
         const route = url.pathname.startsWith(protocol.prefix) ? url.pathname.slice(protocol.prefix.length) : null;
-        if (url.search || url.hash || !route || (route !== 'capabilities' && !Object.hasOwn(protocol.routes, route))) fail('route_not_available');
+        const requestedContract = request.headers.get(CONTRACT_HEADER);
+        if (url.search || url.hash || !route || (route !== 'capabilities' && !routeThere(protocol, route, settings, requestedContract))) fail('route_not_available');
         const capability = route === 'capabilities';
         loggedRoute = route;
         if (request.method !== (capability ? 'GET' : 'POST')) fail('method_not_allowed');
         checkBrowser(request, settings.appOrigin, capability);
-        const requestedContract = request.headers.get(CONTRACT_HEADER);
         if (requestedContract !== null && !acceptedVersions(protocol).includes(requestedContract)) fail('upstream_contract_mismatch');
-        version = requestedContract ?? protocol.version;
+        version = requestedContract ?? (capability ? protocol.version : firstVersion(protocol, route));
         if (capability) {
+          // The reads of the version asked: read-v6's 1.1.0-rc.1 capabilities never name position-fees.
+          const reads = settings.enabledReads.filter((name) => routeIn(protocol, name, version));
           const output = new Response(JSON.stringify({
             contractVersion: version,
-            dataMode: settings.enabledReads.length ? 'live_read_only' : 'disabled',
+            dataMode: reads.length ? 'live_read_only' : 'disabled',
             // read-v6 reads three chains, so it says which; read-v1 to read-v5 say their one chain, as before.
             ...(protocol.chainIds ? { chainIds: protocol.chainIds } : { chainId: CHAIN_ID }),
-            enabledReads: settings.enabledReads,
+            enabledReads: reads,
             walletAuthentication: false,
             privateAccounts: false,
             ownerTransactions: false,
@@ -445,7 +494,7 @@ export function createWorker({ fetch: fetchImpl = globalThis.fetch, getClientIp 
           if (Date.now() - started >= LIMITS.totalMs) fail('request_timeout');
           return finish(output);
         }
-        if (!settings.enabledReads.includes(route)) fail('route_not_available');
+        if (!settings.enabledReads.includes(route) || !routeIn(protocol, route, version)) fail('route_not_available');
         const encoding = request.headers.get('Content-Encoding');
         if ((encoding !== null && encoding !== 'identity') || !jsonContentType(request.headers)) fail('json_required');
         lengthWithin(request.headers, LIMITS.requestBytes, 'request_too_large');

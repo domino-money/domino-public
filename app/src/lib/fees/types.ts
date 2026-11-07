@@ -145,6 +145,8 @@ export interface FeeHistory {
   events: ReadonlyArray<FeeEvent>
   /** The ledger's block: every settlement up to it is in `events`, and the state agrees with it. */
   through: number
+  /** read-v6's stored history of a position minted before Domino's first block on its chain: `mintedAt` is that block, and All is since then. */
+  fromFloor?: true
 }
 
 // ---------------------------------------------------------------------------
@@ -219,9 +221,10 @@ export interface StateResponse {
  * - native: a collect paid out ETH, whose moves leave no log;
  * - liquidity: the settlements found do not add up to the position's liquidity now (one was not seen);
  * - unseen: something settled this position that Domino's reads cannot see;
- * - too_many: more settlements or owners than one ledger keeps.
+ * - too_many: more settlements or owners than one ledger keeps;
+ * - same_block: read-v6's stored history (./positionFees.ts): two settlements of one block after a liquidity change, whose fees cannot be told apart.
  */
-export type LedgerWhy = 'reading' | 'before_floor' | 'manual' | 'shared' | 'native' | 'liquidity' | 'unseen' | 'too_many'
+export type LedgerWhy = 'reading' | 'before_floor' | 'manual' | 'shared' | 'native' | 'liquidity' | 'unseen' | 'too_many' | 'same_block'
 
 /** One own ModifyLiquidity of the NFT, as the ledger found it (decimal strings). */
 export interface LedgerEntry {

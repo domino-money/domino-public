@@ -7,7 +7,7 @@ import { mixesInto, symbolReading } from '../../../lib/symbolReading'
 import type { PoolOption } from '../../../lib/read/screens/poolsList'
 import type { TransientCandidate } from '../../../lib/read/screens/transient'
 import type { TokenDisplay } from '../../../lib/read/types'
-import { v2Chain } from '../../../v2/chains'
+import { chainHasDex, v2Chain } from '../../../v2/chains'
 import type { ReadV6Reply } from '../../../v2/read/v6'
 import { ZERO_ADDRESS, type Address, type PoolRef } from '../../../v2/types'
 import { JOURNEY_USD_SHOWN } from '../constants'
@@ -76,6 +76,19 @@ export function usableNetworkToken(chainId: OtherChainId, token: TokenDisplay): 
  */
 export function lookalikePools(chainId: OtherChainId, options: readonly PoolOption[]): string[] {
   return options.filter((option) => option.currencies.some((currency) => lookalikeOf(chainId, currency) !== null)).map((option) => option.key)
+}
+
+/**
+ * Added 2026-11-06 (the replica rule): for each pool `lookalikePools` names, the network's own currency its token passes
+ * for, by key, so that pool's page warns in Robinhood Chain's words ("This isn’t the USDC Domino uses. …").
+ */
+export function lookalikeMains(chainId: OtherChainId, options: readonly PoolOption[]): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const option of options) {
+    const main = option.currencies.map((currency) => lookalikeOf(chainId, currency)).find((symbol) => symbol !== null)
+    if (main) out[option.key] = main
+  }
+  return out
 }
 
 /**
@@ -222,7 +235,8 @@ const v3FeeOf = (live: LivePool): { v3FeeProtocol?: number } => (live.pool.dex =
 
 /** Whether a pool of the answer is one Domino can open a position in: hookless, on a tier the network offers for its version. */
 function openable(chainId: OtherChainId, pool: PoolRef): boolean {
-  return offeredPool(pool) && tiersOf(chainId, pool.dex).some((tier) => tier.fee === pool.fee && tier.tickSpacing === pool.tickSpacing)
+  // Never a pool of a version the network lacks (v3 on a chain with v4 alone).
+  return chainHasDex(chainId, pool.dex) && offeredPool(pool) && tiersOf(chainId, pool.dex).some((tier) => tier.fee === pool.fee && tier.tickSpacing === pool.tickSpacing)
 }
 
 /** A pool's key on screen: v4's pool id, or a v3 pool's address as a 32-byte word (lib/read/screens/poolsList.ts `dex`). */
