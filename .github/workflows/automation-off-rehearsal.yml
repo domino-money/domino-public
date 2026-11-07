@@ -5,6 +5,7 @@ permissions:
   contents: read
 jobs:
   synthetic-ubuntu:
+    if: github.repository == 'domino-money/domino' && github.event.repository.private == true
     name: Archive, OFF units and local gas peer
     runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-systemd, "domino-job-automation-off"]
     timeout-minutes: 10

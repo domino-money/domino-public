@@ -34,4 +34,12 @@ When the owner waives a test or acceptance step, record the waiver and proceed. 
 
 ## Effective GitHub configuration
 
-Both `rugged97` and `OxDecimal` already have administrator access. The former area-based review ruleset is disabled, `CODEOWNERS` has no ownership patterns, and classic `main` protection has no required reviews/status checks/conversation resolution. CI execution, secret handling, linear history and no-force-push/no-delete remain in place. This policy does not introduce new public collaborators, grant unrelated accounts access or enable unimplemented financial capabilities.
+The administrator grants and former area-based ruleset described in the private
+project's historical records apply to the original repository. Publication does
+not copy those grants or deployment credentials into `domino-money/domino-public`.
+`CODEOWNERS` has no ownership patterns. The public `main` branch retains linear
+history and protection against force-push and deletion, with no required review
+or status-check gate. Its hosted CI provides feedback within the limited scope
+documented in [PUBLIC_CI.md](PUBLIC_CI.md). This policy does not introduce new
+public collaborators, grant unrelated accounts access or enable unimplemented
+financial capabilities.

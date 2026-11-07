@@ -49,7 +49,7 @@ function policy(text) {
   assert.equal(field(root, 'cancel-in-progress', 2), "${{ github.event_name == 'pull_request' }}")
   const preview = job(text, 'preview')
   assert.equal(field(preview, 'needs', 4), '[hygiene, frontend, read_bridge, frontend_browser, backend, contracts]')
-  assert.equal(field(preview, 'if', 4), "github.event_name == 'push' && github.ref == 'refs/heads/main'")
+  assert.equal(field(preview, 'if', 4), "github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'domino-money/domino' && github.event.repository.private == true")
   assert.equal(field(preview, 'group', 6), 'deploy-gated-preview')
   assert.equal(field(preview, 'cancel-in-progress', 6), 'false')
   assert.doesNotMatch(preview, /^    permissions:/m, 'preview inherits the read-only GitHub token')

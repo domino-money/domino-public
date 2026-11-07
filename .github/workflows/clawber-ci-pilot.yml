@@ -21,7 +21,7 @@ concurrency:
 jobs:
   trusted_main:
     name: Require a dispatched main commit
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'domino-money/domino' && github.event.repository.private == true
     runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-normal, "domino-job-pilot-preflight"]
     timeout-minutes: 5
     outputs:
@@ -51,6 +51,7 @@ jobs:
         with:
           python-version-file: .python-version
   compare:
+    if: github.repository == 'domino-money/domino' && github.event.repository.private == true
     name: ${{ inputs.workload }} (${{ matrix.pool }})
     needs: trusted_main
     # The broker validates event, actor, source, profile and exact job label

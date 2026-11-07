@@ -1,8 +1,10 @@
 # Domino
 
-Publication provenance: [public sanitization candidate](docs/PUBLIC_SANITIZATION.md).
+Publication provenance: [sanitized public derivative](docs/PUBLIC_SANITIZATION.md).
 
-Private source repository for a wallet-friendly Uniswap v4 liquidity app on Robinhood Chain. The approved alpha includes self-compounding and Domino successor positions. The product UI is English, playful and modern with restrained retro details.
+Public source repository for a wallet-friendly Uniswap v4 liquidity app on Robinhood Chain. The approved alpha includes self-compounding and Domino successor positions. The product UI is English, playful and modern with restrained retro details.
+
+This repository is published separately from the original private repository. Historical reports describe their recorded snapshots, not the current state of a deployed service. Public CI uses [GitHub-hosted runners](docs/PUBLIC_CI.md).
 
 ## Current status
 
@@ -30,8 +32,8 @@ The [executor migration assessment](docs/EXECUTOR_MIGRATION_ASSESSMENT.md) maps 
 Use Node 24 LTS and Python 3.14. macOS and Linux are supported development targets; use WSL2 on Windows. Install PostgreSQL 16+ only for database-backed work. Docker is not required.
 
 ```sh
-git clone https://github.com/domino-money/domino.git
-cd domino
+git clone https://github.com/domino-money/domino-public.git
+cd domino-public
 npm ci
 npm --prefix web ci
 python3 -m venv backend/.venv
@@ -74,9 +76,9 @@ Optional read-only provider setup and API commands are in [backend/README.md](ba
 
 ## Work together
 
-**Execution first, planning afterward:** all authorized collaborators and agents may work across every area, integrate and deploy within the requested scope, without area owners or repeated approvals. Direct pushes are allowed; PRs, reviews and issues are optional coordination tools. CI continues as feedback. Both `rugged97` and `OxDecimal` have administrator access. See the authoritative [execution policy](docs/EXECUTION_POLICY.md), [contribution guide](CONTRIBUTING.md) and [assistant instructions](AGENTS.md).
+**Execution first, planning afterward:** authorized collaborators and agents may work across every area within their assigned scope. Repository policy does not grant access or authorize actions for a public visitor. See the [execution policy](docs/EXECUTION_POLICY.md), [contribution guide](CONTRIBUTING.md) and [assistant instructions](AGENTS.md). Historical administrator and protection settings describe the original private repository; they are not a statement of this repository's current access settings.
 
-The [Clawber CI runner pilot](docs/CI_RUNNERS.md) documents the disposable guest, manual hosted comparison, qualification stages and rollback. Existing hosted CI remains active.
+The [public CI procedure](docs/PUBLIC_CI.md) describes this repository's unprivileged hosted checks. The [Clawber CI runner pilot](docs/CI_RUNNERS.md) is retained as historical documentation of the private repository's runner infrastructure.
 
 | Directory | Responsibility |
 | --- | --- |
@@ -91,6 +93,6 @@ The [Clawber CI runner pilot](docs/CI_RUNNERS.md) documents the disposable guest
 
 The existing owner-only Sites preview is a separate deployment. GitHub membership does not grant Sites access. Preserve `web/.openai/hosting.json`; publish only through the approved Sites workflow from a **separate checkout rooted at `web/`**, so the Sites source remote never replaces this repository's GitHub remote. No automatic deployment workflow is included.
 
-Third-party Uniswap reference sources retain their original notices and licenses in `backend/tests/reference/v4/`; see [third-party notices](backend/THIRD_PARTY_NOTICES.md).
+There is no repository-wide license at the root of this source tree. Existing file-level SPDX identifiers and third-party licenses remain in place; publication does not assign a new license. See the [backend third-party notices](backend/THIRD_PARTY_NOTICES.md), [contract reference provenance](contracts/test/reference/README.md), [font provenance](app/src/fonts/PROVENANCE.md) and [wallet artwork notices](app/public/wallets/PROVENANCE.md).
 
 The [public V1 preparation record](reports/V1_RELEASE_PREPARATION_2026-09-21.md) records naming, compatibility and internal release validation.

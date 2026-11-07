@@ -16,6 +16,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   hygiene:
+    if: github.repository == 'domino-money/domino' && github.event.repository.private == true
     name: Repository hygiene
     runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-systemd, "domino-job-ci-hygiene"]
     timeout-minutes: 5
@@ -92,6 +93,7 @@ jobs:
           systemd-analyze verify --man=no scripts/reference-collector/domino-reference-collector.service
           systemd-analyze verify --man=no scripts/reference-collector/domino-reference-collector.timer
   changes:
+    if: github.repository == 'domino-money/domino' && github.event.repository.private == true
     name: What the change touches
     runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-normal, "domino-job-ci-changes"]
     timeout-minutes: 5
@@ -125,6 +127,7 @@ jobs:
           fi
           echo "browser=$browser" | tee -a "$GITHUB_OUTPUT"
   frontend:
+    if: github.repository == 'domino-money/domino' && github.event.repository.private == true
     name: Frontend
     runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-normal, "domino-job-ci-frontend"]
     # The web checks, the shared types and check:app up to its build: about 4
@@ -194,6 +197,7 @@ jobs:
       - name: Check pool estimate contract in a real browser
         run: node --test --test-force-exit api-contracts/read-v2/consumer.browser.test.mjs
   read_bridge:
+    if: github.repository == 'domino-money/domino' && github.event.repository.private == true
     name: Read Worker
     runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-normal, "domino-job-ci-read-worker"]
     # The read Worker's own checks (bridge/ and the read contracts it
@@ -210,7 +214,7 @@ jobs:
   frontend_browser:
     name: Frontend browser (${{ matrix.suite }})
     needs: changes
-    if: needs.changes.outputs.browser == 'true'
+    if: needs.changes.outputs.browser == 'true' && github.repository == 'domino-money/domino' && github.event.repository.private == true
     runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-normal, "domino-job-ci-browser-${{ matrix.suite }}"]
     # check:app's browser suites, one job each: test:render is test:pages and
     # then test:finance, and test:gate follows. These 2-vCPU runners give
@@ -289,6 +293,7 @@ jobs:
             echo "::warning title=${SUITE} is near its time limit::$(( used / 60 )) min $(( used % 60 )) s of ${LIMIT_MINUTES} min. Split it further (app/tests/support/parts.mjs) before the limit cuts it off."
           fi
   backend:
+    if: github.repository == 'domino-money/domino' && github.event.repository.private == true
     name: Backend
     runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-normal, "domino-job-ci-backend"]
     # The artifact build for the EVM tests (issue #144) adds a full Forge
@@ -437,6 +442,7 @@ jobs:
         if: always()
         run: python backend/dev_postgres.py stop
   contracts:
+    if: github.repository == 'domino-money/domino' && github.event.repository.private == true
     name: Contracts (${{ matrix.part }})
     runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-normal, "domino-job-ci-contracts-${{ matrix.part }}"]
     # Two jobs in parallel, each with its own Forge cache: v1 runs every suite
@@ -543,7 +549,7 @@ jobs:
   preview:
     name: Deploy gated preview
     needs: [hygiene, frontend, read_bridge, frontend_browser, backend, contracts]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'domino-money/domino' && github.event.repository.private == true
     runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-deploy, "domino-job-ci-preview"]
     timeout-minutes: 15
     # One upload at a time. Main runs no longer wait for each other (the

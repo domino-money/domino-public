@@ -1,10 +1,13 @@
 # Public sanitized derivative
 
-This source tree and its rewritten Git history are a public sanitization candidate
+This repository, `domino-money/domino-public`, is a separate sanitized publication
 derived from the private repository snapshot at
-`f6aa00bbcaf0e23a5d2c81a86b95420be6edb1ed`. Preparing this candidate does not publish
-the repository or establish that GitHub-hosted discussions, artifacts and logs
-have been cleared for publication.
+`f6aa00bbcaf0e23a5d2c81a86b95420be6edb1ed`. The original repository remains private.
+The initial publication includes the sanitized `main` history and six
+`sanitized/` tags. Other development branches, pull request refs, discussions,
+Actions logs, release attachments and private repository settings were not
+imported. Git history in this repository has no ancestry link to the original
+unsanitized commit objects.
 
 Private network addresses, personal filesystem paths and personal Git author
 email addresses have been replaced with documentation values or stable aliases.
@@ -19,7 +22,7 @@ objects are preserved privately. Original commit and checksum references in
 reports describe that original evidence. They do not authenticate rewritten
 commits or modified public archive members.
 
-In the rewritten candidate, tags are prefixed with `sanitized/`. For example,
+In this repository, tags are prefixed with `sanitized/`. For example,
 `sanitized/v4-audit-2026-09-21` identifies a derivative of the original frozen
 tag, not the original tag object or its signature. A historical statement that
 an original tag is frozen continues to refer to the privately preserved original.
@@ -39,11 +42,17 @@ behavior or wallet authorization. Documentation addresses and path markers are
 not live configuration. Supply operational endpoints through private local
 configuration when following a runbook.
 
-The existing self-hosted CI broker requires a private repository. A public CI
-design and review of GitHub issues, pull requests, releases, Actions artifacts,
-logs and repository settings remain separate publication work. Do not enable
-untrusted public contributions on a privileged private runner.
+The original self-hosted CI broker requires the original private repository.
+Its workflows are guarded against execution here. The separate public workflow
+uses hosted runners with read-only repository access and no deployment steps;
+see [PUBLIC_CI.md](PUBLIC_CI.md) for its scope. Do not add operational credentials
+or enable untrusted public contributions on a privileged private runner.
+
+The initial public preparation also supplies the full upstream font license
+notices. It does not assign a new repository-wide software license.
 
 Keep the original private backup and replacement maps outside the public
-repository. Existing clones must be replaced or carefully migrated after any
-remote history replacement; merging old history would restore removed data.
+repository. Clone this repository directly when contributing to the public
+source. Do not merge branches from the original private repository: doing so
+would restore the unsanitized history. Future imports require the same review
+of source, history, archives and metadata before they reach this repository.

@@ -42,6 +42,17 @@ to be bundled, embedded and served with the site. Each file carries its own copy
 The files are not modified, subset or renamed inside (only the file names on disk differ), so the fonts keep their
 Reserved Font Names, if any, and their licence.
 
+The complete copyright notices and license texts accompany the repository and
+the built site in [`public/licenses/fonts/`](../../public/licenses/fonts/README.md):
+[Geist](../../public/licenses/fonts/OFL-Geist.txt),
+[Geist Mono](../../public/licenses/fonts/OFL-Geist-Mono.txt) and
+[Instrument Serif](../../public/licenses/fonts/OFL-Instrument-Serif.txt).
+These also cover the unchanged Geist and Instrument Serif copies used by the
+access page under `public/__beta/fonts/`. The license directory records its
+upstream revision and checksums. Publication on 2026-11-07 added these notices
+without changing any font bytes; the embedded family, version and copyright
+metadata were checked against the entries above.
+
 ## Updating
 
 Only by fetching the same stylesheet again with a current browser's user agent, replacing the files and `../styles/fonts.css`

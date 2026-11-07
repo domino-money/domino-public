@@ -21,6 +21,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   funding:
+    if: github.repository == 'domino-money/domino' && github.event.repository.private == true
     name: Funding, automation and history in browser
     runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-normal, "domino-job-funding"]
     # 40 since 2026-10-16 (V4): the suite already used 23.5-24 of its 25 minutes on main; V4's blurs and gradients cost

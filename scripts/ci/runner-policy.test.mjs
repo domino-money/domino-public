@@ -17,6 +17,8 @@ const workflows = Object.fromEntries(readdirSync(path.join(root, '.github/workfl
 }));
 const RUN_LABEL = 'domino-ci-${{ github.run_id }}-${{ github.run_attempt }}';
 const PILOT = '.github/workflows/clawber-ci-pilot.yml';
+const PUBLIC = '.github/workflows/public-ci.yml';
+const PRIVATE_GUARD = "github.repository == 'domino-money/domino' && github.event.repository.private == true";
 const RESOURCE_JOBS = {
   light: ['ci-hygiene', 'ci-changes', 'ci-read-worker', 'automation-off', 'execution-inspect', 'pilot-preflight', 'pilot-read-worker'],
   standard: ['ci-frontend', 'ci-preview', 'read-path-release'],
@@ -36,6 +38,9 @@ function field(body, name) {
 
 function expandedJobs(file, text) {
   return blocks(text).flatMap(({ id, body }) => {
+    const condition = field(body, 'if');
+    assert.ok(condition === PRIVATE_GUARD || condition?.endsWith(' && ' + PRIVATE_GUARD), `${file}/${id} requires the original private repository`);
+    assert.doesNotMatch(condition, /\|\|/, 'an alternative branch cannot bypass the private repository guard');
     const display = field(body, 'name') ?? id;
     const route = field(body, 'runs-on');
     const timeout = field(body, 'timeout-minutes');
@@ -87,6 +92,15 @@ function check(input = policy, files = workflows) {
   let seen = 0;
   for (const [file, text] of Object.entries(files)) {
     assert.doesNotMatch(text, /github\.job/, 'github.job is unavailable when Actions resolves runs-on');
+    // The public derivative has one separately checked hosted workflow; it
+    // never receives a broker authorization or a self-hosted label.
+    if (file === PUBLIC) {
+      const jobs = blocks(text);
+      assert.deepEqual(jobs.map(job => job.id), ['offline']);
+      assert.equal(field(jobs[0].body, 'runs-on'), 'ubuntu-24.04');
+      assert.doesNotMatch(text, /self-hosted|secrets\.|id-token:|environment:/);
+      continue;
+    }
     for (const job of expandedJobs(file, text)) {
       const key = `${file}:${job.name}`;
       const entry = entries.get(key);
@@ -96,10 +110,10 @@ function check(input = policy, files = workflows) {
       if (/secrets\./.test(job.body)) assert.equal(entry.profile, 'deploy', 'credentialed jobs require the isolated deploy profile');
       if (entry.profile === 'deploy') {
         if (file.endsWith('/ci.yml')) {
-          assert.equal(field(job.body, 'if'), "github.event_name == 'push' && github.ref == 'refs/heads/main'");
+          assert.equal(field(job.body, 'if'), "github.event_name == 'push' && github.ref == 'refs/heads/main' && " + PRIVATE_GUARD);
         } else {
           assert.doesNotMatch(text.split('\npermissions:')[0], /^  (?:push|pull_request|pull_request_target):/m);
-          assert.equal(field(job.body, 'if'), "github.ref == 'refs/heads/main'");
+          assert.equal(field(job.body, 'if'), "github.ref == 'refs/heads/main' && " + PRIVATE_GUARD);
         }
       }
       entries.delete(key);
@@ -121,6 +135,14 @@ test('routing guard rejects an unlisted job, a hosted default, changed privilege
   assert.throws(() => check({ ...policy, jobs: policy.jobs.map((job, i) => i === 0 ? { ...job, profile: 'normal' } : job) }), /exact routing/);
   assert.throws(() => check({ ...policy, jobs: policy.jobs.map((job, i) => i === 1 ? { ...job, job_label: policy.jobs[0].job_label } : job) }), /both be unique/);
   assert.throws(() => check(policy, { ...workflows, [PILOT]: workflows[PILOT].replace('        default: false', '        default: true') }));
+});
+
+test('legacy jobs refuse another repository or public visibility before runner allocation', () => {
+  const ci = '.github/workflows/ci.yml';
+  for (const replacement of ["github.repository == 'somewhere/else' && github.event.repository.private == true", "github.repository == 'domino-money/domino'", 'true']) {
+    assert.throws(() => check(policy, { ...workflows, [ci]: workflows[ci].replace(PRIVATE_GUARD, replacement) }), /requires the original private repository/);
+  }
+  assert.throws(() => check(policy, { ...workflows, [ci]: workflows[ci].replace(PRIVATE_GUARD, 'true || false && ' + PRIVATE_GUARD) }), /cannot bypass/);
 });
 
 test('resource profiles cover every workload independently of privileges and reject missing or changed capacity classes', () => {
