@@ -21,7 +21,8 @@ from v2_index_fixtures import block_hash, encode_log, tx_hash  # noqa: E402
 
 REGISTRY = '0x25d4f013ecff3790e384e16ca9951bba6cd715fa'
 OPERATOR = '0x64b72517d8b0d72be25f814b4e03985cf15e098a'
-TOKEN = '123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw'
+# Synthetic, format-valid fixture; every Telegram request below uses a fake opener.
+TOKEN = '12345678:' + 'x' * 35
 NOW = 1_791_200_000.0
 ETH = 10**18
 CAP = 25 * 10**14  # gas.dailyCapWei, 0.0025 ETH (the owner's, 5 Oct 2026)
