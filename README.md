@@ -1,98 +1,165 @@
 # Domino
 
-Publication provenance: [sanitized public derivative](docs/PUBLIC_SANITIZATION.md).
+[![Public CI](https://github.com/domino-money/domino-public/actions/workflows/public-ci.yml/badge.svg)](https://github.com/domino-money/domino-public/actions/workflows/public-ci.yml)
 
-Public source repository for a wallet-friendly Uniswap v4 liquidity app on Robinhood Chain. The approved alpha includes self-compounding and Domino successor positions. The product UI is English, playful and modern with restrained retro details.
+**Concentrated liquidity management for Uniswap v3 and v4.**
 
-This repository is published separately from the original private repository. Historical reports describe their recorded snapshots, not the current state of a deployed service. Public CI uses [GitHub-hosted runners](docs/PUBLIC_CI.md).
+Domino brings pool discovery, position management and fee reinvestment into one
+wallet-facing app. It combines a React frontend, Python data and automation
+services, and Solidity contracts for owner-authorized liquidity operations.
 
-## Current status
+The code supports two reinvestment modes: **Auto-compound** adds eligible earned
+fees back to a position; **Domino-compound** can also create and fund successor
+positions within the owner's policy. The repository includes position creation,
+fee accounting, bounded swaps, auto-exit and owner recovery paths.
 
-- **Invited-wallet candidate:** operator-managed backend allowlist for login/private operations, with revocation and generation-bound sessions. Public reads stay open. [Wallet access](docs/WALLET_ACCESS.md), [home VM handoff](docs/HOME_VM_RUNBOOK.md). Application disabled; VM/database foundation provisioned, no real wallets admitted.
-- **Web:** approved Tangerine practice workbench, position/activity cards, modal workflows and hypothetical fee calculations. Browser-local practice data; no live deposits or signing.
-- **Backend 0.8.0:** generic token reads, verified pool identities and on-demand provider TVL/24h volume/hourly prices with a bounded cache. Exact historical accounting and NFT ownership reads remain available separately.
-- **Market data:** attributed provider TVL/volume can be read without a local pool ledger. Reconciled USD valuation and LP fee APR remain unavailable without qualified inputs. Source coverage, method and freshness remain visible; no new-pool history is invented.
-- **APR calculation candidate:** separate local pool-estimate and managed NFT/sequence fee calculators, with reproducible examples and a current VFAT source assessment. Existing read fields and frontend feeds are unchanged; the managed collector remains pending. [Methods and handoff](docs/APR_METRICS.md).
-- **Read bridge candidate:** shared `read-v1` contract, disabled same-origin Worker and authenticated loopback gateway; offline validation only. [Runbook](docs/READ_GATEWAY_RUNBOOK.md) and [evidence](reports/READ_BRIDGE_IMPLEMENTATION.md).
-- **Wallet sessions candidate:** disabled SIWE backend with private PostgreSQL state and a separate session BFF; EOAs only, plain or EIP-7702 delegated. [Session runbook](docs/WALLET_SESSIONS.md). No frontend hookup or deployed login.
-- **Direct-deposit candidate:** durable owner-bound operations, one wallet-signed step at a time and verified receipts/NFT identity for admitted existing v4 pools. [Deposit runbook](docs/DIRECT_DEPOSITS.md). Disabled; no server signing/broadcast or public activation.
-- **Reviewed-token support:** WETH/USDG proxy profiles, fresh identity/state checks and explicit receipt amount bases in the disabled deposit candidate. Four deposit paths observed on a local Robinhood fork with the reviewed profiles. [Evidence and remaining gates](reports/UPGRADEABLE_ADMISSION_IMPLEMENTATION.md). No public activation or mainnet transactions.
-- **Contracts:** the [seven-component public Domino V1 release](contracts/README.md) retains technical implementation version 4 and implements owner-bound immutable clones, typed self-compound/netting/successor actions, owner-funded Setup and independent recovery. Local official-v4 and adversarial tests support review; no public financial deployment, signing or swaps are enabled. The V3 candidate was retired on 20 September 2026. The [V4 remediation](reports/V4_REMEDIATION_2026-09-21.md) and [M1/M2/M3 corrections](reports/V4_M123_REMEDIATION_2026-09-21.md) document the internal bases; use the [public V1 build and unsigned release procedure](docs/FINANCIAL_RELEASE.md) for current deployment artifacts and pins.
+[Run locally](#run-locally) · [Codebase](#codebase) · [Tests](#tests) · [Security and audit evidence](#security-and-audit-evidence)
 
-The personal live bot, operator wallet, credentials and operational database are outside this repository. See [implementation status](IMPLEMENTATION_STATUS.md), [alpha scope](ALPHA_SCOPE.md) and [security specification](SECURITY_SPEC.md).
+## Status and network support
 
-The approved [MVP data strategy](MVP_DATA_STRATEGY.md) uses existing APIs for
-onboarding. Full lifetime reconstruction is optional audit work and is not a
-user-facing prerequisite.
+**Alpha software.** This repository contains the application and its supporting
+services, contracts and tests. Live data and financial actions depend on configured
+services, deployment manifests and the capabilities those services expose. Cloning
+the repository does not provision an operator, connect production infrastructure
+or activate transactions.
 
-The [executor migration assessment](docs/EXECUTOR_MIGRATION_ASSESSMENT.md) maps selected personal-strategy source to the approved public design, with provenance hashes, required redesign and independent release tests. It implements no public execution.
+The committed Domino V2 profiles cover:
 
-## Start locally
+| Network | Chain ID | Uniswap versions |
+| --- | ---: | --- |
+| Robinhood Chain | 4663 | v3 and v4 |
+| Base | 8453 | v3 and v4 |
+| Arbitrum One | 42161 | v3 and v4 |
 
-Use Node 24 LTS and Python 3.14. macOS and Linux are supported development targets; use WSL2 on Windows. Install PostgreSQL 16+ only for database-backed work. Docker is not required.
+These are code and profile capabilities, not a claim that every pool or operation
+is available. Elysium integration is present but disabled in this snapshot while
+its qualified profile and pinned deployment are pending. See the
+[chain profiles](api-contracts/v2/chains/) and [chain qualification procedure](docs/v2/QUALIFY_CHAIN.md).
+
+Domino V1 and V2 are application/contract release families; Uniswap v3 and v4
+name the underlying AMM protocols. Both Domino generations remain in this
+repository for compatibility and historical verification.
+
+## Run locally
+
+Use **Node.js 24** and npm, as pinned in [`.nvmrc`](.nvmrc). The full development
+toolchain supports macOS, Linux and WSL2. Python and PostgreSQL are unnecessary
+for this frontend walkthrough.
 
 ```sh
 git clone https://github.com/domino-money/domino-public.git
 cd domino-public
-npm ci
 npm --prefix web ci
-python3 -m venv backend/.venv
-backend/.venv/bin/python -m pip install -r backend/requirements-api.lock
+npm --prefix app ci
+npm --prefix app run dev:fixtures -- --host 127.0.0.1
+```
+
+Open **[http://127.0.0.1:5273](http://127.0.0.1:5273)**.
+
+This read-only mode uses synthetic fixtures to explore the interface and its
+data states without a wallet, RPC key or funds. It does not reproduce the full
+V2 financial flows. The `web/` install is required because the app shares its
+domain modules. See the [app guide](app/README.md) for normal application build
+modes, browser checks and further development.
+
+The separate `web/` practice workbench can also be explored locally:
+
+```sh
 npm --prefix web run dev -- --host 127.0.0.1 --port 3000
 ```
 
-Open http://127.0.0.1:3000. The practice UI and all automated tests need **no wallet, RPC key or funds**. Frontend contributors can omit the Python setup until needed.
+### Backend setup
+
+Backend work uses **Python 3.14**, pinned in [`.python-version`](.python-version).
+Install PostgreSQL 16+ only when running database-backed work; Docker is optional.
 
 ```sh
-npm run check:web
-backend/.venv/bin/python -m unittest discover -s backend/tests -v
-npm run test:contracts
-npm run check:read-bridge
-backend/.venv/bin/python scripts/export-read-contract.py --check
-backend/.venv/bin/python scripts/export-read-openapi.py --check
-backend/.venv/bin/python scripts/export-session-contract.py --check
-backend/.venv/bin/python scripts/export-onboarding-contract.py --check
+python3 -m venv backend/.venv
+backend/.venv/bin/python -m pip install -r backend/requirements-api.lock
 ```
 
-The default Python suite explicitly skips PostgreSQL and native EVM cases. To run the full suite:
+The [backend guide](backend/README.md) covers local services, provider
+configuration and disposable test databases. The browser reaches backend APIs
+through the edge/bridge layer; the standalone local read API deliberately
+rejects browser origins.
 
-```sh
-npm --prefix app ci
-node scripts/test-contracts.mjs --match-path test/setup/DominoSetup.t.sol
-node scripts/test-contracts.mjs --match-path test/reference/OfficialDominoExecutionV4.t.sol
-node scripts/test-contracts.mjs --match-path test/audit_engine/SwapReinvestment.t.sol
-(cd contracts && node ../scripts/test-contracts.mjs build src/v2/registry/DominoRegistry.sol \
-  src/v2/anchor/DominoPriceAnchor.sol src/v2/autoexit/DominoAutoExit.sol src/v2/vault/DominoV2VaultSwapModule.sol \
-  src/v2/vault/DominoV2VaultV3.sol src/v2/vault/DominoV2VaultV4.sol src/v2/vault/DominoV2VaultFactory.sol \
-  src/v2/zap/DominoZapV3.sol src/v2/zap/DominoZapV4.sol src/v2/zap/DominoZapV4Steps.sol)
-backend/.venv/bin/python backend/dev_postgres.py prepare-tests
-DOMINO_TEST_POSTGRES=1 DOMINO_TEST_EVM=1 backend/.venv/bin/python -m unittest discover -s backend/tests -v
-backend/.venv/bin/python backend/dev_postgres.py stop
-```
+## Codebase
 
-The helper runs a private Unix-socket cluster, with disposable test databases separate from the development catalogue. `DOMINO_PG_BIN` selects an installation when discovery needs help. It never upgrades an existing database directory. Root `npm ci` installs the pinned Anvil, Forge and Solidity compiler used in tests.
-
-Optional read-only provider setup and API commands are in [backend/README.md](backend/README.md). Keys are entered locally at a hidden prompt, never committed. The local Python API rejects browser origins and is **not** the deployed web API; use the shared fixtures until the candidate bridge completes staging and frontend integration.
-
-## Work together
-
-**Execution first, planning afterward:** authorized collaborators and agents may work across every area within their assigned scope. Repository policy does not grant access or authorize actions for a public visitor. See the [execution policy](docs/EXECUTION_POLICY.md), [contribution guide](CONTRIBUTING.md) and [assistant instructions](AGENTS.md). Historical administrator and protection settings describe the original private repository; they are not a statement of this repository's current access settings.
-
-The [public CI procedure](docs/PUBLIC_CI.md) describes this repository's unprivileged hosted checks. The [Clawber CI runner pilot](docs/CI_RUNNERS.md) is retained as historical documentation of the private repository's runner infrastructure.
-
-| Directory | Responsibility |
+| Directory | Purpose |
 | --- | --- |
-| `web/` | React / TypeScript / vinext practice UI and server preview endpoints |
-| `backend/` | Python / FastAPI read API, PostgreSQL accounting, OpenAPI and fixtures |
-| `api-contracts/read-v1/` | Shared read schemas, types, validators and fixtures |
-| `api-contracts/session-v1/` | Separate wallet-login schemas, types, validators and fixtures |
-| `bridge/` | Disabled Cloudflare read and session Worker candidates |
-| `contracts/` | Public Domino V1 entrypoints, technical V4 bases, official-pool integration and adversarial regressions |
-| `scripts/` | Pinned compiler wrapper and repository checks |
-| `reports/` | Historical qualification evidence; not current production state |
+| [`app/`](app/) | Product UI: React, TypeScript and Vite; wallet flows, pools, positions and activity |
+| [`web/`](web/) | Practice workbench and shared domain calculations used by the app |
+| [`backend/`](backend/) | Python/FastAPI services, PostgreSQL accounting, indexing, planning and automation |
+| [`bridge/`](bridge/) | Cloudflare Workers for bounded read and authenticated API transport |
+| [`contracts/`](contracts/) | Solidity contracts, pinned compiler tooling, unit, fuzz and integration tests |
+| [`api-contracts/`](api-contracts/) | Versioned schemas, runtime validators, ABIs, chain profiles and shared fixtures |
+| [`docs/`](docs/) · [`reports/`](reports/) | Design references, release records and dated verification evidence |
 
-The existing owner-only Sites preview is a separate deployment. GitHub membership does not grant Sites access. Preserve `web/.openai/hosting.json`; publish only through the approved Sites workflow from a **separate checkout rooted at `web/`**, so the Sites source remote never replaces this repository's GitHub remote. No automatic deployment workflow is included.
+For the V2 design, start with the [contract interfaces](docs/v2/F0_INTERFACES.md),
+[vault and custody model](docs/v2/F3_VAULT.md),
+[automation backend](docs/v2/V2_AUTOMATION_BACKEND.md) and
+[read API](docs/v2/V2_INDEXER_READ_API.md). The
+[V1 contract guide](contracts/README.md) explains the earlier release family.
 
-There is no repository-wide license at the root of this source tree. Existing file-level SPDX identifiers and third-party licenses remain in place; publication does not assign a new license. See the [backend third-party notices](backend/THIRD_PARTY_NOTICES.md), [contract reference provenance](contracts/test/reference/README.md), [font provenance](app/src/fonts/PROVENANCE.md) and [wallet artwork notices](app/public/wallets/PROVENANCE.md).
+## Tests
 
-The [public V1 preparation record](reports/V1_RELEASE_PREPARATION_2026-09-21.md) records naming, compatibility and internal release validation.
+Install the root tools once before running contract or combined checks:
+
+```sh
+npm ci
+```
+
+This installs the pinned Forge, Anvil and Solidity compiler. With the frontend
+and Python dependencies above installed, choose the checks for the layer you
+are changing:
+
+| Check | Command |
+| --- | --- |
+| App logic | `npm --prefix app test` |
+| App types and lint | `npm --prefix app run typecheck && npm --prefix app run lint` |
+| Full app, including browser suites | `npm run check:app` |
+| Practice workbench | `npm run check:web` |
+| Backend | `backend/.venv/bin/python -m unittest discover -s backend/tests -v` |
+| Solidity | `npm run test:contracts` |
+| Bridge and shared API contracts | `npm run check:read-bridge` |
+| Repository hygiene | `npm run check:repository` |
+
+Browser suites require a Chromium-based browser; set `DOMINO_BROWSER_PATH` when
+it is not discovered automatically. PostgreSQL and native EVM backend cases are
+opt-in and skipped by the default Python command. Follow the
+[backend setup](backend/README.md) and [V2 integration guide](docs/v2/INTEGRATION_TESTS.md)
+for their prerequisites.
+
+[Public CI](docs/PUBLIC_CI.md) runs a limited offline verification suite on
+GitHub-hosted runners with read-only permissions and no operational credentials.
+It does not replace the full application, browser, database or EVM suites above.
+
+## Security and audit evidence
+
+Keep keys, wallet material and operational configuration outside Git. Local
+fixtures are test data. Missing, stale or unqualified financial data must remain
+explicit; the interface must not invent balances, prices or returns.
+
+- [Security model](SECURITY_SPEC.md) and [owner setup and recovery](docs/OWNER_SETUP_AND_RECOVERY.md).
+- [V2 audit package](reports/V2_AUDIT_PACKAGE.md), [initial findings and remediation](reports/v2-audit-2026-10-04/README.md), and [reaudit evidence](reports/v2-audit-2026-10-04.2/README.md).
+- [V2 freeze and reproducibility](docs/v2/FREEZE.md), including the scope of frozen artifacts.
+- [Public sanitization provenance](docs/PUBLIC_SANITIZATION.md).
+
+This is a sanitized publication of a private development repository. Public
+`sanitized/` tags and audit ZIPs identify derivatives of the original evidence;
+they do not preserve original Git signatures or constitute a new audit.
+Historical reports describe their recorded revisions, not the current state of
+a deployed service. Contributions should start from this public repository so
+unsanitized private history is not reintroduced. See the
+[contribution guide](CONTRIBUTING.md) for development conventions.
+
+## License and third-party material
+
+No repository-wide license has been assigned. Existing file-level SPDX identifiers
+and third-party licenses continue to apply; public visibility does not grant a
+new blanket license.
+
+See the [backend notices](backend/THIRD_PARTY_NOTICES.md),
+[contract reference provenance](contracts/test/reference/README.md),
+[font licenses](app/public/licenses/fonts/README.md) and
+[wallet artwork notices](app/public/wallets/PROVENANCE.md).
