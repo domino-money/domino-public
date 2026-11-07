@@ -4,6 +4,9 @@
 
 **Concentrated liquidity management for Uniswap v3 and v4.**
 
+Published for transparency, consultation and security review. See the
+[source availability and review terms](LICENSE.md) for permissions and exceptions.
+
 Domino brings pool discovery, position management and fee reinvestment into one
 wallet-facing app. It combines a React frontend, Python data and automation
 services, and Solidity contracts for owner-authorized liquidity operations.
@@ -56,8 +59,9 @@ npm --prefix app run dev:fixtures -- --host 127.0.0.1
 
 Open **[http://127.0.0.1:5273](http://127.0.0.1:5273)**.
 
-This read-only mode uses synthetic fixtures to explore the interface and its
-data states without a wallet, RPC key or funds. It does not reproduce the full
+The [limited review permission](LICENSE.md#limited-review-permission) covers
+this local walkthrough. This read-only mode uses synthetic fixtures to explore
+the interface and its data states without a wallet, RPC key or funds. It does not reproduce the full
 V2 financial flows. The `web/` install is required because the app shares its
 domain modules. See the [app guide](app/README.md) for normal application build
 modes, browser checks and further development.
@@ -155,9 +159,15 @@ unsanitized private history is not reintroduced. See the
 
 ## License and third-party material
 
-No repository-wide license has been assigned. Existing file-level SPDX identifiers
-and third-party licenses continue to apply; public visibility does not grant a
-new blanket license.
+Domino is published for transparency and consultation under the
+[source availability and review terms](LICENSE.md). Otherwise unlicensed
+Domino material is available for local inspection, evaluation and testing;
+general reuse, redistribution and production operation require separate permission.
+
+**Existing licenses remain in force.** The Solidity files in `contracts/src/`
+already carry MIT SPDX identifiers and retain those permissions. Third-party
+code, data, fonts and artwork keep their own licenses. The review terms do not
+revoke permissions granted for earlier versions or override applicable licenses.
 
 See the [backend notices](backend/THIRD_PARTY_NOTICES.md),
 [contract reference provenance](contracts/test/reference/README.md),

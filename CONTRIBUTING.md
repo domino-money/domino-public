@@ -1,31 +1,59 @@
-# Contributing
+# Reviewing and contributing
 
-Follow [Execution first](docs/EXECUTION_POLICY.md), the owner decision of 12 September 2026. It supersedes older planning, ownership and approval gates. `rugged97` and `OxDecimal` are administrators with access across the entire repository; all authorized collaborators and their agents may operate across all project areas.
+Domino is published for transparency, consultation and security review. Read the
+[source availability and review terms](LICENSE.md) before using the code.
+Existing file-level and third-party licenses retain their own permissions.
 
-## Working approach
+## Public review
 
-1. Start the next useful action in the requested scope. Read the relevant current code/state; no issue assignment, advance plan or area-owner acknowledgement is required.
-2. Implement the smallest useful increment. Use a branch/worktree when it helps isolate concurrent work; assistant branches use `codex/`. Preserve uncommitted work and resolve overlaps directly.
-3. Run checks proportionate to the actual change, reusing valid evidence. CI remains automatic feedback. Optional Windows/browser acceptance and repeated full-suite runs are not universal delivery gates.
-4. Integrate with a normal direct push to `main`, or use a small PR when useful. Any authorized collaborator may merge without a second person's approval. Keep forward/linear history and avoid force-pushing or deleting shared main.
-5. Record the delivered behavior, actual checks, known problems and useful recovery details after acting. Issues and PRs are coordination records, not permission queues. Fix reported errors promptly.
+Use the [local fixture walkthrough](README.md#run-locally) and the checks for the
+layer you are reviewing. The limited review permission covers local evaluation
+and tests of otherwise unlicensed Domino material. It does not grant production
+deployment or general redistribution rights.
 
-Task authorization persists through necessary fixes, provisioning, configuration, integration and deployment. Do not ask repeatedly for the same approval. Missing credentials or an external restriction should be reported concretely while other work continues. Do not publish credentials in commits, prompts, logs or browser bundles.
+Public issues are useful for reproducible bugs, documentation corrections and
+questions. Include the revision, expected behavior, observed behavior and a
+minimal reproduction using synthetic data. Never post credentials, private
+configuration, wallet material or sensitive vulnerability details publicly.
 
-## Cross-area work and subagents
+For code contributions, state the applicable license or permission and confirm
+that you have the right to submit the material. Do not assume that a GitHub fork,
+issue or pull request creates a general license to reuse the project. This guide
+introduces no copyright assignment or blanket license for contributions;
+applicable component licenses, separate agreements and GitHub's terms continue
+to govern those submissions.
 
-No frontend/backend/contracts/infrastructure area has an exclusive owner. Any collaborator may update both sides of an interface or operate an environment through authorized project access. Delegate independent subtasks when useful, inspect their evidence and integrate their results. Avoid concurrent overwrites using current diffs and isolated worktrees, without reserving areas or waiting for ceremonial handoffs.
+## Preparing an authorized change
 
-Each assistant has its own session history. Publish a short result in the existing issue/PR when needed; a GitHub comment does not automatically wake another assistant. Do not claim monitoring or automatic notifications that were not configured.
+1. Start from this public repository. Do not merge private repository branches;
+   that would reintroduce unsanitized history. See the
+   [publication provenance](docs/PUBLIC_SANITIZATION.md).
+2. Keep the change focused and preserve other contributors' work. Use a branch
+   or worktree when useful; assistant branches use `codex/`.
+3. Preserve file-level licenses, attribution, source provenance and frozen audit
+   artifacts. Changes to frozen contract sources are new candidates and follow
+   the [freeze procedure](docs/v2/FREEZE.md).
+4. Run checks proportionate to the change and report what actually ran, any
+   failures, and skipped checks. The [README](README.md#tests) lists the commands;
+   [Public CI](docs/PUBLIC_CI.md) explains the hosted suite's limited scope.
+5. Include a concise explanation of the behavior, relevant validation and any
+   remaining problem with the patch.
 
-## API compatibility and runtime behavior
+Shared API schemas and runtime validators must reflect producer and consumer
+behavior. Keep affected OpenAPI exports and fixtures aligned, following the
+[compatibility guide](docs/API_COMPATIBILITY.md). Missing or unqualified data
+must remain explicit; do not invent balances, prices or returns. Wallet login
+and NFT ownership reads do not supply consent to spend funds.
 
-Use shared schemas, runtime validators and representative producer/consumer fixtures. Keep `backend/openapi-read.json`, `api-contracts/read-v1/` and relevant session exports consistent with real behavior. Follow [API_COMPATIBILITY.md](docs/API_COMPATIBILITY.md) for version semantics and a concise change notice. The implementing collaborator may adapt producer and consumer and integrate immediately; a named person's ACK is not required.
+## Authorized maintainers
 
-Unknown values remain unavailable. Public NFT ownership is not wallet authentication; a connected wallet or login does not supply spending consent. Keep existing data integrity, secret handling and runtime access controls correct. This process change does not fabricate live capabilities, signatures or qualified data.
+The [execution policy](docs/EXECUTION_POLICY.md) governs work already authorized
+by the project owner. Such collaborators may work across project areas and use
+normal direct pushes or pull requests within their granted access. Preserve
+linear history and protection against force-pushing or deleting `main`.
 
-## Checks and delivery
-
-README lists reproducible frontend, backend, PostgreSQL/Anvil, Solidity and repository-hygiene checks. Choose the checks affected by a change and report their results. CI remains unprivileged and independent of real provider/wallet keys. Tests and feedback guide corrections without a mandatory reviewer/CI waiting gate on main.
-
-Any authorized collaborator may deploy and recover the scoped project. Use the actual target's documented commands and credentials. For Sites, retain its hosting identity and use the frontend-only checkout so deployment does not replace this repository's Git remote. A provider account permission is an actual access constraint, not a permanent assignment to a particular person.
+Public visibility does not grant write access, deployment authority, credentials
+or access to private services. Work in Domino-managed environments requires
+project authorization and access; existing task authorization remains valid.
+Keep public CI unprivileged and independent of operational provider keys and
+wallets.

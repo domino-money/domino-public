@@ -50,6 +50,9 @@ or enable untrusted public contributions on a privileged private runner.
 
 The initial public preparation also supplies the full upstream font license
 notices. It does not assign a new repository-wide software license.
+The current [source availability and review terms](../LICENSE.md) document
+publication for transparency and local review, while preserving existing
+file-level licenses and permissions granted for earlier versions.
 
 Keep the original private backup and replacement maps outside the public
 repository. Clone this repository directly when contributing to the public
