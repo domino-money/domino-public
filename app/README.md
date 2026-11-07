@@ -176,6 +176,11 @@ returns an error instead.
   that the old password fails on every host that still answers.
 - `POST /__beta/logout` clears the cookie.
 - `www.domino.money` redirects to the apex.
+- **Opening the site** (2026-11-06): the setting `BETA_GATE`, exactly `off`,
+  serves everyone as a visitor who typed the password is served, with no
+  password page and no cookie, and needs neither secret; any other value, or
+  none, keeps the gate as described here. It is a Pages secret per environment, never in
+  `wrangler.toml`. Steps to open and close: `docs/OPEN_THE_SITE.md`.
 - Authenticated pages and assets carry HSTS, `nosniff`, `X-Frame-Options:
   DENY`, `noindex`, private caching and a strict CSP: scripts, styles, images
   and connections from this origin only, plus the Google Fonts `index.html`

@@ -25,6 +25,10 @@
  *   - The access page loads no Google Fonts: its two fonts are the site's own
  *     files, served without the cookie from GATE_FONTS.
  *   - Logins are limited per client address (createLoginLimiter).
+ *
+ * 2026-11-06 (the owner: the password comes off for the public launch): one
+ * setting, BETA_GATE, opens the deployment without touching the secrets. See
+ * gateOpen() and app/docs/OPEN_THE_SITE.md.
  */
 
 export interface BetaEnv {
@@ -36,7 +40,24 @@ export interface BetaEnv {
    * Set for production only, in wrangler.toml.
    */
   CANONICAL_HOSTS_ONLY?: string
+  /**
+   * The switch that opens the site (2026-11-06). Exactly GATE_OFF ("off") opens
+   * it: every visitor is served as one holding a valid access cookie is, and
+   * the two secrets above are neither needed nor read. Anything else, or
+   * nothing, is the gate as it always was. Never written in wrangler.toml: the
+   * owner sets it per environment as a Pages secret (app/docs/OPEN_THE_SITE.md).
+   */
+  BETA_GATE?: string
 }
+
+/** The one value of BETA_GATE that opens the site: lowercase, no spaces around it. */
+export const GATE_OFF = 'off'
+
+/**
+ * Whether the gate is open in `env`: BETA_GATE is exactly "off". "OFF", " off", "false", "" or no setting at all keep
+ * it closed, so a typo can only ever leave the site closed, never open it.
+ */
+export const gateOpen = (env: BetaEnv): boolean => env.BETA_GATE === GATE_OFF
 
 export interface BetaConfig {
   key: CryptoKey

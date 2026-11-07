@@ -5,6 +5,7 @@
  * that `next` was never called, so "refused" always means "nothing served".
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { beforeEach, test } from 'node:test';
 
@@ -968,4 +969,229 @@ test('each app HTML response gives Cloudflare a fresh nonce without changing the
   }
   assert.equal(nonces.size, 3, 'a nonce is never reused between responses');
   assert.equal((await run(navigate('/'))).headers.get('Content-Security-Policy'), gate.PAGE_CSP, 'the beta gate keeps its separate policy');
+});
+
+// ---------------------------------------------------------------------------
+// 2026-11-06 (the owner: the password comes off for the public launch): BETA_GATE exactly "off" opens the site. Every
+// visitor is then served as one with a valid access cookie is, header for header, with no password and no cookie, and
+// without the two secrets being needed. Anything else is the gate as it was, byte for byte (app/docs/OPEN_THE_SITE.md).
+// ---------------------------------------------------------------------------
+
+const OPEN = { ...ENV, BETA_GATE: 'off' };
+
+/** A response as the browser gets it: its status, every header (the page's per-response nonce taken out) and its body. */
+async function snapshot(response) {
+  const headers = [...response.headers].map(([name, value]) => [name, name === 'content-security-policy' ? withoutNonce(value) : value]);
+  return { status: response.status, headers, body: await response.text() };
+}
+
+/**
+ * The deployment behind the gate for one request: answers `type` (or `status`, for a 304) as the static files or a route
+ * would, and records what the gate handed on: 'as sent' for the browser's own request, else the request it made.
+ */
+function upstream(type, status = 200) {
+  const handed = [];
+  const next = async (passed) => {
+    handed.push(passed === undefined ? 'as sent' : { method: passed.method, url: passed.url, cookie: passed.headers.get('Cookie'), body: await passed.text() });
+    if (status === 304) return new Response(null, { status, headers: { ETag: '"x"' } });
+    return new Response(type.startsWith('text/html') ? '<!doctype html><title>app</title>' : '{"ok":true}', { status, headers: { 'Content-Type': type, 'Cache-Control': 'public, max-age=0', ETag: '"x"' } });
+  };
+  return { handed, next };
+}
+
+/** Every kind of request the site answers past the gate: pages, files, the ungated ones, reads, chain routes, sessions. */
+const OPEN_CASES = [
+  { label: 'Home', path: '/', type: 'text/html; charset=utf-8', mode: 'navigate' },
+  { label: 'a page path', path: '/positions', type: 'text/html; charset=utf-8', mode: 'navigate' },
+  { label: 'index.html', path: '/index.html', type: 'text/html; charset=utf-8', mode: 'navigate' },
+  { label: 'a page the browser revalidates', path: '/', type: 'text/html', mode: 'navigate', status: 304 },
+  { label: 'HEAD of Home', path: '/', type: 'text/html; charset=utf-8', mode: 'navigate', method: 'HEAD' },
+  { label: 'a hashed script', path: '/assets/index-abc123.js', type: 'text/javascript' },
+  { label: 'a hashed stylesheet', path: '/assets/index-abc123.css', type: 'text/css' },
+  { label: 'an old release’s missing chunk', path: '/assets/missing-abc.js', type: 'text/html; charset=utf-8' },
+  { label: 'a token icon', path: '/tokens/weth.svg', type: 'image/svg+xml' },
+  { label: 'a docs picture', path: '/docs/markets.webp', type: 'image/webp' },
+  { label: 'the favicon (ungated)', path: '/favicon.ico', type: 'image/x-icon' },
+  { label: 'a font of the access page (ungated)', path: '/__beta/fonts/geist-latin.woff2', type: 'font/woff2' },
+  { label: 'a POST to the favicon', path: '/favicon.ico', type: 'image/x-icon', method: 'POST', body: 'x' },
+  { label: 'robots.txt, which the deployment does not hold', path: '/robots.txt', type: 'text/html; charset=utf-8' },
+  { label: 'a public read', path: '/api/read/v1/capabilities', type: 'application/json' },
+  { label: 'a public read posted', path: '/api/read/v1/token', type: 'application/json', method: 'POST', body: '{"token":"0x01"}' },
+  { label: 'a chain route', path: '/api/fees/v2/ledger', type: 'application/json', method: 'POST', body: '{"tokenIds":["1"]}' },
+  { label: 'a session route', path: '/api/session/v1/me', type: 'application/json' },
+  { label: 'the second chain’s service', path: '/uniswap-v3/read/v1/capabilities', type: 'application/json', method: 'POST', body: '{}' },
+  { label: 'an /api path with an empty segment', path: '/api//x', type: 'application/json' },
+];
+
+/** One case's request, with `cookie` as its Cookie header (none when null). */
+function caseRequest({ path, mode, method = 'GET', body }, cookie) {
+  const headers = mode === 'navigate'
+    ? { 'Sec-Fetch-Mode': 'navigate', Accept: 'text/html' }
+    : { 'Sec-Fetch-Mode': 'cors', Accept: '*/*', Origin: ORIGIN, 'Sec-Fetch-Site': 'same-origin', ...(body ? { 'Content-Type': 'application/json' } : {}) };
+  if (cookie !== null) headers.Cookie = cookie;
+  return new Request(`${ORIGIN}${path}`, { method, headers, body });
+}
+
+test('with BETA_GATE "off" every page, file and /api route is served with no password and no cookie, exactly as to a signed-in visitor', async () => {
+  const cookie = await signIn();
+  for (const item of OPEN_CASES) {
+    const admitted = upstream(item.type, item.status);
+    const signedIn = await snapshot(await onRequest({ request: caseRequest(item, `${cookie}; ${SESSION_COOKIES}`), env: ENV, next: admitted.next }));
+    const opened = upstream(item.type, item.status);
+    const open = await snapshot(await onRequest({ request: caseRequest(item, SESSION_COOKIES), env: OPEN, next: opened.next }));
+    assert.deepEqual(open, signedIn, `${item.label}: the same status, headers and body`);
+    assert.deepEqual(opened.handed, admitted.handed, `${item.label}: the same request goes on (a read, a chain route and the second chain’s service lose every cookie)`);
+    assert.ok(!open.headers.some(([name]) => name === 'set-cookie'), `${item.label}: no cookie is set`);
+    // A visitor with no cookie at all is served the same.
+    const fresh = upstream(item.type, item.status);
+    const bare = await snapshot(await onRequest({ request: caseRequest(item, null), env: OPEN, next: fresh.next }));
+    assert.deepEqual([bare.status, bare.headers, bare.body], [open.status, open.headers, open.body], `${item.label}: with no cookie at all`);
+  }
+  // What a signed-in visitor gets, and so an open site too: the app's CSP and every security header.
+  const home = await run(navigate('/'), OPEN);
+  assert.equal(home.status, 200);
+  assert.equal(withoutNonce(home.headers.get('Content-Security-Policy')), APP_CSP);
+  assert.match(home.headers.get('Content-Security-Policy'), /'nonce-[A-Za-z0-9+/]+={0,2}'/, 'a fresh nonce for Cloudflare’s detection script, as for a signed-in visitor');
+  for (const [name, value] of [['Strict-Transport-Security', 'max-age=31536000'], ['X-Content-Type-Options', 'nosniff'], ['X-Frame-Options', 'DENY'], ['X-Robots-Tag', 'noindex, nofollow'], ['Permissions-Policy', PERMISSIONS_POLICY], ['Cross-Origin-Opener-Policy', 'same-origin-allow-popups'], ['Cross-Origin-Resource-Policy', 'same-origin'], ['Cache-Control', 'private, no-cache']]) {
+    assert.equal(home.headers.get(name), value, name);
+  }
+  assert.doesNotMatch(await home.text(), /Domino · Access|__beta\/login/, 'the app, not the access page');
+});
+
+test('only the exact value "off" opens: another case, a space, another word, empty or no setting at all is the gate, byte for byte', async () => {
+  const requests = () => [navigate('/'), navigate('/positions'), fetchLike('/assets/index-abc123.js'), fetchLike('/api/read/v1/pools'), fetchLike('/favicon.svg'), navigate(LOGIN_PATH), loginPost('wrong'), new Request(`${ORIGIN}${LOGOUT_PATH}`, { method: 'POST', headers: { Origin: ORIGIN } }), new Request('https://www.domino.money/x', { headers: { 'Sec-Fetch-Mode': 'navigate' } })];
+  const all = async (env) => {
+    const out = [];
+    for (const request of requests()) out.push(await snapshot(await run(request, env)));
+    return out;
+  };
+  const gated = await all(ENV);
+  const paused = await all({});
+  assert.equal(gated[0].status, 401);
+  assert.equal(paused[0].status, 503);
+  const values = ['OFF', 'Off', ' off', 'off ', 'off\n', '"off"', 'false', '0', 'no', 'open', 'true', 'on', 'of', 'offf', '', undefined];
+  for (const value of values) {
+    const env = value === undefined ? { ...ENV } : { ...ENV, BETA_GATE: value };
+    assert.equal(gate.gateOpen(env), false, JSON.stringify(value));
+    assert.deepEqual(await all(env), gated, `${JSON.stringify(value)}: today’s gate`);
+    // Without the secrets, still the 503 for everything, as today.
+    assert.deepEqual(await all(value === undefined ? {} : { BETA_GATE: value }), paused, `${JSON.stringify(value)} without the secrets: 503`);
+  }
+  assert.equal(served, 0, 'nothing of the app was served');
+  // The right password still signs in, as today.
+  const signedIn = await run(loginPost(PASSWORD), { ...ENV, BETA_GATE: 'OFF' });
+  assert.equal(signedIn.status, 303);
+  assert.match(signedIn.headers.get('Set-Cookie') ?? '', /^__Host-domino-beta=v1\./);
+  assert.equal(gate.GATE_OFF, 'off');
+  assert.equal(gate.gateOpen(OPEN), true);
+});
+
+test('opening does not depend on the password: "off" opens a deployment whose secrets are missing, weak or reused', async () => {
+  const reference = await snapshot(await onRequest({ request: navigate('/'), env: OPEN, next: upstream('text/html; charset=utf-8').next }));
+  const read = await snapshot(await onRequest({ request: fetchLike('/api/read/v1/capabilities'), env: OPEN, next: upstream('application/json').next }));
+  for (const env of [
+    { BETA_GATE: 'off' },
+    { BETA_GATE: 'off', BETA_PASSWORD: PASSWORD },
+    { BETA_GATE: 'off', BETA_COOKIE_KEY: KEY },
+    { BETA_GATE: 'off', BETA_PASSWORD: 'short', BETA_COOKIE_KEY: 'short' },
+    { BETA_GATE: 'off', BETA_PASSWORD: KEY, BETA_COOKIE_KEY: KEY },
+  ]) {
+    const label = JSON.stringify(env);
+    assert.deepEqual(await snapshot(await onRequest({ request: navigate('/'), env, next: upstream('text/html; charset=utf-8').next })), reference, `${label}: Home`);
+    assert.deepEqual(await snapshot(await onRequest({ request: fetchLike('/api/read/v1/capabilities'), env, next: upstream('application/json').next })), read, `${label}: a read`);
+    const login = await run(loginPost(PASSWORD), env);
+    assert.deepEqual([login.status, login.headers.get('Location'), login.headers.get('Set-Cookie')], [303, '/', null], `${label}: the login goes home`);
+  }
+  assert.equal(reference.status, 200);
+  assert.equal(read.status, 200);
+});
+
+test('with the gate open, /__beta/login and /__beta/logout go home, whatever is sent, and set, clear or read no cookie', async () => {
+  const cookie = await signIn();
+  const address = { 'CF-Connecting-IP': '198.51.100.77' };
+  let pulled = false;
+  const unread = new ReadableStream({ pull(controller) { pulled = true; controller.enqueue(new TextEncoder().encode(`password=${PASSWORD}`)); controller.close(); } }, { highWaterMark: 0 });
+  const requests = [
+    navigate(LOGIN_PATH),
+    new Request(`${ORIGIN}${LOGIN_PATH}`, { method: 'HEAD' }),
+    loginPost(PASSWORD),
+    loginPost('wrong', address),
+    loginPost(PASSWORD, { Origin: 'https://evil.example' }),
+    loginWith({ password: PASSWORD, next: '#/positions/42' }),
+    new Request(`${ORIGIN}${LOGIN_PATH}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: ORIGIN }, body: '{}' }),
+    new Request(`${ORIGIN}${LOGIN_PATH}`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: ORIGIN }, body: unread, duplex: 'half' }),
+    new Request(`${ORIGIN}${LOGOUT_PATH}`, { method: 'POST', headers: { Origin: ORIGIN, Cookie: cookie } }),
+    new Request(`${ORIGIN}${LOGOUT_PATH}`, { method: 'POST', headers: { Origin: 'https://evil.example', Cookie: cookie } }),
+    navigate(LOGOUT_PATH, { Cookie: cookie }),
+  ];
+  for (const request of requests) {
+    const label = `${request.method} ${new URL(request.url).pathname}`;
+    const response = await run(request, OPEN);
+    assert.equal(response.status, 303, label);
+    assert.equal(response.headers.get('Location'), '/', label);
+    assert.equal(response.headers.get('Set-Cookie'), null, `${label}: no cookie set or cleared`);
+    assert.equal(response.headers.get('Cache-Control'), 'no-store', label);
+    assert.equal(response.headers.get('Strict-Transport-Security'), 'max-age=31536000', label);
+    assert.equal(response.headers.get('X-Frame-Options'), 'DENY', label);
+  }
+  // Ten wrong tries from one address: still home each time, and the limiter never hears of them.
+  for (let i = 0; i < 10; i++) assert.equal((await run(loginPost('wrong', address), OPEN)).status, 303);
+  assert.equal(loginLimiter.waitMs(address['CF-Connecting-IP'], Date.now()), 0, 'no try was counted');
+  assert.equal(pulled, false, 'the form is never read');
+  assert.equal(served, 0, 'neither path serves the app itself');
+});
+
+test('with the gate open, production still answers on its own hosts only and www still goes to the apex; a preview keeps the gate unless its own setting says off', async () => {
+  const production = { CANONICAL_HOSTS_ONLY: 'true', BETA_GATE: 'off' };
+  for (const host of ['https://domino-app-e65.pages.dev', 'https://abc123.domino-app-e65.pages.dev']) {
+    for (const request of [new Request(`${host}/`, { headers: { 'Sec-Fetch-Mode': 'navigate' } }), new Request(`${host}/assets/index.js`), new Request(`${host}${LOGIN_PATH}`, { method: 'POST' })]) {
+      const response = await run(request, production);
+      assert.equal(response.status, 404, `${host}: no entrance`);
+      assert.deepEqual(await response.json(), { error: 'not_found' });
+    }
+  }
+  const www = await run(new Request('https://www.domino.money/some/path?x=1', { headers: { 'Sec-Fetch-Mode': 'navigate' } }), production);
+  assert.deepEqual([www.status, www.headers.get('Location'), www.headers.get('Cache-Control')], [301, 'https://domino.money/some/path?x=1', 'no-store']);
+  assert.equal(served, 0);
+  assert.equal((await run(navigate('/'), production)).status, 200, 'domino.money itself is open');
+  // Previews: each environment's own setting. Without it (as wrangler.toml leaves every one) the gate holds there.
+  const preview = (env) => run(new Request('https://preview.domino-app-e65.pages.dev/', { headers: { 'Sec-Fetch-Mode': 'navigate' } }), env);
+  assert.equal((await preview(ENV)).status, 401, 'a preview without the setting keeps the gate');
+  assert.equal((await preview({ ...ENV, PREVIEW_PUBLIC_READS: 'true', PREVIEW_FAMILIES: 'setup', CHAIN2_PREVIEW: 'true', LOCAL_RPC_SIMULATE: 'true' })).status, 401, 'with every preview var wrangler.toml sets');
+  assert.equal((await preview(OPEN)).status, 200, 'a preview whose own setting says off is open');
+});
+
+test('an old beta cookie is simply served while the site is open, and works again the moment the gate is back', async () => {
+  const config = await gate.readConfig(ENV);
+  const old = (await gate.issueCookie(config, Date.now() - 2 * 86_400_000)).split(';')[0];
+  const [name, value] = old.split('=');
+  // One signature character changed, well inside the signature (its last one carries two spare bits).
+  const at = value.length - 3;
+  const tampered = `${name}=${value.slice(0, at)}${value[at] === 'A' ? 'B' : 'A'}${value.slice(at + 1)}`;
+  for (const cookie of [old, tampered, `${old}; ${old}`]) {
+    const response = await run(navigate('/', { Cookie: cookie }), OPEN);
+    assert.equal(response.status, 200, cookie);
+    assert.equal(response.headers.get('Set-Cookie'), null, 'nothing is renewed while open');
+  }
+  // BETA_GATE deleted (or set to anything else): the gate, at once, with the same secrets, so a cookie still inside its
+  // week works as before and is renewed as before; anything else is refused again.
+  const closed = await run(navigate('/', { Cookie: old }), ENV);
+  assert.equal(closed.status, 200);
+  assert.match(closed.headers.get('Set-Cookie') ?? '', /^__Host-domino-beta=v1\./);
+  for (const headers of [{ Cookie: tampered }, {}]) assert.equal((await run(navigate('/', headers), ENV)).status, 401, JSON.stringify(headers));
+  assert.equal((await run(navigate('/'), { ...ENV, BETA_GATE: 'closed' })).status, 401);
+});
+
+test('nothing committed opens the site: wrangler.toml sets BETA_GATE in no environment, and the owner’s steps are written down', () => {
+  const toml = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
+  assert.doesNotMatch(toml, /BETA_GATE/, 'the switch is the owner’s, set as a Pages secret per environment (app/docs/OPEN_THE_SITE.md)');
+  const doc = readFileSync(new URL('../docs/OPEN_THE_SITE.md', import.meta.url), 'utf8');
+  assert.match(doc, /npx wrangler pages secret put BETA_GATE --project-name domino-app/);
+  assert.match(doc, /npx wrangler pages secret delete BETA_GATE --project-name domino-app/);
+  assert.match(doc, /without BETA_PASSWORD and BETA_COOKIE_KEY/);
+  // Pages applies a secret to the deployments made after it, so one set early opens the site at the next production
+  // deployment of this release, whoever makes it (a publish the same night included): the steps must say so.
+  assert.doesNotMatch(doc, /harmless/, 'setting BETA_GATE early is not harmless');
+  assert.match(doc, /Set `BETA_GATE` only when you mean to open the site\. Do not set it early:/);
+  assert.match(doc, /the next production deployment of a release with this change, whoever makes\s+it/);
 });

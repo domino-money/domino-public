@@ -23,6 +23,30 @@
  *                                             navigation, a JSON error for
  *                                             assets and API calls.
  *
+ * 2026-11-06 (the owner: the password comes off for the public launch): where
+ * BETA_GATE is exactly "off" (functions/_lib/gate.ts gateOpen) the gate is
+ * open, and the rules read:
+ *
+ *   0. As above.
+ *   1. Skipped: the secrets are neither needed nor read, so a deployment
+ *      without them opens too.
+ *   2. As above.
+ *   3. As above.
+ *   4. /__beta/login, any method          → 303 to /, no cookie set or read.
+ *   5. /__beta/logout, any method         → 303 to /, no cookie set or read.
+ *   6. Everything else                    → served as rule 6 serves a visitor
+ *                                             with a valid cookie: the same
+ *                                             headers, CSP, caching, cookie
+ *                                             stripping and forward(); no
+ *                                             cookie is renewed.
+ *   7. Never reached.
+ *
+ * Any other value, in another case, with a space, empty or not set at all,
+ * is the gate above, byte for byte. Opening never needs the secrets deleted
+ * or changed, and setting BETA_GATE to anything else (or deleting it) closes
+ * the site again: a beta cookie still inside its week then works as before.
+ * app/docs/OPEN_THE_SITE.md has the owner's steps.
+ *
  * Rule 0 holds where CANONICAL_HOSTS_ONLY is "true", which wrangler.toml sets
  * for production only. A production deployment then answers on its own hosts
  * and none of its pages.dev or hash URLs is an entrance; previews keep the gate.
@@ -75,6 +99,7 @@ import {
   clearCookie,
   cookieExpiry,
   createLoginLimiter,
+  gateOpen,
   isPassword,
   issueCookie,
   nextHash,
@@ -519,8 +544,11 @@ export async function onRequest(context: Context): Promise<Response> {
   const canonical = url.hostname === CANONICAL_HOST || url.hostname === `www.${CANONICAL_HOST}`
   if (env.CANONICAL_HOSTS_ONLY === 'true' && !canonical) return json('not_found', 404)
 
-  const config = await readConfig(env)
-  if (!config) return page('unavailable', 503)
+  // Rule 1, unless the gate is open (BETA_GATE exactly "off", 2026-11-06): then the secrets are not read at all, and a
+  // deployment without them opens as well. From here on `config` is null exactly when the gate is open.
+  const open = gateOpen(env)
+  const config = open ? null : await readConfig(env)
+  if (!open && config === null) return page('unavailable', 503)
 
   if (url.hostname === `www.${CANONICAL_HOST}`) {
     // Permanent describes what the redirect means, not how long a browser may
@@ -540,19 +568,25 @@ export async function onRequest(context: Context): Promise<Response> {
   // Rule 3: the public files that need no cookie, as they are, and nothing else under them.
   if (UNGATED.has(url.pathname) && (request.method === 'GET' || request.method === 'HEAD')) return secured(await context.next(), url, pageCsp)
 
-  if (url.pathname === LOGIN_PATH) return login(request, url, config)
-  if (url.pathname === LOGOUT_PATH) return logout(request, url)
+  if (url.pathname === LOGIN_PATH || url.pathname === LOGOUT_PATH) {
+    // Rules 4 and 5. With the gate open there is nothing to sign in to or out of: both go home, and no cookie is set,
+    // cleared or read (a tab left on the access page posts its form here and lands on the app).
+    if (config === null) return seeOther('/')
+    return url.pathname === LOGIN_PATH ? login(request, url, config) : logout(request, url)
+  }
 
   const now = Date.now()
-  const expires = await cookieExpiry(config, request.headers.get('Cookie'), now)
-  if (expires !== null) {
+  // Rule 6. With the gate open every request is admitted, as one with a valid cookie is; the cookie is not read.
+  const expires = config === null ? null : await cookieExpiry(config, request.headers.get('Cookie'), now)
+  if (config === null || expires !== null) {
     // A public read, and since 2026-10-01 (the chain2 workstream, part B) the second chain's services and (RPC-SPEC
     // §2.7) Domino's own chain routes, go on with no cookie at all.
     const bare = url.pathname.startsWith(PUBLIC_READ_PREFIX) || UNISWAP_V3_PATH.test(url.pathname) || CHAIN_ROUTE.test(url.pathname)
     const response = secured(await (bare ? next(withoutCookies(request)) : next()), url, pageCsp)
     // D3 (2026-10-01): the week runs from the last visit. A page load (also one the browser's copy answers, a 304) with
-    // a cookie more than a day old gets a fresh one; nothing else does, so a visit renews it at most once a day.
-    if (renewable(expires, now) && wantsPage(request) && (response.status === 200 || response.status === 304)) {
+    // a cookie more than a day old gets a fresh one; nothing else does, so a visit renews it at most once a day. With the
+    // gate open nothing is renewed: there is no cookie to keep.
+    if (config !== null && expires !== null && renewable(expires, now) && wantsPage(request) && (response.status === 200 || response.status === 304)) {
       response.headers.append('Set-Cookie', await issueCookie(config, now))
     }
     return response

@@ -59,11 +59,12 @@ export const NO_BROWSER_WALLET_PHONE = 'On a phone or tablet, open this site in 
 
 /**
  * The Connect dialog on a phone with no wallet in its browser (2026-10-01, audit C4): an extension cannot be installed
- * there, so the site is opened in a wallet app's own browser instead, where the beta's access password is asked again.
+ * there, so the site is opened in a wallet app's own browser instead.
  */
+// Changed on purpose 2026-11-06 (public launch): the password sentence is gone, as the site opens without one.
 // Changed on purpose 2026-10-01 (fix round 1): "this site", which the links open (wallet/appLinks.ts), the preview too.
 export const OPEN_IN_WALLET_APP = 'Open this site in your wallet app’s browser, then connect there.'
-export const OPEN_IN_WALLET_APP_NOTE = 'You’ll enter the site’s access password again there. Using Rabby or another wallet app? Open this site in its own browser.'
+export const OPEN_IN_WALLET_APP_NOTE = 'Using Rabby or another wallet app? Open this site in its own browser.'
 /** WalletConnect's row and what its pairing says (wallet/walletConnect.ts, WalletConnectPanel.tsx). */
 export const WALLETCONNECT = {
   rowHint: 'A wallet on your phone',

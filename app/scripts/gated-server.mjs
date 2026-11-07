@@ -9,6 +9,7 @@
  *   npm test                                  # compiles the middleware
  *   npm run build
  *   BETA_PASSWORD=... BETA_COOKIE_KEY=... node scripts/gated-server.mjs [port]
+ *   BETA_GATE=off node scripts/gated-server.mjs [port]   # the site opened (app/docs/OPEN_THE_SITE.md)
  */
 import { existsSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
@@ -112,7 +113,7 @@ export function createGatedServer({ env, dist = DIST, middleware = loadMiddlewar
 // Run directly: serve on a local port for a look in a real browser.
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const port = Number(process.argv[2] ?? 5290);
-  const env = { BETA_PASSWORD: process.env.BETA_PASSWORD, BETA_COOKIE_KEY: process.env.BETA_COOKIE_KEY };
+  const env = { BETA_PASSWORD: process.env.BETA_PASSWORD, BETA_COOKIE_KEY: process.env.BETA_COOKIE_KEY, BETA_GATE: process.env.BETA_GATE };
   createGatedServer({ env }).listen(port, '127.0.0.1', () => {
     console.log(`gated app on http://127.0.0.1:${port}`);
   });

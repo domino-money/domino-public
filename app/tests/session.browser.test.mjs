@@ -818,7 +818,9 @@ test('with no wallet, a phone is offered the wallet apps that open this site (do
   const text = await dialog(page).innerText();
   // Changed on purpose 2026-10-01 (fix round 1): "this site", which the links open (the preview alias opens the preview).
   assert.match(text, /Open this site in your wallet app’s browser, then connect there\./);
-  assert.match(text, /access password again/);
+  // Changed on purpose 2026-11-06 (public launch): no password sentence, as the site opens without one.
+  assert.match(text, /Using Rabby or another wallet app\? Open this site in its own browser\./);
+  assert.doesNotMatch(text, /password/);
   assert.doesNotMatch(text, /extension/, 'nothing a phone cannot do');
   // Changed on purpose 2026-10-30 (QA round 2, N56): each link carries the open route (#/app here), as the gate keeps it
   // through the password, so the wallet's browser opens the same screen; the site stays fixed.

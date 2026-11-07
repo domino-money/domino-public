@@ -352,3 +352,43 @@ test('a cookie from one browser does not work after the password is rotated', as
   await new Promise((done) => rotated.close(done));
   await closeContext(context);
 });
+
+// 2026-11-06 (the owner: the password comes off for the public launch): with BETA_GATE "off" the built site opens to a
+// fresh visitor with no password and no cookie, the app runs under the same CSP without a violation, and taking the
+// setting away brings the password page back on the very next request (app/docs/OPEN_THE_SITE.md).
+test('with BETA_GATE "off" a fresh visitor gets the full app with no password and no cookie, and the gate is back once the setting goes', async () => {
+  const env = { ...ENV, BETA_GATE: 'off' };
+  const opened = createGatedServer({ env });
+  await new Promise((done) => opened.listen(0, '127.0.0.1', done));
+  const site = `http://127.0.0.1:${opened.address().port}`;
+  const context = await browser.newContext({ viewport: { width: 1280, height: 860 } });
+  const page = await context.newPage();
+  const { problems } = watch(page, { requests: false, responses: false });
+  const responses = [];
+  page.on('response', (response) => {
+    if (response.url().startsWith(site)) responses.push({ status: response.status(), path: response.url().slice(site.length) });
+  });
+  try {
+    const response = await page.goto(`${site}/`, { waitUntil: 'networkidle' });
+    assert.equal(response.status(), 200, 'the app, not the access page');
+    assert.notEqual(await page.title(), 'Domino · Access');
+    assert.equal(await page.locator('#password').count(), 0, 'no password is asked');
+    assert.match(await page.getByRole('heading', { level: 1 }).innerText(), /^Earn fees\.\s*Keep control\.$/);
+    assert.ok((await page.locator('#root').innerText()).length > 500, 'the app rendered');
+    assert.match(response.headers()['content-security-policy'] ?? '', /^default-src 'self'; script-src 'nonce-/, 'the app’s own CSP, as behind the password');
+    // This site's own cookies only: the page's token artwork comes from DEX Screener, whose edge sets one of its own.
+    assert.deepEqual(await context.cookies(site), [], 'this site sets no cookie');
+    assert.deepEqual(responses.filter((entry) => entry.status >= 400), [], 'nothing was refused');
+    assert.deepEqual(problems, [], 'no error and no CSP violation');
+    // The setting taken away: the gate is back on the next request.
+    delete env.BETA_GATE;
+    leaving(page);
+    const closed = await page.goto(`${site}/`, { waitUntil: 'networkidle' });
+    assert.equal(closed.status(), 401);
+    assert.equal(await page.title(), 'Domino · Access');
+    assert.equal(await page.locator('#password').count(), 1);
+  } finally {
+    await closeContext(context);
+    await new Promise((done) => opened.close(done));
+  }
+});
