@@ -2,7 +2,7 @@
 
 This folder holds two things:
 - [`freeze.json`](freeze.json): the record of the annotated tag `v2-audit-2026-10-04.2`;
-- the auditors' re-audit of that commit, kept as delivered on 4 Oct 2026, unmodified.
+- the auditors' re-audit of that commit: reports, findings and receipt retain their delivered bytes from 4 Oct 2026; its evidence ZIP is a public sanitized derivative, identified below.
 
 **The tag.** `v2-audit-2026-10-04.2` (object `d0c72d80de8037c502401ac9c002c485b8ca89bf`) is on commit `559c509ff71d71e49ac720bd6acd8a9783531ebb`, tree `e5ed5db6404ae9d5464028690f788ea3a217ebbd`. That commit is #323's merge, the remediation of [`v2-audit-2026-10-04`](../v2-audit-2026-10-04/README.md). The release manifest's SHA-256 is `2975c377c6f3690a702fddeecfe4ffb2c4ccab6e52c8739f4877ce458f66ed5c`.
 
@@ -32,17 +32,27 @@ This folder holds two things:
 - the JSON-RPC `error` object could be checked more strictly (a malformed one already fails closed);
 - the RPC budget counts admissions, not a hard wall-clock or HTTP ceiling.
 
-## As delivered
+## Historical delivery and public derivative
+
+### Public sanitization
+
+The ZIP above is a **sanitized derivative**, not the original delivery, an unchanged audit freeze, or a new independent audit. Identified checkout prefixes became `[WORKSPACE]`; other user home directories became `[USER_HOME]`. ZIP timestamps, permissions, creator metadata, comments and extra fields were normalized. All original member names remain present, and unmodified member contents are byte-identical. No contracts, bytecode, verdicts or test outcomes were regenerated.
+
+[`PUBLIC_SANITIZATION_MANIFEST.json`](PUBLIC_SANITIZATION_MANIFEST.json) records the original and public archive SHA-256, the affected members and the validation results. Inside the ZIP, a separate manifest records original and public hashes for every original member. The archive's original `MANIFEST.json` remains historical evidence: its hashes authenticate the original payload and must not be used as current checksums for redacted members.
+
+`DELIVERY_RECEIPT.json`, freeze records, original source hashes, commit IDs and tag names retain their historical meaning. They describe the privately preserved original delivery; they do not certify the rewritten public history or the derivative ZIP as the same original freeze. The original archive hash is retained above solely for provenance.
+
 
 | File | SHA-256 | What |
 |---|---|---|
 | [`REAUDITORIA_DOMINO_V2.md`](REAUDITORIA_DOMINO_V2.md) | `9bb40965be860ba7483ef4c622c3a0d349650c07881c661db1e5b1e7082fd355` | The re-audit report (Portuguese) |
 | [`FINDINGS.json`](FINDINGS.json) | `86b0a30c06014f30830f9958dfa1c39acfc64a3aec6563758f63451a829c56a4` | The findings, machine-readable (also inside the archive) |
-| `DOMINO_V2_REAUDIT_EVIDENCE.zip` | `6946b9a5b33d35585bd7fe1c36a8fffee5257421d40319a875c50c1de5209352` | The evidence: 332,566 bytes, 68 members, with an internal manifest |
+| `DOMINO_V2_REAUDIT_EVIDENCE.zip` (private original) | `6946b9a5b33d35585bd7fe1c36a8fffee5257421d40319a875c50c1de5209352` | Original delivered evidence: 332,566 bytes, 68 members. Preserved in the private backup; this original ZIP is omitted from the public checkout. |
+| [`DOMINO_V2_REAUDIT_EVIDENCE_PUBLIC_SANITIZED.zip`](DOMINO_V2_REAUDIT_EVIDENCE_PUBLIC_SANITIZED.zip) | `078a0287cad7d84391c991610a11ed7ad63b7ffe5344679cb9cbbd0f8a4dfce5` | Public sanitized derivative: 335,841 bytes, 70 members. 8 original members contain path redactions; two added members explain and verify the derivative. |
 | [`DELIVERY_RECEIPT.json`](DELIVERY_RECEIPT.json) | `18a6fdbc074e4ca63017c6d7d13a6d192b3e926f0af2d0931696c3ac9e73ab51` | The receipt with the three hashes above |
 
 ```bash
-cd reports/v2-audit-2026-10-04.2 && shasum -a 256 REAUDITORIA_DOMINO_V2.md FINDINGS.json DOMINO_V2_REAUDIT_EVIDENCE.zip DELIVERY_RECEIPT.json
+cd reports/v2-audit-2026-10-04.2 && shasum -a 256 REAUDITORIA_DOMINO_V2.md FINDINGS.json DOMINO_V2_REAUDIT_EVIDENCE_PUBLIC_SANITIZED.zip DELIVERY_RECEIPT.json
 ```
 
 **Neither audit authorized a deployment.** The tag and a deployment are separate decisions (docs/v2/FREEZE.md, `v2-release-YYYY-MM-DD`).

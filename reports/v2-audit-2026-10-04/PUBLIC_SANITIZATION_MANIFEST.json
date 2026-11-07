@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "kind": "domino-public-sanitized-audit-archive-checksum",
+  "notice": "Sanitized derivative, not the original delivery, unchanged audit freeze, or a new independent audit. Historical receipts, freezes, original manifests and source hashes describe the private original evidence.",
+  "original_archive": {
+    "filename": "DOMINO_V2_AUDIT_EVIDENCE.zip",
+    "sha256": "db3a30d7b6cdb8ab8734f160ff1a8a5db5aeab6ed186c577f7ef7ff93976650e",
+    "bytes": 996367,
+    "members": 131,
+    "availability": "Preserved in the private backup; omitted from the public checkout."
+  },
+  "public_archive": {
+    "filename": "DOMINO_V2_AUDIT_EVIDENCE_PUBLIC_SANITIZED.zip",
+    "sha256": "72a25218245bd05beef6d0b218d1c00945c80176d66461eb6c3b8f90e93fe732",
+    "bytes": 1005888,
+    "members": 133
+  },
+  "internal_manifest": "PUBLIC_SANITIZATION_MANIFEST.json",
+  "modified_members": [
+    "evidence/checks-summary.json",
+    "evidence/checks/results.json",
+    "evidence/ci-failed-job-111449829937.log",
+    "evidence/cold-instructions/clone.log",
+    "evidence/cold-instructions/results.json",
+    "evidence/environment.json",
+    "evidence/slither-triage/REPORT.md",
+    "evidence/slither-triage/triage.json",
+    "evidence/slither/receipt.json",
+    "evidence/slither/results.json",
+    "evidence/slither/run.log",
+    "evidence/v1-gate-prerequisite/receipt.json"
+  ],
+  "redacted_home_prefix_occurrences": 2484,
+  "validation": {
+    "zip_crc": "passed",
+    "json_members_parsed": 33,
+    "all_original_member_names_retained": true,
+    "unchanged_original_manifest": true,
+    "non_redacted_member_bytes_unchanged": true,
+    "home_prefix_scan": "no remaining matches",
+    "contracts_or_bytecode_modified": false
+  }
+}

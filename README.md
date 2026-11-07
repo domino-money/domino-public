@@ -1,5 +1,7 @@
 # Domino
 
+Publication provenance: [public sanitization candidate](docs/PUBLIC_SANITIZATION.md).
+
 Private source repository for a wallet-friendly Uniswap v4 liquidity app on Robinhood Chain. The approved alpha includes self-compounding and Domino successor positions. The product UI is English, playful and modern with restrained retro details.
 
 ## Current status

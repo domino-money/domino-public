@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "kind": "domino-public-sanitized-audit-archive-checksum",
+  "notice": "Sanitized derivative, not the original delivery, unchanged audit freeze, or a new independent audit. Historical receipts, freezes, original manifests and source hashes describe the private original evidence.",
+  "original_archive": {
+    "filename": "DOMINO_V2_REAUDIT_EVIDENCE.zip",
+    "sha256": "6946b9a5b33d35585bd7fe1c36a8fffee5257421d40319a875c50c1de5209352",
+    "bytes": 332566,
+    "members": 68,
+    "availability": "Preserved in the private backup; omitted from the public checkout."
+  },
+  "public_archive": {
+    "filename": "DOMINO_V2_REAUDIT_EVIDENCE_PUBLIC_SANITIZED.zip",
+    "sha256": "078a0287cad7d84391c991610a11ed7ad63b7ffe5344679cb9cbbd0f8a4dfce5",
+    "bytes": 335841,
+    "members": 70
+  },
+  "internal_manifest": "PUBLIC_SANITIZATION_MANIFEST.json",
+  "modified_members": [
+    "evidence/checks/results.json",
+    "evidence/contract-delta/REPORT.md",
+    "evidence/contract-delta/result.json",
+    "evidence/environment.json",
+    "evidence/evidence-delta/REPORT.md",
+    "evidence/evidence-delta/result.json",
+    "evidence/tooling-delta/REPORT.md",
+    "evidence/tooling-delta/result.json"
+  ],
+  "redacted_home_prefix_occurrences": 58,
+  "validation": {
+    "zip_crc": "passed",
+    "json_members_parsed": 37,
+    "all_original_member_names_retained": true,
+    "unchanged_original_manifest": true,
+    "non_redacted_member_bytes_unchanged": true,
+    "home_prefix_scan": "no remaining matches",
+    "contracts_or_bytecode_modified": false
+  }
+}

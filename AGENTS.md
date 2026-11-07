@@ -1,5 +1,9 @@
 # Shared assistant instructions
 
+For this sanitized derivative, read [PUBLIC_SANITIZATION.md](docs/PUBLIC_SANITIZATION.md).
+Original audit freezes remain privately preserved; `sanitized/` tags identify
+rewritten derivatives and must not be described as the original signed freezes.
+
 This file applies to the entire Domino repository. **Execute first, plan afterward.** Follow [EXECUTION_POLICY.md](docs/EXECUTION_POLICY.md), the owner decision of 12 September 2026. It overrides older process/ownership/approval gates in this repository and its issues. Read only the relevant current code and documentation needed to act. The user's latest instructions take precedence.
 
 ## Product and accounting
