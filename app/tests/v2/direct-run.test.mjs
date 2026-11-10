@@ -51,7 +51,8 @@ function harness(answers, { send = async () => HASH, current = () => true, realF
     // The hook's own pause before 2026-10-14 (kept so the old hook can be run against these cases).
     './constants': { RECEIPT_POLL_MS: 1_500 },
     './errors': { actionError: (error) => ({ copy: 'failed', code: error instanceof Error ? error.message : 'unknown', recovery: 'none' }) },
-    './wallet': { connectPosition: async () => connection },
+    // Changed on purpose 2026-11-09 (the core-flows fix, item b): the hook asks whether a direct exit may be sent under its gate.
+    './wallet': { connectPosition: async () => connection, directSendable: (gate) => gate.mode === 'live' },
     '../lists/positionSync': { positionChanged: (change) => announced.push(change) },
     '../../v2/chains': { v2Chain: () => ({ uniswap: { v3: { positionManager: '0x03' }, v4: { positionManager: '0x04' } } }), positionManagerOf: (chain, dex) => chain.uniswap[dex === 4 ? 'v4' : 'v3'].positionManager },
     '../receiptWait': wait,

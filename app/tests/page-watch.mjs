@@ -43,6 +43,8 @@
  * test has to remember that, and no teardown lands in the middle of a read.
  */
 
+import { createRequire } from 'node:module';
+
 const ABORTED = 'net::ERR_ABORTED';
 
 /** Per page: its problems, its /api trail per document, and what it is doing now. */
@@ -244,13 +246,24 @@ export async function reload(page, route = '/', { wait = true } = {}) {
   if (wait) await shown(page, route);
 }
 
-/** Goes to another screen of the same app, as a link or a hash would. */
+/** The page's own address for a route (functions/_lib/pagePaths.ts, compiled by npm run build:unit): an older name resolved. */
+function ownAddress(route) {
+  const { canonicalPath } = createRequire(import.meta.url)('../.test-build/app/functions/_lib/pagePaths.js');
+  const cut = route.indexOf('#');
+  return `${canonicalPath(cut === -1 ? route : route.slice(0, cut))}${cut === -1 ? '' : route.slice(cut)}`;
+}
+
+/**
+ * Goes to another screen of the same app, as a link from before would (`#/…`). Changed on purpose 2026-11-07 (pages of
+ * their own, src/lib/route.ts): the app then shows the page's own address, `route` without the `#` (an older name as the
+ * page's own).
+ */
 export async function go(page, route, { wait = true } = {}) {
   leaving(page);
   await page.evaluate((hash) => {
     location.hash = hash;
   }, `#${route}`);
-  await page.waitForFunction((hash) => location.hash === hash, `#${route}`);
+  await page.waitForFunction((want) => `${location.pathname}${location.hash}` === want, ownAddress(route));
   if (wait) await shown(page, route);
 }
 

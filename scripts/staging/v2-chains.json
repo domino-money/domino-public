@@ -18,6 +18,12 @@
         "arb-mainnet.g.alchemy.com",
         "arb1.arbitrum.io"
       ]
+    },
+    "elysium-99901": {
+      "egressHosts": [
+        "elysium-mainnet.core.chainstack.com",
+        "elysium-mainnet.g.alchemy.com"
+      ]
     }
   }
 }

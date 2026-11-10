@@ -27,6 +27,8 @@ The [reviewed runner policy](../scripts/ci/runner-policy.json) covers 24 expande
 
 Existing triggers, assertions, contract/compiler freezes, per-main-commit execution, preview ordering/hold checks and release conditions are retained. The [execution policy](EXECUTION_POLICY.md) and GitHub branch protection are unchanged. There is **no automatic fallback to GitHub-hosted compute** if Clawber is unavailable.
 
+For explicit recovery, repository variable `DOMINO_CI_RUNNER_POOL=github-hosted` routes the updated **CI** and **Position journeys** workflows to Ubuntu 24.04 on GitHub. An unset or different value restores their exact Clawber labels. The four manual workflows, including the pilot, keep their existing routing. Changing this variable does not transfer older jobs whose workflow already requested self-hosted labels.
+
 ## Capacity, storage and network
 
 | Property | Current configuration |
@@ -34,9 +36,9 @@ Existing triggers, assertions, contract/compiler freezes, per-main-commit execut
 | Slots | `1` through `8`, one disposable VM/job per slot |
 | Each guest | Ubuntu 24.04 x64; size selected by the trusted job policy; 80 GiB sparse writable disk capacity |
 | Aggregate guest allocation | At most 14 vCPU and 56 GiB guest RAM, with at most two heavy jobs; hypervisor overhead is separate |
-| Storage | Existing SSD mount, `/mnt/narrative-ssd/domino-ci-pilot`; no new host volume |
+| Storage | Dedicated internal NVMe mount `/mnt/domino-ci`; CI files under `/mnt/domino-ci/domino-ci-pilot` |
 | Trusted host source | Root-owned broker, controller and policy under `/opt/domino-ci` |
-| Base image | `/mnt/narrative-ssd/domino-ci-pilot/base/ubuntu-24.04-ci.qcow2`, root-owned mode `0444` |
+| Base image | `/mnt/domino-ci/domino-ci-pilot/base/ubuntu-24.04-ci.qcow2`, root-owned mode `0444` |
 | Prepared base SHA-256 | `73835938384dafb7c497e6141f44fa4798574c57bf59adddb768d2bf33a992cf` |
 | Dedicated network | `domino-ci-pilot`, `/28`; fixed guest host octets `.2` through `.9`, one per slot; network autostart enabled |
 | Lifecycle | Single-job JIT runner; bounded lifetime; guest, writable disk, seed and job state removed afterward |
@@ -98,7 +100,7 @@ Existing workflow `contents: read` permissions are preserved. The pilot explicit
 
 ## Configuration and service operation
 
-Install reviewed broker, controller, `clawber_resources.py` and policy under root-owned, non-writable-by-jobs `/opt/domino-ci`. The controller's legacy manual source directory also needs the resource module beside it. Configuration is `/etc/domino-ci/broker.json`, root-owned mode `0600`; broker state is `/var/lib/domino-clawber-broker`, mode `0700`. The following schema example uses illustrative App, installation and runner-group IDs. Replace all three with the provisioned IDs before installation:
+Install reviewed broker, controller, `clawber_resources.py` and policy under root-owned, non-writable-by-jobs `/opt/domino-ci`. The manual launcher uses that same installed controller. Configuration is `/etc/domino-ci/broker.json`, root-owned mode `0600`; broker state is `/var/lib/domino-clawber-broker`, mode `0700`. The following schema example uses illustrative App, installation and runner-group IDs. Replace all three with the provisioned IDs before installation:
 
 ```json
 {
@@ -113,7 +115,9 @@ Install reviewed broker, controller, `clawber_resources.py` and policy under roo
 }
 ```
 
-Omit `private_key` so systemd's credential directory supplies it. Omit `base_image` to use the controller's pinned SSD default; the broker requires every ancestor of an explicitly configured image path to be root-owned, while this shared SSD mount is administrator-owned. The service runs the host broker with `/opt/domino-ci/runner-policy.json`; code, configuration, parents and state must satisfy its root-ownership/no-symlink/permission checks.
+Omit `private_key` so systemd's credential directory supplies it. Omit `base_image` to use the controller's pinned NVMe default; if it is configured explicitly, update it to the new base path and retain root ownership for every ancestor. The service runs the host broker with `/opt/domino-ci/runner-policy.json`; code, configuration, parents and state must satisfy its root-ownership/no-symlink/permission checks.
+
+The service requires the CI filesystem and checks that `/mnt/domino-ci` is a mountpoint. The controller repeats that mount check before launch or slot recovery; the image builder checks it before creating directories. These guards prevent an absent volume from redirecting CI writes to the system disk. They do not establish device health or replace an operator's UUID verification.
 
 ```sh
 sudo systemctl daemon-reload
@@ -149,6 +153,14 @@ sudo python3 /opt/domino-ci/clawber_pilot.py --slot 8 --cleanup-slot
 
 Cleanup validates exact domain, slot and job-directory identities before removing anything. If a domain cannot be confirmed absent, or recovery metadata is missing/invalid, it fails closed and preserves files for inspection. Never replace this with prefix-wide `virsh destroy`, firewall resets, or broad disk deletion. Verify guest domains, job directories and corresponding GitHub registrations are gone, then restart the broker. Interrupted jobs require an explicit same-SHA rerun; restarting the broker does not turn them into successful checks.
 
+### Moving from the former USB storage
+
+The initial rollout used `/mnt/previous-ci/domino-ci-pilot`. The source configuration now targets the dedicated internal NVMe path above. Before installing the new controller, drain and stop the broker, verify all eight slots with the old controller, and confirm that no CI guest remains. Preserve the broker state: it records the exact GitHub runner identities needed for recovery.
+
+Mount the selected CI filesystem by its verified UUID at `/mnt/domino-ci`. Keep the mountpoint, CI root, `base` and `jobs` root-owned without group/other write permission; root, base and jobs ancestors must allow QEMU traversal. Copy the immutable base, verify its configured SHA-256, retain mode `0444`, and start with an empty `jobs` directory. A copied checksum file may embed the old absolute filename; regenerate its filename record after verifying the image bytes. Do not move live job directories or rewrite their ownership metadata to fit the new location: metadata, VM XML and overlay backing paths contain absolute filenames.
+
+Install the reviewed controller and unit, and replace any host-local mount dependency drop-in that still requires the former USB path. Keep credentials and `/var/lib/domino-clawber-broker` on their existing paths. Validate the unit, mount source, base digest and all eight slot cleanups before admitting work. This migration changes storage only; runner policy, guest isolation and the resource budget stay unchanged.
+
 ## Manual benchmark and break-glass operation
 
 The manual pilot uses the shared [workload script](../scripts/ci/run-pilot-workload.sh). Default dispatch uses Clawber only:
@@ -159,6 +171,8 @@ gh workflow run clawber-ci-pilot.yml \
 ```
 
 Request a hosted benchmark control explicitly with `-f compare_hosted=true`. Both legs use the same dispatched SHA and runtime patch versions resolved by admission. Record cold/warm cache state, provisioning/queue/job times, resource pressure, failures and teardown separately. No queued guest job is automatically transferred to a hosted pool.
+
+To qualify migrated storage while ordinary CI remains on GitHub, keep `DOMINO_CI_RUNNER_POOL=github-hosted` and dispatch the pilot above with the broker running. Its preflight and `read-worker (clawber)` job still use disposable Clawber guests. Before removing the broker's drain marker, inspect the self-hosted queue so older pending jobs are not mistaken for part of the pilot. Confirm both pilot jobs succeed and their runners, guests and job directories are cleaned up. Confirm the pre-existing queue has been admitted on GitHub before restoring ordinary Clawber routing after the pilot; already-started hosted jobs keep their assigned runners.
 
 The older [manual launcher](../scripts/ci/start-clawber-pilot.py) is break-glass tooling only, with the broker stopped. It requires an already successful pilot preflight at the exact run/SHA before registration; it cannot bootstrap a queued self-hosted preflight. It accepts historical and current pilot routing labels and keeps the operator's GitHub access on the operator's computer. Use only after inspecting the run, never concurrently with automatic slot admission:
 

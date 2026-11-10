@@ -244,6 +244,33 @@ class AutomationTests(unittest.TestCase):
         _, levels = self.run_cycle(state, [], NOW + 121)
         self.assertEqual(levels['automation:base-8453:passes'], monitor.CRIT)
 
+    def test_large_journal_pass_refreshes_a_stale_automation(self):
+        unit = 'domino-v2-automation@robinhood-4663.service'
+        cfg = config(automation={'robinhood-4663': {'unit': unit, 'passSeconds': 15}})
+        report = pass_line(chain='robinhood-4663', vaults=[
+            {'vault': f'0x{i:040x}', 'target': f'0x{i + 24:040x}', 'eligible': False,
+             'reason': 'gas_above_benefit', 'feesWei': '1234567890123456789'} for i in range(24)])
+        self.assertGreater(len(report.encode('utf-8')), 4096)
+
+        def run(args):
+            # journalctl's JSON output replaces fields larger than 4096 bytes with null unless --all is set.
+            return journal((NOW, report if '--all' in args else None))
+
+        for cursor in (None, 'previous-pass'):
+            with self.subTest(cursor=cursor):
+                state = monitor.empty_state()
+                stale = monitor.Cycle(NOW)
+                monitor.check_automation(stale, cfg, state, Reader({unit: [(NOW - 9 * 3600, pass_line())]}))
+                self.assertEqual({c.key: c.level for c in stale.checks}['automation:robinhood-4663:passes'],
+                                 monitor.CRIT)
+                entries = monitor.journal_lines(unit, cursor, run)
+                cycle = monitor.Cycle(NOW + 15)
+                monitor.check_automation(cycle, cfg, state, lambda _: entries)
+                self.assertEqual(state['automation']['robinhood-4663']['lastPassAt'], NOW)
+                self.assertEqual(state['automation']['robinhood-4663']['vaults'], 24)
+                self.assertEqual({c.key: c.level for c in cycle.checks}['automation:robinhood-4663:passes'],
+                                 monitor.OK)
+
     def test_consecutive_errors_warn_then_turn_critical_and_a_pass_clears_them(self):
         state = monitor.empty_state()
         error = json.dumps({'error': 'v2_rpc_unavailable'})

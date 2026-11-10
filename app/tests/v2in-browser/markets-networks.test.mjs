@@ -43,7 +43,7 @@ function readings({ lookalike = false } = {}) {
 const CAT_PAIRS = `https://api.dexscreener.com/token-pairs/v1/base/${TOKEN}`;
 const catDex = (url) => (url === CAT_PAIRS ? [{ chainId: 'base', dexId: 'uniswap', labels: ['v4'], pairAddress: poolIdOf(POOL), baseToken: { address: TOKEN, symbol: 'CAT' }, quoteToken: { address: ZERO, symbol: 'ETH' }, liquidity: { usd: 250000 }, volume: { h24: 50000 } }] : undefined);
 
-async function markets({ live = [], originOpen = true, failed = false, hash = '#/markets', lookalike = false, dex = null, answer = null, clock = false } = {}) {
+async function markets({ live = [], originOpen = true, failed = false, hash = '#/markets', lookalike = false, dex = null, answer = null, clock = false, routes = [], prepare = null } = {}) {
   const chain = createV2Chain({ chainId: 8453, timestamp: Math.floor(Date.now() / 1000) });
   chain.switchTo(4663);
   const read = createReadStub();
@@ -51,9 +51,9 @@ async function markets({ live = [], originOpen = true, failed = false, hash = '#
   const s = await openJourney(browser, chain, {
     dist: WALLET_V2_DIST, hash, connect: false, originOpen, live,
     contracts: Object.fromEntries(live.map(id => [id, contractsFor(id)])),
-    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true, dex,
+    routes: [...routes, (request, url) => read.handle(request, url) ?? undefined], artwork: true, dex,
     chainReads: { answer: answer ? answer(chainReads) : failed ? () => ({ status: 501, body: { error: 'not_enabled' } }) : chainReads.answer },
-    clock,
+    clock, prepare,
   });
   return { ...s, chain, chainReads, read };
 }
@@ -94,16 +94,16 @@ test('Markets searches names and contracts on every creation network, keeps same
     const poolKey = poolIdOf(POOL).toLowerCase();
     const row = view.locator(`[data-pool-row="${poolKey}"]`);
     await row.waitFor({ timeout: 30_000 });
-    assert.equal(await row.locator('a.dm-mkt-name').getAttribute('href'), `#/pool/network/8453/${poolKey}/${TOKEN}`, 'the row opens the pool page on its network');
+    assert.equal(await row.locator('a.dm-mkt-name').getAttribute('href'), `/pool/network/8453/${poolKey}/${TOKEN}`, 'the row opens the pool page on its network');
     assert.equal(await row.locator('[data-pool-price="usable"]').count(), 1, 'the price column, from the pool’s own state');
     assert.equal(await row.locator('[data-chain-chip="8453"]').innerText(), 'Base');
     assert.equal(await view.locator('input, button[data-open-pool], [data-network-new-position]').count(), 0, 'no deposit selection and no New position on a token page');
     await inspectSizes(page);
     await row.click();
-    await page.waitForFunction(expected => window.location.hash === expected, `#/pool/network/8453/${poolKey}/${TOKEN}`);
+    await page.waitForFunction(expected => location.pathname + location.hash === expected, `/pool/network/8453/${poolKey}/${TOKEN}`);
     const pool = page.locator(`[data-pool-workspace="${poolKey}"][data-pool-network="8453"]`);
     await pool.waitFor({ timeout: 30_000 });
-    assert.equal(await pool.locator('[data-new-position]').getAttribute('href'), `#/new/network/8453/${TOKEN}/${poolKey}`);
+    assert.equal(await pool.locator('[data-new-position]').getAttribute('href'), `/new/network/8453/${TOKEN}/${poolKey}`);
     await page.evaluate(token => { window.location.hash = `#/markets/network/8453/${token}`; }, TOKEN);
     await view.locator('#stored-token-title').filter({ hasText: 'CAT' }).waitFor();
     // A direct chain change with the same contract must immediately drop the old token metadata.
@@ -289,7 +289,7 @@ test('replica: a Base pool’s page is Robinhood Chain’s, fed from Base’s re
     assert.equal((await sheet.locator('[data-chain-chip="8453"]').innerText()).trim(), 'Base');
     await sheet.locator('[data-figures-sources] summary').click();
     assert.match(await sheet.locator('[data-figures-sources]').innerText(), /Data sources\s*DEX Screener, not checked by Domino/);
-    assert.equal(await sheet.locator('[data-pool-figures-open]').getAttribute('href'), `#/pool/network/8453/${poolKey}/${TOKEN}`, 'Open pool leads to the pool’s own page');
+    assert.equal(await sheet.locator('[data-pool-figures-open]').getAttribute('href'), `/pool/network/8453/${poolKey}/${TOKEN}`, 'Open pool leads to the pool’s own page');
     await page.keyboard.press('Escape');
     await sheet.waitFor({ state: 'detached', timeout: 10_000 });
     await row.click();
@@ -307,7 +307,7 @@ test('replica: a Base pool’s page is Robinhood Chain’s, fed from Base’s re
     assert.equal(await pool.locator('.dm-pool-a-range').count(), 1, 'the typical range');
     assert.equal(await pool.locator('.dm-pool-a-chart, .dm-pool-a-recent, [data-history-apr]').count(), 0, 'no block without data');
     assert.equal(await pool.locator('[data-pool-offlist]').count(), 1, 'Robinhood Chain’s caution for a pool off Domino’s list');
-    assert.equal(await pool.locator('[data-new-position]').getAttribute('href'), `#/new/network/8453/${TOKEN}/${poolKey}`);
+    assert.equal(await pool.locator('[data-new-position]').getAttribute('href'), `/new/network/8453/${TOKEN}/${poolKey}`);
     assert.doesNotMatch(await page.locator('main').innerText(), /unavailable|not available|coming soon|as of/i, 'no notice about what is missing');
     await pool.locator('[data-pool-details] summary').click();
     const details = await pool.locator('[data-pool-details]').innerText();
@@ -341,5 +341,113 @@ test('replica: a Base pool’s page is Robinhood Chain’s, fed from Base’s re
     const asked = s.read.requests.map((request) => `${request.path} ${request.body ?? ''}`.toLowerCase());
     assert.deepEqual(asked.filter((line) => line.includes(poolKey.slice(2)) || line.includes(TOKEN.slice(2))), [], 'no Robinhood Chain read names the Base pool or token');
     noWalletActions(chain);
+  } finally { await s.close(); }
+});
+
+// Added 2026-11-07 (the live site that day: Base USDC's and Arbitrum One WETH's WETH/USDC rows had dashes for TVL, 24h
+// volume and APR). DEX Screener lists 30 pairs a token, not ranked by liquidity, and those tokens' 30 named none of the
+// pools their pages list. Here the page's DEX resolver is built as production builds it (our edge first), behind our
+// edge's real route code (tests/support/dex-edge-route.mjs), over a provider whose 30 pairs for CAT name none of CAT's
+// pools: the rows they leave out are asked of our edge by their own names, once, and the token page, the figures sheet,
+// the pool's page and New position's list show DEX Screener's own figures where the dashes were. The provider is never
+// asked from the page.
+test('the 30-pair cap: a Base pool CAT’s 30 pairs leave out is asked of our edge by its id; its row, sheet, page and New position’s list show DEX Screener’s figures', async () => {
+  const { createDexEdgeRoute, createDexUpstream, edgeOnInTestBuild } = await import('../support/dex-edge-route.mjs');
+  const poolKey = poolIdOf(POOL).toLowerCase();
+  // CAT's 30 pairs: other exchanges, other tokens, never CAT's Uniswap pool.
+  const thirty = Array.from({ length: 30 }, (_, i) => ({
+    chainId: 'base', dexId: 'aerodrome', pairAddress: `0x${(i + 1).toString(16).padStart(40, 'a')}`, baseToken: { address: TOKEN, symbol: 'CAT' },
+    quoteToken: { address: `0x${(i + 1).toString(16).padStart(40, 'b')}`, symbol: `T${i}` }, liquidity: { usd: 1000 + i }, volume: { h24: 10 },
+  }));
+  const upstream = createDexUpstream({ byUrl: (url) => {
+    if (url === `https://api.dexscreener.com/token-pairs/v1/base/${TOKEN}`) return thirty;
+    if (url === `https://api.dexscreener.com/latest/dex/pairs/base/${poolKey}`) {
+      return { schemaVersion: '1.0.0', pairs: [{ chainId: 'base', dexId: 'uniswap', labels: ['v4'], pairAddress: poolKey, baseToken: { address: TOKEN, symbol: 'CAT' }, quoteToken: { address: ZERO, symbol: 'ETH' }, liquidity: { usd: 250000 }, volume: { h24: 50000 } }], pair: null };
+    }
+    return url.startsWith('https://api.dexscreener.com/latest/dex/pairs/') ? { schemaVersion: '1.0.0', pairs: null, pair: null } : undefined;
+  } });
+  const edge = createDexEdgeRoute(upstream);
+  let rewrites = null;
+  const s = await markets({ live: [8453, 42161], routes: [edge.handle], hash: `#/markets/network/8453/${TOKEN}`, prepare: async (context, origin) => { rewrites = await edgeOnInTestBuild(context, origin); } });
+  try {
+    const { page, chain } = s;
+    const view = page.locator('[data-network-token-view="8453"]');
+    const row = view.locator(`[data-pool-row="${poolKey}"]`);
+    await row.locator('[data-figure-source="discovered"]').first().waitFor({ timeout: 30_000 });
+    assert.equal(rewrites.count, 1, 'the page’s DEX resolver is built as production builds it (our edge first)');
+    const rowText = await row.innerText();
+    assert.match(rowText, /\$250\.0K/, 'TVL, DEX Screener’s, where the dash was');
+    assert.match(rowText, /\$50\.0K/, '24h volume, DEX Screener’s');
+    assert.match(await row.locator('[data-apr-estimate="fallback"]').innerText(), /% est\.$/, 'and the APR worked out from them');
+    const report = () => JSON.stringify({ asked: edge.asked, upstream: upstream.calls, direct: s.dexAsked });
+    assert.deepEqual(edge.asked.filter((one) => one.kind === 'pairs').map((one) => [one.path, one.tokens, one.status]), [['dex2', [poolKey], 200]], `one ask of our edge, by the pool’s id: ${report()}`);
+    assert.ok(upstream.calls.includes(`https://api.dexscreener.com/latest/dex/pairs/base/${poolKey}`), report());
+    // The figures sheet: the same figures.
+    await row.locator('button[data-pool-figures]').click();
+    const sheet = page.locator('[data-pool-figures-dialog]');
+    await sheet.waitFor({ timeout: 10_000 });
+    assert.match(await sheet.locator('[data-figures-summary]').innerText(), /% est\.[\s\S]*\$250\.0K[\s\S]*\$50\.0K/);
+    await page.keyboard.press('Escape');
+    await sheet.waitFor({ state: 'detached', timeout: 10_000 });
+    // The pool's page: the same figures, its earnings estimate on them.
+    await row.click();
+    const pool = page.locator(`[data-pool-workspace="${poolKey}"][data-pool-network="8453"]`);
+    await pool.waitFor({ timeout: 30_000 });
+    await pool.locator('[data-pool-earnings="ready"]').waitFor({ timeout: 30_000 });
+    const figures = await pool.locator('[data-pool-figures]').innerText();
+    assert.match(figures, /APR[\s\S]*% est\./);
+    assert.match(figures, /24h volume[\s\S]*\$50\.0K/);
+    assert.match(figures, /TVL[\s\S]*\$250\.0K/);
+    assert.doesNotMatch(figures, /no recent fee rate/i);
+    // New position's list on Base: the pool's row with the same figures.
+    await pool.locator('[data-new-position]').click();
+    await page.locator(`[data-chosen-pool="${poolKey}"]`).waitFor({ timeout: 30_000 });
+    await page.locator(`[data-chosen-pool="${poolKey}"]`).getByRole('button', { name: 'Change pool', exact: true }).click();
+    const listed = page.locator(`[data-picker="pool"][data-picker-network="8453"] li[data-pool-key="${poolKey}"]`);
+    await listed.locator('[data-provider-figure="attributed"]').first().waitFor({ timeout: 30_000 });
+    assert.deepEqual(await listed.locator('[data-provider-figure]').evaluateAll((cells) => cells.map((cell) => [cell.getAttribute('data-provider'), cell.innerText.replace(/\s+/g, ' ').trim()])), [
+      ['dexscreener', 'TVL $250.0K'],
+      ['dexscreener', '24h volume $50.0K'],
+    ]);
+    await edge.settle();
+    // Asked once for every screen (a name is not asked again within a minute), and never of the provider by the page.
+    assert.equal(upstream.calls.filter((url) => url.includes('/latest/dex/pairs/')).length, 1, report());
+    assert.deepEqual(s.dexAsked, [], `the provider is never asked from the page: ${report()}`);
+    assert.ok(edge.asked.every((one) => one.path === 'dex2' && one.status === 200), report());
+    noWalletActions(chain);
+  } finally { await s.close(); }
+});
+
+// Added 2026-11-07: the pools asked by name are asked again beside their token a minute before their figures would age
+// (components/read/screens/PoolPicker.tsx useNetworkPools), so the row keeps its figures past ten minutes and never shows
+// the "more than 10 minutes old" dash in between.
+test('the 30-pair cap: a pool asked by name is asked again a minute before its figures would age, and keeps them', async () => {
+  const { createDexEdgeRoute, createDexUpstream, edgeOnInTestBuild } = await import('../support/dex-edge-route.mjs');
+  const poolKey = poolIdOf(POOL).toLowerCase();
+  const upstream = createDexUpstream({ byUrl: (url) => {
+    if (url === `https://api.dexscreener.com/token-pairs/v1/base/${TOKEN}`) return [];
+    if (url === `https://api.dexscreener.com/latest/dex/pairs/base/${poolKey}`) {
+      return { schemaVersion: '1.0.0', pairs: [{ chainId: 'base', dexId: 'uniswap', labels: ['v4'], pairAddress: poolKey, baseToken: { address: TOKEN, symbol: 'CAT' }, quoteToken: { address: ZERO, symbol: 'ETH' }, liquidity: { usd: 250000 }, volume: { h24: 50000 } }], pair: null };
+    }
+    return undefined;
+  } });
+  const edge = createDexEdgeRoute(upstream);
+  const s = await markets({ live: [8453, 42161], routes: [edge.handle], hash: `#/markets/network/8453/${TOKEN}`, clock: true, prepare: async (context, origin) => { await edgeOnInTestBuild(context, origin); } });
+  try {
+    const { page } = s;
+    const row = page.locator(`[data-network-token-view="8453"] [data-pool-row="${poolKey}"]`);
+    await row.locator('[data-figure-source="discovered"]').first().waitFor({ timeout: 30_000 });
+    const byName = () => edge.asked.filter((one) => one.kind === 'pairs').length;
+    assert.equal(byName(), 1);
+    // Nine minutes and ten seconds on: asked again, by its name, before its figures are ten minutes old.
+    await page.clock.fastForward(9 * 60_000 + 10_000);
+    for (let step = 0; step < 40 && byName() < 2; step++) await page.waitForTimeout(100);
+    assert.equal(byName(), 2, JSON.stringify(edge.asked));
+    // Past the first figures' ten minutes: the row still shows DEX Screener's figures, never the "too old" dash.
+    await page.clock.fastForward(60_000);
+    await page.waitForTimeout(500);
+    assert.match(await row.innerText(), /\$250\.0K[\s\S]*\$50\.0K/);
+    assert.equal(await row.locator('[data-provider-reason="dexscreener_too_old"], [title*="more than 10 minutes old"]').count(), 0);
+    assert.deepEqual(s.dexAsked, [], 'the provider is never asked from the page');
   } finally { await s.close(); }
 });

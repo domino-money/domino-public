@@ -86,7 +86,7 @@ test('each read-v6 position is a row: chain and DEX named, its own page, open or
   const [root, successor, plain, unavailable, unread] = rows;
   assert.equal(root.chain, 'Robinhood Chain');
   assert.equal(root.dexName, 'Uniswap v4');
-  assert.equal(root.href, '#/positions/robinhood-v4-7', 'the shared route helper (src/v2in/route.ts)');
+  assert.equal(root.href, '/positions/robinhood-v4-7', 'the shared route helper (src/v2in/route.ts)');
   assert.equal(root.tab, 'open');
   assert.equal(root.state, 'in-range');
   assert.equal(successor.state, 'out-of-range');

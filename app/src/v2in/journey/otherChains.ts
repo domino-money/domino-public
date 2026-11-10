@@ -87,6 +87,24 @@ type Readable = ReadGate
 const SEARCH_LIMIT = 8
 /** Quiet re-asks of a failed name search, per network and text, while the list stays open (2026-10-06). */
 const SEARCH_REASKS = 3
+/**
+ * Added 2026-11-09 (core flows, the owner: nothing may load forever): how long a read through the wallet's own provider on
+ * another network may take, its network switch included, before it counts as not read. A wallet that never answered (its
+ * prompt behind a window, a locked extension) left New position's pools, and a token chosen there, loading for good, and
+ * held every later wallet step of the page behind it (./wallet.ts inTurn). Past it the list says what it says for a read
+ * that failed, and asks again by itself; the wallet's own request is left to finish.
+ */
+export const WALLET_READ_MS = 30_000
+
+/** `work` in the page's one wallet line (./wallet.ts inTurn), given up after WALLET_READ_MS so the line goes on. */
+function inTurnWithin<T>(work: () => Promise<T>): Promise<T> {
+  return inTurn(() => new Promise<T>((done, fail) => {
+    const timer = setTimeout(() => fail(new Error(WALLET_SLOW)), WALLET_READ_MS)
+    work().then((value) => { clearTimeout(timer); done(value) }, (error: unknown) => { clearTimeout(timer); fail(error) })
+  }))
+}
+const WALLET_SLOW = 'wallet_read_slow'
+const walletSlow = (error: unknown) => error instanceof Error && error.message === WALLET_SLOW
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/
 
@@ -194,13 +212,15 @@ export function otherChainsFor(gates: JourneyGates | null, { walletFallback = tr
       if (said.kind === 'ok') return resolvedOf(row.chainId, row.token.address, said.body)
       if (gate.mode !== 'live' || !walletFallback) return { ok: false, ...unread(row.chainId) }
       try {
-        const [read] = await inTurn(async () => (await connectJourney(row.chainId, gate.contracts)).zap.readTokens([row.token.address as Address]))
+        const [read] = await inTurnWithin(async () => (await connectJourney(row.chainId, gate.contracts)).zap.readTokens([row.token.address as Address]))
         if (signal.aborted) return { ok: false, code: 'aborted', reason: '' }
         if (!read || read.decimals === null) return { ok: false, code: 'token_decimals_unknown', reason: JOURNEY.pool.decimalsUnknown }
         // Changed on purpose 2026-11-02 (review M1): read through the wallet, a token passing for one of the network's own
         // currencies is refused as the service's answer refuses it (./model/chainReads.ts resolvedOf).
         return usableNetworkToken(row.chainId, displayOf(row.chainId, { address: read.address, symbol: cleanSymbol(read.symbol), decimals: read.decimals }))
       } catch (error) {
+        // Changed on purpose 2026-11-09 (core flows): a wallet that did not answer in time, as a pool search that failed.
+        if (walletSlow(error)) return { ok: false, ...unread(row.chainId) }
         return { ok: false, ...failure(error, row.chainId) }
       }
     },
@@ -221,11 +241,14 @@ export function otherChainsFor(gates: JourneyGates | null, { walletFallback = tr
       }
       if (gate.mode !== 'live' || !walletFallback) return { kind: 'failed', ...unread(chainId) }
       try {
-        const read = await inTurn(async () => (await connectJourney(chainId, gate.contracts)).zap.readPools(poolsToRead(chainId, token.address as Address)))
+        const read = await inTurnWithin(async () => (await connectJourney(chainId, gate.contracts)).zap.readPools(poolsToRead(chainId, token.address as Address)))
         if (signal.aborted) return { kind: 'ok', options: [] }
         const options = listedPools(chainId, token, read, Date.now())
         return { kind: 'ok', options, facts: factsOfFound(read), subject, warned: lookalikePools(chainId, options), warnedAs: lookalikeMains(chainId, options) }
       } catch (error) {
+        // Changed on purpose 2026-11-09 (core flows): a wallet that did not answer in time is a list asked again by itself
+        // (its code is the pickers' READ_AGAIN_CODES'), never a list loading for good.
+        if (walletSlow(error)) return { kind: 'failed', ...unread(chainId) }
         return { kind: 'failed', ...failure(error, chainId) }
       }
     },
@@ -240,7 +263,11 @@ export function otherChainsFor(gates: JourneyGates | null, { walletFallback = tr
       if (signal.aborted) return null
       if (said.kind === 'ok') return rereadOf(option, ref, said.body, said.receivedAt)
       if (gate.mode !== 'live' || !walletFallback) return null
-      const [read] = await inTurn(async () => (await connectJourney(chainId, gate.contracts)).zap.readPools([ref]))
+      // (2026-11-09, core flows): within WALLET_READ_MS; a pool not read again keeps what it showed.
+      const [read] = await inTurnWithin(async () => (await connectJourney(chainId, gate.contracts)).zap.readPools([ref])).catch((error: unknown) => {
+        if (walletSlow(error)) return [null]
+        throw error
+      })
       if (signal.aborted || !read || !read.initialized) return null
       // Its figures are about the pool, not its price: they stay (2026-10-06).
       return { ...optionOf(read, option.currencies, Date.now()), liquidity: option.liquidity, volume: option.volume, providerNote: option.providerNote }
@@ -255,12 +282,16 @@ export function otherChainsFor(gates: JourneyGates | null, { walletFallback = tr
       if (pair) return pair
       if (gate.mode !== 'live' || !walletFallback) return null
       const tokens = option.currencies.map((currency) => ({ address: currency.address, symbol: currency.address, decimals: currency.decimals as number }))
-      const report = await inTurn(async () => {
+      // (2026-11-09, core flows): within WALLET_READ_MS; balances not read are said as such (null), never zero.
+      const report = await inTurnWithin(async () => {
         // Balance refresh is read-only. A service outage never moves the wallet to another network.
         await connectJourney(chainId, gate.contracts, false)
         const wallet = await browserOriginWallet()
         if (wallet.owner.toLowerCase() !== owner.toLowerCase()) return null
         return readHoldingsReport(wallet, { chainId, name: v2Chain(chainId).name, tokens })
+      }).catch((error: unknown) => {
+        if (walletSlow(error)) return null
+        throw error
       })
       if (signal.aborted || !report) return null
       const of = (token: TokenDisplay): CurrencyBalance => {

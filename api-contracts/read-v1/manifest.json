@@ -1136,15 +1136,15 @@
     },
     {
       "path": "backend/position_store.py",
-      "sha256": "8555b9b9d8b52880c91357fa2082f419ea7db517a95cd1b849e4e3acedf6314d"
+      "sha256": "651d78db97af2f12209156bf6a75b558cd68280331a29ba3c81a7bfa210825ed"
     },
     {
       "path": "backend/fee_store.py",
-      "sha256": "3171fbcc6f31f9d6074351ba6de9d8f8178708f7d919603a8abbd1de234efe48"
+      "sha256": "c94404b9acafc6e1020ec9181afe029487ac48fd11e2703a0a0f6f1d1bfe213e"
     },
     {
       "path": "backend/capital_store.py",
-      "sha256": "361fa18c778633736d89136b8db991882a772db0b18bd3957a4cb6567ba03707"
+      "sha256": "31a72ceecd71d6fb61224ee40af809808052f74e961dc1485c563fe7cd04f4aa"
     },
     {
       "path": "backend/price_history.py",

@@ -30,6 +30,14 @@ execFileSync(
     'tests/domain.test.mjs',
     'tests/load-timing.test.mjs',
     'tests/gate.test.mjs',
+    // 2026-11-07 (the owner: Domino in Google): pages of their own, their heads, the sitemap, noindex by host, one route module.
+    'tests/seo.test.mjs',
+    // 2026-11-07 (the owner's Points page, Season 1): its numbers and season, the referral link's capture, the link it
+    // shares and signs, and its points-v1 transport against the contract's own fixtures.
+    'tests/points-format.test.mjs',
+    'tests/points-capture.test.mjs',
+    'tests/points-link.test.mjs',
+    'tests/points-transport.test.mjs',
     // 2026-10-01 (platform workstream): an open tab across a release, the browser's copies, the kept formatters and the boot script.
     'tests/platform.test.mjs',
     'tests/read.test.mjs',
@@ -42,6 +50,9 @@ execFileSync(
     'tests/build-guard.test.mjs',
     // 2026-11-06 (the Elysium surface): the build's one Elysium switch, both ways, and the release build ignoring the test override.
     'tests/elysium-switch.test.mjs',
+    // 2026-11-07 (Elysium's pre-launch): the opening day in the visitor's own time zone, and where the pre-launch names may live.
+    'tests/elysium-opening.test.mjs',
+    'tests/elysium-prelaunch-guards.test.mjs',
     'tests/forwarder.test.mjs',
     'tests/edge-client.test.mjs',
     // 2026-10-01 (RPC-SPEC §2.10): Domino's own node from the edge (functions/_lib/localRpc.ts), and the six chain routes over it.
@@ -56,6 +67,9 @@ execFileSync(
     // 2026-10-01 (audit A6, A7 b, A14, B1, F7, I3): the list served at once under 5 min, its evidence line, misses coalesced,
     // the stored overview kept when settled, and DEX Screener through our own edge.
     'tests/edge-cache.test.mjs',
+    // 2026-11-07 (edge hardening): token search and read-v6's chain-pools and chain-tokens kept at the edge, and the
+    // overview's and the history's keys joining the spellings their producer answers alike.
+    'tests/edge-hardening.test.mjs',
     // 2026-10-01 (audit V1, V2, V3, I1, I2, B1-B3, A7, A22, I3): stand-in figures, a token's pools from both sources,
     // look-alikes, the featured list's count and withdrawals, and the client's side of the edge.
     'tests/markets-pacote.test.mjs',
@@ -169,6 +183,8 @@ execFileSync(
     // 2026-10-02 (RPC-SPEC §11.4, rugged97's rule 2): the fees history is the position's own ledger (the edge's route, and
     // the page's fold of it with the chain's state and this browser's readings), in place of the replay of its pool's logs.
     'tests/fees-ledger.test.mjs',
+    // 2026-11-09 (core flows, the owner: nothing may be slow): answers a ledger waits for, 1, 10 and 35 days old, and a list's.
+    'tests/fees-ledger-speed.test.mjs',
     'tests/fees-ledger-fold.test.mjs',
     // 2026-10-02 (the owner: the chart's 24H / 7D / 30D / All went missing): the periods back, each from a measured start,
     // and the page's reads of a position at chosen past blocks that give a start the history lacks (lib/fees/pastReads.ts).

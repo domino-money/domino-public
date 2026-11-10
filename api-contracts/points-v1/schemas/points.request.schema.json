@@ -1,0 +1,10 @@
+{
+  "$id": "https://domino.invalid/contracts/points-v1/points.request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "No field: the wallet is the session's.",
+  "properties": {},
+  "title": "PointsRequest",
+  "type": "object",
+  "x-contract-version": "1.0.0-rc.1"
+}

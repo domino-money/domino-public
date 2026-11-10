@@ -33,7 +33,10 @@ const ARACHNID_RUNTIME = '0x' + ARACHNID_INIT.slice(2 + 2 * 14, 2 + 2 * (14 + 69
 const SAFE_FACTORY = '0x4e1dcf7ad4e460cfd30791ccc4f9c8a4f820ec67';
 const FACTORY_CODE = synthetic('safeProxyFactory 1.4.1');
 const PROXY_CREATION = '0x' + 'ab'.repeat(40);
-const PENDING = loadProfiles().pending.elysium;
+// Changed on purpose 2026-11-09 (Elysium enabled): its disabled placeholder left api-contracts/v2/chains; the pending
+// profile these tests qualify against is that placeholder as it was, kept as the backend's fixture.
+const PENDING = readJson(join(repoRoot, 'backend/tests/fixtures/v2-pending-elysium.json'));
+const REPOSITORY_PROFILES = { ...loadProfiles(), pending: { elysium: PENDING } };
 
 /** One chain's contracts: per-chain immutables as the real ones carry them. */
 function contracts(name, chainId) {
@@ -226,15 +229,17 @@ test('the Safe references agree with deploy.mjs and the repository fixture', () 
 
 test('the committed profiles: one code hash for identical contracts, one per chain where immutables differ', () => {
   const { profiles, createxCodeHash } = defaultReferences();
-  assert.deepEqual(profiles.map(p => p.slug), ['arbitrum', 'base', 'robinhood']);
+  // Changed on purpose 2026-11-09: Elysium (99901) is the fourth committed profile, Uniswap v4 only.
+  assert.deepEqual(profiles.map(p => p.slug), ['arbitrum', 'base', 'elysium', 'robinhood']);
   const hashes = key => new Set(profiles.map(p => p[key]?.codehash).filter(Boolean));
   assert.equal(createxCodeHash, CREATE_X_CODE_HASH);
   assert.deepEqual([...hashes('createx')], [CREATE_X_CODE_HASH]);
   assert.equal(hashes('multicall3').size, 1);
   assert.equal(hashes('arachnid').size, 1);
-  assert.equal(hashes('permit2').size, 3);
-  assert.equal(hashes('poolManager').size, 3);
-  assert.deepEqual(profiles.filter(p => p.arbSys?.codehash).map(p => p.slug), ['arbitrum', 'robinhood']);
+  assert.equal(hashes('permit2').size, 4);
+  assert.equal(hashes('poolManager').size, 4);
+  assert.equal(hashes('v3Factory').size, 3);  // one per chain with v3 (its own address is an immutable); Elysium has none
+  assert.deepEqual(profiles.filter(p => p.arbSys?.codehash).map(p => p.slug), ['arbitrum', 'elysium', 'robinhood']);
   assert.equal(profiles.find(p => p.slug === 'robinhood').arbSys.codehash, viem.keccak256('0xfe'));
 });
 
@@ -635,7 +640,7 @@ test('the command line: outputs outside the checkout, never the URL or its key',
     const uniswap = join(directory, 'uniswap.json');
     writeFileSync(uniswap, JSON.stringify(uniswapOf(fake.c)));
     const argv = ['--rpc-env', 'QUALIFY_TEST_RPC', '--out', out, '--pending', 'elysium', '--uniswap', uniswap, '--stable', fake.c.stable, '--chain-id', String(CHAIN)];
-    const message = await cli(argv, { env: { QUALIFY_TEST_RPC: url } });
+    const message = await cli(argv, { env: { QUALIFY_TEST_RPC: url }, profiles: REPOSITORY_PROFILES });
     const report = readFileSync(join(out, 'report.json'), 'utf8'), draft = readFileSync(join(out, 'profile-draft.json'), 'utf8');
     for (const text of [message, report, draft]) { assert.ok(!text.includes(secret)); assert.ok(!text.includes(server.url)); }
     assert.match(message, /^Domino V2 chain qualification: chain 777001 at block 5000000 \(\d+ RPC calls, [0-9.]+ s\)$/m);
@@ -646,12 +651,12 @@ test('the command line: outputs outside the checkout, never the URL or its key',
     assert.equal(JSON.parse(report).chain.client, 'nitro/v3.9.0 behind [url] ([redacted])');
     assert.equal(JSON.parse(draft).enabled, false);
     assert.equal(JSON.parse(report).tool.commit.length, 40);
-    await assert.rejects(cli(argv, { env: { QUALIFY_TEST_RPC: url } }), /^Error: output_exists$/);
+    await assert.rejects(cli(argv, { env: { QUALIFY_TEST_RPC: url }, profiles: REPOSITORY_PROFILES }), /^Error: output_exists$/);
     // A name of this run only, so a directory an earlier failure left cannot hide a regression.
     const inside = join(repoRoot, 'scripts/v2', `qualify-test-${process.pid}-${Date.now()}`);
-    await assert.rejects(cli(['--rpc-env', 'QUALIFY_TEST_RPC', '--out', inside], { env: { QUALIFY_TEST_RPC: url } }), /output_inside_the_checkout/);
+    await assert.rejects(cli(['--rpc-env', 'QUALIFY_TEST_RPC', '--out', inside], { env: { QUALIFY_TEST_RPC: url }, profiles: REPOSITORY_PROFILES }), /output_inside_the_checkout/);
     assert.ok(!existsSync(inside));
-    await assert.rejects(cli(['--rpc-env', 'QUALIFY_TEST_RPC', '--out', join(directory, 'x'), '--pending', 'atlantis'], { env: { QUALIFY_TEST_RPC: url } }), /unknown_pending_profile/);
-    await assert.rejects(cli(['--rpc-env', 'QUALIFY_TEST_RPC', '--out', join(directory, 'x'), '--sign', 'yes'], { env: { QUALIFY_TEST_RPC: url } }), /^Error: usage/);
+    await assert.rejects(cli(['--rpc-env', 'QUALIFY_TEST_RPC', '--out', join(directory, 'x'), '--pending', 'atlantis'], { env: { QUALIFY_TEST_RPC: url }, profiles: REPOSITORY_PROFILES }), /unknown_pending_profile/);
+    await assert.rejects(cli(['--rpc-env', 'QUALIFY_TEST_RPC', '--out', join(directory, 'x'), '--sign', 'yes'], { env: { QUALIFY_TEST_RPC: url }, profiles: REPOSITORY_PROFILES }), /^Error: usage/);
   } finally { await server.close(); }
 });

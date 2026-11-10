@@ -21,6 +21,21 @@ import crosschain_api
 from crosschain_service import DECISION_KEYS, DECISION_SERVICE, candidate_failure
 from session_models import SessionError
 
+# Elysium (99901): Relay alone, USDC alone (crosschain_pins.json, 9 Nov 2026).
+ELYSIUM, ELYSIUM_USDC = 99901, '0xb47c4c8f73f009cc0c0d3f92b388d13e293f0b65'
+RELAY_DEPOSITORY = '0x4cd00e387622c35bddb9b4c962c136462338bc31'
+
+
+def with_elysium(relay_routes, solver_currencies):
+    """Relay's chain listing with Elysium's entry as GET /chains gave it on 9 Nov 2026, its solver currencies set."""
+    chains = deepcopy(relay_routes[('GET', '/chains')])
+    chains['chains'].append({'id': ELYSIUM, 'name': 'elysium', 'displayName': 'Elysium', 'vmType': 'evm',
+                             'disabled': False, 'depositEnabled': True,
+                             'protocol': {'v2': {'chainId': 'elysium', 'depository': RELAY_DEPOSITORY}},
+                             'solverCurrencies': solver_currencies})
+    relay_routes[('GET', '/chains')] = chains
+    return relay_routes
+
 DEPOSITORY = '0x4cd00e387622c35bddb9b4c962c136462338bc31'
 SPOKE_ARBITRUM = '0xe35e9842fceaca96570b734083f4a58e8f7c5f2a'
 SPOKE_BASE = '0x09aea4b2242abc8bb4bb78d537a67a245a7bec64'
@@ -118,6 +133,37 @@ class QuoteTests(unittest.TestCase):
         self.assertEqual(quote['candidates'][1]['status'], 'origin_not_supported')
         self.assertEqual(across_http.calls, [])
         self.assertEqual(len(relay_http.calls), 1)
+
+    def test_a_destination_a_provider_does_not_serve_is_not_quoted_by_it(self):
+        # Elysium: Relay alone serves it; Across is never asked, its candidate says why.
+        quote, relay_http, across_http = self.quote(body=quote_request(destination=ELYSIUM, destination_token=ELYSIUM_USDC))
+        self.assertEqual(quote['candidates'][1]['provider'], 'across')
+        self.assertEqual((quote['candidates'][1]['status'], quote['candidates'][1]['reason']),
+                         ('no_route', 'destination_not_served'))
+        self.assertEqual(across_http.calls, [])
+        self.assertEqual(len(relay_http.calls), 1)
+        self.assertEqual(relay_http.calls[0]['body']['destinationChainId'], ELYSIUM)
+        # A token Relay does not deliver there is not offered at all.
+        relay_routes, across_routes = default_routes()
+        service, relay_http, across_http = make_service(relay_routes=relay_routes, across_routes=across_routes)
+        for token in (ZERO, '0xba876237b0f021a6c6d852d6c26e107997cc5e81'):
+            with self.subTest(token=token), self.assertRaisesRegex(CrosschainError, 'invalid_request'):
+                run(service, 'quote', quote_request(destination=ELYSIUM, destination_token=token))
+        self.assertEqual((relay_http.calls, across_http.calls), ([], []))
+
+    def test_an_origin_token_its_pin_does_not_list_is_not_quoted(self):
+        # From Elysium: Relay bridges its USDC only (the pin), and no Across SpokePool is pinned there.
+        quote, relay_http, across_http = self.quote(body=quote_request(origin=ELYSIUM, origin_token=ZERO,
+                                                                       destination=8453, destination_token=USDC_BASE))
+        self.assertEqual([(c['provider'], c['status'], c['reason']) for c in quote['candidates']],
+                         [('relay', 'origin_not_supported', 'origin_token_not_pinned'),
+                          ('across', 'origin_not_supported', 'origin_chain_not_pinned')])
+        self.assertEqual((relay_http.calls, across_http.calls), ([], []))
+        self.assertEqual((quote['decision'], quote['steps']), (None, []))
+        quote, relay_http, _ = self.quote(body=quote_request(origin=ELYSIUM, origin_token=ELYSIUM_USDC,
+                                                             destination=8453, destination_token=USDC_BASE))
+        self.assertEqual(len(relay_http.calls), 1)
+        self.assertEqual(relay_http.calls[0]['body']['originChainId'], ELYSIUM)
 
     def test_the_session_wallet_cannot_be_the_fee_recipient(self):
         relay_routes, across_routes = default_routes()
@@ -507,6 +553,31 @@ class OriginsTests(unittest.TestCase):
         self.assertIn(137, weth_chains)
         # Relay's chain listing serves both; Across is asked once per destination token, never answered from the other's.
         self.assertEqual((len(relay_http.calls), len(across_http.calls)), (1, 2))
+
+    def test_origins_for_elysium_ask_relay_alone(self):
+        relay_routes, across_routes = default_routes()
+        service, relay_http, across_http = make_service(relay_routes=relay_routes, across_routes=across_routes)
+        origins = run(service, 'origins', {'destinationChainId': ELYSIUM, 'destinationToken': ELYSIUM_USDC})['origins']
+        self.assertEqual([(p['provider'], p['status'], p['reason']) for p in origins['providers']],
+                         [('relay', 'listed', None), ('across', 'unavailable', 'destination_not_served')])
+        self.assertEqual((len(relay_http.calls), across_http.calls), (1, []))
+        self.assertTrue(origins['chains'])
+        self.assertTrue(all(token['providers'] == ['relay'] for chain in origins['chains'] for token in chain['tokens']))
+
+    def test_elysium_is_an_origin_of_its_pinned_usdc_only(self):
+        relay_routes, across_routes = default_routes()
+        with_elysium(relay_routes, [{'address': ELYSIUM_USDC, 'symbol': 'USDC', 'decimals': 6},
+                                    {'address': ZERO, 'symbol': 'HYPE', 'decimals': 18},
+                                    {'address': '0x' + '44' * 20, 'symbol': 'OTHER', 'decimals': 18}])
+        service, _, _ = make_service(relay_routes=relay_routes, across_routes=across_routes)
+        origins = run(service, 'origins', {'destinationChainId': 8453, 'destinationToken': USDC_BASE})['origins']
+        chains = {chain['chainId']: chain for chain in origins['chains']}
+        self.assertEqual(chains[ELYSIUM]['name'], 'Elysium')
+        self.assertEqual(chains[ELYSIUM]['tokens'], [{'address': ELYSIUM_USDC, 'symbol': 'USDC', 'decimals': 6,
+                                                      'providers': ['relay']}])
+        # Not its own origin.
+        elysium = run(service, 'origins', {'destinationChainId': ELYSIUM, 'destinationToken': ELYSIUM_USDC})['origins']
+        self.assertNotIn(ELYSIUM, {chain['chainId'] for chain in elysium['chains']})
 
     def test_a_throttled_provider_is_reported_and_the_other_still_lists(self):
         relay_routes, across_routes = default_routes()

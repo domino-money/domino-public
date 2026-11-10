@@ -59,6 +59,26 @@
         "status": "not_configured",
         "timestamp": null
       }
+    },
+    {
+      "automationHalted": null,
+      "chainId": 99901,
+      "deployment": null,
+      "finalizedThrough": null,
+      "head": null,
+      "indexedThrough": null,
+      "lagBlocks": null,
+      "lagSeconds": null,
+      "lastError": null,
+      "operatorsAdmitted": null,
+      "reason": "deployment_not_registered",
+      "status": "unavailable",
+      "waitingReasons": {
+        "ageSeconds": null,
+        "block": null,
+        "status": "not_configured",
+        "timestamp": null
+      }
     }
   ],
   "contractVersion": "1.1.0-rc.1",

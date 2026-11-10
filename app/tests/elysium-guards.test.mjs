@@ -152,7 +152,7 @@ test('the menu links the section from the chain\'s identity and the section\'s m
   const chainImports = [...valueCode(menu).matchAll(/from '(\.\.\/(?:config|chains)\/[^']+)'/g)].map((m) => m[1]).sort();
   assert.deepEqual(chainImports, ['../chains/elysium/mode', '../config/chainIdentity']);
   assert.match(menu, /const ELYSIUM_LINKED = typeof location !== 'undefined' && sectionLinked\(location\.origin, ELYSIUM_STATUS\)/);
-  assert.match(menu, /\.\.\.\(ELYSIUM_LINKED \? \[\{ kind: 'link', href: `#\/\$\{ELYSIUM_KEY\}`, label: ELYSIUM_NAME,/);
+  assert.match(menu, /\.\.\.\(ELYSIUM_LINKED \? \[\{ kind: 'link', href: `\/\$\{ELYSIUM_KEY\}`, label: ELYSIUM_NAME,/);
   const mode = valueCode(readFileSync(join(APP, 'src/chains/elysium/mode.ts'), 'utf8'));
   assert.deepEqual([...mode.matchAll(/^\s*(?:import|export\s[^;]*\sfrom)\s.*$/gm)].map((m) => m[0]), [], 'the mode imports nothing at run time');
   const identity = strip(readFileSync(join(APP, 'src/config/chainIdentity.ts'), 'utf8'));

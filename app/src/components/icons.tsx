@@ -317,3 +317,12 @@ export function IconBook({ size, className }: IconProps) {
     </Svg>
   )
 }
+
+/** A five-pointed star: Points (added 2026-11-07, the owner's Points page, Season 1). */
+export function IconStar({ size, className }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <path d="M8 1.9l1.8 3.75 4.1.55-3 2.85.75 4.05L8 11.15 4.35 13.1l.75-4.05-3-2.85 4.1-.55z" />
+    </Svg>
+  )
+}

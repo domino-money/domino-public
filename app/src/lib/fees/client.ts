@@ -106,6 +106,42 @@ export function freshState(tokenIds: readonly string[]): void {
 }
 
 /**
+ * Added 2026-11-09 (core flows, the owner: nothing may load forever): how long one request of the state route may take
+ * before it counts as `unavailable`, and how soon a request that failed that way is made once more within the same read.
+ * A request that never answered held a position's page (and its fees card) on its loading frame for good, since an asker
+ * with no signal waits for the read's end; a failure was asked again only on the asker's own, slower schedule.
+ */
+export const STATE_DEADLINE_MS = 12_000
+export const STATE_RETRY_MS = 1_500
+/** A Retry-After longer than this is left to the asker's own schedule: no second request within the read. */
+const STATE_RETRY_AT_MOST_MS = 5_000
+
+/** One request of the state route, dropped at STATE_DEADLINE_MS or when `stop` aborts (an answer of its own then: `unavailable`). */
+async function stateOnce(tokenIds: readonly string[], fresh: boolean, stop: AbortSignal): Promise<RelayAnswer<unknown>> {
+  const deadline = new AbortController()
+  const drop = () => deadline.abort()
+  const timer = setTimeout(drop, STATE_DEADLINE_MS)
+  stop.addEventListener('abort', drop, { once: true })
+  try {
+    return await postState(tokenIds, true, { signal: deadline.signal }, fresh)
+  } finally {
+    clearTimeout(timer)
+    stop.removeEventListener('abort', drop)
+  }
+}
+
+/** The read's answer: one request, and once more a moment later after one the route could not answer (never a refusal). */
+async function stateRead(tokenIds: readonly string[], fresh: boolean, stop: AbortSignal): Promise<RelayAnswer<unknown>> {
+  const first = await stateOnce(tokenIds, fresh, stop)
+  if (first.ok || first.failure !== 'unavailable' || stop.aborted || first.retryAfterMs > STATE_RETRY_AT_MOST_MS) return first
+  await new Promise<void>((done) => {
+    const timer = setTimeout(done, Math.max(STATE_RETRY_MS, first.retryAfterMs))
+    stop.addEventListener('abort', () => { clearTimeout(timer); done() }, { once: true })
+  })
+  return stop.aborted ? first : stateOnce(tokenIds, fresh, stop)
+}
+
+/**
  * Up to eight positions at one block, asked of the state route, each with its feature (item 17). Two askers of the same
  * ids while a read is on its way share it; a read that has answered is never reused, so a page reading again after an
  * action gets the chain as it is then: the route serves a kept answer 5 s, and a read of an id the owner just acted on asks
@@ -122,7 +158,8 @@ export async function chainState(tokenIds: readonly string[], signal?: AbortSign
   let read = statesAsked.get(key)
   if (!read) {
     const stop = new AbortController()
-    const answer = postState(tokenIds, true, { signal: stop.signal }, fresh)
+    // Changed on purpose 2026-11-09 (core flows): within STATE_DEADLINE_MS, and once more after a request that failed.
+    const answer = stateRead(tokenIds, fresh, stop.signal)
       .then((answer) => noted(checked(answer as RelayAnswer<StateResponse>, isStateResponse)))
       .catch((): RelayAnswer<StateResponse> => UNAVAILABLE)
       .finally(() => statesAsked.get(key) === read && statesAsked.delete(key))

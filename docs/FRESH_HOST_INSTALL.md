@@ -187,6 +187,20 @@ Below, `$A_<lane>` stands for
     One that carries `057_session_origin`, the sessions' origin (launch
     round P3), applies it like 041, before the listeners of that archive:
     `python3 -B apply_migrations.py $A_public_data --migrations 057_session_origin --apply`.
+    One that carries `060_chunk_end_index`, the `(pool_id, end_block)` index on
+    `domino_activity.chunks`, appends it to the list above after
+    `056_position_mint_scan`. It runs as the catalogue owner, as 053. The
+    first production host built it concurrently on 7 Nov 2026, so there it is a
+    no-op.
+    One that carries `061_public_entities_keep_warm`, the keep-warm index on
+    `domino_public.entities` that the collector's hot claims read, appends it
+    after `060_chunk_end_index`. It runs as postgres, as 044. On the first
+    production host, its deploy builds the index concurrently first, so there it
+    is a no-op.
+    One that carries `062_public_claim_cadence`, the table that counts the
+    collector's scheduled claims, appends it after
+    `061_public_entities_keep_warm`. It runs as postgres, as 044, before the
+    lanes of that archive start.
 
 12. **Queue-worker root.** The writer's lock and runtime, and the first host's
     four base units.

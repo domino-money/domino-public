@@ -31,7 +31,7 @@ from dataclasses import dataclass
 
 from clawber_resources import MAX_SLOTS, RESOURCE_PROFILES
 
-ROOT = Path('/mnt/narrative-ssd/domino-ci-pilot')
+ROOT = Path('/mnt/domino-ci/domino-ci-pilot')
 MAX_SECONDS = 5400
 DEFAULT_SECONDS = 900
 MAX_JIT_BYTES = 1_048_576
@@ -289,6 +289,10 @@ def validate_roots(config):
         raise PilotError('invalid_guest_profile')
     if not isinstance(config.resource_profile, str) or config.resource_profile not in RESOURCE_PROFILES:
         raise PilotError('invalid_resource_profile')
+    # Both direct launches and recovery must refuse the empty system-disk
+    # mountpoint if the dedicated CI volume is unavailable.
+    if config.root == ROOT and not config.root.parent.is_mount():
+        raise PilotError('required_storage_mount_missing')
     owned_path(config.root, directory=True)
     owned_path(config.root / 'jobs', config.root, directory=True)
 

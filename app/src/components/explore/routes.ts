@@ -74,7 +74,7 @@ export function parseNewHash(hash: string): PoolLocation {
 }
 
 /** Markets, or a token's view on it. */
-export const exploreHref = (token: string | null = null) => (token ? `#/markets/${token}` : '#/markets')
+export const exploreHref = (token: string | null = null) => (token ? `/markets/${token}` : '/markets')
 
 /** The same link under the page's own name. */
 export const marketsHref: typeof exploreHref = exploreHref
@@ -106,38 +106,38 @@ function networkLocation(hash: string, page: 'markets' | 'new'): NetworkTokenLoc
 
 export const parseMarketsNetworkHash = (hash: string): NetworkTokenLocation | null => networkLocation(hash, 'markets')
 export const parseNewNetworkHash = (hash: string): NetworkTokenLocation | null => networkLocation(hash, 'new')
-export const marketsNetworkHref = (chainId: NetworkTokenLocation['chainId'], token: string) => `#/markets/network/${chainId}/${token}`
+export const marketsNetworkHref = (chainId: NetworkTokenLocation['chainId'], token: string) => `/markets/network/${chainId}/${token}`
 /**
  * Handoff is a token, never a trusted pool selection; New position reads its metadata and pools on the named network again.
  * `pool` (QA round 2, N5): the pool a token page's row proposes, a hint New position checks against its own read.
  */
-export const newNetworkHref = (chainId: NetworkTokenLocation['chainId'], token: string, pool: string | null = null) => `#/new/network/${chainId}/${token}${pool ? `/${pool}` : ''}`
+export const newNetworkHref = (chainId: NetworkTokenLocation['chainId'], token: string, pool: string | null = null) => `/new/network/${chainId}/${token}${pool ? `/${pool}` : ''}`
 
-export const poolHref = (poolId: string, token: string | null = null) => (token ? `#/pool/${poolId}/${token}` : `#/pool/${poolId}`)
+export const poolHref = (poolId: string, token: string | null = null) => (token ? `/pool/${poolId}/${token}` : `/pool/${poolId}`)
 
 /** A Base or Arbitrum One pool's page, `#/pool/network/<chain>/<pool>/<token>`: ./poolNetwork.ts (2026-11-06). */
 
 /** New position, or New position with a pool chosen; `token` is one of the pool's tokens to verify it with (parseNewHash). */
-export const newPositionHref = (poolId: string | null = null, token: string | null = null) => (poolId ? (token ? `#/new/${poolId}/${token}` : `#/new/${poolId}`) : '#/new')
+export const newPositionHref = (poolId: string | null = null, token: string | null = null) => (poolId ? (token ? `/new/${poolId}/${token}` : `/new/${poolId}`) : '/new')
 
-export const positionsHref = '#/positions' as const
+export const positionsHref = '/positions' as const
 
 /** One position NFT's own page. */
-export const positionHref = (tokenId: string) => `#/positions/${tokenId}`
+export const positionHref = (tokenId: string) => `/positions/${tokenId}`
 
 /** Auto-compound set up on one position NFT (Sequence reads the mode and the id from the link). */
-export const compoundHref = (tokenId: string) => `#/sequence/compound/${tokenId}`
+export const compoundHref = (tokenId: string) => `/sequence/compound/${tokenId}`
 
 /**
  * The automation page with one of the wallet's positions preselected (2026-09-24, the three features joined up):
  * with a mode, that mode is chosen too (`#/sequence/<mode>/<id>`); without one, the page asks which.
  */
-export const sequenceHref = (tokenId: string, mode: 'compound' | 'domino' | null = null) => (mode ? `#/sequence/${mode}/${tokenId}` : `#/sequence/${tokenId}`)
+export const sequenceHref = (tokenId: string, mode: 'compound' | 'domino' | null = null) => (mode ? `/sequence/${mode}/${tokenId}` : `/sequence/${tokenId}`)
 
-export const automateHref = '#/automate' as const
+export const automateHref = '/automate' as const
 
 /**
  * The docs, one of their pages, or a section of that page. A section link
  * always carries its route: a bare `#<id>` would open Home.
  */
-export const docsHref = (slug: string | null = null, section: string | null = null) => `#/docs${slug ? `/${slug}` : ''}${section ? `#${section}` : ''}`
+export const docsHref = (slug: string | null = null, section: string | null = null) => `/docs${slug ? `/${slug}` : ''}${section ? `#${section}` : ''}`

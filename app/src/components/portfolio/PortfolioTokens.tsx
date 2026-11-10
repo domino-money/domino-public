@@ -24,6 +24,7 @@ import { exploreHref, marketsNetworkHref } from '../explore/routes'
 import { TokenLabel } from '../read/TokenLabel'
 import { TokenMark } from '../TokenIcon'
 import { Button, Skeleton } from '../ui'
+import { RELOAD_WORDS, useWaitOver } from '../../lib/readWait'
 
 type Step = 'first' | 'more' | 'restart'
 
@@ -54,6 +55,11 @@ const SELECTED_TOKENS: string[] = [...WALLET_FALLBACK_TOKENS]
 
 /** How often the card reads the list again while the page is shown (round 6): the rows stay on screen meanwhile. */
 const REFRESH_MS = 300_000
+/**
+ * Added 2026-11-09 (core flows, the owner: nothing may load forever): how soon a list that failed with nothing on the card is
+ * read again once its quiet re-asks are spent (they wait 4, 8, 16 and 32 s); it waited REFRESH_MS, five minutes, blank.
+ */
+const FAILED_REFRESH_MS = 60_000
 /** A local node catching up with a confirmed action is checked quietly, with a bounded request rate. */
 const CONFIRMED_RETRY_MS = [2_000, 10_000, 30_000, 60_000, 120_000] as const
 /**
@@ -666,13 +672,16 @@ export function PortfolioTokens({ address }: { address: string }) {
   }, [])
 
   // The list is read again every REFRESH_MS while the page is shown; what is on screen stays until the new read lands.
+  // Changed on purpose 2026-11-09 (core flows): a list that failed with no rows kept is read again a minute later
+  // (FAILED_REFRESH_MS), a bounded pace while the card has nothing to show.
+  const bare = kept.length === 0 && snap?.failure != null
   useEffect(() => {
     if (loading || !snap) return
-    return whenVisibleAfter(readGuard.delay(Date.now(), REFRESH_MS), () => {
+    return whenVisibleAfter(readGuard.delay(Date.now(), bare ? FAILED_REFRESH_MS : REFRESH_MS), () => {
       setLoading(true)
       setRound((n) => n + 1)
     })
-  }, [loading, snap, readGuard])
+  }, [loading, snap, readGuard, bare])
 
   const view = snap?.view
   const freshRows = view?.rows ?? []
@@ -789,6 +798,10 @@ export function PortfolioTokens({ address }: { address: string }) {
   // `failed`: the last answer left a token it asked for without one (2026-10-14, D2: no longer every held token unpriced).
   const pricesState = ask === '' ? 'none' : pending ? 'pending' : pricesFailed ? 'failed' : 'ok'
   const showLoadMore = Boolean(view && view.pages > 0 && (canAskMore || loading) && failure !== null)
+  // Added 2026-11-09 (core flows, the owner: nothing may load forever): a card whose list failed with nothing on it said
+  // nothing at all, for good; after STUCK_MS it says what to do, in the line "No tokens listed." takes. The list is still
+  // read again by itself and its rows replace the line.
+  const stuck = useWaitOver(!waiting && holdings.all.length === 0 && others.length === 0 && snap !== null && settledOnce && failure !== null)
 
   const run = (step: Step) => {
     const current = session.current
@@ -906,7 +919,7 @@ export function PortfolioTokens({ address }: { address: string }) {
       {!waiting && holdings.all.length === 0 && others.length === 0 && snap !== null && settledOnce && (
         // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a list that failed shows nothing, its reason as data; it said "Your tokens couldn’t be loaded right now.", with why in its title.
         <p className="dm-acct-tokens-empty" data-wallet-empty={failure ? 'failed' : 'listed'} data-wallet-block={block ?? undefined} title={failure ? undefined : block ? `Balances at block ${block}.` : undefined}>
-          {failure ? null : NONE_LISTED}
+          {failure ? (stuck ? RELOAD_WORDS.tokens : null) : NONE_LISTED}
         </p>
       )}
 

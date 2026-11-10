@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { catalogueTokenLabel, poolListings, type PoolCatalogueEntry, type PoolListing } from '../config/selectedPoolCatalogue'
-import { agedMarket, feeLabel, presentMetric, providerStale, retrievedAgeSeconds, retrievedText, type FallbackApr as Fallback, type Instant, type Market, type MarketProvenance, type Metric } from '../lib/markets'
+import { agedMarket, feeLabel, presentMetric, providerStale, shownTvl, retrievedAgeSeconds, retrievedText, type FallbackApr as Fallback, type Instant, type Market, type MarketProvenance, type Metric } from '../lib/markets'
 import { presentAprEstimate } from '../lib/read/aprEstimate'
 import { poolAprPresentation } from '../lib/read/poolAprPresentation'
 import { FEE_VENUE, feeWords } from '../lib/format/fee'
@@ -19,6 +19,7 @@ import type { TokenDisplay } from '../lib/read/types'
 import { shownResult, useMarkets } from '../lib/read/useMarkets'
 import { useNow } from '../lib/read/useNow'
 import { useLoadMilestone } from '../lib/useLoadMilestone'
+import { navigate } from '../lib/route'
 import { FEE_MEANING } from './explore/feeMeaning'
 import { MetricCell, PendingFigure } from './explore/MetricCell'
 import { InfoTip } from './InfoTip'
@@ -97,7 +98,7 @@ function followRow(event: MouseEvent<HTMLTableRowElement>, href: string) {
   if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
   if ((event.target as Element).closest('a, button')) return
   if (window.getSelection()?.toString()) return
-  window.location.hash = href.slice(1)
+  navigate(href)
 }
 
 /** A token's name as a row shows it: the read symbol, the catalogue's label for its address, or its short address. */
@@ -251,7 +252,8 @@ function Row({ m: read, now, full, home, onFigures, poolToken, poolLink, pinned,
       </Td>
       <Td numeric className="dm-mkt-num">
         {home && <span className="dm-home-pool-label">TVL</span>}
-        {coming(m.tvlUsd) ? <PendingFigure label="TVL" data={{ 'data-metric': 'pending' }} /> : <MetricCell metric={m.tvlUsd} />}
+        {/* Changed on purpose 2026-11-09 (core flows): a provider's zero is the dash (lib/markets.ts shownTvl). */}
+        {coming(m.tvlUsd) ? <PendingFigure label="TVL" data={{ 'data-metric': 'pending' }} /> : <MetricCell metric={shownTvl(m.tvlUsd)} />}
       </Td>
       <Td numeric col="wide" className="dm-mkt-num dm-mkt-volume">
         {home && <span className="dm-home-pool-label">24h volume</span>}

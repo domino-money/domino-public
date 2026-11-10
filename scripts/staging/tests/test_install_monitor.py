@@ -14,6 +14,8 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import install_monitor as installer
 
+LISTED_CHAINS = tuple(installer.v2_release_chains.CHAINS)
+
 COMMIT, NEXT = 'a' * 40, 'b' * 40
 
 
@@ -23,7 +25,7 @@ def archive():
              'api-contracts/v2/abi/IDominoRegistry.json': (b'{}', False),
              'docs/deployments/v2-base-8453-2026-10-04/deployment.json': (b'{}', False),
              'docs/OPS_MONITOR.md': (b'', False), 'app/src/main.ts': (b'', False)}
-    for chain in ('robinhood-4663', 'base-8453', 'arbitrum-42161'):
+    for chain in LISTED_CHAINS:  # v2-chains.json as committed (Elysium joined on 9 Nov 2026), read before any patch
         files[f'api-contracts/v2/chains/{chain}.json'] = (b'{}', False)
     return files
 
@@ -54,7 +56,8 @@ class TreeTests(unittest.TestCase):
     def test_a_release_carries_the_backend_and_the_v2_exports_only(self):
         self.assertEqual(sorted(installer.selected(archive())),
                          ['api-contracts/v2/abi/IDominoRegistry.json', 'api-contracts/v2/chains/arbitrum-42161.json',
-                          'api-contracts/v2/chains/base-8453.json', 'api-contracts/v2/chains/robinhood-4663.json',
+                          'api-contracts/v2/chains/base-8453.json', 'api-contracts/v2/chains/elysium-99901.json',
+                          'api-contracts/v2/chains/robinhood-4663.json',
                           'backend/ops_monitor.py', 'backend/requirements-api.lock', 'backend/v2_events.py'])
 
 

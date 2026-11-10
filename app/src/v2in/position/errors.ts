@@ -11,7 +11,7 @@ import { CONTRACTS_NOT_LIVE, contractsNotLiveCopy } from '../../finance/v2/liveL
 import { capacityBusyWait, isCapacityBusy } from '../../finance/v2/requestCoordinator'
 import { v2Chain } from '../../v2/chains'
 import { versionOffChain } from '../../v2/plan/client'
-import { GENERIC_COPY, decodeRevertData, decodeV2Error, type ErrorLabels, type Recovery } from '../../v2/errors'
+import { GENERIC_COPY, SLOW_WALLET_COPY, TOKEN_TRANSFER_ERRORS, UNKNOWN_FAILURE_COPY, UNREADABLE_REPLY_COPY, debugFailure, decodeRevertData, decodeV2Error, tokenChoice, walletNetworkCopy, walletNetworkFailure, type ErrorLabels, type Recovery } from '../../v2/errors'
 import type { S1PlanResult } from '../../v2/plan/types'
 import type { Address, V2ChainId } from '../../v2/types'
 import { HOOKED_COPY, ROOT_CHANGE_RANGE_COPY, SUCCESSOR_BLOCKED_COPY } from './constants'
@@ -62,9 +62,23 @@ export const REJECTED_IN_WALLET = 'I rejected it in my wallet'
 const CLOSE_UNSETTLED_COPY = (chain: string) => `Closing this position was already sent to your wallet and is not settled on ${chain} yet. Check your wallet’s activity. If you rejected or closed it in your wallet, say so in Close positions.`
 export const STILL_PENDING_COPY = 'A transaction from this wallet is still waiting. Let it finish, then try again.'
 export const SENT_CHECK_WALLET_COPY = 'Sent to your wallet. Check your wallet’s activity to see how it went: nothing more is sent from here.'
+const CHANGED_COPY = 'Your wallet changed while this was open. Review again.'
+
+/**
+ * Changed on purpose 2026-11-09 (core flows, errors): "The transaction would fail. Review again." (src/v2/errors.ts
+ * GENERIC_COPY) was said for every failure nothing else named, as on New position (../journey/errors.ts). A revert the
+ * decoder has no sentence for is said as what the person can change: in the position's dialogs, their amount or range
+ * (DIALOG_REFUSED_COPY, ./run.ts); anywhere else this module speaks (Close positions, a direct withdrawal, an approval),
+ * that it cannot go through now (ACTION_REFUSED_COPY). The wallet's network, a slow wallet, a token's transfer and the
+ * zap client's codes that had no words have their own sentences; the whole failure goes to the console at debug level.
+ */
+export const DIALOG_REFUSED_COPY = 'This can’t go through with these choices. Try a different amount or range.'
+export const ACTION_REFUSED_COPY = 'This can’t go through right now. Try again later.'
+/** A token's transfer refused in the plan's simulation, which names no token: every token the action moves, none guessed. */
+export const tokensCopy = (tokens: string) => `${tokens} may limit transfers, so this can’t go through. Try a smaller amount.`
 
 /** The money clients' closed codes (finance/v2/zap.ts, direct.ts, transact.ts) that are not a contract's revert. */
-function clientCopy(code: string, chainId: V2ChainId): { copy: string; recovery: ActionError['recovery'] } | null {
+function clientCopy(code: string, chainId: V2ChainId, walletChanged: boolean, refused: string): { copy: string; recovery: ActionError['recovery'] } | null {
   const chain = v2Chain(chainId).name
   if (code === 'plan_route_source' || code === 'plan_route_target' || code === 'plan_target') return { copy: ROUTE_COPY, recovery: 'requote' }
   if (code === 'plan_price_moved') return { copy: 'The price moved. Review again.', recovery: 'requote' }
@@ -77,7 +91,11 @@ function clientCopy(code: string, chainId: V2ChainId): { copy: string; recovery:
     case CONTRACTS_NOT_LIVE: return { copy: contractsNotLiveCopy(chainId), recovery: 'none' }
     case 'connect_wallet': return { copy: 'Connect a wallet first.', recovery: 'none' }
     case 'wallet_wrong_chain': return { copy: `Your wallet is on another network. Switch it to ${chain}, then try again.`, recovery: 'none' }
-    case 'wallet_identity_changed': case 'wallet_action_expired': return { copy: 'Your wallet changed while this was open. Review again.', recovery: 'none' }
+    case 'wallet_identity_changed': return { copy: CHANGED_COPY, recovery: 'none' }
+    // Changed on purpose 2026-11-09 (core flows, errors): the money client's window ran out or its calls did
+    // (finance/v2/transact.ts), most often a slow wallet network, while the wallet stayed the same; it said "Your wallet
+    // changed while this was open." The run tells which (`walletChanged`).
+    case 'wallet_action_expired': return { copy: walletChanged ? CHANGED_COPY : SLOW_WALLET_COPY, recovery: 'none' }
     case 'wallet_action_busy': return { copy: 'Another request to your wallet is still open. Finish it first.', recovery: 'none' }
     case 'wallet_timeout': return { copy: 'Your wallet did not answer in time. Check it, then review again.', recovery: 'none' }
     case 'pending_wallet_transaction': case 'wallet_nonce_already_offered': return { copy: STILL_PENDING_COPY, recovery: 'none' }
@@ -99,7 +117,14 @@ function clientCopy(code: string, chainId: V2ChainId): { copy: string; recovery:
     case 'pool_not_initialized': return { copy: 'This pool has no price yet.', recovery: 'other-pool' }
     case 'native_eth_refused': return { copy: `Your account can’t receive ${v2Chain(chainId).nativeSymbol} directly. Use another account.`, recovery: 'none' }
     case 'nft_approval_missing': return { copy: 'Approve Domino to manage this position first.', recovery: 'approve-position' }
-    case 'batch_simulation_reverted': return { copy: GENERIC_COPY, recovery: 'requote' }
+    case 'batch_simulation_reverted': return { copy: refused, recovery: 'requote' }
+    // Added 2026-11-09 (core flows, errors): the zap client's review codes that had no sentence (finance/v2/zap.ts review).
+    case 'position_identity': return { copy: 'This position couldn’t be verified, so Domino can’t change it.', recovery: 'none' }
+    case 'registry_rank_mismatch': return { copy: `Domino’s settings on ${chain} changed. Reload the page, then try again.`, recovery: 'none' }
+    // A reply the wallet gave that could not be read: asked once more by the dialog's run before this is said (./run.ts).
+    case 'invalid_wallet_reply': return { copy: UNREADABLE_REPLY_COPY, recovery: 'retry' }
+    // The plan's own checks, as the plan_* codes above: a fresh quote by itself first.
+    case 'rank_unread': case 'permit2_account_not_plain': return { copy: PLAN_COPY, recovery: 'requote' }
     case 'signature_journal_unavailable': case 'signature_journal_full': case 'wallet_nonce_coordination_unavailable': return { copy: 'This browser can’t keep track of your wallet requests. Use another browser.', recovery: 'none' }
     case 'invalid_slippage': return { copy: 'Choose between 0.1% and 5%.', recovery: 'fix-fields' }
     case 'position_vault_root': return { copy: ROOT_CHANGE_RANGE_COPY, recovery: 'none' }
@@ -116,6 +141,12 @@ function clientCopy(code: string, chainId: V2ChainId): { copy: string; recovery:
  * through the §2.12 decoder; anything this app does not accept as `invalid`).
  */
 export function planFailure(result: Exclude<S1PlanResult, { kind: 'ok' }>, chainId: V2ChainId, token?: (address: Address) => string, dex?: number): ActionError {
+  const said = planFailureOf(result, chainId, token, dex)
+  debugFailure('Position quote', said.code, result)
+  return said
+}
+
+function planFailureOf(result: Exclude<S1PlanResult, { kind: 'ok' }>, chainId: V2ChainId, token?: (address: Address) => string, dex?: number): ActionError {
   const chain = v2Chain(chainId).name
   const E = COPY.planErrors
   // Changed on purpose 2026-11-06 (Elysium readiness): the service's `invalid_request` for a version the chain lacks (v3
@@ -131,9 +162,17 @@ export function planFailure(result: Exclude<S1PlanResult, { kind: 'ok' }>, chain
     case 'unavailable': return { copy: COPY.review.planUnavailable, code: tidy(`plan_${result.reason}`), recovery: 'none' }
     case 'unsimulated': return { copy: PLAN_COPY, code: tidy(`plan_simulation_${result.reason}`), recovery: 'none' }
     case 'reverted': {
-      const decoded = result.selector ? decodeRevertData(result.selector, 'zap', { chainId, token }) : null
-      if (decoded) return { copy: decoded.copy, code: decoded.dataCode, recovery: decoded.recovery }
-      return { copy: GENERIC_COPY, code: 'plan_simulation_reverted', recovery: 'review-again' }
+      const labels: ErrorLabels = { chainId, token }
+      const decoded = result.selector ? decodeRevertData(result.selector, 'zap', labels) : null
+      // Changed on purpose 2026-11-09 (core flows, errors): a token's transfer refused, reported by its selector alone,
+      // names the tokens the plan moves (../../v2/plan/parse.ts `tokens`); any other revert the decoder has no sentence for
+      // is what the person can change in the dialog. Both said "The transaction would fail. Review again."
+      if (decoded && TOKEN_TRANSFER_ERRORS.has(decoded.code) && decoded.token === undefined) {
+        const tokens = tokenChoice(result.tokens, labels)
+        if (tokens) return { copy: tokensCopy(tokens), code: decoded.dataCode, recovery: 'none' }
+      }
+      if (decoded && decoded.copy !== GENERIC_COPY) return { copy: decoded.copy, code: decoded.dataCode, recovery: decoded.recovery }
+      return { copy: DIALOG_REFUSED_COPY, code: decoded ? decoded.dataCode : 'plan_simulation_reverted', recovery: decoded ? decoded.recovery : 'review-again' }
     }
     case 'refused': {
       const code = result.code
@@ -179,14 +218,29 @@ export function retryLaterWait(view: Pick<ActionError, 'code' | 'retryAfterSecon
   return Math.max(4000 * 2 ** attempt, (view.retryAfterSeconds ?? 0) * 1000)
 }
 
-/** Any thrown failure of an action, said. */
-export function actionError(error: unknown, chainId: V2ChainId, token?: (address: Address) => string): ActionError {
+/**
+ * Any thrown failure of an action, said. Added 2026-11-09 (core flows, errors), `options`: `refused`, the sentence for a
+ * revert the decoder has no words for (the dialogs' DIALOG_REFUSED_COPY; else ACTION_REFUSED_COPY), and `walletChanged`,
+ * the connection's wallet no longer the one the action began with (so `wallet_action_expired` is not a slow wallet).
+ */
+export function actionError(error: unknown, chainId: V2ChainId, token?: (address: Address) => string, options: { refused?: string; walletChanged?: boolean } = {}): ActionError {
+  const said = actionErrorOf(error, chainId, token, options.refused ?? ACTION_REFUSED_COPY, options.walletChanged === true)
+  debugFailure('Position action', said.code, error)
+  return said
+}
+
+function actionErrorOf(error: unknown, chainId: V2ChainId, token: ((address: Address) => string) | undefined, refused: string, walletChanged: boolean): ActionError {
   if (error instanceof WalletNotice) return { copy: error.copy, code: error.code, recovery: 'none' }
   const labels: ErrorLabels = { chainId, token }
   const decoded = decodeV2Error(error, 'zap', labels)
-  if (decoded) return { copy: decoded.copy, code: decoded.dataCode, recovery: decoded.recovery }
+  if (decoded) return { copy: decoded.copy === GENERIC_COPY ? refused : decoded.copy, code: decoded.dataCode, recovery: decoded.recovery }
   const code = codeOf(error)
-  const known = /^[a-z][a-z0-9_]{0,63}$/.test(code) ? clientCopy(code, chainId) : null
+  const closed = /^[a-z][a-z0-9_]{0,63}$/.test(code)
+  const known = closed ? clientCopy(code, chainId, walletChanged, refused) : null
   if (known) return { copy: known.copy, code, recovery: known.recovery }
-  return { copy: GENERIC_COPY, code: /^[a-z][a-z0-9_]{0,63}$/.test(code) ? code : 'unknown', recovery: 'review-again' }
+  // Changed on purpose 2026-11-09 (core flows, errors): the wallet's network failing is said as such (the dialog's run
+  // asked once more first, ./run.ts); anything else no longer says "The transaction would fail": nothing says it would.
+  const network = walletNetworkFailure(error)
+  if (network) return { copy: walletNetworkCopy(network), code: network, recovery: 'retry' }
+  return { copy: UNKNOWN_FAILURE_COPY, code: closed ? code : 'unknown', recovery: 'review-again' }
 }

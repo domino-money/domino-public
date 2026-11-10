@@ -47,12 +47,19 @@ const prunedNode = (world, swapLogs) => ({ fetch: async (url, init) => {
   return world.chain.fetch(url, init);
 } });
 
-/** The routes over `chain` as one isolate with one edge cache, on a clock of their own. */
-function edge(chain, clock = { time: 1_000_000 }) {
+/**
+ * The routes over `chain` as one isolate with one edge cache, on a clock of their own. `postMs` (2026-11-09): each POST to
+ * the node moves the clock this far, so an answer's passes run out of LEDGER_PASS_MS as on a slow node.
+ */
+function edge(chain, clock = { time: 1_000_000 }, { postMs = 0 } = {}) {
   const lines = [];
   const { cache, stored } = memoryCache();
+  const node = fakeNode({ fetch: (_url, init) => chain.fetch(RPC_URL, init) });
   const runtime = {
-    upstream: fakeNode({ fetch: (_url, init) => chain.fetch(RPC_URL, init) }),
+    upstream: async (url, init) => {
+      clock.time += postMs;
+      return node(url, init);
+    },
     cache,
     now: () => clock.time,
     sleep: async (ms) => {
@@ -151,11 +158,19 @@ test('a verified indexed V2 mint completes on its first read, with exact mint an
 test('a hint is an exact PM mint proof, never authority to skip history on a wrong tx, token or block', async () => {
   for (const hint of [mintHint(ID, { ...V2_MINT, tx: txOf(V2_MINT.block, 9) }), { ...mintHint(), block: V2_MINT.block + 1 }]) {
     const { chain } = v2World();
-    const result = await edge(chain).askOnce({ tokenIds: [ID], mintHints: [hint] });
-    assert.equal(result.status, 200);
-    assert.equal(result.body.positions[0].why, 'reading');
-    assert.equal(result.body.positions[0].mint, null);
+    // Changed on purpose 2026-11-09 (an answer's passes): on a slow node one answer is one pass, as before: from the floor,
+    // no mint yet. On a fast one its passes read on from the floor to the chain's own mint, never the hint's.
+    const slow = await edge(chain, undefined, { postMs: 2_000 }).askOnce({ tokenIds: [ID], mintHints: [hint] });
+    assert.equal(slow.status, 200);
+    assert.equal(slow.body.positions[0].why, 'reading');
+    assert.equal(slow.body.positions[0].mint, null);
     assert.ok(logReads(chain).some((filter) => Number(filter.fromBlock) === FLOOR));
+    routes.resetChainRouteMemory();
+    const fast = await edge(v2World().chain).askOnce({ tokenIds: [ID], mintHints: [hint] });
+    assert.equal(fast.status, 200);
+    const [position] = fast.body.positions;
+    if (position.why === 'reading') assert.equal(position.mint, null);
+    else assert.deepEqual([position.mint.block, position.mint.tx], [V2_MINT.block, txOf(V2_MINT.block)], 'the chain’s own mint');
   }
   for (const hint of [{ ...mintHint(), tokenId: '9' }, { ...mintHint(), extra: 1 }, { ...mintHint(), block: 1 }, { ...mintHint(), tx: '0x1234' }]) {
     assert.equal(ledger.ledgerRequestOf({ tokenIds: [ID], mintHints: [hint] }), null);
@@ -716,7 +731,8 @@ test('a position minted before the floor: once discovery has covered the floor t
   assert.deepEqual(position.entries, []);
   assert.equal(position.through, head);
   assert.equal(folded(result.body).why, 'before_floor');
-  assert.equal(answers, 2, 'two discovery windows of MINT_DISCOVERY_BLOCKS cover the floor to the head: then the answer');
+  // Changed on purpose 2026-11-09 (an answer's passes): both discovery windows in one answer (it was two).
+  assert.equal(answers, 1, 'two discovery windows of MINT_DISCOVERY_BLOCKS cover the floor to the head, in one answer');
   assert.ok(posts <= 8, `node POSTs until the answer: ${posts} (65 in 21 answers before)`);
   assert.ok(logReads(chain).every((filter) => filter.address === owned.POSITION_MANAGER && filter.topics[1] === word(0n)), 'only the mint discovery: no ledger scan from the floor');
   const saved = await e.stored.get(`${ORIGIN}/api/fees/v1/cache/c1/ledger2/${ID}/0`).clone().json();
@@ -744,7 +760,8 @@ test('a long ledger is read in steps: each read looks into at most LEDGER_STEP b
   const steps = Array.from({ length: 450 }, (_, i) => ({ block: 73_300_000 + 1_000 * i, kind: 'swap' }));
   steps.push({ block: 73_800_000, kind: 'collect', fees: [9n, 9n] });
   const { chain } = ledgerWorld({ vault: null, steps });
-  const e = edge(chain);
+  // Changed on purpose 2026-11-09 (an answer's passes): a node slow enough that an answer is one pass, as each was.
+  const e = edge(chain, undefined, { postMs: 1_000 });
   const throughs = [];
   for (let round = 0; round < 6; round++) {
     const { body } = await e.ask({ tokenIds: [ID] });
@@ -760,6 +777,66 @@ test('a long ledger is read in steps: each read looks into at most LEDGER_STEP b
   assert.ok(throughs.every((through, i) => i === 0 || through > throughs[i - 1]), 'each read went further');
   const lookups = logReads(chain).filter((filter) => [filter.address].flat().includes(fees.POOL_MANAGER));
   assert.ok(lookups.length <= 452 + ledger.LEDGER_STEP, `${lookups.length} one-block lookups in all`);
+});
+
+// Added on purpose 2026-11-09 (core flows, the owner: nothing may be slow): one answer goes on, pass after pass, while it
+// has the time and the calls (feesLedger.ts LEDGER_PASS_MS), each pass what an answer was.
+test('an answer goes on pass after pass: the long ledger in one answer, each block looked into once, LEDGER_STEP a pass', async () => {
+  const steps = Array.from({ length: 450 }, (_, i) => ({ block: 73_300_000 + 1_000 * i, kind: 'swap' }));
+  steps.push({ block: 73_800_000, kind: 'collect', fees: [9n, 9n] });
+  const { chain } = ledgerWorld({ vault: null, steps });
+  const e = edge(chain);
+  const { status, body } = await e.askOnce({ tokenIds: [ID] });
+  assert.equal(status, 200);
+  assert.equal(body.positions[0].exact, true, body.positions[0].why);
+  assert.equal(body.positions[0].through, HEAD);
+  assert.deepEqual(body.positions[0].entries.map((entry) => entry.kind), ['mint', 'collect']);
+  const lookups = logReads(chain).filter((filter) => [filter.address].flat().includes(fees.POOL_MANAGER)).map((filter) => Number(filter.fromBlock));
+  assert.equal(lookups.length, 452, 'the mint, 450 swaps and the collect: each block once');
+  assert.equal(new Set(lookups).size, lookups.length);
+  // Three passes of at most LEDGER_STEP: the tail each later pass reads again is SAFE_DEPTH blocks of its own events only,
+  // and the third pass's tail is the second's, which the transport answers from what this invocation already read.
+  const own = scans(chain).filter((filter) => [filter.address].flat().includes(owned.POSITION_MANAGER) && filter.topics[1] !== word(0n));
+  assert.equal(own.length, 2, 'the window, then its tail once');
+  assert.ok(own.slice(1).every((filter) => Number(filter.fromBlock) >= HEAD + 1 - fees.SAFE_DEPTH), 'a later pass reads the kept tail only');
+  assert.ok(chain.log.filter((entry) => entry.method === 'eth_blockNumber').length === 0);
+});
+
+test('a ledger whose answer runs out of time says `reading` and is kept as far as it got; a pass that fails after the first leaves the answer the passes before it made', async () => {
+  // Five weeks of windows: an answer on a slow node stops starting passes at LEDGER_PASS_MS, its cursor kept.
+  const head = OWNER_MINT.block + 30 * ledger.LEDGER_SCAN_BLOCKS;
+  const { chain } = ledgerWorld({ vault: null, steps: [], head });
+  const slow = edge(chain, undefined, { postMs: 700 });
+  const started = slow.clock.time;
+  const first = await slow.askOnce({ tokenIds: [ID], mintHints: [{ tokenId: ID, block: OWNER_MINT.block, tx: txOf(OWNER_MINT.block) }] });
+  assert.equal(first.status, 200);
+  assert.equal(first.body.positions[0].why, 'reading');
+  assert.ok(slow.clock.time - started < 15_000, `${slow.clock.time - started} ms`);
+  const saved = await slow.stored.get(`${ORIGIN}/api/fees/v1/cache/c1/ledger2/${ID}/0`).clone().json();
+  assert.ok(saved.scanned > OWNER_MINT.block + 3 * ledger.LEDGER_SCAN_BLOCKS, 'several windows in one answer, kept');
+  // Its mint's block is looked into once its logs are read to the head: worked out to the block before it, until then.
+  assert.equal(first.body.positions[0].through, OWNER_MINT.block - 1);
+  assert.equal(saved.through, OWNER_MINT.block - 1);
+  assert.deepEqual(saved.pending.candidates, [OWNER_MINT.block]);
+  assert.ok(isLedgerResponse(first.body));
+  // A node that fails the third pass's reads: the answer is the second's, 200, never the failure.
+  routes.resetChainRouteMemory();
+  const world = ledgerWorld({ vault: null, steps: [], head });
+  let rounds = 0;
+  const failing = { fetch: async (url, init) => {
+    const call = JSON.parse(init.body);
+    if (call.method === 'eth_getLogs' && [call.params[0].address].flat().includes(owned.POSITION_MANAGER) && call.params[0].topics[1] !== word(0n) && ++rounds === 3) return new Response(JSON.stringify({ jsonrpc: '2.0', id: call.id, error: { code: -32000, message: 'boom' } }));
+    return world.chain.fetch(url, init);
+  } };
+  const e = edge(failing);
+  const answer = await e.askOnce({ tokenIds: [ID], mintHints: [{ tokenId: ID, block: OWNER_MINT.block, tx: txOf(OWNER_MINT.block) }] });
+  assert.equal(answer.status, 200);
+  assert.equal(answer.body.positions[0].why, 'reading');
+  const kept = await e.stored.get(`${ORIGIN}/api/fees/v1/cache/c1/ledger2/${ID}/0`).clone().json();
+  // Two windows, the second from the kept tail on: the passes before the failure.
+  assert.equal(kept.scanned, OWNER_MINT.block + 2 * ledger.LEDGER_SCAN_BLOCKS - fees.SAFE_DEPTH - 1, 'two windows: the passes before the failure');
+  assert.equal(rounds, 3);
+  assert.equal([...e.stored.keys()].filter((url) => url.includes('/ledgerAnswer2/')).length, 0, 'an answer still reading is never kept whole');
 });
 
 test('the route’s refusals: a body not exactly {"tokenIds": [1..8]} with at most "fresh": true is a 400, nothing asked of the node', async () => {
@@ -1016,7 +1093,8 @@ test('a ledger read in steps reads its logs once: each later step reads from whe
   const steps = Array.from({ length: 450 }, (_, i) => ({ block: 73_300_000 + 1_000 * i, kind: 'swap' }));
   steps.push({ block: 73_800_000, kind: 'collect', fees: [9n, 9n] });
   const { chain } = ledgerWorld({ vault: null, steps });
-  const e = edge(chain);
+  // Changed on purpose 2026-11-09 (an answer's passes): a node slow enough that an answer is one pass, as each was.
+  const e = edge(chain, undefined, { postMs: 1_000 });
   const first = await e.ask({ tokenIds: [ID] });
   assert.equal(first.body.positions[0].why, 'reading');
   for (let round = 0; round < 6; round++) {

@@ -71,6 +71,12 @@ export interface PositionActionsProps {
    * collecting or closing stops Domino automation is not said.
    */
   autoExitRoot?: boolean
+  /**
+   * Added 2026-11-09 (the core-flows fix): the V2 actions' guided close (src/v2in/position/CloseSteps.tsx), handed in
+   * while they read this position as an automation's main position: Close position opens it (it says that closing turns
+   * the automation off, and returns the fees the automation still holds) instead of this dialog. Null: this dialog.
+   */
+  closeWith?: (() => void) | null
 }
 
 type Action = 'collect' | 'close'
@@ -110,12 +116,17 @@ const OWN_TEXT: Readonly<Record<string, string>> = {
   wallet_review_expired: SLOW,
   invalid_slippage: 'Choose a slippage limit from 0.1% to 5%.',
 }
-function failureText(error: unknown): { text: string; code: string | null } {
+/**
+ * Changed on purpose 2026-11-09 (the core-flows fix, item c): an unknown failure before the step was handed to the wallet
+ * (reading the position, preparing the step) says that nothing was sent; only one while or after the wallet was asked
+ * (`asked`) says to check the wallet's activity. It said "… nothing is sent twice." even when nothing had been sent.
+ */
+function failureText(error: unknown, asked = false): { text: string; code: string | null } {
   if (error instanceof PositionNetworkError) return { text: v2SwitchNotice(error.outcome as Exclude<ChainSwitchOutcome, 'switched'>, 'Robinhood Chain'), code: error.message }
   const code = errorCode(error)
   if (isRejection(error)) return { text: 'You declined in your wallet. Nothing was sent.', code: 'declined' }
   if (code && Object.hasOwn(OWN_TEXT, code)) return { text: OWN_TEXT[code], code }
-  return { text: financeErrorText(code, 'Your wallet could not complete this step. Check your wallet activity before trying again: nothing is sent twice.', 'Create position'), code }
+  return { text: financeErrorText(code, asked ? 'Your wallet could not complete this step. Check your wallet activity before trying again: nothing is sent twice.' : 'Your wallet could not complete this step. Nothing was sent. Try again.', 'Create position'), code }
 }
 const WATCHED_TEXT = {
   reverted: 'The transaction reverted on chain. Nothing changed; only network gas was spent.',
@@ -185,7 +196,7 @@ const LEDE: Readonly<Record<Action, string>> = {
   close: 'Your tokens and fees return to your wallet. The position, now empty, stays in your wallet.',
 }
 
-export default function PositionActions({ tokenId, owner, liquidityRaw, unsettledFeesRaw, currencies, hooks, onChanged, usd = null, tokens = null, automate = null, automationSlot = null, primary, autoExitRoot = false }: PositionActionsProps) {
+export default function PositionActions({ tokenId, owner, liquidityRaw, unsettledFeesRaw, currencies, hooks, onChanged, usd = null, tokens = null, automate = null, automationSlot = null, primary, autoExitRoot = false, closeWith = null }: PositionActionsProps) {
   const identity = useWalletIdentity()
   const wallet = identity.kind === 'connected' ? `${identity.connectorName}|${identity.address.toLowerCase()}` : null
   const mine = wallet !== null && identity.kind === 'connected' && identity.address.toLowerCase() === owner.toLowerCase()
@@ -262,6 +273,7 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
     const reviewed = run?.action === action ? run.prepared : null
     let prepared = reviewed
     let sent = false
+    let asked = false
     setRun({ action, stage: 'wallet', prepared, notice: null })
     try {
       const { positions, gas } = await connect(gen, action)
@@ -278,6 +290,7 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
         return
       }
       setRun({ action, stage: 'wallet', prepared, notice: null })
+      asked = true
       const hash = await positions.send(step, true)
       sent = true
       if (!alive()) return
@@ -309,7 +322,7 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
       if (!alive()) return
       // Once sent, a failure is a watch that could not conclude, never a step known to have failed.
       if (sent) setRun({ action, stage: 'failed', prepared, notice: { text: WATCHED_TEXT.unknown, code: errorCode(error) ?? 'unknown' } })
-      else setRun({ action, stage: isRejection(error) ? 'ready' : 'failed', prepared, notice: failureText(error) })
+      else setRun({ action, stage: isRejection(error) ? 'ready' : 'failed', prepared, notice: failureText(error, asked) })
     } finally {
       if (preparing.current === gen) preparing.current = null
     }
@@ -319,8 +332,11 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
   const empty = liquidityRaw === '0'
   // As the shared contract has it: nothing to collect when both reported fees are zero, or when the read service
   // reported none (unknown counts as zero). The dialog itself always reads the fees again on chain.
-  const noFees = unsettledFeesRaw === null || (unsettledFeesRaw[0] === '0' && unsettledFeesRaw[1] === '0')
-  const collectReason = hooked ? HOOKED : empty ? 'This position is closed: it holds no liquidity.' : unsettledFeesRaw === null ? 'The fees could not be read just now.' : noFees ? 'No fees to collect yet.' : undefined
+  // Changed on purpose 2026-11-09 (the core-flows fix, item d): fees the read service did not report (null) no longer turn
+  // Collect fees off with a reason only a mouse could see: it opens, and the dialog reads the fees on chain and says when
+  // there is nothing to collect. Both reported fees zero stays off, as Base and Arbitrum One's pages have it.
+  const noFees = unsettledFeesRaw !== null && unsettledFeesRaw[0] === '0' && unsettledFeesRaw[1] === '0'
+  const collectReason = hooked ? HOOKED : empty ? 'This position is closed: it holds no liquidity.' : noFees ? 'No fees to collect yet.' : undefined
   const pending = run !== null && (run.stage === 'switching' || run.stage === 'reading' || run.stage === 'wallet' || run.stage === 'chain')
   const shown = open && run?.action === open ? run : null
   const prepared = shown?.prepared ?? null
@@ -377,7 +393,7 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
             aria-haspopup="dialog"
             aria-expanded={open === 'close'}
             data-position-action="close"
-            onClick={() => void show('close')}
+            onClick={() => (closeWith ? closeWith() : void show('close'))}
           >
             <IconClose size={18} /><span>Close position</span>
           </Button>

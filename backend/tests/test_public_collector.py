@@ -44,14 +44,14 @@ class PublicCollectorTests(unittest.TestCase):
         with psycopg.connect(**cls.settings,user=ADMIN) as conn:
             for name in ('001_catalogue','002_activity','020_pool_requests','023_pool_request_scheduling',
                          '024_public_observations','025_public_history','026_public_demand',
-                         '042_provider_priority','044_demand_horizon','047_provider_ceiling'):
+                         '042_provider_priority','044_demand_horizon','047_provider_ceiling','062_public_claim_cadence'):
                 conn.execute((migrations/(name+'.sql')).read_text())
 
     def setUp(self):
         self.catalogue=PgCatalogue(self.settings)
         self.writer=PgPublicData(self.catalogue,writer=True,clock=lambda:1010)
         with psycopg.connect(**self.settings,user=ADMIN) as conn:
-            conn.execute('TRUNCATE domino_public.entities,domino_public.token_pools,domino_public.provider_requests,domino_catalogue.events,domino_catalogue.chunks,domino_catalogue.hints')
+            conn.execute('TRUNCATE domino_public.entities,domino_public.token_pools,domino_public.provider_requests,domino_public.claim_cadence,domino_catalogue.events,domino_catalogue.chunks,domino_catalogue.hints')
             conn.execute('UPDATE domino_catalogue.state SET revision=0')
             conn.execute('UPDATE domino_public.state SET revision=0')
         self.rpc=FakeRpc();self.provider=Provider();self.discovery=[]

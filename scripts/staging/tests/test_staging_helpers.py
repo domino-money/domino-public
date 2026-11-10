@@ -74,7 +74,12 @@ PACKAGED_MIGRATIONS = ('backend/migrations/015_unsigned_execution.sql',
                        'backend/migrations/054_v2_fees.sql',
                        'backend/migrations/055_featured_chains.sql',
                        'backend/migrations/056_position_mint_scan.sql',
-                       'backend/migrations/057_session_origin.sql')
+                       'backend/migrations/057_session_origin.sql',
+                       'backend/migrations/058_points_ledger.sql',
+                       'backend/migrations/059_points_engine.sql',
+                       'backend/migrations/060_chunk_end_index.sql',
+                       'backend/migrations/061_public_entities_keep_warm.sql',
+                       'backend/migrations/062_public_claim_cadence.sql')
 
 
 def packaged_records(files):

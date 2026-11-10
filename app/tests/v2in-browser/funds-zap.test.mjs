@@ -78,7 +78,9 @@ async function openFunding({ balance = 0n, failed = false, bridge = true, served
     if (route === 'origins') data.origins.destinationToken = body.destinationToken;
     return Response.json(data, { headers });
   }];
-  const s = await openJourney(browser, chain, { dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, routes, zapOnRobinhood: true, chainReads: served, read6: { 'chain-balances': destinationBalances },
+  // Changed on purpose 2026-11-07 (launch sweep F3): step 1's Top pools ask DEX Screener for their tokens' artwork, answered
+  // here as every other suite answers it; unanswered, the request was refused and failed close().
+  const s = await openJourney(browser, chain, { dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, routes, zapOnRobinhood: true, artwork: true, chainReads: served, read6: { 'chain-balances': destinationBalances },
     intercept: async (method, params) => {
       walletMethods.push(method);
       if (origin && (method === 'wallet_getCallsStatus' || (chain.chainId === origin.state.chainId && ORIGIN_METHODS.has(method)))) {

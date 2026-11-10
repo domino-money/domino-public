@@ -92,10 +92,13 @@ class PositionIndexer:
                              (pool_id,chunk['start_block'])).fetchone()
             if not fee:raise DataError('reconciled_fee_chunk_required')
             if fee['methodology_version']!=FEE_VERSION:raise DataError('fee_methodology_mismatch')
+            # The chunk before this one through the primary key, as in fee_store: end_block has no index. Only the
+            # nearest earlier chunk can end at start_block-1; any other is no predecessor.
             previous=conn.execute('''SELECT c.*,p.model AS position_model,p.methodology_version
               FROM domino_activity.chunks c LEFT JOIN domino_activity.position_chunks p
-              ON p.pool_id=c.pool_id AND p.chunk_start=c.start_block WHERE c.pool_id=%s AND c.end_block=%s''',
-              (pool_id,chunk['start_block']-1)).fetchone()
+              ON p.pool_id=c.pool_id AND p.chunk_start=c.start_block WHERE c.pool_id=%s AND c.start_block<%s
+              ORDER BY c.start_block DESC LIMIT 1''',(pool_id,chunk['start_block'])).fetchone()
+            if previous and previous['end_block']!=chunk['start_block']-1:previous=None
             if previous and (previous['position_model'] is None or previous['methodology_version']!=VERSION):
                 raise DataError('position_methodology_mismatch')
             if not previous and chunk['start_block']!=row['start_block']:

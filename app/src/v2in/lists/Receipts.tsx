@@ -10,10 +10,12 @@ import { anyIn, chainsIn, useKeyed, useListsGate, useSessionReceipts } from './h
 import { receiptViews, sessionReceiptView } from './model'
 import { ChainLines, ReceiptRow, RECEIPT_LIST } from './receiptParts'
 import { OWN_PORTFOLIO } from './source'
+import { routeQuiet } from './read'
 import { LocalReceiptRow, useLocalReceipts } from './LocalReceiptRow'
 import { activityWindow, immediateRows, sessionActivity, sessionAutomation } from './sessionActivity'
 import { sessionReceipts } from './sessionReceipts'
 import { SessionActivityRow } from './SessionActivityRow'
+import { RELOAD_WORDS, useWaitOver } from '../../lib/readWait'
 
 const PAGE_ROWS = 10
 
@@ -64,6 +66,11 @@ export default function Receipts({ limit, onShows }: { limit?: number; onShows?:
     return view.state === 'signed_out' ? { kind: 'none', reason: session.kind, ...signedOutLine(session.kind, 'both') } : null
   }, [total, cancelled.length, history.answer, history.error, view.state, session.kind])
   useEffect(() => { if (live) onShows?.(showing) }, [live, onShows, showing])
+  // Added 2026-11-09 (core flows, the owner: nothing may load forever): a history that has only failed so far, with nothing
+  // of this browser's to show, says what to do after STUCK_MS (a route simply not on says nothing, as before); the card was
+  // blank under its title for good. It is still asked again by itself (./activityHistory.ts: 5 s, 15 s, 45 s, then every
+  // minute), and its rows replace the line.
+  const stuck = useWaitOver(live && !history.answer && history.error !== null && !routeQuiet(history.error) && visible.length + immediate.length === 0)
 
   if (!live) return <Execution limit={limit} onShows={onShows} />
   return (
@@ -93,6 +100,7 @@ export default function Receipts({ limit, onShows }: { limit?: number; onShows?:
       {/* Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): nothing while the first page is on its way (it said "Loading activity…"). */}
       {/* (QA round 2, SWEEP) Said only once the whole history is in; with more to read, nothing (it said "More history is available."). */}
       {visible.length + immediate.length === 0 && !history.error && history.answer && !history.more && <p className="dm-rcpt-note" role="status">No activity yet.</p>}
+      {stuck && <p className="dm-rcpt-note" role="status" data-v2-receipts-stuck="">{RELOAD_WORDS.receipts}</p>}
       {limit === undefined && more && <div className="dm-activity-footer"><Button variant="ghost" size="sm" disabled={loading && !hidden}
         onClick={() => {
           setPage({ wallet, shown: shown + PAGE_ROWS })

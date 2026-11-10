@@ -294,7 +294,8 @@ export interface PositionRowView {
   vault: VaultBadge | null
   /** A v4 pool with a hook: shown, but nothing is offered on it (decision #6). */
   hooked: boolean
-  family: { successors: number; reserves: 'available' | 'unknown' | null } | null
+  /** `vault` (Added 2026-11-09, the core-flows fix): the automation holding fees for it, for the list's Withdraw to wallet. */
+  family: { successors: number; reserves: 'available' | 'unknown' | null; vault?: string | null } | null
 }
 
 /** A row without the dollars a valuation gave it: what withUsd starts from, and what a burned NFT is left with. */
@@ -444,7 +445,7 @@ function rowOf(position: V6Position, answer: Pick<PortfolioResponse, 'chains' | 
     tokenId,
     href: v2PositionHref({ chainId, dex: position.dex, tokenId: BigInt(tokenId) }),
     vault: vaultBadge(position, answer.vaults, answer.mandates ?? [], answer.wallet, chain?.automationHalted === true, automation),
-    family: families.length ? { successors, reserves } : null,
+    family: families.length ? { successors, reserves, vault: families.find((vault) => vault.state.status === 'read' && vault.state.reserves.some((reserve) => BigInt(reserve.total) > 0n))?.address.toLowerCase() ?? null } : null,
   }
   // /state has no block hash. Use its validated amounts as a frontend observation, never forge a read-v6 snapshot.
   const wallet = ownRead ? positionOfState(ownRead.position) : null

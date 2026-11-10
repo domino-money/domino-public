@@ -207,7 +207,10 @@ test('the wallet feature is reached only through the build flag', () => {
   // carries none of them. (The old #/v2 screens, v2ui/, were admitted the same way until item 6 removed them.)
   // Changed on purpose (2026-10-02, rugged97's spec rev3 §2.13): the fees waiting in a vault and their withdrawal
   // (components/positions/FeeReserves.tsx) sign through the wallet too; Positions and a position's page open it lazily.
-  const feature = /^(session|wallet|finance|components\/wallet|v2in)\/|^screens\/(Setup|AdvancedSetup|WalletDeposit|Performance|Execution|Sequence|SequenceCreate|SequenceLegacy|SequenceShell|PositionLab)\.tsx$|^components\/create\/(DepositAmounts|CreatePosition)(\.tsx)?$|^components\/positions\/(PositionActions|HeldDeposits|SequenceSwitch|FeeReserves)(\.tsx)?$/;
+  // Changed on purpose 2026-11-07 (the owner's Points page, Season 1): screens/Points.tsx reads the signed-in session and
+  // asks the wallet to sign a referral link (finance/points.ts), so it is wallet feature code too; App.tsx opens it only
+  // lazily, behind __DOMINO_WALLET_SESSION__ (asserted below).
+  const feature = /^(session|wallet|finance|components\/wallet|v2in)\/|^screens\/(Setup|AdvancedSetup|WalletDeposit|Performance|Execution|Points|Sequence|SequenceCreate|SequenceLegacy|SequenceShell|PositionLab)\.tsx$|^components\/create\/(DepositAmounts|CreatePosition)(\.tsx)?$|^components\/positions\/(PositionActions|HeldDeposits|SequenceSwitch|FeeReserves)(\.tsx)?$/;
   // The onboarding previews and the deposit consumer (#38, #40/#44) read the
   // session through session/port.ts, and the preview screen also through
   // session/livePort.ts. Their lab screens live in chunks of the consumer-test
@@ -449,4 +452,17 @@ test('V2 integration: the integrated modules (src/v2in) name no wallet method an
     for (const [, target] of code.matchAll(/from '((?:\.\.\/)+(?:wallet|session)\/[^']+)'/g)) assert.match(target, /\/wallet\/port$/, `${path} imports ${target}: of the wallet and the session, only the port's chain switch`);
   }
   for (const name of fromPort) assert.ok(['ChainSwitchOutcome', 'switchToChain', 'switchToOrigin', 'v2SwitchNotice'].includes(name), `wallet/port.ts ${name}`);
+});
+
+// Added 2026-11-07 (the owner's Points page, Season 1): the Points screen is wallet feature code (it reads the session
+// and asks the wallet to sign a referral link), opened only by App.tsx, lazily, behind the wallet's build flag; the one
+// module it signs and sends through is finance/points.ts, which signs with the sign-in's own signer and nothing else.
+test('the Points screen is opened only lazily behind the wallet flag, and signs only through finance/points.ts', () => {
+  const openers = ALL.filter(({ code }) => /['"`]\.{1,2}\/(?:screens\/)?Points['"`]/.test(code)).map(({ path }) => path);
+  assert.deepEqual(openers, ['App.tsx']);
+  assert.match(ALL.find(({ path }) => path === 'App.tsx').code, /const Points = __DOMINO_WALLET_SESSION__ \? deferred<object>\(recovering\(\(\) => import\('\.\/screens\/Points'\)/);
+  const screen = ALL.find(({ path }) => path === 'screens/Points.tsx').code;
+  assert.doesNotMatch(screen, /\b(signLoginMessage|signMessage|sessionController|withSessionCsrf|fetch)\b|personal_sign/, 'the screen asks through finance/points.ts only');
+  const binding = ALL.find(({ path }) => path === 'finance/points.ts').code;
+  assert.deepEqual([...binding.matchAll(/\b(signLoginMessage|signMessage|signTypedData|sendTransaction)\(/g)].map((m) => m[1]), ['signLoginMessage'], 'one signature, the referral text');
 });

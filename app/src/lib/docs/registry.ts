@@ -8,6 +8,7 @@ import { AUTO_COMPOUND, AUTO_EXIT, DOMINO_COMPOUNDER, YOUR_AUTOMATION } from './
 import { EARNED_FEES, POOLS, RANGES } from './pages/basics'
 import { NON_CUSTODIAL, PRIVACY, RISKS } from './pages/custody'
 import { WALLET, WALLET_REQUESTS, WHAT_IS_DOMINO } from './pages/introduction'
+import { POINTS } from './pages/points'
 import { CONTRACTS, FEES, FIGURES, GLOSSARY } from './pages/reference'
 import { BRING_FUNDS, MANAGE_POSITION, MARKETS, NEW_POSITION, POOL_PAGE, POSITIONS } from './pages/using'
 import type { DocGroup, DocPage, TocEntry } from './types'
@@ -18,7 +19,8 @@ export const DOC_GROUPS: readonly DocGroup[] = [
   // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): bringing funds from another network, managing a
   // position from its page, Auto-exit (2026-10-06, once stop-loss and take-profit), and the automation behind them, each a
   // page of its own.
-  { key: 'using', title: 'Using Domino', pages: [MARKETS, POOL_PAGE, NEW_POSITION, BRING_FUNDS, POSITIONS, MANAGE_POSITION] },
+  // Changed on purpose 2026-11-07 (the owner: a Docs page for Season 1 of points, beside the Points page): Points, last.
+  { key: 'using', title: 'Using Domino', pages: [MARKETS, POOL_PAGE, NEW_POSITION, BRING_FUNDS, POSITIONS, MANAGE_POSITION, POINTS] },
   { key: 'automation', title: 'Automation', pages: [AUTO_COMPOUND, DOMINO_COMPOUNDER, AUTO_EXIT, YOUR_AUTOMATION] },
   { key: 'custody', title: 'Custody and risk', pages: [NON_CUSTODIAL, RISKS, PRIVACY] },
   { key: 'reference', title: 'Reference', pages: [FEES, FIGURES, CONTRACTS, GLOSSARY] },

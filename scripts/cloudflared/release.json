@@ -12,5 +12,5 @@
   "tagObject": "6d0eceb28aca93086a3a9ccce88415b4e613b690",
   "sourceCommit": "dc3b264da64a801bc3a8d5301a6db21401910ad5",
   "tagSignatureVerified": false,
-  "provenance": "Cloudflare-owned GitHub release metadata and asset digest; not an independently signed binary attestation. The services host (domino-prod-02) verified this size and SHA-256 and has run this binary since 2026-11-02 13:30:52 UTC."
+  "provenance": "Cloudflare-owned GitHub release metadata and asset digest; not an independently signed binary attestation. The services host (production-services-host) verified this size and SHA-256 and has run this binary since 2026-11-02 13:30:52 UTC."
 }

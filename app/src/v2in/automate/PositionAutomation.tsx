@@ -175,10 +175,10 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
 
   // §2.13: a manual action on this position handed one of its vaults over; its dialog opens by itself.
   useEffect(() => {
-    const show = (vault: Address, focus: 'rearm' | 'reserves' | 'leave') => {
+    const show = (vault: Address, focus: 'rearm' | 'reserves' | 'leave' | 'withdraw') => {
       const found = views.find((entry) => entry.view.vault === vault)
       if (!found) return
-      const kind: VaultDialogKind = focus === 'rearm' ? 'rearm' : focus === 'leave' ? 'leave' : reservesOffer(found.view).returnable ? 'return' : 'withdraw'
+      const kind: VaultDialogKind = focus === 'rearm' ? 'rearm' : focus === 'leave' ? 'leave' : focus === 'withdraw' ? 'withdraw' : reservesOffer(found.view).returnable ? 'return' : 'withdraw'
       beginAction({ kind, vault: found.view, subject: null })
     }
     for (const entry of views) {
@@ -320,7 +320,12 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
   // that opens this same dialog (setupExit); never on compounding (no target there), and never while the automation's
   // state is not read (it never says Off then).
   const exitEntry = offered && target !== null && label !== 'Auto-exit' && !setupExit && !stateUnavailable
+  // Added 2026-11-09 (the core-flows fix; the owner: getting your money back must be totally easy): a closed position
+  // whose automation still holds its fees ("Funds available in automation") has Withdraw to wallet in its row, one press
+  // from the dialog that sends them to the wallet. It sat behind the automation's control and its sheet.
+  const fundsLeft = current !== null && current.rootClosed === true && reservesOffer(current).withdraw
   const controls = <>
+      {fundsLeft && <Button type="button" variant="primary" onClick={() => beginAction({ kind: 'withdraw', vault: current, subject: null })} aria-haspopup="dialog" data-automation-withdraw="">{VAULT_ACTION_LABEL.withdraw}</Button>}
       {setupLink ? <LinkButton href={setupHref({ chainId, dex, tokenId: idOf(tokenId) })} variant="primary" data-automation-control="" data-automation-setup="" data-automate-entry={tokenId}>Set up automation</LinkButton>
         : setupExit ? <Button type="button" variant="primary" onClick={() => beginAction({ kind: 'mandate', target })} data-automation-control="" data-automation-setup="" data-v2in-open="mandate">Set up automation</Button>
           : <Button type="button" variant="outline" onClick={() => setExpanded(true)} aria-haspopup="dialog" aria-expanded={expanded && !open} aria-controls={controlId} data-automation-control="">
@@ -354,7 +359,7 @@ export default function PositionAutomation({ tokenId, position, holder, priceCon
           {view.successors.map((id) => <Button key={id.toString()} type="button" size="sm" variant="outline" onClick={() => beginAction({ kind: 'withdraw-child', vault: view, subject: { tokenId: id } })}>Withdraw position #{id.toString()}</Button>)}
         </div>)}
       </Details>}
-      {current?.rootClosed === true && <p className="dm-acct-note">This position is closed. Any remaining funds can be recovered here. <a href="#/new">Create a new position</a></p>}
+      {current?.rootClosed === true && <p className="dm-acct-note">This position is closed. Any remaining funds can be recovered here. <a href="/new">Create a new position</a></p>}
     </div>
     return expanded && !open && !actionOpen
       ? <ActionSheet id={`manage-${entryKey}`} title={label} onClose={hideManagement} footer={<Button type="button" variant="outline" size="lg" onClick={hideManagement}>Back to position</Button>} data-automation-management="">{panel}</ActionSheet>

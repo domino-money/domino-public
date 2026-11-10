@@ -25,7 +25,7 @@ export interface V2PositionRef {
 export function v2PositionHref(ref: V2PositionRef): string {
   const slug = SLUGS[ref.chainId]
   if (!slug || (ref.dex !== 3 && ref.dex !== 4) || ref.tokenId < 1n || ref.tokenId > MAX) throw new Error('invalid_position_ref')
-  return `#/positions/${slug}-v${ref.dex}-${ref.tokenId.toString(10)}`
+  return `/positions/${slug}-v${ref.dex}-${ref.tokenId.toString(10)}`
 }
 
 /** The position a `#/positions/<param>` names, or null for anything else (V1's digits-only ids included). */

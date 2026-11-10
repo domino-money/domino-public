@@ -7,10 +7,14 @@
  * them, from the repository's own and the forced profile, and nothing else: each package's schemas name 99901 wherever
  * they name Domino's three chains (an `enum` of chain ids), and its constants take a row for it:
  *   - read-v6: CONSTANTS.chainIds ends with 99901; CONSTANTS.priceProfiles[99901] is the profile's stable and wrapped
- *     token, and its HYPE priced at its native pool alone (`nativePool`, the runtime's own shape for a chain with no feed;
- *     api-contracts/read-v6/runtime.mjs `priced`).
+ *     token, no feed, and its HYPE priced at its native pool alone (`nativePool`, the runtime's own shape for a chain with
+ *     no feed; api-contracts/read-v6/runtime.mjs `priced`).
+ * A package that already names 99901 (rugged97's day-9 version, landed) is handed back exactly as it is.
  *   - position-plan-v1: CONSTANTS.chains[99901], the profile's charge currencies, Permit2, Universal Router and wrapped
  *     token, a Nitro chain's L1 data fee source, as the package writes Arbitrum One's row.
+ *   - crosschain-v1 (added 2026-11-09, Elysium's day 9, in a build that forces funds brought to Elysium alone):
+ *     CONSTANTS.chains[99901] pinning Relay at its depository, as the package pins it on the other chains, and
+ *     CONSTANTS.destinations[99901], the profile's stable alone (Relay bridges Elysium's USDC, not its native HYPE).
  * The runtimes themselves (their checks) are rugged97's, unchanged: vite.config.ts serves these as the two packages'
  * `schema-data.mjs` in a forced test build alone (`elysiumRehearsal`), and tests/support/elysium-day9.mjs loads the same
  * runtimes over them in node for the browser suites' fixture services. The release build and every build that does not
@@ -18,7 +22,7 @@
  *
  * Pure: data in, data out.
  */
-import { ELYSIUM_V2_ID } from './elysium-switch.mjs';
+import { ELYSIUM_V2_ID, destinationPinned, originPinned, planNames, readV6Names } from './elysium-switch.mjs';
 
 const THREE = [4663, 8453, 42161];
 /** The V2 chains beside Robinhood Chain: every chain-id enum that names them (Domino's three, or these two alone) takes Elysium. */
@@ -57,16 +61,32 @@ function nativePoolOf(profile) {
   return { dex: 4, currency0, currency1, fee: pool.fee, tickSpacing: pool.tickSpacing, hooks: ZERO };
 }
 
-/** read-v6's schema data (its SCHEMAS, ERRORS and CONSTANTS) as a day-9 version naming 99901 has it. */
+/** A package's schema data exactly as it is (a deep copy): what the rehearsal hands back once the package names 99901. */
+const asItIs = (data) => ({ SCHEMAS: copy(data.SCHEMAS), ERRORS: copy(data.ERRORS), CONSTANTS: copy(data.CONSTANTS) });
+
+/**
+ * read-v6's schema data (its SCHEMAS, ERRORS and CONSTANTS) as a day-9 version naming 99901 has it.
+ * Changed on purpose 2026-11-07 (day-9 rehearsal): once rugged97's package names 99901 (CONSTANTS.chainIds), it is his
+ * day-9 version itself, handed back exactly as it is: nothing is widened any more (an enum he left without 99901, such as
+ * chain-tokens', stays without it, so a forced test build refuses what the release build refuses). Before that, its
+ * priceProfiles row is the producer's shape for a chain priced at its native pool (backend/v2_chain_reads.py
+ * price_profile: `feed` and `heartbeatSeconds` null beside `nativePool`).
+ */
 export function rehearseReadV6(data, profile) {
+  if (readV6Names(data.CONSTANTS.chainIds)) return asItIs(data);
   const out = { SCHEMAS: withChain(copy(data.SCHEMAS)), ERRORS: copy(data.ERRORS), CONSTANTS: copy(data.CONSTANTS) };
-  if (!out.CONSTANTS.chainIds.includes(ELYSIUM_V2_ID)) out.CONSTANTS.chainIds.push(ELYSIUM_V2_ID);
-  out.CONSTANTS.priceProfiles[String(ELYSIUM_V2_ID)] ??= { stable: stableOf(profile), wrapped: lower(profile.wrappedNative.address), nativePool: nativePoolOf(profile) };
+  out.CONSTANTS.chainIds.push(ELYSIUM_V2_ID);
+  out.CONSTANTS.priceProfiles[String(ELYSIUM_V2_ID)] ??= { stable: stableOf(profile), wrapped: lower(profile.wrappedNative.address), feed: null, heartbeatSeconds: null, nativePool: nativePoolOf(profile) };
   return out;
 }
 
-/** position-plan-v1's schema data as a day-9 version naming 99901 has it. */
+/**
+ * position-plan-v1's schema data as a day-9 version naming 99901 has it.
+ * Changed on purpose 2026-11-07 (day-9 rehearsal): once rugged97's package has a 99901 row (CONSTANTS.chains), it is his
+ * day-9 version itself, handed back exactly as it is.
+ */
 export function rehearsePlan(data, profile) {
+  if (planNames(data.CONSTANTS.chains)) return asItIs(data);
   const out = { SCHEMAS: withChain(copy(data.SCHEMAS)), ERRORS: copy(data.ERRORS), CONSTANTS: copy(data.CONSTANTS) };
   out.CONSTANTS.chains[String(ELYSIUM_V2_ID)] ??= {
     chargeCurrencies: profile.chargeCurrencies.map((currency) => ({ rank: currency.rank, token: lower(currency.address) })),
@@ -77,6 +97,22 @@ export function rehearsePlan(data, profile) {
     universalRouter: lower(profile.uniswap.universalRouter.address),
     wrappedNative: lower(profile.wrappedNative.address),
   };
+  return out;
+}
+
+/** Relay's depository, as crosschain-v1 pins it on nearly every chain (CONSTANTS.chains[*].relay.depository). */
+const RELAY_DEPOSITORY = '0x4cd00e387622c35bddb9b4c962c136462338bc31';
+
+/**
+ * crosschain-v1's schema data as a version that brings funds to 99901 would have it (added 2026-11-09, Elysium's day 9,
+ * the owner: funds brought to Elysium from other networks as on Base). Once rugged97's package pins a bridge for 99901 and
+ * lists its destinations, it is his version itself, handed back exactly as it is.
+ */
+export function rehearseCrosschain(data, profile) {
+  if (originPinned(data.CONSTANTS.chains) && destinationPinned(data.CONSTANTS.destinations) !== null) return asItIs(data);
+  const out = { SCHEMAS: withChain(copy(data.SCHEMAS)), ERRORS: copy(data.ERRORS), CONSTANTS: copy(data.CONSTANTS) };
+  out.CONSTANTS.chains[String(ELYSIUM_V2_ID)] ??= { name: 'Elysium', relay: { depository: RELAY_DEPOSITORY } };
+  out.CONSTANTS.destinations[String(ELYSIUM_V2_ID)] ??= [stableOf(profile)];
   return out;
 }
 

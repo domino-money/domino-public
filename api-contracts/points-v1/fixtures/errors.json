@@ -1,0 +1,62 @@
+[
+  {
+    "body": {
+      "error": "invalid_request"
+    },
+    "status": 400
+  },
+  {
+    "body": {
+      "error": "session_required"
+    },
+    "status": 401
+  },
+  {
+    "body": {
+      "error": "csrf_invalid"
+    },
+    "status": 403
+  },
+  {
+    "body": {
+      "error": "points_unavailable"
+    },
+    "status": 503
+  },
+  {
+    "body": {
+      "error": "referral_self"
+    },
+    "status": 422
+  },
+  {
+    "body": {
+      "error": "referral_wallet_excluded"
+    },
+    "status": 403
+  },
+  {
+    "body": {
+      "error": "referral_season_closed"
+    },
+    "status": 409
+  },
+  {
+    "body": {
+      "error": "referral_message_not_fresh"
+    },
+    "status": 422
+  },
+  {
+    "body": {
+      "error": "referral_signature_invalid"
+    },
+    "status": 422
+  },
+  {
+    "body": {
+      "error": "referral_signature_mismatch"
+    },
+    "status": 422
+  }
+]

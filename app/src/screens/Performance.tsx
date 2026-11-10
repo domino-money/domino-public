@@ -105,7 +105,7 @@ function PerformanceCard({ card }: { card: PerfCard }) {
     data-performance-status={card.performanceStatus} data-collection-status={card.collectionStatus} data-collection-reason={card.collectionReason}
     data-snapshot-age={card.snapshotAgeSeconds} data-snapshot-block={card.snapshot.blockNumber} data-window-start={card.financial.windowStart} data-window-end={card.financial.windowEnd}
     data-external-flows={card.financial.externalFlowsComplete ? 'complete' : 'incomplete'} data-operator-costs-reason={card.financial.operatorCostsReason} data-complete-24h={card.complete24h ? 'true' : 'false'}>
-    <Head name={`Position #${card.rootTokenId}`} href={`#/positions/${card.rootTokenId}`} status={status} title={reasonsText(card)} />
+    <Head name={`Position #${card.rootTokenId}`} href={`/positions/${card.rootTokenId}`} status={status} title={reasonsText(card)} />
     <dl className="dm-mp-figs">{MAIN.map(field => <MetricCell key={field.name} field={field} card={card} />)}</dl>
     <details className="dm-details dm-mp-more">
       <summary>All figures</summary>
@@ -323,7 +323,7 @@ export default function Performance({ onShows }: { onShows?: (shows: CardShows |
             order, and a sequence's first position is its oldest, so the first id is the one it started from. The automation's
             address is only the row's title. */}
         {waiting.map(item => <li className="dm-mp-row" key={item.enrollmentId} title={item.vault} data-enrollment-status={item.status} data-enrollment-reason={item.reason}>
-          <Head name={`Position #${item.tokenIds[0]}`} href={`#/positions/${item.tokenIds[0]}`} status={ENROLLMENT_STATUS_TEXT[item.status]} />
+          <Head name={`Position #${item.tokenIds[0]}`} href={`/positions/${item.tokenIds[0]}`} status={ENROLLMENT_STATUS_TEXT[item.status]} />
           <p className="dm-acct-note">{ENROLLMENT_REASON_TEXT[item.reason]}</p>
         </li>)}
         {view.cards.map(card => <PerformanceCard key={card.epochId} card={card} />)}

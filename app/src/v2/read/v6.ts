@@ -81,9 +81,18 @@ async function exchange<T>(transport: ReadV6Transport, runtime: ReadV6Validators
     return { kind: 'unavailable', reason: 'network' }
   }
   if (answer.status === 200) {
-    if (!runtime.validateResponse(route, answer.body)) return { kind: 'invalid', detail: 'response' }
-    if (!runtime.validateExchange(route, request, answer.body)) return { kind: 'invalid', detail: 'exchange' }
-    return { kind: 'ok', body: servedOnly(route, answer.body) as T }
+    let body = answer.body
+    // Changed on purpose 2026-11-07 (the read-v6 version skew, docs/ELYSIUM_DAY9.md "Order"): an answer the package refuses
+    // whole, and that names chains this app does not serve, is checked again without them (servedOnly); every rule of the
+    // package still holds on what is left, and nothing of those chains is ever read. The read Worker does the same with
+    // its own package's chains (bridge/src/worker.mjs ownChains), so a read gateway whose read-v6 names one chain more
+    // under the same version blanks nothing on the chains served. An answer the package takes is read exactly as before.
+    if (!runtime.validateResponse(route, body)) {
+      body = servedOnly(route, body)
+      if (body === answer.body || !runtime.validateResponse(route, body)) return { kind: 'invalid', detail: 'response' }
+    }
+    if (!runtime.validateExchange(route, request, body)) return { kind: 'invalid', detail: 'exchange' }
+    return { kind: 'ok', body: servedOnly(route, body) as T }
   }
   if (!runtime.validateError(answer.status, answer.body)) return { kind: 'invalid', detail: 'error_body' }
   const code = (answer.body as { error: ReadV6ErrorCode }).error
@@ -104,15 +113,24 @@ const PER_CHAIN = ['chains', 'tokens', 'vaults', 'positions', 'mandates', 'credi
  * missing: scripts/elysium-switch.mjs); until then no screen meets a chain it holds no name, route or contract for. An
  * answer that names only served chains, every answer today, is returned as it is. Every other route asks about one chain
  * the app chose, or about exactly the chains it lists.
+ *
+ * Changed on purpose 2026-11-07 (the read-v6 version skew): also run on an answer the package refused (exchange above), so
+ * it reads nothing it does not have to: the chains left out are those the answer's own `chains` lists beyond the served
+ * ones, and only when they are distinct chain ids and the answer's coverage is its own chains' (else it is returned as it
+ * is, and refused); an entry naming any other chain stays, for the package to refuse.
  */
 function servedOnly(route: ReadV6NextRoute, body: unknown): unknown {
-  if (route !== 'portfolio' && route !== 'activity') return body
-  const answer = body as Record<string, unknown> & { chains: readonly { chainId: number; status: string }[] }
-  const served = (entry: unknown) => V2_CHAIN_IDS.includes((entry as { chainId: number }).chainId)
-  if (answer.chains.every(served)) return body
+  const chains = (body as { chains?: unknown } | null)?.chains
+  if ((route !== 'portfolio' && route !== 'activity') || !Array.isArray(chains)) return body
+  const answer = body as Record<string, unknown>
+  const current = (list: { status?: unknown }[]) => list.every((chain) => chain?.status === 'current')
+  const ids = chains.map((chain) => chain?.chainId)
+  const out = ids.filter((id) => !V2_CHAIN_IDS.includes(id))
+  if (!out.length || new Set(ids).size < ids.length || !out.every((id) => Number.isSafeInteger(id) && id > 0) ||
+    (answer.coverage === 'complete') !== current(chains)) return body
   const kept: Record<string, unknown> = { ...answer }
-  for (const key of PER_CHAIN) if (Array.isArray(answer[key])) kept[key] = (answer[key] as unknown[]).filter(served)
-  kept.coverage = (kept.chains as { status: string }[]).every((chain) => chain.status === 'current') ? 'complete' : 'partial'
+  for (const key of PER_CHAIN) if (Array.isArray(answer[key])) kept[key] = (answer[key] as { chainId?: unknown }[]).filter((entry) => !out.includes(entry?.chainId))
+  kept.coverage = current(kept.chains as { status: string }[]) ? 'complete' : 'partial'
   return kept
 }
 

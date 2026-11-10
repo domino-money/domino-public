@@ -1,0 +1,233 @@
+/* V4 Points (added 2026-11-07, the owner's Points page, Season 1; owner: points). Imported by screens/Points.tsx alone, so
+   it comes in the page's own chunk. Scope: .dm-points-page. Every rule sits in @layer v4 (the last layer) and starts with
+   this file's scope.
+
+   Direction C, "Corrente", as the owner chose it (integ-logs/points/directions: c.css, base.css, the corrente-*.png
+   renders): your referral line as a line of play with matching ends, your double laid across it, the referrer's tile
+   before it and the wallets you referred after it; under it the total in the display serif, the link to share, and what
+   earned the points. The tile is Home's own material (the slabs, the face's light, the groove, the shaded pips), sized by
+   one length (--s, its short side). Nothing sits behind a tile; its shadow falls on the ground under it.
+
+   Motion (2026-11-08) is the owner's animated prototype (PROPOSAL.md §11), run by points/motion.ts as Web Animations on
+   transform and opacity; this file holds what it moves: the layers that cross (.pt-swap, a leaving one .pt-left, hidden
+   at rest and kept in its place so nothing moves), the total's drums, the joint's light, the season's shimmer, and the
+   hold that keeps the first visit's page hidden until its entrance. CSS keeps the hover and press of a tile and the
+   disclosure. Under reduced motion nothing moves: changes are short fades (points/motion.ts), a tile does not lift. */
+@layer v4 {
+  .dm-points-page {
+    --cs: 5.9rem;
+    --ys: 10.75rem;
+    padding-bottom: 6rem;
+  }
+
+  /* ---- Title (Positions' title row: the serif title with its Tangerine stop, the wallet chip beside it) ------------- */
+  .dm-points-page .pt-title { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.75rem 1.125rem; }
+  .dm-points-page .pt-title h1 { margin: 0.05em 0 0; }
+  .dm-points-page .pt-chip { height: 2rem; min-height: 0; margin: 0 0 1rem; padding: 0 0.75rem; border-radius: 999px; background: rgb(255 236 220 / 0.035); box-shadow: inset 0 0 0 1px var(--line); }
+  .dm-points-page .pt-mono { font-family: var(--font-mono); letter-spacing: 0; }
+  .dm-points-page .pt-chip .pt-mono { font-size: 0.8125rem; line-height: 1rem; color: var(--muted); white-space: nowrap; }
+  .dm-points-page .pt-num { font-variant-numeric: lining-nums tabular-nums; }
+
+  /* ---- The tile ----------------------------------------------------------------------------------------------------- */
+  .dm-points-page .pt-tile { position: relative; flex: none; display: inline-block; width: var(--s); height: calc(var(--s) * 1.755); }
+  .dm-points-page .pt-tile.pt-flat { width: calc(var(--s) * 1.755); height: var(--s); }
+  .dm-points-page :is(.pt-drop, .pt-lift) { position: absolute; inset: 0; }
+  .dm-points-page .pt-lift { perspective: calc(var(--s) * 5.3); transition: transform 0.22s var(--ease-std); }
+  .dm-points-page .pt-3d { position: absolute; inset: 0; transform-style: preserve-3d; transform: var(--tf, none); }
+  .dm-points-page .pt-3d > span { position: absolute; inset: 0; border-radius: calc(var(--s) * 0.16); }
+  .dm-points-page .pt-3d > .z6 { background: #7c4223; transform: translateZ(calc(var(--s) * -0.128)); }
+  .dm-points-page .pt-3d > .z5 { background: #a0552b; transform: translateZ(calc(var(--s) * -0.104)); }
+  .dm-points-page .pt-3d > .z4 { background: #bb6233; transform: translateZ(calc(var(--s) * -0.08)); }
+  .dm-points-page .pt-3d > .z3 { background: #cd6d39; transform: translateZ(calc(var(--s) * -0.056)); }
+  .dm-points-page .pt-3d > .z2 { background: #dc7840; transform: translateZ(calc(var(--s) * -0.032)); }
+  .dm-points-page .pt-3d > .z1 { background: #ec8549; transform: translateZ(calc(var(--s) * -0.012)); }
+  .dm-points-page .pt-face { overflow: hidden; transform: translateZ(1px); background: linear-gradient(158deg, #ffc39c, #ffa771 30%, #ff9d62 55%, #f28a4c); box-shadow: inset 0 2px #fff0e4b3, inset 0 0 0 1px #ffdcc459, inset 0 calc(var(--s) * -0.032) calc(var(--s) * 0.075) #82340e59; }
+  .dm-points-page .pt-face::after { content: ''; position: absolute; inset: 0; background: radial-gradient(closest-side, #fff7eeb3, #fff7ee2e 45%, #fff7ee00) calc(var(--s) * -1.05) calc(var(--s) * -1.25) / calc(var(--s) * 2.25) calc(var(--s) * 2.25) no-repeat; mix-blend-mode: soft-light; }
+  .dm-points-page .pt-face > b { position: absolute; left: 11%; right: 11%; top: 50%; height: max(1.5px, calc(var(--s) * 0.016)); margin-top: max(-0.75px, calc(var(--s) * -0.008)); border-radius: 2px; background: #5422088c; box-shadow: 0 1px #ffe2cc8c; }
+  .dm-points-page .pt-flat .pt-face > b { left: 50%; right: auto; top: 11%; bottom: 11%; width: max(1.5px, calc(var(--s) * 0.016)); height: auto; margin: 0 0 0 max(-0.75px, calc(var(--s) * -0.008)); }
+  .dm-points-page .pt-face > i { position: absolute; width: calc(var(--s) * 0.17); height: calc(var(--s) * 0.17); margin: calc(var(--s) * -0.085) 0 0 calc(var(--s) * -0.085); border-radius: 50%; background: radial-gradient(circle at 50% 38%, #1a110b, #3b2416 70%, #4a2c1a); box-shadow: inset 0 calc(var(--s) * 0.016) calc(var(--s) * 0.027) #000000a6, 0 1px #ffe4cea6; }
+  /* A pip not set yet: its socket, pressed into the face. */
+  .dm-points-page .pt-face > i.o { background: radial-gradient(circle at 50% 40%, #b8582544, #d0703a22 70%); box-shadow: inset 0 calc(var(--s) * 0.012) calc(var(--s) * 0.02) #6e2c0c66, 0 1px #ffe4ce80; }
+  /* The light that passes along the line, and the glint under a pointer (hooks; transform and opacity only). */
+  .dm-points-page .pt-sweep { position: absolute; inset: -10% -60%; background: linear-gradient(100deg, transparent 41%, rgb(255 246 236 / 0.62) 50%, transparent 59%); mix-blend-mode: screen; opacity: 0; transform: translateX(-70%); }
+  .dm-points-page .pt-glint { position: absolute; inset: 0; background: radial-gradient(60% 50% at 30% 20%, rgb(255 246 236 / 0.5), transparent 70%); mix-blend-mode: soft-light; opacity: 0; transition: opacity 0.22s var(--ease-std); }
+  .dm-points-page .pt-ground { position: absolute; left: 8%; right: 8%; bottom: calc(var(--s) * -0.3); height: calc(var(--s) * 0.22); border-radius: 50%; background: radial-gradient(closest-side, #000c, #00000059 55%, #0000); filter: blur(calc(var(--s) * 0.03)); }
+  /* A place for a tile (Not found's ghost tile), outlined at 3:1 against the ground (WCAG 1.4.11). */
+  .dm-points-page .pt-tile.ghost .pt-ground { display: none; }
+  .dm-points-page .pt-tile.ghost .pt-face { background: transparent; box-shadow: inset 0 0 0 1px #ffecdc61; }
+  .dm-points-page .pt-tile.ghost .pt-face::after { content: none; }
+  .dm-points-page .pt-tile.ghost .pt-face > b { background: #ffecdc3d; box-shadow: none; }
+  .dm-points-page .pt-tile.ghost .pt-face > i { background: transparent; box-shadow: inset 0 0 0 1px #ffecdc4d; }
+  .dm-points-page .pt-tile.dashed .pt-face { box-shadow: none; outline: 1.5px dashed #ffecdc99; outline-offset: -1.5px; }
+  /* Under a fine pointer a tile in play lifts 4 px and catches the light; pressed, it gives 1.5%. */
+  @media (hover: hover) and (pointer: fine) {
+    .dm-points-page .pt-tile.solid:hover .pt-lift { transform: translateY(-0.25rem); }
+    .dm-points-page .pt-tile.solid:hover .pt-glint { opacity: 1; }
+    .dm-points-page .pt-tile.solid:active .pt-lift { transform: translateY(-0.125rem) scale(0.985); transition-duration: 0.1s; }
+  }
+
+  /* ---- The line of play --------------------------------------------------------------------------------------------- */
+  /* Clipped sideways only: a tile sliding in from beyond the line never widens the page (the entrance, on a phone). */
+  .dm-points-page .pt-stage { position: relative; display: grid; justify-items: center; margin-top: 0.5rem; padding: 3rem 0 1rem; overflow-x: clip; overflow-clip-margin: 2rem; }
+  .dm-points-page .pt-chain { position: relative; display: grid; grid-auto-flow: column; grid-template-rows: auto auto; align-items: center; column-gap: 0.1875rem; }
+  .dm-points-page .pt-node { display: contents; }
+  .dm-points-page .pt-node > :is(.pt-tile, .pt-run, .pt-slot) { grid-row: 1; align-self: center; justify-self: center; }
+  .dm-points-page .pt-node > figcaption { grid-row: 2; align-self: start; display: grid; justify-items: center; margin-top: 2.25rem; text-align: center; }
+  .dm-points-page .pt-run { display: flex; gap: 0.1875rem; }
+  /* A place on the line: a tile, and the ghost it replaced while that leaves, in one cell. */
+  .dm-points-page .pt-slot { display: inline-grid; }
+  .dm-points-page .pt-slot > * { grid-area: 1 / 1; }
+  .dm-points-page .pt-capl { display: grid; gap: 0.3rem; justify-items: center; }
+  /* Where two tiles meet: a thin line of light (points/motion.ts places it). */
+  .dm-points-page .pt-joints { position: absolute; inset: 0; pointer-events: none; }
+  .dm-points-page .pt-jflash { position: absolute; width: 2px; border-radius: 2px; background: linear-gradient(transparent, #fff3e6, transparent); box-shadow: 0 0 0.75rem rgb(255 190 146 / 0.8); opacity: 0; }
+  .dm-points-page .pt-cap { font-size: 1rem; color: var(--fg); }
+  .dm-points-page .pt-sub { font-size: 0.9375rem; color: var(--subtle); }
+  .dm-points-page .pt-sub .pt-mono { color: var(--muted); }
+  .dm-points-page .pt-total { display: flex; align-items: baseline; gap: 1rem; margin: 3.25rem 0 0; font-family: var(--font-display); font-size: 9.5rem; line-height: 0.85; letter-spacing: -0.035em; color: var(--fg); }
+  .dm-points-page .pt-unit { font-family: var(--font-sans); font-size: 1.25rem; letter-spacing: 0; color: var(--muted); }
+  /* The total's drums: each digit over a 0-9 strip twice (generated text, so the page's words stay the figure), shown
+     only while it rolls, in a window a little taller than the line with soft ends. */
+  .dm-points-page .pt-total .pt-num { white-space: nowrap; }
+  .dm-points-page .pt-dg { position: relative; display: inline-block; }
+  .dm-points-page .pt-drum { position: absolute; inset: -0.1em 0; overflow: hidden; visibility: hidden; opacity: 0; pointer-events: none; -webkit-mask: linear-gradient(transparent, #000 14%, #000 86%, transparent); mask: linear-gradient(transparent, #000 14%, #000 86%, transparent); }
+  .dm-points-page .pt-strip { position: absolute; top: 0.1em; left: 0; right: 0; text-align: center; }
+  .dm-points-page .pt-strip::before { content: '0\A 1\A 2\A 3\A 4\A 5\A 6\A 7\A 8\A 9\A 0\A 1\A 2\A 3\A 4\A 5\A 6\A 7\A 8\A 9'; display: block; white-space: pre; }
+  /* Before 9 Nov: a window of warm light, 40% of the words wide, crosses them (outer and inner counter-translate). */
+  .dm-points-page .pt-shimmer { position: relative; display: inline-block; }
+  .dm-points-page .pt-hl { position: absolute; top: 0; bottom: 0; left: 0; width: 40%; overflow: hidden; pointer-events: none; transform: translateX(-100%); -webkit-mask: linear-gradient(90deg, transparent, #000 40%, #000 60%, transparent); mask: linear-gradient(90deg, transparent, #000 40%, #000 60%, transparent); }
+  .dm-points-page .pt-hl > span { display: block; width: 250%; white-space: nowrap; color: var(--v4-lit-stop); transform: translateX(40%); }
+  .dm-points-page .pt-hl > span::before { content: attr(data-text); }
+  .dm-points-page .pt-lead { max-width: 18ch; margin: 3rem 0 0; font-family: var(--font-display); font-size: 4.5rem; line-height: 1; letter-spacing: -0.02em; text-align: center; color: var(--fg); text-wrap: balance; }
+  /* A referral link opened while signed out: one line over the sign-in's own. */
+  .dm-points-page .pt-invited { max-width: 52ch; margin: 2.5rem 0 -1.5rem; padding: 0.5rem 1rem; border-radius: 999px; box-shadow: inset 0 0 0 1px #ff9d628c; font-size: 0.9375rem; line-height: 1.4; text-align: center; color: var(--fg); }
+  .dm-points-page .pt-lead--line { max-width: 24ch; font-size: 2.75rem; line-height: 1.05; }
+  .dm-points-page .pt-lead-wait { height: 9.5rem; margin-top: 3.25rem; }
+  .dm-points-page .pt-rule { max-width: 44ch; margin: 1.5rem 0 0; font-size: 1.125rem; line-height: 1.5; text-align: center; color: var(--muted); text-wrap: balance; }
+  .dm-points-page .pt-note { max-width: 52ch; margin: 1rem 0 0; font-size: 0.9375rem; line-height: 1.45; text-align: center; color: var(--subtle); text-wrap: balance; }
+  .dm-points-page .pt-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; margin-top: 1.75rem; }
+  .dm-points-page :is(.pt-actions, .pt-link) > .dm-btn { flex: none; height: 3.5rem; padding: 0 1.75rem; border-radius: 0.9375rem; font-size: 0.96875rem; font-weight: 400; }
+
+  /* ---- Headings ----------------------------------------------------------------------------------------------------- */
+  .dm-points-page .pt-h2 { margin: 0 0 1.25rem; font-family: var(--font-display); font-size: 2.5rem; font-weight: 400; line-height: 1; color: var(--fg); }
+  .dm-points-page .pt-h3 { margin: 0 0 0.5rem; font-family: var(--font-display); font-size: 2rem; font-weight: 400; line-height: 1; color: var(--fg); }
+
+  /* ---- Link your referrer --------------------------------------------------------------------------------------------- */
+  .dm-points-page .pt-invite { max-width: 44rem; margin: 3rem auto 0; padding: 2rem 2.25rem 1.5rem; border-radius: 1.75rem; box-shadow: inset 0 0 0 1px #ff9d628c; background: radial-gradient(120% 140% at 50% 0%, rgb(255 157 98 / 0.09), rgb(255 157 98 / 0) 60%); text-align: center; }
+  .dm-points-page .pt-invite-lead { max-width: 50ch; margin: 0 auto; font-size: 1.125rem; line-height: 1.45; color: var(--fg); }
+  .dm-points-page .pt-invite-note { max-width: 56ch; margin: 0.75rem auto 0; font-size: 0.9375rem; line-height: 1.45; color: var(--subtle); }
+  .dm-points-page .pt-invite .pt-actions { margin-top: 1.5rem; }
+  .dm-points-page .pt-invite-status { min-height: 1.5rem; margin: 0.75rem 0 0; font-size: 0.9375rem; color: var(--muted); }
+  /* The ask and its answer in one cell: once answered, the card keeps the ask's size, its answer in the middle. */
+  .dm-points-page .pt-invite > .pt-swap { display: grid; }
+  .dm-points-page .pt-done { align-self: center; }
+  .dm-points-page .pt-done-head { display: inline-flex; align-items: center; gap: 0.75rem; }
+  .dm-points-page .pt-check { display: inline-grid; place-items: center; width: 2rem; height: 2rem; border-radius: 50%; color: var(--money-in); box-shadow: inset 0 0 0 1px rgb(95 208 154 / 0.4); }
+  .dm-points-page .pt-wait { display: inline-flex; gap: 0.25rem; margin-left: 0.375rem; }
+  .dm-points-page .pt-wait > i { width: 0.3125rem; height: 0.3125rem; border-radius: 50%; background: currentColor; opacity: 0.25; }
+  .dm-points-page .pt-l-busy { display: inline-flex; align-items: center; }
+  .dm-points-page .pt-link-btn[aria-busy] { cursor: progress; }
+  /* Its three pips are its busy sign (the prototype's): not the site's busy spinner as well, which would widen it. */
+  .dm-points-page .pt-link-btn[aria-busy="true"]:disabled::before { content: none; }
+  /* Labels and icons that cross keep both in one cell: a button never changes its width. */
+  .dm-points-page .pt-swap { display: inline-grid; }
+  .dm-points-page .pt-swap > * { grid-area: 1 / 1; }
+  .dm-points-page :is(.pt-left, .pt-link-btn[data-busy] .pt-l-idle, .pt-link-btn:not([data-busy]) .pt-l-busy, .pt-copy[data-copied] :is(.pt-i-copy, .pt-l-copy), .pt-copy:not([data-copied]) :is(.pt-i-check, .pt-l-copied)) { visibility: hidden; }
+
+  /* ---- Your link ---------------------------------------------------------------------------------------------------- */
+  .dm-points-page .pt-share { max-width: 44rem; margin: 4rem auto 0; text-align: center; }
+  .dm-points-page .pt-link { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.5rem 0.5rem 1.375rem; border-radius: 1.25rem; background: linear-gradient(180deg, rgb(255 236 220 / 0.05), rgb(255 236 220 / 0.015)); box-shadow: inset 0 1px 0 var(--card-lip), inset 0 0 0 1px var(--border-card); text-align: left; }
+  .dm-points-page .pt-link-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1.125rem; color: var(--fg); }
+  .dm-points-page .pt-copy { gap: 0.5rem; }
+  .dm-points-page .pt-copy-icon { display: inline-grid; }
+  .dm-points-page .pt-copy-icon > * { grid-area: 1 / 1; }
+
+  /* ---- What earned them, Season 1, how points are counted -------------------------------------------------------- */
+  .dm-points-page .pt-lower { max-width: 44rem; margin: 5rem auto 0; }
+  .dm-points-page .pt-ledger { margin: 1.25rem 0 0; padding: 0; list-style: none; }
+  .dm-points-page .pt-ledger > li { display: grid; grid-template-columns: minmax(0, 1fr) auto 5.5rem; align-items: baseline; gap: 1rem; padding: 0.875rem 0.25rem; border-bottom: 1px solid var(--line); font-size: 1rem; }
+  .dm-points-page .pt-ledger .lk { color: var(--fg); }
+  .dm-points-page .pt-ledger .lf { font-size: 0.875rem; color: var(--subtle); }
+  .dm-points-page .pt-ledger .lp { font-family: var(--font-display); font-size: 1.625rem; line-height: 1; text-align: right; color: var(--fg); }
+  .dm-points-page .pt-ways > li { grid-template-columns: minmax(0, 1fr) auto; }
+  .dm-points-page .pt-ways .lf { font-size: 0.9375rem; color: var(--muted); }
+  .dm-points-page .pt-dates { margin: 0.25rem 0 0; font-size: 0.9375rem; color: var(--subtle); }
+  .dm-points-page .pt-zero { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; margin: 1.25rem 0 0; padding: 1rem 0.25rem; border-bottom: 1px solid var(--line); }
+  .dm-points-page .pt-zero > p { max-width: 46ch; margin: 0; font-size: 1rem; line-height: 1.45; color: var(--muted); }
+  .dm-points-page .pt-count { margin: 1rem 0 0; font-size: 0.875rem; color: var(--subtle); }
+  .dm-points-page .pt-details { margin-top: 1.25rem; }
+  .dm-points-page .pt-details > summary { display: inline-flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0; list-style: none; cursor: pointer; font-size: 0.9375rem; color: var(--muted); transition: color 0.16s var(--ease-std); }
+  .dm-points-page .pt-details > summary::-webkit-details-marker { display: none; }
+  .dm-points-page .pt-details > summary:hover { color: var(--fg); }
+  .dm-points-page .pt-details > summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 0.1875rem; border-radius: 0.5rem; }
+  .dm-points-page .pt-chev { display: inline-block; width: 0.5rem; height: 0.5rem; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; rotate: 45deg; translate: 0 -0.125rem; transition: rotate 0.28s var(--ease-enter), translate 0.28s var(--ease-enter); }
+  .dm-points-page .pt-details[open] .pt-chev { rotate: 225deg; translate: 0 0.125rem; }
+  .dm-points-page .pt-details dl { display: grid; gap: 0.75rem; margin: 0.5rem 0 0; transition: opacity 0.2s var(--ease-std), translate 0.3s var(--ease-enter); }
+  .dm-points-page .pt-details:not([open]) dl { opacity: 0; translate: 0 -0.375rem; }
+  .dm-points-page .pt-details[open] dl { transition-delay: 0.06s; }
+  @starting-style { .dm-points-page .pt-details[open] dl { opacity: 0; translate: 0 -0.375rem; } }
+  /* Where the browser can, the region opens and closes by its height (the one change of size, on a click). */
+  .dm-points-page .pt-details { interpolate-size: allow-keywords; }
+  .dm-points-page .pt-details::details-content { block-size: 0; overflow-y: clip; transition: block-size 0.3s var(--ease-enter), content-visibility 0.3s allow-discrete; }
+  /* Opening, its words are there at once (only closing keeps them while the height goes). */
+  .dm-points-page .pt-details[open]::details-content { block-size: auto; transition: block-size 0.3s var(--ease-enter); }
+  .dm-points-page .pt-details dt { font-size: 0.875rem; font-weight: 500; color: var(--fg); }
+  .dm-points-page .pt-details dd { margin: 0; font-size: 0.875rem; line-height: 1.4; color: var(--subtle); }
+  /* How points work: a quiet link to the docs' Points page, the summary's size and tone, under it. */
+  .dm-points-page .pt-lower > .pt-docs { height: auto; min-height: 0; margin-top: 0.25rem; padding: 0.5rem 0; background: none; box-shadow: none; font-size: 0.9375rem; font-weight: 400; color: var(--muted); text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 0.25em; }
+  .dm-points-page .pt-lower > .pt-docs:hover { background: none; color: var(--fg); text-decoration-color: currentColor; }
+
+  /* ---- Motion (points/motion.ts) ---------------------------------------------------------------------------------- */
+  /* The first visit of the session: the page waits hidden until it knows what to show, then its entrance brings it in. */
+  .dm-points-page[data-entrance="hold"] > :not(.sr-only) { opacity: 0; }
+  /* The title comes in with the entrance, once per session, not with each visit's load moment (v4-foundation.css): a
+     later visit is still, as the owner's prototype has it. */
+  html:not(.dm-booted) .dm-points-page .pt-title h1.dm-display-h1:not(:has(.dm-ln)), html:not(.dm-booted) .dm-points-page .pt-title h1.dm-display-h1::after { animation: none; }
+  /* Stilled, a tile does not lift. */
+  @media (prefers-reduced-motion: reduce) {
+    .dm-points-page .pt-tile.solid:is(:hover, :active) .pt-lift { transform: none; }
+  }
+  html.dm-still .dm-points-page .pt-tile.solid:is(:hover, :active) .pt-lift { transform: none; }
+
+  /* ---- Phone: the line stays one line; its three captions become a short legend under it ------------------------------ */
+  @media (max-width: 767px) {
+    .dm-points-page { --cs: 2.05rem; --ys: 3.95rem; padding-bottom: 3rem; }
+    .dm-points-page .pt-title { gap: 0.75rem; padding-top: 1rem; }
+    .dm-points-page .pt-chip { margin: 0 0 0.5rem; }
+    .dm-points-page .pt-stage { padding: 1.75rem 0 0.5rem; }
+    .dm-points-page .pt-chain { grid-auto-flow: row; grid-template-columns: auto auto auto; grid-template-rows: auto; justify-content: center; column-gap: 0.0625rem; }
+    .dm-points-page .pt-run { gap: 0.0625rem; }
+    .dm-points-page .pt-node > :is(.pt-tile, .pt-run, .pt-slot) { grid-row: 1; }
+    .dm-points-page .pt-prev > .pt-slot { grid-column: 1; }
+    .dm-points-page .pt-you > .pt-tile { grid-column: 2; }
+    .dm-points-page .pt-next > .pt-run { grid-column: 3; }
+    .dm-points-page .pt-node > figcaption { grid-row: auto; grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; margin-top: 0; padding: 0.625rem 0.125rem; border-bottom: 1px solid var(--line); text-align: left; }
+    .dm-points-page .pt-prev > figcaption { margin-top: 1.75rem; border-top: 1px solid var(--line); }
+    .dm-points-page .pt-node > figcaption > .pt-swap { width: 100%; }
+    .dm-points-page .pt-capl { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; width: 100%; }
+    /* A fourth tile on a phone narrower than 390 px: the line shrinks to the screen, edge to edge. */
+    .dm-points-page .pt-chain[data-run="4"] { --cs: min(2.05rem, calc((100vw - 2rem - 0.3125rem) / 10.7)); --ys: calc(var(--cs) * 1.927); }
+    .dm-points-page .pt-cap { font-size: 0.875rem; line-height: 1.3; }
+    .dm-points-page .pt-sub { font-size: 0.8125rem; text-align: right; }
+    .dm-points-page .pt-total { margin-top: 2rem; font-size: 5rem; gap: 0.5rem; }
+    .dm-points-page .pt-unit { font-size: 0.9375rem; }
+    .dm-points-page .pt-lead { margin-top: 1.75rem; font-size: 2.25rem; }
+    .dm-points-page .pt-lead--line { font-size: 1.625rem; }
+    .dm-points-page .pt-lead-wait { height: 5rem; margin-top: 2rem; }
+    .dm-points-page .pt-rule { margin-top: 1rem; font-size: 0.875rem; }
+    .dm-points-page .pt-note { font-size: 0.8125rem; }
+    .dm-points-page .pt-actions { width: 100%; margin-top: 1.25rem; }
+    .dm-points-page :is(.pt-actions, .pt-link) > .dm-btn { height: 2.875rem; padding: 0 1.25rem; }
+    .dm-points-page .pt-stage > .pt-actions > .dm-btn { flex: 1 1 0; min-width: 0; }
+    .dm-points-page .pt-h2 { margin-bottom: 1rem; font-size: 1.75rem; }
+    .dm-points-page .pt-h3 { font-size: 1.5rem; }
+    .dm-points-page .pt-invite { padding: 1.25rem 1rem; }
+    .dm-points-page .pt-invite-lead { font-size: 1rem; }
+    .dm-points-page .pt-share { margin-top: 2.5rem; }
+    .dm-points-page .pt-link { flex-wrap: wrap; padding: 0.875rem; }
+    .dm-points-page .pt-link-text { flex-basis: 100%; white-space: normal; font-size: 0.875rem; line-height: 1.4; }
+    .dm-points-page .pt-link .pt-addr { white-space: nowrap; }
+    .dm-points-page .pt-link > .dm-btn { width: 100%; justify-content: center; }
+    .dm-points-page .pt-lower { margin-top: 3rem; }
+  }
+}

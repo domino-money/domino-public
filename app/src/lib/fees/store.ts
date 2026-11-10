@@ -14,6 +14,10 @@
  * - 2026-10-30 (QA round 2, N45 a): a ledger still `reading` after MAX_READING answers in a row, or one whose fresh read
  *   for the newest state still does not hold its settlement, shows Fees ready to collect only (`why: 'unseen'`), never
  *   a skeleton for the visit; a history already drawn stays.
+ * - 2026-11-09 (core flows, the owner: nothing may be slow, nothing may load forever): the ids still `reading` are asked
+ *   again together, one request for up to eight, where each was asked alone; and a view still loading after
+ *   LIST_LOADING_MS says so (`waited`), so a list row's APR is a dash while its ledger is read on, the rate in its place
+ *   once read, with no notice.
  * - The Positions list shares state and ledger reads with the detail, at its slower visible-list interval.
  * - A position's page records each valid state read in a bounded live series (readings.ts); hourly samples are persisted. Since
  *   2026-10-02 every ledger answer records its own state too (the list's only for a position whose page this browser
@@ -126,8 +130,20 @@ export const RETRY_MS = [2_000, 10_000, 30_000, 60_000, 120_000] as const
 const retryAfter = (failures: number) => RETRY_MS[Math.min(failures, RETRY_MS.length - 1)]!
 /** After an action, the second /state read: past the few blocks a read right after the receipt may still lack. */
 export const AFTER_ACTION_MS = 11_000
-/** How many times in a row a ledger still `reading` is asked again before it waits for the retry ladder instead. */
-export const MAX_READING = 30
+/**
+ * How many times in a row a ledger still `reading` is asked again before it waits for the retry ladder instead.
+ * Changed on purpose 2026-11-09 (core flows): 10, was 30. An answer is no longer one window of a ledger but as many as
+ * LEDGER_PASS_MS holds (functions/_lib/feesLedger.ts), up to some ten seconds, so ten answers in a row still `reading` are
+ * about the minute and a half thirty were (30 × ~3 s), and cover months of history, not five weeks. The card then shows
+ * Fees ready to collect only; the store asks on and draws the history once read through, as before.
+ */
+export const MAX_READING = 10
+/**
+ * Added on purpose 2026-11-09 (core flows, the owner: "I don't want slowness"): how long a view may load before it says
+ * it has waited (`waited`): a list row's APR is a skeleton this long, then a dash while the ledger is read on, and the
+ * rate in its place once read (components/positions/listApr.ts). A ledger an edge holds answers well within it.
+ */
+export const LIST_LOADING_MS = 5_000
 /**
  * 2026-10-02 (the owner's preview, the iPhone session that never logged a ledger answer): a ledger request not answered in
  * this long is dropped and taken as one that could not reach the chain, so the retry ladder asks again; while it hung,
@@ -174,6 +190,9 @@ interface Entry {
   retry: (() => void) | null
   /** Ledger answers in a row still `reading`. */
   reading: number
+  /** (2026-11-09) Since when its view has been loading (`now`), and the cancel of the timer that marks it `waited`. */
+  loadingSince: number | null
+  waiting: (() => void) | null
   /** The state block a fresh ledger was last asked for (one fresh read per newer state that disagrees). */
   freshFor: number
   release: (() => void) | null
@@ -225,7 +244,7 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
   const entry = (id: string): Entry => {
     let found = entries.get(id)
     if (!found) {
-      found = { id, listeners: new Set(), pageRefs: 0, listRefs: 0, stateRefs: 0, restored: false, state: null, read: null, stateReason: null, answered: false, stateFailures: 0, stateRetry: null, minBlock: 0, pollElapsed: 0, goodAt: null, view: IDLE, ledger: null, asking: false, ledgerFreshPending: false, ledgerEpoch: 0, settled: null, failures: 0, retry: null, reading: 0, freshFor: 0, release: null, trace: NO_TRACE }
+      found = { id, listeners: new Set(), pageRefs: 0, listRefs: 0, stateRefs: 0, restored: false, state: null, read: null, stateReason: null, answered: false, stateFailures: 0, stateRetry: null, minBlock: 0, pollElapsed: 0, goodAt: null, view: IDLE, ledger: null, asking: false, ledgerFreshPending: false, ledgerEpoch: 0, settled: null, failures: 0, retry: null, reading: 0, loadingSince: null, waiting: null, freshFor: 0, release: null, trace: NO_TRACE }
       entries.set(id, found)
     }
     return found
@@ -250,8 +269,31 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
       e.snapshotExpiry?.()
       e.snapshotExpiry = undefined
     }
-    e.view = view
+    e.view = waitedOf(e, view)
     notify(e)
+  }
+  /**
+   * Added on purpose 2026-11-09 (core flows): a loading view as long as it has loaded. The first marks when (and a timer
+   * marks it `waited` LIST_LOADING_MS later); a later one, the same wait going on, keeps the mark; any other view ends it.
+   */
+  function waitedOf(e: Entry, view: FeeHistoryView): FeeHistoryView {
+    if (view.phase !== 'loading') {
+      e.loadingSince = null
+      e.waiting?.()
+      e.waiting = null
+      return view
+    }
+    if (view.waited) return view
+    if (e.loadingSince === null || e.view.phase !== 'loading') {
+      e.waiting?.()
+      e.loadingSince = clock()
+      e.waiting = deps.timer(LIST_LOADING_MS, () => {
+        e.waiting = null
+        if (e.view.phase === 'loading' && !e.view.waited) setView(e, { ...e.view, waited: true })
+      })
+      return view
+    }
+    return (e.view.phase === 'loading' && e.view.waited) || clock() - e.loadingSince >= LIST_LOADING_MS ? { ...view, waited: true } : view
   }
   function restore(e: Entry): void {
     if (e.restored) return
@@ -425,10 +467,7 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
       }
       if (position.why === 'reading' && historyRefs(e) > 0) {
         e.reading += 1
-        if (e.reading <= MAX_READING) e.retry = deps.later(LEDGER_READING_MS, () => {
-          e.retry = null
-          askLedger(e)
-        })
+        if (e.reading <= MAX_READING) askAgainSoon(e)
         else scheduleRetry(e, 0)
       } else e.reading = 0
       draw(e)
@@ -449,6 +488,35 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     // What was shown stays; a first read that failed shows the unclaimed figure, calmly.
     if (e.state && (e.view.phase === 'idle' || e.view.phase === 'loading' || e.view.phase === 'unavailable')) setView(e, { phase: 'unclaimed-only', state: e.state, reason: 'rpc_unavailable' })
     else if (!e.state && (e.view.phase === 'idle' || e.view.phase === 'loading') && historyRefs(e) > 0) setView(e, { phase: 'unavailable', reason: 'rpc_unavailable' })
+  }
+
+  /**
+   * Changed on purpose 2026-11-09 (core flows): a ledger still `reading` is asked again with every other one that is, on one
+   * timer LEDGER_READING_MS after the first of them answered, so they go in one request (eight a request, askLedger) where
+   * each went alone, each on its own timer, as soon as the first batch answered. Its `retry` takes it out again (a screen
+   * left, a hint arrived).
+   */
+  const readingDue = new Set<Entry>()
+  let readingTimer: (() => void) | null = null
+  function askAgainSoon(e: Entry): void {
+    readingDue.add(e)
+    e.retry = () => {
+      readingDue.delete(e)
+      if (readingDue.size === 0) {
+        readingTimer?.()
+        readingTimer = null
+      }
+    }
+    if (readingTimer) return
+    readingTimer = deps.later(LEDGER_READING_MS, () => {
+      readingTimer = null
+      const due = [...readingDue]
+      readingDue.clear()
+      for (const one of due) {
+        one.retry = null
+        askLedger(one)
+      }
+    })
   }
 
   /** The next ledger read after a failure: the ladder's wait, never sooner than the route's Retry-After. */
@@ -628,7 +696,12 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
       if (historyRefs(e) > 0) return
       e.retry?.()
       e.retry = null
-      if (e.view.phase === 'loading') e.view = IDLE
+      if (e.view.phase === 'loading') {
+        e.view = IDLE
+        e.loadingSince = null
+        e.waiting?.()
+        e.waiting = null
+      }
       if (![...entries.values()].some(reads)) {
         refresh?.()
         refresh = null

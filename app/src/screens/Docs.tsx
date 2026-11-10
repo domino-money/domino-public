@@ -8,6 +8,7 @@ import { findDocPage } from '../lib/docs/registry'
 import { useRouteTitle } from '../lib/routeTitle'
 import { NotFound } from './NotFound'
 import { scrollToSection } from '../lib/sectionScroll'
+import { currentRoute } from '../lib/route'
 
 /** What stops the late re-scroll: the reader has started moving the page themselves. */
 const MOVES = ['wheel', 'touchstart', 'keydown', 'pointerdown'] as const
@@ -20,7 +21,7 @@ const MOVES = ['wheel', 'touchstart', 'keydown', 'pointerdown'] as const
  */
 function useSectionAfterFonts() {
   useEffect(() => {
-    const { section } = hashParts(window.location.hash)
+    const { section } = hashParts(currentRoute())
     const fonts = typeof document === 'undefined' ? undefined : document.fonts
     if (!section || !fonts) return
     let wanted = true

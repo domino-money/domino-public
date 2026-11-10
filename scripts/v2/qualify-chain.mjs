@@ -357,8 +357,10 @@ export function profileReferences(profiles) {
     const u = profile.uniswap;
     return { slug: profile.slug, chainId: profile.chainId, permit2: at(profile.permit2), multicall3: at(profile.multicall3),
       createx: at(profile.deployer?.address), arachnid: at(ARACHNID_PROXY), safeSingletonFactory: at(SAFE_SINGLETON_FACTORY),
-      arbSys: at(ARB_SYS), v3Factory: at(u.v3.factory), quoterV2: at(u.v3.quoterV2), poolManager: at(u.v4.poolManager),
-      stateView: at(u.v4.stateView), v4Quoter: at(u.v4.quoter), wrappedNative: lower(profile.wrappedNative.address) };
+      // Changed on purpose 2026-11-09 (Elysium enabled): a chain with one Uniswap version names the other null, and is no
+      // reference for that version's contracts.
+      arbSys: at(ARB_SYS), v3Factory: at(u.v3?.factory), quoterV2: at(u.v3?.quoterV2), poolManager: at(u.v4?.poolManager),
+      stateView: at(u.v4?.stateView), v4Quoter: at(u.v4?.quoter), wrappedNative: lower(profile.wrappedNative.address) };
   });
 }
 
@@ -809,7 +811,7 @@ export async function qualifyChain({ rpc, now = Math.floor(Date.now() / 1000), e
     return { getter: label, value: checksummed(value), expected: expected ? checksummed(expected) : null,
       status: expected === null || expected === undefined ? unanswered ?? 'unknown' : value === expected ? 'pass' : 'fail' };
   };
-  const profileValues = key => references.profiles.map(p => ({ slug: p.slug, values: [p[key]?.address], codehash: p[key]?.codehash ?? null }));
+  const profileValues = key => references.profiles.filter(p => p[key]).map(p => ({ slug: p.slug, values: [p[key].address], codehash: p[key].codehash ?? null }));
   const uniswapCheck = (id, key, label, subs, extra = {}) => {
     const address = candidates[key];
     if (!address) return add(id, 'uniswap', 'unknown', versions.includes(id.split('.')[1]) ? 'no candidate address given'
@@ -842,7 +844,7 @@ export async function qualifyChain({ rpc, now = Math.floor(Date.now() / 1000), e
     [expectSame('factory()', npmFactory, u.v3.factory), expectSame('WETH9()', npmWeth, wrapped)], { evidence: { byteComparison: 'not meaningful: per-chain immutables' } });
   {
     const build = present(uniCodes.quoterV2 ?? {}) ? sameBuild(uniCodes.quoterV2.value, [u.v3.factory, wrapped],
-      references.profiles.map(p => ({ slug: p.slug, values: [p.v3Factory?.address, p.wrappedNative], codehash: p.quoterV2?.codehash ?? null }))) : null;
+      references.profiles.filter(p => p.v3Factory && p.quoterV2).map(p => ({ slug: p.slug, values: [p.v3Factory.address, p.wrappedNative], codehash: p.quoterV2.codehash ?? null }))) : null;
     uniswapCheck('uniswap.v3.quoterV2', 'quoterV2', 'QuoterV2', [expectSame('factory()', quoterFactory, u.v3.factory), expectSame('WETH9()', quoterWeth, wrapped)],
       { evidence: { byteComparison: build } });
   }
@@ -1152,11 +1154,10 @@ function outputDirectory(path) {
   return target;
 }
 
-export async function cli(argv, { env = process.env } = {}) {
+export async function cli(argv, { env = process.env, profiles = loadProfiles() } = {}) {
   const f = flags(argv);
   ensure(Object.keys(f).every(k => OPTIONS.includes(k)) && typeof f.out === 'string', USAGE);
   const url = rpcUrlFrom(f, env), out = outputDirectory(f.out);
-  const profiles = loadProfiles();
   let pending = null;
   if (f.pending !== undefined) {
     ensure(/^[a-z][a-z0-9]{0,31}$/.test(f.pending) && profiles.pending[f.pending], 'unknown_pending_profile');

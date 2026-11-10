@@ -2,6 +2,8 @@
 import copy
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -27,6 +29,25 @@ class OperatorAuthorization(unittest.TestCase):
 
     def test_exact_trusted_dispatch(self):
         self.assertIn('domino-ci-123-2', self.check())
+
+    def test_manual_launch_uses_the_installed_controller_and_keeps_jit_on_stdin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ssh_config = Path(directory) / 'ssh-config'
+            ssh_config.touch()
+            argv = ['start-clawber-pilot.py', '--run-id', '123', '--sha', 'a' * 40,
+                    '--workload', 'read-worker', '--ssh-config', str(ssh_config),
+                    '--ssh-host', 'ci-host', '--base-sha256', 'b' * 64]
+            with patch.object(launch.sys, 'argv', argv), \
+                 patch.object(launch, 'gh', side_effect=[{'login': 'operator'}, {'permission': 'write'},
+                     self.run, {'jobs': self.jobs}, {'runner': {'id': 17}, 'encoded_jit_config': 'synthetic-jit'}]), \
+                 patch.object(launch.subprocess, 'run', return_value=SimpleNamespace(returncode=0)) as run:
+                self.assertEqual(launch.main(), 0)
+            ssh = run.call_args_list[0]
+            self.assertEqual(ssh.args[0][-1], 'sudo -n python3 /opt/domino-ci/clawber_pilot.py '
+                             f'--base-sha256 {"b" * 64} --timeout-seconds 900')
+            self.assertEqual(ssh.kwargs['input'], b'synthetic-jit')
+            self.assertNotIn('synthetic-jit', ' '.join(ssh.args[0]))
+            self.assertEqual(run.call_args_list[1].args[0][-1], 'repos/domino-money/domino/actions/runners/17')
 
     def test_job_specific_routing_is_accepted_without_other_profile_or_job(self):
         jobs = copy.deepcopy(self.jobs)

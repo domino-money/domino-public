@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react'
 import type { Page } from '../App'
 import { Menu, type MenuEntry } from './ui'
-import { IconAutomate, IconBook, IconCoins, IconInfo, IconMarkets, IconPlus, IconPositions, IconRange, IconShield, type IconProps } from './icons'
+import { IconAutomate, IconBook, IconCoins, IconInfo, IconMarkets, IconPlus, IconPositions, IconRange, IconShield, IconStar, type IconProps } from './icons'
 import { automateHref, docsHref, marketsHref, newPositionHref, positionsHref } from './explore/routes'
 import { ELYSIUM_KEY, ELYSIUM_NAME, ELYSIUM_STATUS } from '../config/chainIdentity'
 import { sectionLinked } from '../chains/elysium/mode'
@@ -30,8 +30,8 @@ export const PRIMARY_NAV: ReadonlyArray<{ label: string; href: string; icon: Com
 
 /** The guides, under the same names and to the same places in the menu and the footer (components/Footer.tsx). */
 export const GUIDES: ReadonlyArray<{ label: string; href: string; icon: ComponentType<IconProps> }> = [
-  { label: 'How it works', href: '#/#learn', icon: IconInfo },
-  { label: 'Price ranges', href: '#/#ranges', icon: IconRange },
+  { label: 'How it works', href: '/#learn', icon: IconInfo },
+  { label: 'Price ranges', href: '/#ranges', icon: IconRange },
   { label: 'Risks', href: docsHref('risks'), icon: IconShield },
 ]
 
@@ -63,8 +63,11 @@ export function HeaderMenu({ page }: { page: Page }) {
     })),
     { kind: 'separator', mobileOnly: true },
     { kind: 'link', href: newPositionHref(), label: 'New position', icon: <IconPlus />, current: page === 'new' },
+    // Added 2026-11-07 (the owner's Points page, Season 1, decision D4): always here, under New position, on every width,
+    // in every build that carries the wallet (each deployed one); the page itself says what the points service shows yet.
+    ...(__DOMINO_WALLET_SESSION__ ? [{ kind: 'link', href: '/points', label: 'Points', icon: <IconStar />, current: page === 'points' } as const] : []),
     { kind: 'link', href: docsHref(), label: 'Docs', icon: <IconBook />, current: page === 'docs' },
-    ...(ELYSIUM_LINKED ? [{ kind: 'link', href: `#/${ELYSIUM_KEY}`, label: ELYSIUM_NAME, icon: <IconCoins />, current: page === 'elysium' } as const] : []),
+    ...(ELYSIUM_LINKED ? [{ kind: 'link', href: `/${ELYSIUM_KEY}`, label: ELYSIUM_NAME, icon: <IconCoins />, current: page === 'elysium' } as const] : []),
     { kind: 'separator' },
     { kind: 'heading', label: 'Guides' },
     ...GUIDES.map(({ label, href, icon: Icon }): MenuEntry => ({ kind: 'link', href, label, icon: <Icon /> })),

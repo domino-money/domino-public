@@ -98,7 +98,9 @@ test('Elysium\'s mark is one path, the owner\'s square PNG, that no chain the ap
   assert.deepEqual(files('src').filter((path) => /\.(?:ts|tsx|css)$/.test(path) && read(path).includes('chains/elysium.svg')), [], 'the old SVG path is named nowhere');
   const home = read('src/components/home/HomeCapabilities.tsx');
   // Changed on purpose 2026-11-07 (Elysium's screens): and ELYSIUM_LIVE, for Home's "Open positions on" row (POSITION_ROW).
-  assert.match(home, /import \{ ELYSIUM_FUNDS_FROM, ELYSIUM_LIVE, ELYSIUM_MARK, ELYSIUM_NAME \} from '\.\.\/\.\.\/lib\/elysiumIdentity'/);
+  // Changed on purpose 2026-11-07 (Elysium's pre-launch): and ELYSIUM_PRELAUNCH, for the same row before Elysium is live.
+  assert.match(home, /import \{ ELYSIUM_FUNDS_FROM, ELYSIUM_LIVE, ELYSIUM_MARK, ELYSIUM_NAME, ELYSIUM_PRELAUNCH \} from '\.\.\/\.\.\/lib\/elysiumIdentity'/);
+  assert.match(home, /export const POSITION_ROW: readonly MarkedNetwork\[\] = Object\.freeze\(ELYSIUM_LIVE \|\| ELYSIUM_PRELAUNCH \? \['Robinhood Chain', 'Base', 'Arbitrum One', ELYSIUM_NAME\] : \[\]\)/, 'the row where Elysium is live or in pre-launch, empty only where it is off');
   assert.match(home, /if \(network === ELYSIUM_NAME\) \{/);
   assert.match(home, /<img src=\{ELYSIUM_MARK\} alt="" width=\{20\} height=\{20\} draggable=\{false\} onError=/, 'a missing file draws nothing in its place');
   assert.deepEqual([ELYSIUM.name, ELYSIUM.mark, ELYSIUM.fundsFrom], [identityWords.ELYSIUM_NAME, identityWords.ELYSIUM_MARK, identityWords.ELYSIUM_FUNDS_FROM]);

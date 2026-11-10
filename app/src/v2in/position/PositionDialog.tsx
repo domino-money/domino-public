@@ -12,7 +12,8 @@ import type { S1PlanRequest } from '../../v2/plan/types'
 import { ZERO_ADDRESS, type ActionName, type Address } from '../../v2/types'
 import { usdOfPoolAmounts } from '../usd'
 import { v2PositionHref } from '../route'
-import { CHANGE_RANGE_BURNS_WHEN_ALL, EXIT_BURNS, EXIT_PAUSE_COPY, EXIT_REARM_COPY, POSITION_SLIPPAGE_DEFAULT_BPS, POSITION_SLIPPAGE_MIN_BPS, ROOT_PAUSE_COPY, type Share } from './constants'
+import { CHANGE_RANGE_BURNS_WHEN_ALL, EXIT_BURNS, EXIT_PAUSE_COPY, EXIT_REARM_COPY, POSITION_SLIPPAGE_DEFAULT_BPS, POSITION_SLIPPAGE_MIN_BPS, ROOT_PAUSE_COPY, closeHeldCopy, closeTurnsOffCopy, type Share } from './constants'
+import { CloseStepsList, useCloseFlow } from './CloseSteps'
 import { COPY } from './copy'
 import { useDirectExit } from './directRun'
 import { AmountsField, RangeField, RangePicture, ReceiveField, ShareField } from './Fields'
@@ -163,10 +164,15 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, av
   // first, §1.3). Under `preview` nothing is sent, so the wallet is never asked to switch for a read: off the position's
   // chain the review shows what was chosen, as the zap actions' preview does.
   const identity = useWalletIdentity()
-  const directReads = gate.mode === 'live' || (identity.kind === 'connected' && identity.chainId === chainId)
+  // Changed on purpose 2026-11-09 (the core-flows fix, item b): a direct action reads and sends under `preview` too
+  // wherever the chain itself is live (./wallet.ts directSendable): it needs no plan, so the planner's word never locks it.
+  const directLive = usesDirect && direct.sendable
+  const directReads = gate.mode === 'live' || directLive || (identity.kind === 'connected' && identity.chainId === chainId)
   const view = run.view
-  const switching = identity.kind === 'connected' && identity.chainId !== chainId && gate.mode === 'live' &&
+  const switching = identity.kind === 'connected' && identity.chainId !== chainId && (gate.mode === 'live' || directLive) &&
     (direct.stage === 'reading' || direct.stage === 'wallet' || view.stage === 'quoting' || view.busy)
+  // Added 2026-11-09 (the core-flows fix): Close position as one guided flow whatever the automation on it (./CloseSteps.tsx).
+  const flow = useCloseFlow({ enabled: mode === 'close', position, reserves, direct })
   const reviewed = view.reviewed
   const kept = useKeptReview(view)
   const ready = bps !== null && (mode === 'increase' ? inputs !== null : mode === 'changeRange' ? ticks !== null && !sameRange && position.liquidity > 0n : position.liquidity > 0n)
@@ -190,8 +196,10 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, av
   useEffect(() => {
     directNow.current = direct
   })
+  const closeReady = flow.ready
   useEffect(() => {
-    if (mode !== 'close' || !directReads || bps === null || closeAsked.current === bps) return
+    // A position Domino-compound holds is read only once it is back in the wallet (the flow's first step).
+    if (mode !== 'close' || !directReads || !closeReady || bps === null || closeAsked.current === bps) return
     const stage = directNow.current.stage
     if (stage === 'wallet' || stage === 'sent' || stage === 'done' || stage === 'unknown') return
     const timer = setTimeout(() => {
@@ -199,7 +207,17 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, av
       void directNow.current.quote('close', bps, undefined)
     }, closeAsked.current === null ? 0 : 400)
     return () => clearTimeout(timer)
-  }, [mode, directReads, bps])
+  }, [mode, directReads, closeReady, bps])
+  // Its close then starts by itself once read: the person pressed once for both steps (one wallet confirmation each).
+  const sentAfterWithdraw = useRef(false)
+  const successorClose = mode === 'close' && flow.successor && closeReady
+  const closeRead = direct.stage === 'ready'
+  const sendClose = direct.send
+  useEffect(() => {
+    if (!successorClose || !closeRead || sentAfterWithdraw.current) return
+    sentAfterWithdraw.current = true
+    void sendClose()
+  }, [successorClose, closeRead, sendClose])
   /** V1's "Try again": a close whose read failed reads again. */
   const readAgain = () => {
     if (bps === null) return
@@ -209,7 +227,10 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, av
 
   const zapDone = view.receipt !== null && (view.receipt.state === 'included' || view.receipt.state === 'finalized')
   const directDone = direct.stage === 'done'
-  const done = zapDone || directDone
+  // Changed on purpose 2026-11-09 (the core-flows fix): a close whose automation still holds fees goes on to its last step
+  // (./CloseSteps.tsx) before the dialog is done; the page still reads again as soon as the close is on chain.
+  const done = zapDone || (directDone && flow.finished)
+  const onChainNow = zapDone || directDone
   // The page reads again once the action is on chain (V1's onChanged), once.
   const told = useRef(false)
   const doneRef = useRef(onDone)
@@ -217,10 +238,10 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, av
     doneRef.current = onDone
   })
   useEffect(() => {
-    if (!done || told.current) return
+    if (!onChainNow || told.current) return
     told.current = true
     doneRef.current(usesDirect ? direct.includedBlock : view.receipt?.includedBlock)
-  }, [done, usesDirect, direct.includedBlock, view.receipt?.includedBlock])
+  }, [onChainNow, usesDirect, direct.includedBlock, view.receipt?.includedBlock])
 
   // Rev3/rev4 §2.13: an exit of a vault's root (armed or not) leaves the fees waiting to be reinvested in the vault. The
   // review says so with the vault's reserves; once the exit is on chain the automation panel opens at them.
@@ -231,16 +252,20 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, av
   const leavesReserves = exitVault !== null
   const afterClose = useRef<VaultHandoff | null>(null)
   const closedByUser = useRef(false)
+  // Changed on purpose 2026-11-09 (the core-flows fix): not after a close whose fees this dialog already returned.
+  const returnedHere = flow.handled
   useEffect(() => {
-    if (leavesReserves && done && exitVault) afterClose.current = { chainId, vault: exitVault, focus: 'reserves' }
-  }, [leavesReserves, done, exitVault, chainId])
+    if (leavesReserves && done && exitVault && !returnedHere) afterClose.current = { chainId, vault: exitVault, focus: 'reserves' }
+  }, [leavesReserves, done, exitVault, chainId, returnedHere])
   useEffect(() => () => {
     // Only an explicit close hands over the completed action. Navigation/StrictMode never opens another popup.
     const next = afterClose.current
     if (closedByUser.current && next) { afterClose.current = null; offerVault(next) }
   }, [])
   const closeDialog = () => { closedByUser.current = true; onClose() }
-  const reservesWarning = leavesReserves && exitVault
+  // Changed on purpose 2026-11-09 (the core-flows fix): Close position no longer says the fees stay: its own last step
+  // returns them (./CloseSteps.tsx), and its step list says so.
+  const reservesWarning = leavesReserves && exitVault && mode !== 'close'
     ? (reserves && reserves.vault === exitVault && reserves.reserves !== null
         ? (reservesText(book, reserves) ? COPY.reserves.exitWarning(reservesText(book, reserves) as string) : null)
         : COPY.reserves.exitWarningUnread)
@@ -255,7 +280,12 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, av
   // pause, yet its approval still replaces the one Auto-exit's exit needs, so this dialog asks for the tick itself.
   const ownTick = exitLive && !usesDirect && reviewed !== null && reviewed.review.replacesApproval !== null && reviewed.review.pausesAutomation === null
   const pauseTick = reviewed !== null && (reviewed.review.pausesAutomation !== null ? !quiet : ownTick)
-  const pauseTicked = ownTick ? exitTicked : view.pauseAcknowledged
+  // Changed on purpose 2026-11-09 (the core-flows fix): a withdrawal asks for no tick (./run.ts acknowledges it at once);
+  // the same words stand as one plain line. Add liquidity keeps its tick.
+  const pauseLine = pauseTick && mode === 'exit'
+  // The armed root's note at the top already says these words (Auto-exit's own root has no note there): never twice.
+  const rootNote = position.vault?.role === 'root' && position.vault.armed === true && !exitLive && mode !== 'close'
+  const pauseTicked = pauseLine || (ownTick ? exitTicked : view.pauseAcknowledged)
   // Decision #5: at the end of an armed root's add, withdrawal or collect, the page offers to turn automation back on (the
   // automation panel does it); not after a withdrawal of everything, which leaves the root empty (its reserves go first).
   const pausedVault = zapDone ? view.rearm ?? (ownTick ? position.vault?.address ?? null : null) : directDone ? direct.prepared?.pausesAutomation ?? null : null
@@ -311,13 +341,28 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, av
         <span className="dm-pa-cta-l dm-pa-cta-a" data-on={reviewShown ? '' : undefined} aria-hidden="true">{COPY.form.review}</span>
       </Button>
     )
-  } else if (gate.mode === 'preview') {
+  } else if (gate.mode === 'preview' && !directLive) {
     footer = <Locked copy={gate.lockedCopy} />
+  } else if (mode === 'close' && flow.successor && !flow.ready) {
+    // Added 2026-11-09 (the core-flows fix): one press for a position Domino-compound holds: withdrawn, then closed.
+    footer = flow.locked ? <Locked copy={flow.locked} /> : (
+      <Button type="button" variant="primary" size="lg" disabled={flow.busy} aria-busy={flow.busy || undefined} onClick={flow.start} data-position-send="close" data-close-flow="withdraw-child">
+        {COPY.wallet.closeInWallet}
+      </Button>
+    )
+  } else if (mode === 'close' && directDone && !flow.finished) {
+    // Added 2026-11-09: its last step, which starts by itself; pressed again only when it failed before or at the wallet.
+    footer = (
+      <Button type="button" variant="primary" size="lg" disabled={flow.retry === null} aria-busy={flow.busy || undefined} onClick={flow.start} data-position-send="return-reserves" data-close-flow="return-reserves">
+        {COPY.wallet.withdrawInWallet}
+      </Button>
+    )
   } else if (mode === 'close' && direct.stage === 'failed' && !direct.retry) {
     footer = <Button type="button" variant="primary" size="lg" disabled={bps === null} onClick={readAgain} data-position-retry="">{COPY.wallet.tryAgain}</Button>
   } else if (usesDirect) {
-    // V1's Close position: no send at a slippage it does not accept.
-    const blocked = (direct.prepared?.pausesAutomation != null && !direct.ticked && !quiet) || (mode === 'close' && bps === null)
+    // V1's Close position: no send at a slippage it does not accept. Changed on purpose 2026-11-09 (the core-flows fix):
+    // never held for a tick box; an automation's root closes like any position (its line above says what that does).
+    const blocked = mode === 'close' && bps === null
     const offer = direct.stage === 'ready' || (direct.stage === 'failed' && direct.retry)
     footer = (
       <Button type="button" variant="primary" size="lg" disabled={!offer || blocked} aria-busy={direct.stage === 'reading' || direct.stage === 'wallet' || direct.stage === 'sent' || undefined} onClick={() => void direct.send()} data-position-send={mode === 'collect' ? 'collect' : 'close'}>
@@ -333,7 +378,10 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, av
 
   return (
     <ActionDialog id={mode} title={COPY.title[mode]} lede={COPY.lede[mode]} back={backTo} onClose={closeDialog} footer={<Fragment key={done ? 'done' : phase}>{footer}</Fragment>} data-position-dialog={`v2-${mode}`} data-position-gate={gate.mode}>
-      {position.vault?.role === 'root' && position.vault.armed === true && !done && !exitLive && <Note tone="warn" data-position-root-note="">{ROOT_PAUSE_COPY}</Note>}
+      {rootNote && !done && <Note tone="warn" data-position-root-note="">{ROOT_PAUSE_COPY}</Note>}
+      {/* Added 2026-11-09 (the core-flows fix): Close position says, in one plain line, what happens to the automation on it. */}
+      {mode === 'close' && !directDone && position.vault?.role === 'root' && (position.vault.armed !== false || exitLive) && <Note data-position-close-line="turns-off">{closeTurnsOffCopy(position.vault.name ?? null)}</Note>}
+      {mode === 'close' && !directDone && flow.successor && <Note data-position-close-line="held">{closeHeldCopy(position.vault?.name ?? null)}</Note>}
 
       {phase === 'form' && mode === 'increase' && <AmountsField chainId={chainId} position={position} book={book} value={amounts} onChange={setAmounts} />}
       {phase === 'form' && mode === 'changeRange' && <RangeField position={position} book={book} value={range} onChange={setRange} ticks={ticks} sameRange={sameRange} />}
@@ -377,9 +425,10 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, av
             <>
               <Review chainId={chainId} book={book} reply={reviewed.reply} request={reviewed.request} review={reviewed.review} steps={view.steps} feePerGas={view.feePerGas} at={reviewed.at} onLowerSlippage={lowerSlippage} onReceiveBoth={receiveBoth}>
                 {reservesWarning && <Note tone="warn" data-position-reserves-stay="">{reservesWarning}</Note>}
-                {pauseTick && (
+                {pauseTick && !pauseLine && (
                   <Tick checked={pauseTicked} disabled={pauseTicked} onChange={(next) => next && (ownTick ? setExitTicked(true) : run.acknowledgePause())} data-position-pause-confirm="">{pauseCopy}</Tick>
                 )}
+                {pauseLine && !(rootNote && pauseCopy === ROOT_PAUSE_COPY) && <Note tone="warn" data-position-pause-line="">{pauseCopy}</Note>}
                 <StepsList chainId={chainId} view={view} action={action} book={book} onCancelSignature={run.cancelSignature} onKeepSignature={run.keepSignature} onRejected={run.forgetUnsettled} />
                 {!stepsDone(view) && pauseTick && !pauseTicked && <Note data-position-tick-first="">{COPY.wallet.tickFirst}</Note>}
               </Review>
@@ -403,7 +452,7 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, av
 
       {phase === 'review' && usesDirect && directReads && (
         <div className="dm-pa-field" data-position-direct={direct.stage}>
-          {!direct.receipt && !directDone && (
+          {!direct.receipt && !directDone && flow.ready && (
             <div className="dm-pa-field" data-position-receive={mode === 'collect' ? 'collect' : 'close'}>
               <SheetCard caption={COPY.wallet.youReceive} aside={receiveUsd ? <span title={receiveUsd.title} data-position-receive-usd={receiveUsd.basis}>{receiveUsd.text}</span> : undefined}>
                 {direct.prepared ? (
@@ -434,18 +483,20 @@ export function PositionDialog({ gate, position, mode, book, reserves = null, av
               </SheetFacts>
             </div>
           )}
-          {direct.prepared && direct.prepared.pausesAutomation === null && direct.prepared.state.subscriber !== null && direct.prepared.state.subscriber !== '0x0000000000000000000000000000000000000000' && !done && !quiet && (
+          {direct.prepared && direct.prepared.pausesAutomation === null && direct.prepared.state.subscriber !== null && direct.prepared.state.subscriber !== '0x0000000000000000000000000000000000000000' && !done && !quiet && !(mode === 'close' && position.vault) && (
             <Note tone="warn" data-position-warning="automation">{COPY.review.stopsAutomation}</Note>
           )}
           {reservesWarning && !done && <Note tone="warn" data-position-reserves-stay="">{reservesWarning}</Note>}
-          {direct.prepared?.pausesAutomation != null && !done && gate.mode === 'live' && !quiet && (
-            <Tick checked={direct.ticked} disabled={direct.ticked} onChange={(next) => next && direct.tick()} data-position-pause-confirm="">{ROOT_PAUSE_COPY}</Tick>
-          )}
+          {/* Removed on purpose 2026-11-09 (the core-flows fix): a direct exit's pause tick ("This pauses automation for this
+              position…" as a tick box). The vault never refuses its owner's exit; the line at the top says it instead. */}
+          {/* Added 2026-11-09: Close position's steps, when it has more than the close itself (./CloseSteps.tsx). */}
+          {flow.rows && !done && <CloseStepsList rows={flow.rows} />}
+          {flow.rows && !done && <ErrorLine error={flow.error} />}
           {/* Done with an error only when the receipt can't be read exactly: said under the receipt's own "Confirmed". */}
           <ErrorLine error={directDone ? null : direct.error} />
-          {switching ? <Progress data-position-progress="switching">Switch to {v2Chain(chainId).name} in your wallet…</Progress> : direct.stage === 'wallet' && <Progress data-position-progress="wallet">{COPY.wallet.inWallet}</Progress>}
+          {switching ? <Progress data-position-progress="switching">Switch to {v2Chain(chainId).name} in your wallet…</Progress> : direct.stage === 'wallet' && !flow.rows && <Progress data-position-progress="wallet">{COPY.wallet.inWallet}</Progress>}
           {/* Changed on purpose 2026-10-14 (C3 review): reads failing on the wallet's network or account say to switch back. */}
-          {direct.stage === 'sent' && !direct.receipt && <Progress key={direct.away ?? (direct.slow ? 'slow' : 'pending')} data-position-progress="chain">{direct.away === 'chain' ? COPY.wallet.walletAway(v2Chain(chainId).name) : direct.away === 'account' ? COPY.wallet.accountAway : direct.slow ? COPY.wallet.stillWaiting : COPY.wallet.pendingNetwork}</Progress>}
+          {direct.stage === 'sent' && !direct.receipt && !flow.rows && <Progress key={direct.away ?? (direct.slow ? 'slow' : 'pending')} data-position-progress="chain">{direct.away === 'chain' ? COPY.wallet.walletAway(v2Chain(chainId).name) : direct.away === 'account' ? COPY.wallet.accountAway : direct.slow ? COPY.wallet.stillWaiting : COPY.wallet.pendingNetwork}</Progress>}
           {/* Added 2026-10-14 (incident C3): the exit sent 20 s ago whose block is not seen yet, read again by itself (./directRun.ts). */}
           {direct.stage === 'sent' && direct.slow && direct.hash && v2TxUrl(chainId, direct.hash) && <a className="underline" href={v2TxUrl(chainId, direct.hash) ?? undefined} target="_blank" rel="noreferrer noopener" data-step-explorer="">{COPY.wallet.explorer}</a>}
           {direct.stage === 'unknown' && <Note data-position-direct-unknown="">{COPY.wallet.sentUnknown}</Note>}

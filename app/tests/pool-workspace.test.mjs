@@ -126,6 +126,11 @@ function load(name, dependencies, expose = '') {
     InfoTip: function InfoTip({ label, text, children }) { return React.createElement('button', { type: 'button', 'aria-label': label, 'data-info-tip': text }, children) },
     // 2026-10-30 (QA round 2, N8): New position's list takes the figures Markets shows; none held here unless a test says so.
     useKnownMarketFigures: () => null,
+    // 2026-11-09 (core flows): a token page's rules for an acquisition still on its way and its poll's pace, the real ones
+    // (tests/read-public.test.mjs); and a wait that has not run long (src/lib/readWait.ts, its own browser tests).
+    acquisitionPending: require('../.test-build/app/src/lib/read/publicOverview.js').acquisitionPending,
+    overviewPollMs: require('../.test-build/app/src/lib/read/publicOverview.js').overviewPollMs,
+    useWaitOver: () => false,
     ...dependencies,
   }
   new Function('require', 'module', 'exports', code)((name) => name === 'react' ? hooks : name === 'react/jsx-runtime' ? require(name) : common, mod, mod.exports)
@@ -1909,22 +1914,22 @@ test('hash routes: a token or a pool id is taken only in its exact shape, and ol
   assert.deepEqual(routes.parsePoolHash(`#/pool/${id('a')}/nope`), { poolId: id('a'), token: null })
   assert.deepEqual(routes.parsePoolHash('#/pool/abc'), { poolId: null, token: null })
   assert.deepEqual(routes.parsePoolHash(`#/pool/${id('a')}#section`), { poolId: id('a'), token: null }, 'the section part is not a segment')
-  assert.equal(routes.poolHref(id('a')), `#/pool/${id('a')}`)
-  assert.equal(routes.poolHref(id('a'), upper), `#/pool/${id('a')}/${upper}`)
-  assert.equal(routes.exploreHref(), '#/markets')
-  assert.equal(routes.exploreHref(upper), `#/markets/${upper}`)
-  assert.equal(routes.newPositionHref(), '#/new')
-  assert.equal(routes.newPositionHref(id('a')), `#/new/${id('a')}`)
+  assert.equal(routes.poolHref(id('a')), `/pool/${id('a')}`)
+  assert.equal(routes.poolHref(id('a'), upper), `/pool/${id('a')}/${upper}`)
+  assert.equal(routes.exploreHref(), '/markets')
+  assert.equal(routes.exploreHref(upper), `/markets/${upper}`)
+  assert.equal(routes.newPositionHref(), '/new')
+  assert.equal(routes.newPositionHref(id('a')), `/new/${id('a')}`)
   // Added 2026-09-27 (round 6): New position's link can name the token to verify the pool with, as the pool page's does.
-  assert.equal(routes.newPositionHref(id('a'), upper), `#/new/${id('a')}/${upper}`)
+  assert.equal(routes.newPositionHref(id('a'), upper), `/new/${id('a')}/${upper}`)
   assert.deepEqual(routes.parseNewHash(`#/new/${id('a')}/${upper}`), { poolId: id('a'), token: upper })
   assert.deepEqual(routes.parseNewHash(`#/new/${id('a')}`), { poolId: id('a'), token: null })
   assert.deepEqual(routes.parseNewHash(`#/new/${id('a')}/nope`), { poolId: id('a'), token: null })
   assert.deepEqual(routes.parseNewHash(`#/pool/${id('a')}/${upper}`), { poolId: null, token: null })
   // The docs: a section link always carries its route, since a bare #<id> would open Home.
-  assert.equal(routes.docsHref(), '#/docs')
-  assert.equal(routes.docsHref('non-custodial'), '#/docs/non-custodial')
-  assert.equal(routes.docsHref('fees', 'service-fee'), '#/docs/fees#service-fee')
+  assert.equal(routes.docsHref(), '/docs')
+  assert.equal(routes.docsHref('non-custodial'), '/docs/non-custodial')
+  assert.equal(routes.docsHref('fees', 'service-fee'), '/docs/fees#service-fee')
   assert.deepEqual(routes.hashParts(routes.docsHref('fees', 'service-fee')), { segments: ['docs', 'fees'], section: 'service-fee' }, 'what a docs link writes, the route reads back')
   for (const href of [routes.poolHref(id('a'), upper), routes.exploreHref(upper)]) {
     assert.deepEqual(routes.parseExploreHash(href).token ?? routes.parsePoolHash(href).token, upper, 'what a link writes, the page reads back')
@@ -1940,7 +1945,7 @@ test('network pool routes name the network, the pool and its token, and never be
   for (const chainId of [8453, 42161]) {
     for (const pool of [id('B'), v3]) {
       const href = routes.poolNetworkHref(chainId, pool, token)
-      assert.equal(href, `#/pool/network/${chainId}/${pool}/${token}`)
+      assert.equal(href, `/pool/network/${chainId}/${pool}/${token}`)
       assert.deepEqual(routes.parsePoolNetworkHash(href), { chainId, pool: pool.toLowerCase(), token }, 'what a row writes, the page reads back')
       assert.deepEqual(routes.parsePoolHash(href), { poolId: null, token: null }, 'never a Robinhood Chain pool')
       assert.equal(routes.parseMarketsNetworkHash(href), null)
@@ -1982,7 +1987,7 @@ test('network token routes keep identical addresses on different chains distinct
   // Added 2026-10-30 (QA round 2, N5): a token page's pool row proposes its pool to New position, as a hint of a pool id's
   // shape only (lowercase), never on Markets' own route.
   const proposed = routes.newNetworkHref(8453, token, id('B'))
-  assert.equal(proposed, `#/new/network/8453/${token}/${id('B')}`)
+  assert.equal(proposed, `/new/network/8453/${token}/${id('B')}`)
   assert.deepEqual(routes.parseNewNetworkHash(proposed), { chainId: 8453, token, pool: id('b') })
   assert.equal(routes.parseMarketsNetworkHash(`#/markets/network/8453/${token}/${id('b')}`), null, 'Markets takes no pool')
   assert.equal(routes.parseNewNetworkHash(`#/new/network/8453/${token}/${id('b')}/extra`), null)
@@ -2262,7 +2267,7 @@ test('what Domino can do in a pool: the four V2 choices link their own docs and 
   assert.match(text, /Auto-exit 0\.2% of the position’s value, only if it closes Closes it at the end of its range/)
   assert.match(text, /Auto-compound 2% of the earned fees it uses, each time Fees go back into the same position\./)
   assert.match(text, /Domino-compound 4% of the earned fees it uses, each time Fees can fund the next range one step higher\./)
-  assert.deepEqual([...yes.matchAll(/href="([^"]+)"/g)].map(([, href]) => href), ['#/docs/new-position', '#/docs/auto-exit', '#/docs/auto-compound', '#/docs/domino-compound'])
+  assert.deepEqual([...yes.matchAll(/href="([^"]+)"/g)].map(([, href]) => href), ['/docs/new-position', '/docs/auto-exit', '/docs/auto-compound', '/docs/domino-compound'])
   const no = renderToStaticMarkup(React.createElement(PoolAutomation, { usable: false, why: 'it runs extra code on every swap (hooks)' }))
   assert.match(no, /data-pool-automation="unavailable"/)
   assert.match(no.replace(/<[^>]+>/g, ''), /Domino can’t open positions in this pool: it runs extra code on every swap \(hooks\)\./)

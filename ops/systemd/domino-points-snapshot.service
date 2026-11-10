@@ -1,0 +1,41 @@
+[Unit]
+Description=Domino points snapshot (season 1: every wallet's points from the ledger and the links)
+After=postgresql@16-domino.service
+PartOf=domino-public-data.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=oneshot
+User=domino-write
+Group=domino-write
+SupplementaryGroups=domino-db
+WorkingDirectory=@PUBLIC_ROOT@/current/backend
+# The writer reads only the names continuous_egress_policy.py pinned with its
+# egress set, never a DNS answer outside that set (#315). A snapshot reads and
+# writes the catalogue only: no chain, no provider.
+BindReadOnlyPaths=/etc/domino/continuous-reads/write.hosts:/etc/hosts
+ExecStart=@QUEUE_ROOT@/venv/bin/python -B points_engine.py snapshot
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+TimeoutStartSec=120
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=
+TasksMax=16
+MemoryMax=512M
+CPUQuota=100%

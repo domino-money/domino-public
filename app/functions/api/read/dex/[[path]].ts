@@ -2,7 +2,7 @@
  * GET /api/read/dex/token-pairs/<token> and /api/read/dex/tokens/<token>[,<token>…]: DEX Screener's public answers
  * about Robinhood Chain tokens, asked by this edge one token at a time and kept there, so the visitor's address and
  * a wallet's set of tokens never reach the provider (audit I3, 2026-10-01; functions/_lib/dexEdge.ts). Since 2026-10-06
- * also GET /api/read/dex/token-pairs/<base|arbitrum>/<token>, the same answer about a token on Base or Arbitrum One
+ * also GET /api/read/dex/token-pairs/<base|arbitrum|elysium>/<token>, the same answer about a token on Base, Arbitrum One or Elysium
  * (New position's pools there, with their figures and artwork).
  *
  * Pages routes /api/read/dex/* here, ahead of functions/api/[[path]].ts: more static segments are more specific than

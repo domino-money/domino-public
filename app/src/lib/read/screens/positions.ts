@@ -233,7 +233,7 @@ export function portfolioRoute(hash: string): PortfolioRoute {
   return { onRoute: true, address: decodeSegment(second) }
 }
 
-export const portfolioHash = (address: string | null) => (address ? `#/portfolio/${address}` : '#/portfolio')
+export const portfolioHash = (address: string | null) => (address ? `/portfolio/${address}` : '/portfolio')
 
 // ---------------------------------------------------------------------------
 // The range bar: a log price axis, in ticks

@@ -26,8 +26,8 @@ import { useMediaQuery } from '../../lib/useMediaQuery'
 import { useWalletIdentity } from '../../lib/walletIdentity'
 import { newPositionExpected } from '../../lib/automate/autoExitAsk'
 import { chainHasDex, v2Chain } from '../../v2/chains'
-import { v2Gate, type V2Gate } from '../../v2/gate'
-import { v2PageProbe } from '../transports'
+import type { V2Gate } from '../../v2/gate'
+import { useHealingGate } from '../automate/gate'
 import { feeTierText } from '../../v2/plan/present'
 import { coverageNote } from '../../v2/read/v6'
 import { ZERO_ADDRESS, type Address as TokenAddress, type V2ChainId } from '../../v2/types'
@@ -39,7 +39,7 @@ import { cardOf, poolIdentity, walletPositionOf } from './card'
 import PositionAutomation from '../automate/PositionAutomation'
 import { ownVaultsOfPosition } from '../automate/portfolio'
 import { exitOrderKey } from '../autoexit/entry'
-import { HOOKED_COPY, NEW_POSITION_REREAD_MS, SUCCESSOR_BLOCKED_COPY } from './constants'
+import { HOOKED_COPY, NEW_POSITION_REREAD_MS } from './constants'
 import { COPY } from './copy'
 import { chainStatusOf, findPosition, fromV6, hookedPool, isLive, tokensOf, vaultReservesOf, type LiveV6Position } from './model'
 import { MoreActions, positionMenuItems } from './MoreActions'
@@ -49,6 +49,8 @@ import { tokenBook } from './tokens'
 import { useActivityHistory } from '../lists/activity'
 import PositionHistory from '../lists/PositionHistory'
 import { useCreatedPositions, useKeyed, useKeyedLatest, useUsdAged } from '../lists/hooks'
+import { useNewPositionWait, useQuickPortfolio } from '../lists/newPositionWait'
+import { ADDING_POSITION, RELOAD_WORDS, useWaitOver } from '../../lib/readWait'
 import { OWN_PORTFOLIO } from '../lists/source'
 import { positionRows, usdAsOf } from '../lists/model'
 import type { OpenGate } from './wallet'
@@ -70,13 +72,17 @@ function Back() {
   )
 }
 
-/** The page while its gate, its read or its chunk is on the way: the page frame, as V1's page waits. */
-function Waiting({ id }: { id: string }) {
+/**
+ * The page while its gate, its read or its chunk is on the way: the page frame, as V1's page waits. `reason` (2026-11-09,
+ * core flows): why it waits, as data, while a read that failed is asked again; `line`: the one line it says meanwhile (a
+ * position just created being listed), in place of the screen reader's own.
+ */
+function Waiting({ id, reason, line }: { id: string; reason?: string; line?: string }) {
   return (
     <PageShell>
       <Back />
-      <div data-position-loading="" aria-busy="true">
-        <p role="status" className="sr-only">{COPY.page.reading(id)}</p>
+      <div data-position-loading="" aria-busy="true" data-position-reason={reason}>
+        {line ? <p role="status" className="dm-pos-adding" data-position-adding="">{line}</p> : <p role="status" className="sr-only">{COPY.page.reading(id)}</p>}
         <PositionSkeleton />
       </div>
     </PageShell>
@@ -159,15 +165,9 @@ export default function PositionPage({ param, list }: { param: string; list: Rea
   const identity = useWalletIdentity()
   const wallet = identity.kind === 'connected' ? identity.address.toLowerCase() : null
   const walletChain = identity.kind === 'connected' ? identity.chainId : null
-  const [gate, setGate] = useState<V2Gate | null>(null)
-  useEffect(() => {
-    if (!ref) return
-    let alive = true
-    void v2Gate('s1', ref.chainId, undefined, v2PageProbe).then((answer) => { if (alive) setGate(answer) }, () => { if (alive) setGate({ mode: 'off' }) })
-    return () => {
-      alive = false
-    }
-  }, [ref])
+  // Changed on purpose 2026-11-09 (the core-flows fix, item a): asked again by itself while it is not live
+  // (../automate/gate.tsx useHealingGate); asked once per page, a passing failure of its probe stayed until a reload.
+  const gate: V2Gate | null = useHealingGate('s1', ref?.chainId ?? 0)
   if (!ref) return <>{list}</>
   if (gate === null) return <Waiting id={ref.tokenId.toString()} />
   if (gate.mode === 'off') return <>{list}</>
@@ -232,6 +232,20 @@ function Opened({ target, gate, wallet, walletOnChain }: { target: V2PositionRef
     const timer = setTimeout(() => OWN_PORTFOLIO.again(wallet), NEW_POSITION_REREAD_MS)
     return () => clearTimeout(timer)
   }, [awaited, reply, target.chainId, wallet])
+  // Added 2026-11-09 (core flows, the owner: nothing may load forever, nothing slow when it can be fast). A position this
+  // browser just created waits for read-v6 with its one line, the list asked again every few seconds
+  // (../lists/newPositionWait.ts), for five minutes at most and no longer than STUCK_MS of failed answers. Any other page
+  // with nothing to draw (the list failed, the network or the position not read) keeps its loading frame while the list is
+  // asked again by itself, and says what to do after STUCK_MS. Both drew the title alone, for good.
+  const adding = creation !== undefined && !(found && isLive(found))
+  const addingWait = useNewPositionWait(creation)
+  const failing = useWaitOver(reply !== null && reply.kind !== 'ok')
+  const awaitingNew = adding && addingWait && !failing
+  useQuickPortfolio(viewing ? null : wallet, awaitingNew)
+  const okStatus = reply?.kind === 'ok' ? chainStatusOf(reply.body, target.chainId) : null
+  const unread = !viewing && wallet !== null && !adding && reply !== null
+    && (reply.kind !== 'ok' || !okStatus || okStatus.status === 'unavailable' || (found !== null && !isLive(found) && !awaited))
+  const unreadLong = useWaitOver(unread)
 
   if (viewing && otherReply?.kind === 'ok' && elsewhere && isLive(elsewhere)) {
     const status = chainStatusOf(otherReply.body, target.chainId)
@@ -258,15 +272,18 @@ function Opened({ target, gate, wallet, walletOnChain }: { target: V2PositionRef
   // failed (it is asked again), shows its title alone, its reason as data. It said "Updating position details…", "Your
   // positions can’t be listed right now.", "{chain} can’t be read right now.", "This position can’t be read right now."
   // or "Not read yet".
-  if (creation && !(found && isLive(found))) return <Empty title={`Position #${id}`} reason="awaiting_index" />
+  // Changed on purpose 2026-11-09 (core flows): see `adding` and `unread` above; the reasons stay as data.
+  if (creation && !(found && isLive(found))) return awaitingNew ? <Waiting id={id} reason="awaiting_index" line={ADDING_POSITION} />
+    : <Empty title={`Position #${id}`} body={RELOAD_WORDS.position} reason="awaiting_index" />
   if (reply === null) return <Waiting id={id} />
-  if (reply.kind === 'unavailable') return <Empty title={`Position #${id}`} reason={reply.reason} />
+  const unreadPage = (reason: string) => unreadLong ? <Empty title={`Position #${id}`} body={RELOAD_WORDS.position} reason={reason} /> : <Waiting id={id} reason={reason} />
+  if (reply.kind === 'unavailable') return unreadPage(reply.reason)
   // (QA round 2, SWEEP) Its title alone, as for a read that failed: it said "The list of positions came back in a form this app does not accept."
-  if (reply.kind === 'invalid') return <Empty title={`Position #${id}`} reason={reply.detail} />
+  if (reply.kind === 'invalid') return unreadPage(reply.detail)
   const answer = reply.body
   // §6.2: the chain's status before any of its values; an unavailable chain never shows zeros.
   const status = chainStatusOf(answer, target.chainId)
-  if (!status || status.status === 'unavailable') return <Empty title={`Position #${id}`} reason={status?.reason ?? 'chain_unavailable'} />
+  if (!status || status.status === 'unavailable') return unreadPage(status?.reason ?? 'chain_unavailable')
   if (!found || !isLive(found)) {
     if (awaited) return <Waiting id={id} />
     // Added 2026-11-02 (the money review, M2): a position with no live read here (a root NFT burned by Change range or a
@@ -285,7 +302,10 @@ function Opened({ target, gate, wallet, walletOnChain }: { target: V2PositionRef
           action={<Button type="button" variant="outline" onClick={openWalletDialog} data-position-connect="">Open wallet</Button>} automation={automation} />
       )
     }
-    return <Empty title={`Position #${id}`} reason={found.status} automation={automation} />
+    // Changed on purpose 2026-11-09 (core flows): with the wallet's automation of it, that card at once, as before; the plate
+    // under it says what to do after STUCK_MS. With none, the loading frame until then (it was the title alone).
+    if (!automation) return unreadPage(found.status)
+    return <Empty title={`Position #${id}`} body={unreadLong ? RELOAD_WORDS.position : undefined} reason={found.status} automation={automation} />
   }
   return (
     <PageShell>
@@ -426,8 +446,11 @@ function LivePosition({ gate, answer, position, holder, stale, coverage, wallet,
   // (Review, 2026-11-06) A closed position with nothing to collect says so in Robinhood Chain's own words, never "yet".
   const fees = position.feesOwed
   const noFees = fees === null || (fees[0] === 0n && fees[1] === 0n)
-  const collectOff = hooked ? 'hooked' : !noFees ? undefined : position.liquidity === 0n ? 'closed' : fees === null ? 'unread' : 'no_fees'
-  const collectReason = collectOff === 'hooked' ? HOOKED_COPY : collectOff === 'closed' ? COPY.page.closedNoLiquidity : collectOff === 'unread' ? COPY.page.feesUnread : collectOff === 'no_fees' ? COPY.page.noFees : undefined
+  // Changed on purpose 2026-11-09 (the core-flows fix, item d): fees that were not read (null) no longer turn Collect fees
+  // off with a reason only a mouse could see: it opens, and its dialog reads the fees on chain itself (and says when there
+  // is nothing to collect). Nothing to collect, a closed position and a hooked pool stay off, as before.
+  const collectOff = hooked ? 'hooked' : !noFees ? undefined : position.liquidity === 0n ? 'closed' : fees === null ? undefined : 'no_fees'
+  const collectReason = collectOff === 'hooked' ? HOOKED_COPY : collectOff === 'closed' ? COPY.page.closedNoLiquidity : collectOff === 'no_fees' ? COPY.page.noFees : undefined
   // Added 2026-11-06 (O-06, O-11): the stored history's settlements in Activity, outside changes included, and the
   // automation's re-adds named, as Robinhood Chain's Activity lists its ledger's.
   const kind = compoundingKind(answer, position)
@@ -481,11 +504,12 @@ function LivePosition({ gate, answer, position, holder, stale, coverage, wallet,
             successor of a vault has its sentence instead. */}
         {mine && action && (
           <div className="dm-pos-actions" data-position-actions="">
-            {items.length === 0 ? (
-              <span className="text-caption text-fg-muted" data-position-v2-blocked="successor">{SUCCESSOR_BLOCKED_COPY}</span>
-            ) : (
+            {/* Changed on purpose 2026-11-09 (the core-flows fix): a position Domino-compound holds has Close position, last in
+                the row (below): it said "Your automation holds this position. Withdraw it from your automation on your main
+                position's page first." and offered nothing. */}
+            {items.length === 0 ? null : (
               <>
-                <Button type="button" variant="primary" disabled={hooked || noFees} title={collectReason} data-position-v2-action="collect" data-position-collect-off={collectOff} onClick={() => setMode('collect')}>
+                <Button type="button" variant="primary" disabled={collectOff !== undefined} title={collectReason} data-position-v2-action="collect" data-position-collect-off={collectOff} onClick={() => setMode('collect')}>
                   <IconCollect size={18} /><span>{COPY.button.collect}</span>
                 </Button>
                 <MoreActions id={`position-v2-more-${position.tokenId}`} items={items} onPick={(key) => { if (key !== 'protect') setMode(key) }} data-position-v2-actions={gate.mode} />
@@ -494,7 +518,8 @@ function LivePosition({ gate, answer, position, holder, stale, coverage, wallet,
             <span ref={setAutomationToolbar} className="dm-position-automation-slot" data-position-automation-slot="" />
             {/* Added 2026-10-15 (the owner: always a Close position, as Robinhood's): V1's button (components/positions/
                 PositionActions.tsx), same place and look, last in the row; Withdraw of everything in both tokens. */}
-            {items.length > 0 && action.liquidity > 0n && (
+            {/* Changed on purpose 2026-11-09: also for a position Domino-compound holds (its dialog withdraws it first). */}
+            {(items.length > 0 || heldByVault) && action.liquidity > 0n && (
               <Button type="button" variant="danger" disabled={hooked} title={hooked ? HOOKED_COPY : undefined} aria-haspopup="dialog" aria-expanded={mode === 'close'} data-position-action="close" onClick={() => setMode('close')}>
                 <IconClose size={18} /><span>{COPY.title.close}</span>
               </Button>

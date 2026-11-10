@@ -29,6 +29,8 @@ export const ROUTES = {
   sequence: 'sequence',
   setup: 'setup',
   elysium: 'elysium',
+  // Added 2026-11-07 (the owner's Points page, Season 1): /points, kept out of search (lib/seo/heads.ts MAIN_PAGES).
+  points: 'points',
 } as const
 
 export type RoutedPage = (typeof ROUTES)[keyof typeof ROUTES]
@@ -40,7 +42,7 @@ export type RoutedPage = (typeof ROUTES)[keyof typeof ROUTES]
 export const MARKETS_TOKEN = /^0x[0-9a-fA-F]{40}$/
 
 /** The tab a route's screen names itself (each screen's useRouteTitle), as far as the route alone says it. */
-const PENDING_NAMES: Partial<Record<string, string>> = { markets: 'Markets', pool: 'Pool', positions: 'Positions', new: 'New position', automate: 'Automate', docs: 'Docs', setup: 'Setup' }
+const PENDING_NAMES: Partial<Record<string, string>> = { markets: 'Markets', pool: 'Pool', positions: 'Positions', new: 'New position', automate: 'Automate', docs: 'Docs', setup: 'Setup', points: 'Points' }
 const SETUP_MODE = /^(?:compound|domino)$/
 
 /**

@@ -62,10 +62,29 @@
  * ask the new path too (`retrieveDated`), the same tokens and the same 30 s
  * reuse; a token it marks missing is not asked of the provider. Nothing of the
  * page asks /api/read/dex/ any more.
+ *
+ * Changed on purpose 2026-11-07 (the provider lists 30 pairs a token: Base
+ * USDC's left out every WETH/USDC pool, Arbitrum One WETH's every pool with
+ * native USDC, so their rows were dashes): Base's and Arbitrum One's pools a
+ * token's pairs leave out are asked of our edge by their own names
+ * (`edgePairs`, our edge only, never the provider directly), for their
+ * figures alone (lib/read/dexFigures.ts askPairs).
  */
+/**
+ * Whether Elysium (chain 99901) is live in this build: lib/elysiumIdentity.ts ELYSIUM_LIVE, read from the build's own
+ * define here (added 2026-11-09), since this file imports nothing (tests load it as it is).
+ */
+declare const __DOMINO_ELYSIUM_LIVE__: boolean | undefined
+const ELYSIUM_LIVE: boolean = typeof __DOMINO_ELYSIUM_LIVE__ === 'boolean' && __DOMINO_ELYSIUM_LIVE__
+const ELYSIUM_V2_ID = 99901
+
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/
-/** The provider's names for the chains a token here can be on (Robinhood Chain, Base, Arbitrum One). */
-const DEX_CHAIN_SLUGS: Readonly<Record<number, string>> = { 4663: 'robinhood', 8453: 'base', 42161: 'arbitrum' }
+/**
+ * The provider's names for the chains a token here can be on (Robinhood Chain, Base, Arbitrum One). Changed on purpose
+ * 2026-11-09 (Elysium's day 9, checklist step 6): and Elysium's, `elysium`, where it is live; the provider lists its
+ * Uniswap v4 pools under that name since its first day.
+ */
+const DEX_CHAIN_SLUGS: Readonly<Record<number, string>> = { 4663: 'robinhood', 8453: 'base', 42161: 'arbitrum', ...((ELYSIUM_LIVE ? { [ELYSIUM_V2_ID]: 'elysium' } : {}) as Record<number, string>) }
 /** The provider's name for a chain, or null for a chain these reads do not cover. */
 export const dexChainSlug = (chainId: number): string | null => DEX_CHAIN_SLUGS[chainId] ?? null
 const CDN_IMAGE = /^https:\/\/cdn\.dexscreener\.com\/cms\/images\/([A-Za-z0-9_-]{8,128})(?:\?[^#\s]*)?$/
@@ -131,7 +150,8 @@ const EDGE_TIMEOUT = 3000
  */
 const EDGE_BATCH = 10
 /** A provider path our edge answers, by chain: Robinhood Chain's two reads, and Base's and Arbitrum One's token-pairs (2026-10-06). */
-const EDGE_PATH = /^(token-pairs|tokens)\/v1\/(robinhood|base|arbitrum)\/([0-9a-fA-Fx,]+)$/
+// Changed on purpose 2026-11-09 (Elysium's day 9, checklist step 6): Elysium's too, where it is live.
+const EDGE_PATH = ELYSIUM_LIVE ? /^(token-pairs|tokens)\/v1\/(robinhood|base|arbitrum|elysium)\/([0-9a-fA-Fx,]+)$/ : /^(token-pairs|tokens)\/v1\/(robinhood|base|arbitrum)\/([0-9a-fA-Fx,]+)$/
 /** Our edge's path for a provider path it answers: Robinhood Chain's as they always were, another chain's named before the token. */
 function edgePathOf(path: string): string | null {
   const match = EDGE_PATH.exec(path)
@@ -536,12 +556,29 @@ export function createTokenArtworkResolver(options: Options = {}) {
    * asked to wait), or when no GET answered. Added 2026-10-30 (QA round 2, N6): the token search asks it once for its
    * hits (lib/read/dexFigures.ts settleSearchHits), so a look-alike with no pair costs no token-pairs GET of its own.
    */
-  async function edgeTokens(addresses: readonly string[], signal?: AbortSignal): Promise<Map<string, EdgeTokenPairs> | null> {
+  function edgeTokens(addresses: readonly string[], signal?: AbortSignal): Promise<Map<string, EdgeTokenPairs> | null> {
     const list = [...new Set(addresses.map((address) => address.toLowerCase()))].filter((address) => ADDRESS.test(address) && !/^0x0{40}$/.test(address)).sort().slice(0, PRICE_BATCH)
-    if (list.length === 0 || signal?.aborted || edge2 === null || now() < edge2DownUntil || !edgeUp('robinhood') || cooling(true)) return null
+    return edgeBatch('tokens/', list, 'robinhood', signal)
+  }
+
+  /**
+   * Added 2026-11-07: our edge's answer for up to PRICE_BATCH Base or Arbitrum One pools asked by their own names (a v3
+   * pool's address, a v4 pool's id), in GETs of EDGE_BATCH (functions/_lib/dexEdge.ts `pairs`), exactly as `edgeTokens`
+   * asks for tokens: our edge only, never the provider directly, no seed, no listener, no state given up. The provider
+   * lists 30 pairs a token, which left Base USDC's and Arbitrum One WETH's WETH/USDC pools without figures
+   * (lib/read/dexFigures.ts askPairs).
+   */
+  function edgePairs(chainId: number, names: readonly string[]): Promise<Map<string, EdgeTokenPairs> | null> {
+    const slug = dexChainSlug(chainId)
+    return slug === null ? Promise.resolve(null) : edgeBatch(`pairs/${slug}/`, names.slice(0, PRICE_BATCH), slug)
+  }
+
+  /** `edgeTokens`' GETs, by our edge's path for the ask (moved out of it on purpose 2026-11-07, unchanged, for `edgePairs`). */
+  async function edgeBatch(path: string, list: readonly string[], slug: string, signal?: AbortSignal): Promise<Map<string, EdgeTokenPairs> | null> {
+    if (list.length === 0 || signal?.aborted || edge2 === null || now() < edge2DownUntil || !edgeUp(slug) || cooling(true)) return null
     const parts: string[][] = []
     for (let i = 0; i < list.length; i += EDGE_BATCH) parts.push(list.slice(i, i + EDGE_BATCH))
-    const answers = await Promise.all(parts.map((part) => get(`${edge2}tokens/${part.join(',')}`, EDGE_TIMEOUT, signal, true)))
+    const answers = await Promise.all(parts.map((part) => get(`${edge2}${path}${part.join(',')}`, EDGE_TIMEOUT, signal, true)))
     if (signal?.aborted) return null
     const out = new Map<string, EdgeTokenPairs>()
     let heard = false
@@ -620,7 +657,7 @@ export function createTokenArtworkResolver(options: Options = {}) {
     }
   }
 
-  return { resolve, pairs, tokenPrices, edgeTokens, seed, peek, onPairs, observe, rejectImage: (chainId: number, address: string) => {
+  return { resolve, pairs, tokenPrices, edgeTokens, edgePairs, seed, peek, onPairs, observe, rejectImage: (chainId: number, address: string) => {
     const key = tokenArtworkKey(chainId, address)
     if (key) remember(key, null, true, true)
   } }

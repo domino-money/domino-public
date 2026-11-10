@@ -6,7 +6,7 @@ import tailwindcss from '@tailwindcss/vite'
 import { defineConfig, type Plugin, type Rollup } from 'vite'
 import { PREVIEW_SITE_FORBIDDEN, TEXT_FILE, assertDeployable, findForbidden } from './scripts/deploy-markers.mjs'
 import { elysiumSwitch, switchDiagnostic } from './scripts/elysium-switch.mjs'
-import { moduleSource, rehearsePlan, rehearseReadV6, type SchemaData } from './scripts/elysium-rehearsal.mjs'
+import { moduleSource, rehearseCrosschain, rehearsePlan, rehearseReadV6, type SchemaData } from './scripts/elysium-rehearsal.mjs'
 import { ROUTES } from './src/routeTable'
 import { bootTags, type BootData } from './functions/_lib/boot'
 
@@ -58,7 +58,7 @@ const reactDomRoot = here('./node_modules/react-dom')
  * it is part of what the site does. Only its probes are a mode of their own.
  *
  * Changed on purpose 2026-11-06 (the Elysium surface): one environment variable is read, by the test builds alone:
- * DOMINO_TEST_ELYSIUM_PROFILE (with DOMINO_TEST_ELYSIUM_FUNDS_FROM), which turns Elysium on with a fixture profile for
+ * DOMINO_TEST_ELYSIUM_PROFILE (with DOMINO_TEST_ELYSIUM_FUNDS_FROM and DOMINO_TEST_ELYSIUM_FUNDS_TO), which turns Elysium on with a fixture profile for
  * the browser suites and their pictures (scripts/elysium-switch.mjs). The deployable modes, preview-v2 and every other
  * build ignore it and read Elysium's switch from the repository alone; a forced build writes to `<outDir>-elysium` (or
  * `-elysium-funds`), beside its mode's own directory.
@@ -265,11 +265,17 @@ export const ROUTE_MODULES: Readonly<Record<string, readonly string[]>> = {
   // a chain of three round trips made one. A build without V2 carries no such module and passes it over.
   positions: ['src/screens/Positions.tsx', 'src/components/positions/OwnedPositions.tsx', 'src/v2in/lists/OwnedRows.tsx'],
   position: ['src/screens/Positions.tsx', 'src/screens/PositionDetail.tsx'],
+  // Added 2026-11-07 (launch sweep F11): Receipts (#/positions/receipts, functions/_lib/boot.ts `receipts`), which draws
+  // no list: it took the list's row, whose OwnedRows stylesheet it never applies, a console warning seconds after load.
+  receipts: ['src/screens/Positions.tsx', 'src/v2in/lists/Receipts.tsx'],
   new: ['src/screens/NewPosition.tsx', 'src/v2in/journey/NewPositionV2.tsx'],
   automate: ['src/screens/Automate.tsx'],
   docs: ['src/screens/Docs.tsx'],
   setup: ['src/screens/Setup.tsx'],
   sequence: ['src/screens/Sequence.tsx'],
+  // Added 2026-11-07 (the owner's Points page, Season 1): its own chunk with its styles; a build without the wallet carries
+  // no such module and passes it over.
+  points: ['src/screens/Points.tsx'],
   // The second chain's section, #/elysium…, has no row (2026-10-01, fix round 1): the same build is served on
   // domino.money, where that route is not found (src/App.tsx ELYSIUM_OPEN), so the page never preloads its chunk there.
   // On the preview alias the app's own loader asks for it when the route opens.
@@ -336,6 +342,41 @@ function boot(early: boolean): Plugin {
 }
 
 /**
+ * Each page's head (added 2026-11-07, the owner: Domino in Google, integ-logs/seo/PROPOSAL.md): Home's title,
+ * description, canonical address, shared link's words and picture and the site's name as structured data, in place of
+ * index.html's `<title>Domino</title>`, and beside it the table the edge gives every other address its own head from
+ * (functions/_lib/seo.ts); and sitemap.xml. The words are src/lib/seo/table.ts's, loaded here with this build's own
+ * defines (the resolved config's, the same the screens are compiled with), so a docs summary that names the networks
+ * says what this build's docs say (correction 1: a Function has no define). esbuild is Vite's own, as it bundles this
+ * file. Every mode writes them, so the test builds serve the same head; the read lab's page carries none.
+ */
+type HeadModule = { withHead: (html: string) => string; sitemapXml: () => string }
+function pageHeads(): Plugin {
+  let define: Record<string, string> = {}
+  let loaded: Promise<HeadModule> | null = null
+  const load = () =>
+    (loaded ??= import('esbuild')
+      .then(({ build }) => build({ entryPoints: [here('./src/lib/seo/table.ts')], bundle: true, write: false, format: 'esm', platform: 'neutral', target: 'es2022', define, logLevel: 'silent' }))
+      .then((out) => import(`data:text/javascript;base64,${Buffer.from(out.outputFiles[0].text).toString('base64')}`) as Promise<HeadModule>))
+  return {
+    name: 'domino:page-heads',
+    configResolved(config) {
+      define = Object.fromEntries(Object.entries(config.define ?? {}).map(([key, value]) => [key, typeof value === 'string' ? value : JSON.stringify(value)]))
+    },
+    transformIndexHtml: {
+      order: 'post',
+      async handler(html, context) {
+        if (!/(^|[\\/])index\.html$/.test(context?.filename ?? 'index.html')) return html
+        return (await load()).withHead(html)
+      },
+    },
+    async generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'sitemap.xml', source: (await load()).sitemapXml() })
+    },
+  }
+}
+
+/**
  * A build with V2 on scans the integrated V2 modules for its CSS (Domino V2, 2026-10-02). styles/tokens.css keeps
  * `src/v2in` out of Tailwind's scan, so every other build's CSS is byte for byte what it was before V2; only in a build
  * with `__DOMINO_V2__` on is that one line taken out before Tailwind reads the file. A tokens.css without the line fails
@@ -367,12 +408,15 @@ function v2ScreensCss(): Plugin {
  * read-v6 and position-plan-v1 packages' data as rugged97's day-9 versions have it, naming chain 99901
  * (scripts/elysium-rehearsal.mjs), served in place of each package's `schema-data.mjs`; their runtimes are the packages'
  * own. `profile`: the forced profile's text. Every other build bundles the packages as they are.
+ * Changed on purpose 2026-11-09 (Elysium's day 9): and, where the forced build brings funds to Elysium (`fundsTo`), the
+ * crosschain-v1 package's data as a version that pins a bridge for 99901 has it (rehearseCrosschain).
  */
-function elysiumRehearsal(profile: string): Plugin {
+function elysiumRehearsal(profile: string, fundsTo: boolean): Plugin {
   const parsed = JSON.parse(profile) as Record<string, unknown>
   const packages: readonly [RegExp, string, typeof rehearseReadV6][] = [
     [/[\\/]api-contracts[\\/]read-v6[\\/]schema-data\.mjs$/, '../api-contracts/read-v6/schema-data.mjs', rehearseReadV6],
     [/[\\/]api-contracts[\\/]position-plan-v1[\\/]schema-data\.mjs$/, '../api-contracts/position-plan-v1/schema-data.mjs', rehearsePlan],
+    ...(fundsTo ? [[/[\\/]api-contracts[\\/]crosschain-v1[\\/]schema-data\.mjs$/, '../api-contracts/crosschain-v1/schema-data.mjs', rehearseCrosschain] as [RegExp, string, typeof rehearseReadV6]] : []),
   ]
   return {
     name: 'domino:elysium-rehearsal',
@@ -443,7 +487,7 @@ export default defineConfig(({ mode, command }) => {
     // every release refuses.
     // Changed on purpose 2026-11-07 (Elysium's screens): last, a test build forcing Elysium on rehearses day 9's read-v6 and
     // plan packages too (elysiumRehearsal, which loads before Vite's own loader).
-    plugins: [react(), ...(settings.v2 ? [v2ScreensCss(), ...(settings.deployable ? [] : [v2BuildMark(mode)])] : []), tailwindcss(), boot(!localLive && site && settings.pools === 'selected'), ...(localLive ? [{ name: 'domino:local-live-launcher-only', configResolved(config: { server: { middlewareMode: unknown } }) { if (!config.server.middlewareMode) throw new Error('Use npm run dev:live; local-live requires the guarded launcher.') } }] : [deployableOnlyInDist(mode, settings.deployable)]), deployableBundleCheck(mode, settings.deployable), previewSiteBundleCheck(mode, !localLive && !settings.deployable && settings.site), ...(elysium.forced && elysium.profile !== null ? [elysiumRehearsal(elysium.profile)] : [])],
+    plugins: [react(), ...(settings.v2 ? [v2ScreensCss(), ...(settings.deployable ? [] : [v2BuildMark(mode)])] : []), tailwindcss(), boot(!localLive && site && settings.pools === 'selected'), pageHeads(), ...(localLive ? [{ name: 'domino:local-live-launcher-only', configResolved(config: { server: { middlewareMode: unknown } }) { if (!config.server.middlewareMode) throw new Error('Use npm run dev:live; local-live requires the guarded launcher.') } }] : [deployableOnlyInDist(mode, settings.deployable)]), deployableBundleCheck(mode, settings.deployable), previewSiteBundleCheck(mode, !localLive && !settings.deployable && settings.site), ...(elysium.forced && elysium.profile !== null ? [elysiumRehearsal(elysium.profile, elysium.fundsTo)] : [])],
     define: {
       __DOMINO_READ_MODE__: JSON.stringify(settings.read),
       __DOMINO_POOL_SET__: JSON.stringify(settings.pools),
@@ -473,6 +517,11 @@ export default defineConfig(({ mode, command }) => {
       // where it is off. Written for every mode.
       __DOMINO_ELYSIUM_LIVE__: JSON.stringify(elysium.live),
       __DOMINO_ELYSIUM_FUNDS_FROM__: JSON.stringify(elysium.fundsFrom),
+      // Added 2026-11-09 (Elysium's day 9, the owner: funds brought to Elysium from other networks as on Base): whether a
+      // deposit can bring funds to it, and the tokens it may deliver there (src/lib/elysiumIdentity.ts ELYSIUM_FUNDS_TO,
+      // ELYSIUM_DESTINATION_TOKENS). A boolean literal, and null wherever it is false, so a build where it is off carries none.
+      __DOMINO_ELYSIUM_FUNDS_TO__: JSON.stringify(elysium.fundsTo),
+      __DOMINO_ELYSIUM_DESTINATIONS__: JSON.stringify(elysium.destinations),
       // Its Uniswap v4 PositionManager and Permit2 from its profile, for the docs' Contracts page (src/lib/docs/elysium.ts).
       __DOMINO_ELYSIUM_UNISWAP__: JSON.stringify(elysium.uniswap),
       // Added 2026-11-07 (Elysium as a fourth V2 chain): where it is live, its profile's text and its pinned deployment
@@ -481,6 +530,11 @@ export default defineConfig(({ mode, command }) => {
       __DOMINO_ELYSIUM_PROFILE__: JSON.stringify(elysium.profile),
       __DOMINO_ELYSIUM_DEPLOYMENT__: JSON.stringify(elysium.deployment === null ? null : elysium.deployment.text),
       __DOMINO_ELYSIUM_DEPLOYMENT_PIN__: JSON.stringify(elysium.deployment === null ? null : { path: elysium.deployment.path, sha256: elysium.deployment.sha256 }),
+      // Added 2026-11-07 (Elysium's pre-launch): whether this build is in pre-launch, and the opening day and its words
+      // (src/lib/elysiumIdentity.ts ELYSIUM_PRELAUNCH, ELYSIUM_OPENING). A boolean literal, as __DOMINO_ELYSIUM_LIVE__, so
+      // every pre-launch branch folds out of a live or off build; null opening wherever it is not pre-launch.
+      __DOMINO_ELYSIUM_PRELAUNCH__: JSON.stringify(elysium.stage === 'prelaunch'),
+      __DOMINO_ELYSIUM_OPENING__: JSON.stringify(elysium.opening),
     },
     resolve: {
       dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime'],

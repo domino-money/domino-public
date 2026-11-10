@@ -1,0 +1,25 @@
+# Reviewed-source candidate for points-v1 (docs/points/POINTS.md, part 3); this file does not provision a deployment.
+# Only the reviewed domino-app Pages Function may call this Worker via a binding.
+# No Internet endpoint or scheduled trigger is configured here.
+name = "domino-points-bridge"
+main = "src/points-worker.mjs"
+compatibility_date = "2026-11-07"
+workers_dev = false
+preview_urls = false
+routes = []
+logpush = false
+
+[observability]
+enabled = false
+
+[vars]
+POINTS_BRIDGE_ENABLED = "false"
+APP_ORIGIN = "https://domino.money"
+# Documentation endpoint: configure the protected gateway privately before enabling.
+POINTS_GATEWAY_ORIGIN = "https://points-gateway.example.invalid"
+# Exact Pages preview origins this Worker also admits, comma-separated: none.
+# Listing one also needs the listener's DOMINO_SESSION_PREVIEW_ORIGINS; docs/PREVIEW_PUBLIC_READS.md.
+PREVIEW_ORIGINS = ""
+
+# Access client IDs/secrets are provisioned separately in Cloudflare after review.
+# Do not add credentials, account overrides or environment bindings to this file.

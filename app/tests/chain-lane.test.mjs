@@ -115,3 +115,62 @@ test('the state read warmed for a position’s page is the one it takes, once', 
     delete globalThis.__DOMINO_DEPLOYABLE__;
   }
 });
+
+// Added 2026-11-09 (core flows, the owner: nothing may load forever): a /state request that never answers ends at
+// STATE_DEADLINE_MS as `unavailable` (an asker with no signal waited for good), and one the route could not answer is made
+// once more a moment later, within the same read.
+test('a /state read ends at its deadline, and is made once more after a request the route could not answer', async (t) => {
+  const { caseChain } = await import('./support/fees/case-chain.mjs');
+  const { chainDeps, withEdge } = await import('./support/fees/edge.mjs');
+  const chain = caseChain('3136705');
+  globalThis.__DOMINO_DEPLOYABLE__ = true;
+  relay.resetRelayMemory();
+  const flush = async () => { for (let i = 0; i < 20; i++) await new Promise((done) => setImmediate(done)); };
+  try {
+    assert.equal(client.STATE_DEADLINE_MS, 12_000);
+    assert.equal(client.STATE_RETRY_MS, 1_500);
+    // The route away once: asked once more 1.5 s later, and that answer is the read's.
+    const once = await withEdge(chainDeps(chain), async () => {
+      const edge = globalThis.fetch;
+      let calls = 0;
+      globalThis.fetch = async (input, init) => {
+        calls += 1;
+        if (calls === 1) return new Response('{"error":"upstream_unavailable"}', { status: 503, headers: { 'Content-Type': 'application/json' } });
+        return edge(input, init);
+      };
+      return { answer: await client.chainState(['3136705']), calls };
+    });
+    assert.equal(once.result.answer.ok, true, 'the second request’s answer');
+    assert.equal(once.result.calls, 2, 'two requests: the one that failed, then one more');
+    // A refusal of the visitor's own allowance is left to the asker's schedule: one request.
+    const refused = await withEdge(chainDeps(chain), async () => {
+      globalThis.fetch = async () => new Response('{"error":"rate_limited"}', { status: 429, headers: { 'Retry-After': '30' } });
+      return client.chainState(['3136705']);
+    });
+    assert.equal(refused.result.failure, 'rate_limited');
+    // A route that never answers: dropped at the deadline, made once more, dropped again: `unavailable`, never a wait for good.
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const signals = [];
+    const silent = await withEdge(chainDeps(chain), async () => {
+      globalThis.fetch = (_input, init) => new Promise((_done, fail) => {
+        signals.push(init.signal);
+        init.signal.addEventListener('abort', () => fail(new DOMException('aborted', 'AbortError')));
+      });
+      const read = client.chainState(['3136706']);
+      await flush();
+      t.mock.timers.tick(12_000);
+      await flush();
+      t.mock.timers.tick(1_500);
+      await flush();
+      t.mock.timers.tick(12_000);
+      await flush();
+      return read;
+    });
+    assert.deepEqual(silent.result, { ok: false, failure: 'unavailable', retryAfterMs: 0 });
+    assert.equal(signals.length, 2);
+    assert.ok(signals.every((signal) => signal.aborted), 'each request dropped at its deadline');
+  } finally {
+    t.mock.timers.reset();
+    delete globalThis.__DOMINO_DEPLOYABLE__;
+  }
+});

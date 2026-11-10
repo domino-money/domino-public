@@ -6,7 +6,7 @@ import { feeWords } from '../../../lib/format/fee'
 import { readNow } from '../../../lib/markets'
 import { COPY, failureText } from '../../../lib/read/screens/copy'
 import { cataloguePoolId, createCatalogueSession, verifyCandidate, type CatalogueSession, type CatalogueSnapshot } from '../../../lib/read/screens/catalogueSession'
-import { PROTOCOL_FEE_UNDESCRIBED, figuresShownUntil, linkedNetworkPool, networkAprNote, networkFigureNote, networkRows, poolOnOtherChain, type NetworkPools } from '../../../lib/create/otherChains'
+import { PROTOCOL_FEE_UNDESCRIBED, figuresShownUntil, linkedNetworkPool, networkAprNote, networkFigureNote, networkRows, poolOnOtherChain, unnamedPools, type NetworkPools } from '../../../lib/create/otherChains'
 import { dexStore } from '../../../lib/read/dexFigures'
 import { keptCreatePools, readCreatePools, type PoolsAnswer } from '../../../lib/create/poolsAhead'
 import { NATIVE_CURRENCY, type AddressKey, type PoolIdKey } from '../../../lib/read/screens/identity'
@@ -756,18 +756,36 @@ export function useNetworkPools(read: (signal: AbortSignal) => Promise<NetworkPo
   useEffect(() => {
     if (stale && chainId !== null && subject !== null) dexStore.askOn(chainId, subject)
   }, [stale, chainId, subject])
+  // Changed on purpose 2026-11-07 (Base USDC's and Arbitrum One WETH's WETH/USDC rows were dashes: DEX Screener lists 30
+  // pairs a token, and theirs left those pools out): once the token's pairs were read, the pools they leave without a
+  // figure fresh at this list's clock are asked about by their own names, through our edge (dexStore.askPairs, each name
+  // at most once a minute), and again beside the token a minute before their figures would age (below). Their figures are
+  // DEX Screener's, taken as the token's are: the same pool name, both currencies checked (networkRows).
+  const nowS = Math.floor(clock.wall / 1000)
+  const seen = (chain: number, name: string) => dexStore.chainPoolSeen(chain, name)
+  const unnamed = listed && result.kind === 'ok' ? unnamedPools(result.options, seen, nowS).join() : ''
+  const byName = useRef(new Set<string>())
+  const [heard, setHeard] = useState(false)
+  useEffect(() => {
+    if (!unnamed) return
+    const names = unnamed.split(',')
+    for (const name of names) byName.current.add(name)
+    // (`listed` names a chain.)
+    void dexStore.askPairs(chainId!, names).then(() => setHeard(true))
+  }, [unnamed, chainId])
   // Changed on purpose 2026-10-06 (review of the same day): the rows rest a moment more while DEX Screener has not answered
   // for the token (asked beside the pools, so it usually has), at most FIGURES_WAIT_MS, so they are drawn once, in their
   // order and with their figures, and a row is chosen with the figures it showed (the chosen pool keeps the ones it had).
+  // Since 2026-11-07 also while the first pools asked by name have not answered, within the same FIGURES_WAIT_MS.
   const [waited, setWaited] = useState<NetworkPools | null>(null)
   const answered = result.kind === 'ok' ? result : null
-  const waiting = answered !== null && stale && waited !== answered
+  const waiting = answered !== null && (stale || (unnamed !== '' && !heard)) && waited !== answered
   useEffect(() => {
     if (!waiting || answered === null) return
     const timer = setTimeout(() => setWaited(answered), FIGURES_WAIT_MS)
     return () => clearTimeout(timer)
   }, [waiting, answered])
-  const options = result.kind === 'ok' && !waiting ? networkRows(result.options, (chain, name) => dexStore.chainPoolSeen(chain, name), result.facts, keep, { nowS: Math.floor(clock.wall / 1000), listed }) : []
+  const options = result.kind === 'ok' && !waiting ? networkRows(result.options, seen, result.facts, keep, { nowS, listed }) : []
   // Drawn again just after the first figure shown may no longer be, and its token asked about again a minute before, so
   // fresh figures usually arrive first (Added 2026-10-06, rugged97's delta of 6 Oct §4). `clock` is a dependency so a
   // wall clock that stepped back is waited out, never left behind.
@@ -775,7 +793,11 @@ export function useNetworkPools(read: (signal: AbortSignal) => Promise<NetworkPo
   useEffect(() => {
     if (until === null) return
     const after = (seconds: number) => Math.max(0, seconds * 1000 - Date.now())
-    const renew = chainId !== null && subject !== null ? setTimeout(() => dexStore.askOn(chainId, subject), after(until - 60)) : null
+    const renew = chainId !== null && subject !== null ? setTimeout(() => {
+      dexStore.askOn(chainId, subject)
+      // The pools asked by name (2026-11-07), which the token's own pairs do not renew.
+      void dexStore.askPairs(chainId, [...byName.current])
+    }, after(until - 60)) : null
     const wake = setTimeout(() => setClock(readNow()), after(until + 1))
     return () => {
       if (renew !== null) clearTimeout(renew)

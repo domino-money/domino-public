@@ -3,12 +3,12 @@
 set -euo pipefail
 [ "$(id -u)" = 0 ] || { echo 'Run as root on the virtualization host.' >&2; exit 1; }
 source_dir=$(cd -- "$(dirname -- "$0")" && pwd)
-base_dir=/mnt/narrative-ssd/domino-ci-pilot/base
+base_dir=/mnt/domino-ci/domino-ci-pilot/base
 for command in curl sha256sum qemu-img virt-customize virt-resize; do command -v "$command" >/dev/null; done
-# Refuse a missing SSD mount rather than silently filling the system disk.
-mountpoint -q /mnt/narrative-ssd
-[ ! -L /mnt/narrative-ssd/domino-ci-pilot ]
-install -d -o root -g root -m 0755 /mnt/narrative-ssd/domino-ci-pilot "$base_dir" "$base_dir/downloads"
+# Refuse a missing dedicated NVMe mount rather than filling the system disk.
+mountpoint -q /mnt/domino-ci
+[ ! -L /mnt/domino-ci/domino-ci-pilot ]
+install -d -o root -g root -m 0755 /mnt/domino-ci/domino-ci-pilot "$base_dir" "$base_dir/downloads"
 [ ! -e "$base_dir/ubuntu-24.04-ci.qcow2" ] || { echo 'Base already exists; do not overwrite a runner image.' >&2; exit 1; }
 [ "$(df -Pk "$base_dir" | awk 'NR==2 {print $4}')" -gt 52428800 ] || { echo 'Need at least 50 GiB free.' >&2; exit 1; }
 build_dir=$(mktemp -d "$base_dir/build-XXXXXXXX")

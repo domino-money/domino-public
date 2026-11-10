@@ -32,4 +32,4 @@ export function parsePoolNetworkHash(hash: string): PoolNetworkLocation | null {
   return found && isOtherV2ChainId(chainId) ? { chainId, pool: found[2].toLowerCase(), token: found[3] } : null
 }
 
-export const poolNetworkHref = (chainId: PoolNetworkLocation['chainId'], pool: string, token: string) => `#/pool/network/${chainId}/${pool}/${token}`
+export const poolNetworkHref = (chainId: PoolNetworkLocation['chainId'], pool: string, token: string) => `/pool/network/${chainId}/${pool}/${token}`

@@ -1,4 +1,5 @@
 import { docsHref } from '../../components/explore/routes'
+import { SOURCE_REPO } from '../sourceRepo'
 import type { ShotId } from './shots'
 import type { Block, DiagramName, Inline } from './types'
 
@@ -18,7 +19,10 @@ export const b = (text: string): Inline => ({ b: text })
 export const doc = (text: string, slug: string, section?: string): Inline => ({ to: docsHref(slug, section ?? null), text })
 
 /** A link to a screen of the app, or a section of Home. */
-export const screen = (text: string, to: `#/${string}`): Inline => ({ to, text })
+export const screen = (text: string, to: `/${string}`): Inline => ({ to, text })
+
+/** A link to Domino's public source on GitHub (2026-11-08), the docs' one destination outside the app; a new tab. */
+export const source = (text: string): Inline => ({ out: SOURCE_REPO, text })
 
 /** A picture of a screen, with the line under it. Its file, size and description come from shots.ts. */
 export const shot = (id: ShotId, caption: string): Block => ({ kind: 'shot', shot: id, caption })

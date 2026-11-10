@@ -12,7 +12,8 @@ compatibility_date = "2026-09-10"
 
 # Wrangler reads the explicit production/preview sections independently.
 # Vars and service bindings are not inherited. Keep the top level empty:
-# production has seven service bindings; preview has public reads only.
+# production has seven service bindings and its own V2 and points Workers
+# (below); preview has public reads and the setup release only.
 #
 # Secrets are not part of this file. They stay in each environment's
 # settings, set with `wrangler pages secret put` or in the dashboard.
@@ -129,3 +130,11 @@ service = "domino-position-plan-bridge"
 [[env.production.services]]
 binding = "CROSSCHAIN_BRIDGE"
 service = "domino-crosschain-bridge"
+
+# Points routes use a dedicated Worker (bridge/wrangler.points.toml), disabled
+# by default until the operator configures its protected gateway and Access
+# credentials outside Git. The forwarder reports the disabled state to the app.
+# This session-backed family is absent from preview.
+[[env.production.services]]
+binding = "POINTS_BRIDGE"
+service = "domino-points-bridge"

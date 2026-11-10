@@ -14,11 +14,13 @@ concurrency:
   # orders their uploads. Manual checks have their own group.
   group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+# Repository override for recovery: github-hosted selects Ubuntu 24.04.
+# An unset or different value keeps each job's exact Clawber routing.
 jobs:
   hygiene:
     if: github.repository == 'domino-money/domino' && github.event.repository.private == true
     name: Repository hygiene
-    runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-systemd, "domino-job-ci-hygiene"]
+    runs-on: ${{ vars.DOMINO_CI_RUNNER_POOL == 'github-hosted' && 'ubuntu-24.04' || fromJSON(format('["self-hosted","Linux","X64","domino-ci","domino-ci-{0}-{1}","domino-ci-systemd","domino-job-ci-hygiene"]', github.run_id, github.run_attempt)) }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -75,6 +77,8 @@ jobs:
         run: python3 -B -m unittest discover -s scripts/staging/tests -p test_install_monitor.py -v
       - name: Check the S2 crosschain listener installer without host access
         run: python3 -B -m unittest discover -s scripts/staging/tests -p test_install_crosschain.py -v
+      - name: Check the season 1 points listener installer without host access
+        run: python3 -B -m unittest discover -s scripts/staging/tests -p test_install_points_api.py -v
       - name: Check every release installer's drop-ins and the automation boot target against the runner's own systemd
         run: sudo -n env DOMINO_TEST_REAL_SYSTEMD=1 python3 -B -m unittest discover -s scripts/staging/tests -p test_financial_release_systemd.py -v
       - name: Check the public-data installer and rollback without host access
@@ -95,7 +99,7 @@ jobs:
   changes:
     if: github.repository == 'domino-money/domino' && github.event.repository.private == true
     name: What the change touches
-    runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-normal, "domino-job-ci-changes"]
+    runs-on: ${{ vars.DOMINO_CI_RUNNER_POOL == 'github-hosted' && 'ubuntu-24.04' || fromJSON(format('["self-hosted","Linux","X64","domino-ci","domino-ci-{0}-{1}","domino-ci-normal","domino-job-ci-changes"]', github.run_id, github.run_attempt)) }}
     timeout-minutes: 5
     outputs:
       browser: ${{ steps.paths.outputs.browser }}
@@ -129,7 +133,7 @@ jobs:
   frontend:
     if: github.repository == 'domino-money/domino' && github.event.repository.private == true
     name: Frontend
-    runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-normal, "domino-job-ci-frontend"]
+    runs-on: ${{ vars.DOMINO_CI_RUNNER_POOL == 'github-hosted' && 'ubuntu-24.04' || fromJSON(format('["self-hosted","Linux","X64","domino-ci","domino-ci-{0}-{1}","domino-ci-normal","domino-job-ci-frontend"]', github.run_id, github.run_attempt)) }}
     # The web checks, the shared types and check:app up to its build: about 4
     # minutes on run 36114583875. check:app's browser suites run beside this job
     # in frontend_browser.
@@ -175,6 +179,8 @@ jobs:
         run: node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/read-v6/types.ts api-contracts/read-v6/runtime.d.mts
       - name: Check S1 position plan types
         run: node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/position-plan-v1/types.ts api-contracts/position-plan-v1/runtime.d.mts
+      - name: Check season 1 points types
+        run: node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/points-v1/types.ts api-contracts/points-v1/runtime.d.mts
       - run: npm --prefix app ci --no-audit --no-fund
       - name: Install the exact locked Chromium
         run: |
@@ -199,7 +205,7 @@ jobs:
   read_bridge:
     if: github.repository == 'domino-money/domino' && github.event.repository.private == true
     name: Read Worker
-    runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-normal, "domino-job-ci-read-worker"]
+    runs-on: ${{ vars.DOMINO_CI_RUNNER_POOL == 'github-hosted' && 'ubuntu-24.04' || fromJSON(format('["self-hosted","Linux","X64","domino-ci","domino-ci-{0}-{1}","domino-ci-normal","domino-job-ci-read-worker"]', github.run_id, github.run_attempt)) }}
     # The read Worker's own checks (bridge/ and the read contracts it
     # consumes): about 2 seconds, and no install. A job of their own, so a
     # failure elsewhere never skips them (audit H8: they were a late step of
@@ -215,7 +221,7 @@ jobs:
     name: Frontend browser (${{ matrix.suite }})
     needs: changes
     if: needs.changes.outputs.browser == 'true' && github.repository == 'domino-money/domino' && github.event.repository.private == true
-    runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-normal, "domino-job-ci-browser-${{ matrix.suite }}"]
+    runs-on: ${{ vars.DOMINO_CI_RUNNER_POOL == 'github-hosted' && 'ubuntu-24.04' || fromJSON(format('["self-hosted","Linux","X64","domino-ci","domino-ci-{0}-{1}","domino-ci-normal","domino-job-ci-browser-{2}"]', github.run_id, github.run_attempt, matrix.suite)) }}
     # check:app's browser suites, one job each: test:render is test:pages and
     # then test:finance, and test:gate follows. These 2-vCPU runners give
     # node --test one file at a time, so in one job the suites ran end to end
@@ -295,7 +301,7 @@ jobs:
   backend:
     if: github.repository == 'domino-money/domino' && github.event.repository.private == true
     name: Backend
-    runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-normal, "domino-job-ci-backend"]
+    runs-on: ${{ vars.DOMINO_CI_RUNNER_POOL == 'github-hosted' && 'ubuntu-24.04' || fromJSON(format('["self-hosted","Linux","X64","domino-ci","domino-ci-{0}-{1}","domino-ci-normal","domino-job-ci-backend"]', github.run_id, github.run_attempt)) }}
     # The artifact build for the EVM tests (issue #144) adds a full Forge
     # compilation. Last 60 runs: 13-19 minutes warm (backend tests 11.5-16).
     # Cold, the three builds add about 8: 25 minutes on run 36927967030 (#284).
@@ -405,6 +411,7 @@ jobs:
       - run: python scripts/export-crosschain-contract.py --check
       - run: python scripts/export-read-v6-contract.py --check
       - run: python scripts/export-position-plan-contract.py --check
+      - run: python scripts/export-points-contract.py --check
       - name: Check PostgreSQL tools
         run: test -x "$DOMINO_PG_BIN/initdb"
       - name: Check staging catalogue inventory in a disposable cluster
@@ -444,7 +451,7 @@ jobs:
   contracts:
     if: github.repository == 'domino-money/domino' && github.event.repository.private == true
     name: Contracts (${{ matrix.part }})
-    runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-normal, "domino-job-ci-contracts-${{ matrix.part }}"]
+    runs-on: ${{ vars.DOMINO_CI_RUNNER_POOL == 'github-hosted' && 'ubuntu-24.04' || fromJSON(format('["self-hosted","Linux","X64","domino-ci","domino-ci-{0}-{1}","domino-ci-normal","domino-job-ci-contracts-{2}"]', github.run_id, github.run_attempt, matrix.part)) }}
     # Two jobs in parallel, each with its own Forge cache: v1 runs every suite
     # outside contracts/test/v2, v2 the V2 suites and the V2 export check. One
     # job no longer fit a cold run: the 22 V1 suites alone took 33.4-35.1 min
@@ -550,7 +557,7 @@ jobs:
     name: Deploy gated preview
     needs: [hygiene, frontend, read_bridge, frontend_browser, backend, contracts]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'domino-money/domino' && github.event.repository.private == true
-    runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-deploy, "domino-job-ci-preview"]
+    runs-on: ${{ vars.DOMINO_CI_RUNNER_POOL == 'github-hosted' && 'ubuntu-24.04' || fromJSON(format('["self-hosted","Linux","X64","domino-ci","domino-ci-{0}-{1}","domino-ci-deploy","domino-job-ci-preview"]', github.run_id, github.run_attempt)) }}
     timeout-minutes: 15
     # One upload at a time. Main runs no longer wait for each other (the
     # concurrency at the top), so two may reach this job close together: a

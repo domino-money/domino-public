@@ -1,6 +1,6 @@
 import { CAPABILITIES } from '../../capabilities'
 import { CREATE } from '../../create/copy'
-import { b, doc, p } from '../blocks'
+import { b, doc, p, source } from '../blocks'
 // 2026-11-06: Elysium's words where it is live (../elysium.ts).
 import { ELYSIUM_LINKED, ELYSIUM_LIVE, ELYSIUM_PERMIT2, ELYSIUM_POSITION_MANAGER, ELYSIUM_V2_ID, GAS_IN, NETWORKS, NETWORKS_OR, OTHERS } from '../elysium'
 import type { DocChain, DocPage } from '../types'
@@ -186,6 +186,15 @@ export const CONTRACTS: DocPage = {
           ],
         },
         p('Each contract that charges a fee pays it to Domino’s fee recipient. A fee it cannot pay at once waits in that contract, apart from your funds, until it is paid.'),
+      ],
+    },
+    {
+      // 2026-11-08 (the owner: Domino's repository is public): where its code is, beside the addresses (lib/sourceRepo.ts).
+      // Source-available under its LICENSE.md, so it is "public", never "open source".
+      id: 'source-code',
+      title: 'Source code',
+      blocks: [
+        p('Domino’s code is public on GitHub, at ', source('domino-money/domino-public'), ': the app, the services behind it and Domino’s contracts, with their tests and audit evidence. It is published for reading and review, under the terms in its LICENSE.md.'),
       ],
     },
     {

@@ -11,6 +11,14 @@ S2 of [#283](https://github.com/domino-money/domino/issues/283): a user with fun
   - Nothing on-chain enforces it. Anyone can bridge on relay.link, across.to or anywhere else and use Domino with the funds already in the wallet.
 - Quotes are requested server-side. Across' production key and integrator id must never reach the browser, and Relay's key is needed for `/requests/v3`.
 - Origins: any EVM chain where a provider has a route to the token, listed from the providers. Non-EVM wallets are a later app task.
+- **Elysium (99901), 9 Nov 2026** (0xdecimal's day-9 item 11, the owner's parity):
+  - Relay alone serves it, to and from: Across lists no route there. Its profile names `bridge.providers: ["relay"]`, and
+    `crosschain_pins.json` pins Relay's Depository on it (the address it has elsewhere, with its own runtime, codehash read
+    on Elysium at block 3,591,618) and the one token Relay bridges there, USDC (`relay.tokens`; GET /chains: its solver
+    currencies are USDC alone, and the native HYPE has `supportsBridging: false`).
+  - A deposit to Elysium delivers its USDC only (`CONSTANTS.destinations`); one from Elysium starts from its USDC only.
+  - Across is never asked for it: its candidate is `no_route` with `destination_not_served`, and its origins listing
+    `unavailable` with the same reason. No Across fee proof reads Elysium, so the listener needs no RPC for it.
 - Refunds go to the user. Relay gets `refundTo`; Across refunds the depositor on the origin after `fillDeadline`.
 
 ## Flow

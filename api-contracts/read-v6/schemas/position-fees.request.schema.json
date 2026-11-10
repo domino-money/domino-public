@@ -36,7 +36,8 @@
       "enum": [
         4663,
         8453,
-        42161
+        42161,
+        99901
       ],
       "title": "Chainid",
       "type": "integer"

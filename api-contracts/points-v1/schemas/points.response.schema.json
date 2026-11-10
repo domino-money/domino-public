@@ -1,0 +1,208 @@
+{
+  "$defs": {
+    "Revenue": {
+      "additionalProperties": false,
+      "properties": {
+        "assistedSwap": {
+          "maxLength": 49,
+          "pattern": "^(0|[1-9][0-9]{0,29})\\.[0-9]{18}$",
+          "title": "Assistedswap",
+          "type": "string"
+        },
+        "autoExit": {
+          "maxLength": 49,
+          "pattern": "^(0|[1-9][0-9]{0,29})\\.[0-9]{18}$",
+          "title": "Autoexit",
+          "type": "string"
+        },
+        "automation": {
+          "maxLength": 49,
+          "pattern": "^(0|[1-9][0-9]{0,29})\\.[0-9]{18}$",
+          "title": "Automation",
+          "type": "string"
+        },
+        "bridge": {
+          "maxLength": 49,
+          "pattern": "^(0|[1-9][0-9]{0,29})\\.[0-9]{18}$",
+          "title": "Bridge",
+          "type": "string"
+        }
+      },
+      "required": [
+        "assistedSwap",
+        "automation",
+        "autoExit",
+        "bridge"
+      ],
+      "title": "Revenue",
+      "type": "object"
+    },
+    "Season": {
+      "additionalProperties": false,
+      "properties": {
+        "configSha256": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Configsha256",
+          "type": "string"
+        },
+        "end": {
+          "maxLength": 20,
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+          "title": "End",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-z0-9-]{1,40}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "start": {
+          "maxLength": 20,
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+          "title": "Start",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "start",
+        "end",
+        "configSha256"
+      ],
+      "title": "Season",
+      "type": "object"
+    },
+    "Snapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "sha256": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "takenAt": {
+          "maximum": 1099511627776,
+          "minimum": 0,
+          "title": "Takenat",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "takenAt",
+        "sha256"
+      ],
+      "title": "Snapshot",
+      "type": "object"
+    },
+    "WalletPoints": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Address",
+          "type": "string"
+        },
+        "points": {
+          "maxLength": 37,
+          "pattern": "^(0|[1-9][0-9]{0,29})\\.[0-9]{6}$",
+          "title": "Points",
+          "type": "string"
+        },
+        "referees": {
+          "maximum": 1000000000,
+          "minimum": 0,
+          "title": "Referees",
+          "type": "integer"
+        },
+        "referralPoints": {
+          "maxLength": 37,
+          "pattern": "^(0|[1-9][0-9]{0,29})\\.[0-9]{6}$",
+          "title": "Referralpoints",
+          "type": "string"
+        },
+        "referrer": {
+          "anyOf": [
+            {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Referrer"
+        },
+        "revenueUsd": {
+          "$ref": "#/$defs/Revenue"
+        },
+        "usagePoints": {
+          "maxLength": 37,
+          "pattern": "^(0|[1-9][0-9]{0,29})\\.[0-9]{6}$",
+          "title": "Usagepoints",
+          "type": "string"
+        }
+      },
+      "required": [
+        "address",
+        "points",
+        "usagePoints",
+        "referralPoints",
+        "revenueUsd",
+        "referrer",
+        "referees"
+      ],
+      "title": "WalletPoints",
+      "type": "object"
+    }
+  },
+  "$id": "https://domino.invalid/contracts/points-v1/points.response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": {
+      "const": "1.0.0-rc.1",
+      "title": "Contractversion",
+      "type": "string"
+    },
+    "season": {
+      "$ref": "#/$defs/Season"
+    },
+    "snapshot": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Snapshot"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "wallet": {
+      "$ref": "#/$defs/WalletPoints"
+    }
+  },
+  "required": [
+    "contractVersion",
+    "season",
+    "snapshot",
+    "wallet"
+  ],
+  "title": "PointsResponse",
+  "type": "object",
+  "x-contract-version": "1.0.0-rc.1"
+}

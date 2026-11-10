@@ -51,7 +51,8 @@
             10,
             4663,
             8453,
-            42161
+            42161,
+            99901
           ],
           "title": "Chainid",
           "type": "integer"
@@ -413,7 +414,7 @@
       "items": {
         "$ref": "#/$defs/ChainBalances"
       },
-      "maxItems": 5,
+      "maxItems": 6,
       "minItems": 1,
       "title": "Chains",
       "type": "array"

@@ -164,6 +164,23 @@ class DisabledBridgeConfigs(unittest.TestCase):
                 changed["vars"].update(update)
                 self.assertTrue(validate("position-plan", changed))
 
+    def test_the_points_worker_is_its_own_disabled_family(self):
+        """2026-11-07 (season 1 points, part 3): its own name, entry, flag, gateway and no logging."""
+        config = self.configs["points"]
+        self.assertEqual(config["name"], "domino-points-bridge")
+        self.assertEqual(config["main"], "src/points-worker.mjs")
+        self.assertEqual(config["vars"], {"POINTS_BRIDGE_ENABLED": "false", "APP_ORIGIN": "https://domino.money",
+                                          "POINTS_GATEWAY_ORIGIN": "https://points-gateway.example.invalid",
+                                          "PREVIEW_ORIGINS": ""})
+        self.assertEqual(config["observability"], {"enabled": False})
+        self.assertIn("points", PREVIEW_SERVICES)
+        for update in ({"POINTS_GATEWAY_ORIGIN": "https://vm-position-plan.domino.money"},
+                       {"POINTS_BRIDGE_ENABLED": "true"}, {"POSITION_PLAN_BRIDGE_ENABLED": "false"}):
+            with self.subTest(update=update):
+                changed = copy.deepcopy(config)
+                changed["vars"].update(update)
+                self.assertTrue(validate("points", changed))
+
     def test_private_families_carry_preview_origins_committed_empty_and_only_the_alias_passes(self):
         """2026-11-04 (launch round P3, item 7): PREVIEW_ORIGINS on every private family's Worker, never on the read
         Worker or the setup release; "" as committed. Changed on purpose the same day (review L2): a reviewed value is

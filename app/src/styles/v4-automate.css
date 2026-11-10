@@ -43,6 +43,8 @@
   .dm-seq .dm-seq-loading { position: relative; display: grid; gap: 0.125rem; overflow: hidden; padding: 0.75rem 0.875rem 0.875rem; }
   .dm-seq .dm-seq-loading::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(100deg, rgb(255 157 98 / 0) 30%, rgb(255 190 146 / 0.06) 50%, rgb(255 157 98 / 0) 70%) 0 0 / 50% 100% no-repeat; animation: dm-v4-seq-skel 1.8s var(--e-std) infinite; }
   .dm-seq .dm-seq-loading-row.dm-skel { height: 4rem; border-radius: 0.875rem; background-color: var(--v4-w03); background-image: none; animation: none; }
+  /* 2026-11-09 (core flows): the one line over the row of a position just created, while it is being listed. */
+  .dm-seq .dm-seq-loading-line { margin: 0; padding: 0.375rem 0.375rem 0.625rem; font-size: 0.875rem; line-height: 1.5; color: var(--fg-muted); }
 
   /* One-line states (.card.slot with a status dot): unavailable, failed (+ Try again), Auto-exit's own with Back. */
   /* 2026-10-30 (QA round 2): a portfolio not read yet is the loading rows (.dm-seq-loading, still marked failed), never this box. */

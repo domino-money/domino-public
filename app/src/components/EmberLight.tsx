@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { rootScale } from '../lib/rootScale'
+import { onRoute } from '../lib/route'
 
 /** What the light reaches beyond its own layer: lit card edges, a screen's own ember consumers, the page title's sheen and
  * the footer's hairline and wordmark. Looked up again on a route change and at most every 500 ms while the pointer moves. */
@@ -146,7 +147,7 @@ export function EmberLight() {
       schedule()
     }
     reduced.addEventListener?.('change', calm)
-    window.addEventListener('hashchange', routed)
+    const unrouted = onRoute(routed)
     window.addEventListener('resize', schedule, { passive: true })
     // The glow stays under a still pointer while the page scrolls under it.
     window.addEventListener('scroll', schedule, { passive: true })
@@ -163,7 +164,7 @@ export function EmberLight() {
       window.removeEventListener('pointermove', move)
       document.removeEventListener('pointerout', out)
       reduced.removeEventListener?.('change', calm)
-      window.removeEventListener('hashchange', routed)
+      unrouted()
       window.removeEventListener('resize', schedule)
       window.removeEventListener('scroll', schedule)
     }

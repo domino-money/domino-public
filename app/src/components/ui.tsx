@@ -11,6 +11,7 @@ import type {
 } from 'react'
 import { IconCheck, IconChevronDown, IconClose, IconInfo, IconMenu, IconSearch } from './icons'
 import { rem } from '../lib/rootScale'
+import { onRoute } from '../lib/route'
 import { InfoTip } from './InfoTip'
 
 /*
@@ -1028,10 +1029,10 @@ export function Menu({
       if (!anchor.current?.contains(event.target as Node)) shut()
     }
     document.addEventListener('pointerdown', onPointer)
-    window.addEventListener('hashchange', shut)
+    const moved = onRoute(shut)
     return () => {
       document.removeEventListener('pointerdown', onPointer)
-      window.removeEventListener('hashchange', shut)
+      moved()
     }
   }, [open])
 

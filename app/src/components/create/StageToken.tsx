@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ROBINHOOD_NAME } from '../../config/chainIdentity'
 import { catalogueTokens, type PoolCatalogueEntry } from '../../config/selectedPoolCatalogue'
 import { CREATE } from '../../lib/create/copy'
@@ -23,8 +23,6 @@ import { Button, Skeleton } from '../ui'
 import { feeWords } from '../../lib/format/fee'
 import { unreadToken } from '../../lib/read/project'
 import { rem } from '../../lib/rootScale'
-import { tokenArtwork } from '../../lib/tokenArtwork'
-import { tokenHue } from '../../lib/format/tokenHue'
 import { ChosenPool, PoolList } from './StagePool'
 
 /** What the pool id in the link came to, while the person picks a token. */
@@ -92,7 +90,8 @@ function oriented(entry: PoolCatalogueEntry): PoolCatalogueEntry {
  * search, as Home's Top pools names them, each a link that opens New position on that pool exactly as a pool page's link
  * does (it is verified there before it is chosen). Nothing is read for it: the list is the one the page already holds
  * (lib/read/featuredSource.ts, handed in by the journey), and it is drawn only once that list has settled, so it never
- * swaps under the person. No order but the list's own and no row marked above another. Robinhood Chain's for now.
+ * swaps under the person. No order but the list's own and no row marked above another. Robinhood Chain's for now. Since
+ * 2026-11-07 (launch sweep F3) a mark without bundled artwork reads its own, as Home's rows' marks do (TopPoolLink).
  */
 /** One of them, drawn as New position's plain pool row draws a pool (read/screens/PoolPicker.tsx PoolRow): the marks, the pair, its fee chip and network. */
 function TopPoolLink({ entry, network }: { entry: PoolCatalogueEntry; network: string | null }) {
@@ -105,19 +104,15 @@ function TopPoolLink({ entry, network }: { entry: PoolCatalogueEntry; network: s
         {entry.artwork.map((artwork, index) => {
           const style = { marginLeft: index ? rem(-size * 0.3) : 0 }
           const token = !artwork && entry.addresses ? unreadToken(entry.addresses[index]) : null
-          // QA round 2 review (N19): a token without bundled artwork gets the artwork this page already holds, or the plain
-          // disc; nothing is asked for it here (a mark the resolver does not know yet would read it on step 1's first paint).
+          // Changed on purpose 2026-11-07 (launch sweep F3): a token without bundled artwork gets its mark as Home's and
+          // Markets' rows draw it (TokenMark): the artwork this page already holds on the first frame, else the plain disc,
+          // which asks for its artwork once it is on screen (our edge's token-pairs read, two at a time) and is drawn again
+          // when it arrives. It used to ask nothing here (QA round 2 review, N19), so New position opened by its own link
+          // showed plain discs for PONS, TORCH and CASHCAT until Home or Markets had read them.
           return artwork ? (
             <TokenIcon key={index} symbol={artwork} size={size} ring="var(--card)" style={style} />
-          ) : token && tokenArtwork.peek(token.chainId, token.address) !== undefined ? (
-            <TokenMark key={index} token={token} size={size} ring="var(--card)" style={style} />
           ) : token ? (
-            <span
-              key={index}
-              className="dm-token-disc"
-              data-token-mark="unknown"
-              style={{ width: rem(size), height: rem(size), borderRadius: '50%', border: '2px solid var(--card)', display: 'inline-block', flexShrink: 0, '--mark-h': tokenHue(token.address), ...style } as CSSProperties}
-            />
+            <TokenMark key={index} token={token} size={size} ring="var(--card)" style={style} />
           ) : (
             <span key={index} className="inline-block rounded-full bg-surface-3" style={{ width: rem(size), height: rem(size), boxShadow: '0 0 0 2px var(--card)', ...style }} />
           )
@@ -168,7 +163,8 @@ function TopPools({ entries, network, server }: { entries: readonly PoolCatalogu
  * reads once it mounts for a chosen token. Changed on purpose 2026-10-30 (QA
  * round 2, N19, the owner's yes): under the field, while nothing is chosen,
  * the featured list's first pools (TopPools above), from the list the page
- * already holds, with nothing read for them.
+ * already holds, with nothing read for them but a mark's own artwork (since
+ * 2026-11-07, launch sweep F3).
  *
  * Changed on purpose 2026-09-28 (speed wave, study items 27 and 30): the pool
  * list's read is asked the moment the token is chosen, beside the token read,

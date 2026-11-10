@@ -29,7 +29,7 @@ export default function AutomateProtection() {
     <>
       {/* Changed on purpose 2026-10-30 (QA round 2, the owner's Q33): named as its two siblings and the page it opens
           (SequenceShell's "Set up Auto-exit"); it said "Choose a position". */}
-      {anywhere ? <LinkButton href="#/sequence/protection" variant="outline" data-v2in-protection="">
+      {anywhere ? <LinkButton href="/sequence/protection" variant="outline" data-v2in-protection="">
         Set up Auto-exit
         <ActChevron />
       </LinkButton> : <Button disabled>{pending ? 'Checking availability…' : 'Unavailable right now'}</Button>}

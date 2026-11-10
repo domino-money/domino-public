@@ -20,16 +20,30 @@ from v2_chains import (DEX_V3, DEX_V4, ZERO, default_balance_registry, default_r
 from v2_fixtures import ROOT, balance_documents, documents, write_balance_registry, write_registry
 
 ROBINHOOD, BASE, ARBITRUM = 'robinhood-4663.json', 'base-8453.json', 'arbitrum-42161.json'
+# Changed on purpose 2026-11-09 (Elysium's mainnet): Elysium's enabled profile replaced its disabled placeholder in
+# api-contracts/v2/chains. The placeholder, as it was, is kept as a fixture so the pending-profile rules keep a case.
+PENDING = 'elysium.json'
+PENDING_FIXTURE = Path(__file__).resolve().parent / 'fixtures/v2-pending-elysium.json'
+
+
+def pending_documents():
+    """The live profiles with Elysium back to its pending placeholder (a pending and an enabled profile of one slug
+    cannot sit side by side)."""
+    docs = {name: document for name, document in documents().items() if document.get('slug') != 'elysium'}
+    docs[PENDING] = json.loads(PENDING_FIXTURE.read_text())
+    return docs
 ETHEREUM, OPTIMISM = 'ethereum-1.json', 'optimism-10.json'
 
 
 class RegistryTests(unittest.TestCase):
-    def test_the_owner_chains_load_in_chain_id_order_and_elysium_waits(self):
+    def test_the_owner_chains_load_in_chain_id_order_and_elysium_is_the_fourth(self):
         registry = load_registry()
         self.assertEqual([(p.chainId, p.key, p.stack) for p in registry.chains],
                          [(4663, 'robinhood-4663', 'arbitrum-nitro'), (8453, 'base-8453', 'op-stack'),
-                          (42161, 'arbitrum-42161', 'arbitrum-nitro')])
-        self.assertEqual([p.slug for p in registry.pending], ['elysium'])
+                          (42161, 'arbitrum-42161', 'arbitrum-nitro'), (99901, 'elysium-99901', 'arbitrum-nitro')])
+        self.assertEqual(registry.pending, ())
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual([p.slug for p in write_registry(directory, pending_documents()).pending], ['elysium'])
         self.assertIs(default_registry(), default_registry())
         self.assertEqual(v2_chains.chain('base-8453').chainId, 8453)
 
@@ -37,16 +51,22 @@ class RegistryTests(unittest.TestCase):
         registry = load_registry()
         self.assertEqual(registry.chain(42161).key, 'arbitrum-42161')
         self.assertEqual(registry.chain('robinhood-4663').chainId, 4663)
-        for name, code in (('elysium', 'v2_chain_not_enabled'), ('base', 'v2_chain_unknown'),
+        self.assertEqual(registry.chain(99901).key, 'elysium-99901')
+        with tempfile.TemporaryDirectory() as directory, self.assertRaisesRegex(DataError, '^v2_chain_not_enabled$'):
+            write_registry(directory, pending_documents()).chain('elysium')
+        for name, code in (('elysium', 'v2_chain_unknown'), ('base', 'v2_chain_unknown'),
                            ('8453', 'v2_chain_unknown'), (True, 'v2_chain_unknown'),
                            (8453.0, 'v2_chain_unknown'), ('base-4663', 'v2_chain_unknown'), (1, 'v2_chain_unknown')):
             with self.subTest(name=name), self.assertRaisesRegex(DataError, f'^{code}$'):
                 registry.chain(name)
 
     def test_profile_facts_are_typed_lower_case_and_exact(self):
-        robinhood, base, arbitrum = load_registry().chains
-        self.assertEqual((robinhood.block_time, base.block_time, arbitrum.block_time),
-                         (Fraction(1, 10), Fraction(2), Fraction(1, 4)))
+        robinhood, base, arbitrum, elysium = load_registry().chains
+        self.assertEqual((robinhood.block_time, base.block_time, arbitrum.block_time, elysium.block_time),
+                         (Fraction(1, 10), Fraction(2), Fraction(1, 4), Fraction(96, 1000)))
+        # Relay alone serves Elysium (crosschain_pins.json, 9 Nov 2026).
+        self.assertEqual((elysium.uniswap.v3, elysium.nativeSymbol, elysium.bridge.providers), (None, 'HYPE', ('relay',)))
+        self.assertEqual(elysium.uniswap.universalRouter.address, '0x32ca6537934d333b776283d38834309cac06b3e7')
         self.assertEqual(robinhood.uniswap.v4.stateView, '0xf3334192d15450cdd385c8b70e03f9a6bd9e673b')
         self.assertEqual(robinhood.wrappedNative.address, '0x0bd7d308f8e1639fab988df18a8011f41eacad73')
         self.assertIsNone(robinhood.gasPrice.chainlinkEthUsd.sequencerUptimeFeed)
@@ -55,7 +75,7 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(base.bridge.appFeeBps, 35)
 
     def test_charge_ranks_codehashes_and_fee_tiers_come_from_the_profile(self):
-        robinhood, base, _ = load_registry().chains
+        robinhood, base, *_ = load_registry().chains
         self.assertEqual(robinhood.charge_rank('0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168'), 1)  # USDG
         self.assertEqual(robinhood.charge_rank(ZERO), 2)
         self.assertEqual(robinhood.charge_rank(robinhood.wrappedNative.address), 2)
@@ -76,7 +96,7 @@ class RegistryTests(unittest.TestCase):
 
 class RefusalTests(unittest.TestCase):
     def load(self, mutate, name=ROBINHOOD, rename=None):
-        docs = documents()
+        docs = pending_documents() if name == PENDING else documents()
         mutate(docs[name])
         if rename:
             docs[rename] = docs.pop(name)
@@ -88,7 +108,8 @@ class RefusalTests(unittest.TestCase):
             self.load(mutate, **kwargs)
 
     def test_the_unchanged_copy_loads(self):
-        self.assertEqual(len(self.load(lambda d: None).chains), 3)
+        self.assertEqual(len(self.load(lambda d: None).chains), 4)
+        self.assertEqual(len(self.load(lambda d: None, name=PENDING).chains), 3)
 
     def test_keys_and_types_are_exact(self):
         cases = {
@@ -211,7 +232,7 @@ class RefusalTests(unittest.TestCase):
 
     def test_the_file_name_and_document_must_agree(self):
         self.refused(lambda d: None, code='v2_chain_profile_file_name', rename='robinhood-1.json')
-        self.refused(lambda d: None, code='v2_chain_profile_file_name', name='elysium.json', rename='elysium-99801.json')
+        self.refused(lambda d: None, code='v2_chain_profile_file_name', name=PENDING, rename='elysium-99801.json')
 
     def test_chain_ids_and_slugs_are_unique(self):
         self.refused(lambda d: d.update(chainId=8453, slug='arb'), code='v2_chain_profile_duplicate',
@@ -220,12 +241,12 @@ class RefusalTests(unittest.TestCase):
                      name=ARBITRUM)
 
     def test_a_disabled_profile_stays_pending(self):
-        self.refused(lambda d: d.update(chainId=99801), name='elysium.json')
-        self.refused(lambda d: d.update(enableWhen=[]), name='elysium.json')
-        self.refused(lambda d: d.update(enabled='false'), name='elysium.json')
-        self.refused(lambda d: d.pop('enabled'), name='elysium.json')
+        self.refused(lambda d: d.update(chainId=99801), name=PENDING)
+        self.refused(lambda d: d.update(enableWhen=[]), name=PENDING)
+        self.refused(lambda d: d.update(enabled='false'), name=PENDING)
+        self.refused(lambda d: d.pop('enabled'), name=PENDING)
         # Even its opaque testnet facts must be standard JSON.
-        self.refused(lambda d: d['testnet'].update(arbOS=float('nan')), name='elysium.json')
+        self.refused(lambda d: d['testnet'].update(arbOS=float('nan')), name=PENDING)
 
     def test_duplicate_keys_and_oversized_files_are_refused(self):
         docs = documents()
@@ -410,9 +431,7 @@ class NoChainlinkChainTests(unittest.TestCase):
 
     def test_the_fixture_keeps_the_pending_files_testnet_facts(self):
         import v2_hype_chain as hype
-        pending = documents().get('elysium.json')
-        if pending is None:
-            self.skipTest('Elysium is no longer pending')
+        pending = json.loads(PENDING_FIXTURE.read_text())  # the placeholder as it was until 9 Nov 2026
         self.assertEqual({key: pending['testnet'][key] for key in hype.TESTNET if key != 'stack'},
                          {key: value for key, value in hype.TESTNET.items() if key != 'stack'})
         self.assertEqual(pending['stack'], hype.TESTNET['stack'])

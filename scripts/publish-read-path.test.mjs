@@ -189,9 +189,13 @@ test('only worker-v6 and tunnels-v6 open the wallet reads; no release input can'
   for (const operation of ['worker-v6', 'tunnels-v6', 'worker-disable-v6']) assert.doesNotThrow(() => releaseVars(settings(), releaseOptions(operation, {})))
 })
 
-const V6_ALL = 'portfolio,activity,chain-pools,chain-balances,chain-tokens'
+// Changed on purpose 2026-11-07 (the owner's approval): read-v6 1.2.0-rc.1's position-fees joins, named last.
+const V6_ALL = 'portfolio,activity,chain-pools,chain-balances,chain-tokens,position-fees'
+/** The five 1.1.0-rc.1 routes worker-v6 wrote from 2026-10-06: production's list until position-fees opens. */
+const V6_FIVE = 'portfolio,activity,chain-pools,chain-balances,chain-tokens'
 
-test('worker-v6 sets exactly READ_V6_BRIDGE_ENABLED=true and ENABLED_V6_READS to its five routes', () => {
+test('worker-v6 sets exactly READ_V6_BRIDGE_ENABLED=true and ENABLED_V6_READS to its six routes', () => {
+  assert.equal(V6_ALL, `${V6_FIVE},position-fees`)
   const current = settings()
   const ordinary = releaseVars(current)
   assert.equal(ordinary.READ_V6_BRIDGE_ENABLED, undefined, 'an ordinary release does not switch read-v6 on')
@@ -206,6 +210,32 @@ test('worker-v6 sets exactly READ_V6_BRIDGE_ENABLED=true and ENABLED_V6_READS to
   assert.equal(releaseVars(withV6('true'), { enableV6: true }).ENABLED_V6_READS, V6_ALL)
   assert.equal(releaseVars(withV6('true')).ENABLED_V6_READS, 'portfolio,activity')
   assert.equal(releaseVars(withV6('true', V6_ALL)).ENABLED_V6_READS, V6_ALL)
+  assert.equal(releaseVars(withV6('true', V6_ALL), { enableV6: true }).ENABLED_V6_READS, V6_ALL)
+})
+
+// 2026-11-07: the five routes are a known state, as the two first are: worker-v6 alone widens them to six.
+test('a Worker holding the five 1.1.0-rc.1 routes is a known state that worker-v6 alone widens to six', () => {
+  for (const enabled of ['true', 'false']) {
+    const current = withV6(enabled, V6_FIVE)
+    for (const options of [{}, { enableV3: true }, { enableV4: true }, { disableV4: true }, { enableV5: true }, { disableV5: true }]) {
+      const next = releaseVars(current, options)
+      assert.equal(next.READ_V6_BRIDGE_ENABLED, enabled, `${enabled} ${JSON.stringify(options)}`)
+      assert.equal(next.ENABLED_V6_READS, V6_FIVE, `${enabled} ${JSON.stringify(options)}`)
+    }
+    const widened = releaseVars(current, { enableV6: true })
+    assert.deepEqual(widened, { ...releaseVars(current), READ_V6_BRIDGE_ENABLED: 'true', ENABLED_V6_READS: V6_ALL }, enabled)
+    // Its rollback moves nothing but the flag, and keeps the five routes as they were.
+    const off = releaseVars(current, { disableV6: true })
+    assert.equal(off.READ_V6_BRIDGE_ENABLED, 'false', enabled)
+    assert.equal(off.ENABLED_V6_READS, V6_FIVE, enabled)
+  }
+  // Every Worker operation takes it, as each takes the six worker-v6 leaves (run() checks what it deployed the same way).
+  for (const operation of ['worker', 'worker-v3', 'worker-v4', 'worker-v5', 'worker-v6', 'worker-disable-v4', 'worker-disable-v5',
+    'worker-disable-v6']) {
+    assert.doesNotThrow(() => releaseVars(withV6('true', V6_FIVE), releaseOptions(operation, {})), operation)
+  }
+  assert.equal(releaseVars(withV6('true', V6_FIVE), releaseOptions('worker-v6', {})).ENABLED_V6_READS, V6_ALL)
+  assert.doesNotThrow(() => releaseVars(withV6('true', V6_ALL), releaseOptions('worker-disable-v6', {})))
 })
 
 test('every other release keeps an enabled read-v6, and its rollback moves nothing but its flag', () => {
@@ -234,7 +264,13 @@ test('the V6 lock refuses any other route list, live or stored, and any mixed ro
   for (const [enabled, reads] of [['true', ''], ['true', 'portfolio'], ['true', 'activity,portfolio'], ['true', 'portfolio,activity,portfolio'],
     ['true', 'portfolio, activity'], ['true', 'featured-pools'], ['false', 'portfolio'], ['false', 'portfolio,capabilities'], ['false', '__proto__'],
     ['true', 'portfolio,activity,chain-pools'], ['true', 'chain-pools,chain-balances,chain-tokens,portfolio,activity'],
-    ['false', V6_ALL + ',chain-swaps']]) {
+    ['false', V6_ALL + ',chain-swaps'], ['false', V6_FIVE + ',chain-swaps'],
+    // 2026-11-07: position-fees only as worker-v6 writes it, after the five routes.
+    ['true', 'portfolio,activity,position-fees'], ['false', 'portfolio,activity,position-fees'], ['true', 'position-fees'],
+    ['false', 'position-fees'], ['true', 'position-fees,' + V6_FIVE], ['true', V6_ALL + ',position-fees'],
+    ['true', V6_FIVE + ',position_fees'], ['true', V6_FIVE + ', position-fees'], ['true', V6_FIVE + ',Position-fees'],
+    ['true', V6_FIVE + ',position-fees,capabilities'], ['true', V6_ALL.replace('chain-tokens,', '')],
+    ['true', V6_ALL.replace('portfolio,activity,', 'activity,portfolio,')], ['false', V6_ALL + ',']]) {
     assert.throws(() => releaseVars(withV6(enabled, reads)), /Unexpected existing V6/, `${enabled} ${reads}`)
     assert.throws(() => releaseVars(withV6(enabled, reads), { enableV6: true }), /Unexpected existing V6/, `${enabled} ${reads}`)
     assert.throws(() => releaseVars(withV6(enabled, reads), { disableV6: true }), /Unexpected existing V6/, `${enabled} ${reads}`)

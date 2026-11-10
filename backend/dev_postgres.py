@@ -262,6 +262,16 @@ def create_database(name):
         conn.execute((ROOT/'migrations/056_position_mint_scan.sql').read_text())
         # 057 only adds the sessions' nullable origin and its check if absent, so it applies again safely.
         conn.execute((ROOT/'migrations/057_session_origin.sql').read_text())
+        # 058 creates the points ledger's schema and tables if absent and re-grants, so it applies again safely.
+        conn.execute((ROOT/'migrations/058_points_ledger.sql').read_text())
+        # 059 creates the points engine's tables if absent and re-grants, so it applies again safely.
+        conn.execute((ROOT/'migrations/059_points_engine.sql').read_text())
+        # 060 only adds the chunks' (pool_id, end_block) index if absent, so it applies again safely.
+        conn.execute((ROOT/'migrations/060_chunk_end_index.sql').read_text())
+        # 061 only adds the entities' keep-warm index if absent, so it applies again safely.
+        conn.execute((ROOT/'migrations/061_public_entities_keep_warm.sql').read_text())
+        # 062 creates the scheduled cadence's table if absent and re-grants, so it applies again safely.
+        conn.execute((ROOT/'migrations/062_public_claim_cadence.sql').read_text())
         # Development mirrors the production split: callable NOLOGIN privilege
         # roles, each inherited by exactly one unprivileged LOGIN bridge.
         for login, privilege in (

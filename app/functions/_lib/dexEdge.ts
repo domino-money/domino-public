@@ -68,6 +68,15 @@
  *
  * Still one token per upstream request, still nothing of the visitor upstream, and this path never calls Domino's node
  * or rugged97's services. Asking the provider in batches is another package (D3), as is the page's one client (D2).
+ *
+ * Changed on purpose 2026-11-07 (Base's and Arbitrum One's busiest pools showed dashes: the provider lists 30 pairs a
+ * token, and USDC's on Base are its USDC/USDbC pools, WETH's on Arbitrum One its bridged-USDC ones, so the WETH/USDC
+ * pools a token page lists were in neither). One ask more, on the new path only and for Base and Arbitrum One only:
+ * GET /api/read/dex2/pairs/<base|arbitrum>/<pool>[,<pool>…], the pools by their own names (a v3 pool's address, a v4
+ * pool's 32-byte id; at most MAX_TOKENS), each read from the provider's own pairs endpoint, one pool per upstream
+ * request (/latest/dex/pairs/<chain>/<pool>), passed on only when it names that very pool, and kept, refused, remembered,
+ * limited and answered exactly as a token is, under a key of its own (`pair/<pool>`), so a pool never reads as a token.
+ * Robinhood Chain has no such ask, and the old path none at all.
  */
 import { visitorNetwork } from './chainRoutes'
 import type { EdgeCache } from './publicEdge'
@@ -76,8 +85,12 @@ export const DEX_PREFIX = '/api/read/dex/'
 /** The path whose answer says each token's own state, as a 200 whatever the provider does (2026-10-14); the asks are DEX_PREFIX's. */
 export const DEX2_PREFIX = '/api/read/dex2/'
 export const DEX_UPSTREAM = 'https://api.dexscreener.com'
-/** The chains this route asks about, by the provider's own names: Robinhood Chain's paths name none (as before 2026-10-06). */
-export const DEX_CHAINS = ['robinhood', 'base', 'arbitrum'] as const
+/**
+ * The chains this route asks about, by the provider's own names: Robinhood Chain's paths name none (as before 2026-10-06).
+ * Changed on purpose 2026-11-09 (Elysium's day 9, checklist step 6): and Elysium's, `elysium`, named as Base's and
+ * Arbitrum One's are, for token-pairs and pairs; the page asks about it only where Elysium is live (lib/tokenArtwork.ts).
+ */
+export const DEX_CHAINS = ['robinhood', 'base', 'arbitrum', 'elysium'] as const
 export type DexChain = (typeof DEX_CHAINS)[number]
 /** How long a token's answer is served as it is: the provider's own `Cache-Control: max-age=30`. */
 export const DEX_FRESH_SECONDS = 30
@@ -143,6 +156,8 @@ const WIDTH = 6
 const PER_TOKEN = 4
 const REFRESH_GUARD_MS = 10_000
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/
+/** A pool's name at the provider on Base or Arbitrum One (2026-11-07): a v3 pool's address, or a v4 pool's 32-byte id. */
+const POOL_NAME = /^0x(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/
 const STORED_AT = 'X-Edge-Stored-At'
 /** The most misses, visitors and seen tokens one isolate remembers; the least recently written go first. */
 const MAX_MISSES = 2_000
@@ -151,7 +166,8 @@ const MAX_SEEN = 5_000
 /** Past this many reads on their way, the ones older than DEX_READ_STALE_MS are let go as a new one starts. */
 const MAX_FLIGHTS = 256
 
-type Kind = 'token-pairs' | 'tokens'
+/** `pairs` (2026-11-07): pools by their own names, on the new path, for Base and Arbitrum One. */
+type Kind = 'token-pairs' | 'tokens' | 'pairs'
 type Pairs = Record<string, unknown>[]
 
 /**
@@ -241,20 +257,23 @@ function askUnder(prefix: string, request: Request): Asked | null {
   if (!url.pathname.startsWith(prefix)) return null
   const parts = url.pathname.slice(prefix.length).split('/')
   const [kind] = parts
-  if (kind !== 'token-pairs' && kind !== 'tokens') return null
-  // Another chain is named before the token, and only for token-pairs: never Robinhood Chain's own name.
-  const chain: DexChain | null = parts.length === 2 ? 'robinhood' : parts.length === 3 && kind === 'token-pairs' && (parts[1] === 'base' || parts[1] === 'arbitrum') ? parts[1] : null
+  // `pairs` (2026-11-07) is the new path's alone.
+  if (kind !== 'token-pairs' && kind !== 'tokens' && !(kind === 'pairs' && prefix === DEX2_PREFIX)) return null
+  // Another chain is named before the token, and only for token-pairs (and, since 2026-11-07, before the pools for pairs,
+  // which always name one): never Robinhood Chain's own name.
+  const chain: DexChain | null = parts.length === 2 && kind !== 'pairs' ? 'robinhood' : parts.length === 3 && kind !== 'tokens' && (parts[1] === 'base' || parts[1] === 'arbitrum' || parts[1] === 'elysium') ? parts[1] : null
   const list = parts[parts.length - 1]
   if (chain === null || !list) return null
   const named = list.split(',')
-  if (named.length > (kind === 'tokens' ? MAX_TOKENS : 1) || !named.every((token) => ADDRESS.test(token))) return null
+  if (named.length > (kind === 'token-pairs' ? 1 : MAX_TOKENS) || !named.every((name) => (kind === 'pairs' ? POOL_NAME : ADDRESS).test(name))) return null
   return { kind, chain, tokens: [...new Set(named.map((token) => token.toLowerCase()))], origin: url.origin }
 }
 
 /**
  * The ask, when it is one this route answers: its kind, its chain and its tokens, lowercase, each once, in order.
  * `token-pairs/<token>` and `tokens/<tokens>` are Robinhood Chain's; `token-pairs/<chain>/<token>` is Base's or Arbitrum
- * One's (2026-10-06). Robinhood Chain has one path only, the one it always had.
+ * One's (2026-10-06). Robinhood Chain has one path only, the one it always had. `pairs/<chain>/<pools>` (2026-11-07) is
+ * the new path's only (dex2Ask), its `tokens` the pools' names.
  */
 export function dexAsk(request: Request): Asked | null {
   return askUnder(DEX_PREFIX, request)
@@ -332,16 +351,18 @@ function retryAfterOf(header: string | null, now: number): number {
 
 /**
  * One upstream body for one token: its trimmed pairs, the whole list (2026-10-14: each view cuts it as it answers), or
- * why there is none, and for a 429 how long the provider asked to wait.
+ * why there is none, and for a 429 how long the provider asked to wait. For `pairs` (2026-11-07) one pool by its name:
+ * the provider's pairs endpoint, whose body is `{pairs: [...] | null}`, and of it only a pair named exactly so.
  */
-async function upstream(rt: DexRuntime, chain: DexChain, token: string): Promise<{ pairs: Pairs } | { reason: DexReason; retryAfterS?: number }> {
+async function upstream(rt: DexRuntime, chain: DexChain, token: string, kind: Kind = 'token-pairs'): Promise<{ pairs: Pairs } | { reason: DexReason; retryAfterS?: number }> {
   const fetchImpl = rt.fetch ?? ((input: string, init: RequestInit) => fetch(input, init))
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), rt.upstreamMs ?? UPSTREAM_MS)
+  const byName = kind === 'pairs'
   try {
     // The provider's tokens endpoint can omit liquid v4 pairs (observed for UFG on 2026-10-11).
     // Both views read one token at a time: its pair list, of which the price view takes its bounded subset as it answers.
-    const response = await fetchImpl(`${DEX_UPSTREAM}/token-pairs/v1/${chain}/${token}`, {
+    const response = await fetchImpl(byName ? `${DEX_UPSTREAM}/latest/dex/pairs/${chain}/${token}` : `${DEX_UPSTREAM}/token-pairs/v1/${chain}/${token}`, {
       method: 'GET', headers: { Accept: 'application/json' }, redirect: 'manual', signal: controller.signal,
     })
     if (response.status !== 200) {
@@ -373,8 +394,15 @@ async function upstream(rt: DexRuntime, chain: DexChain, token: string): Promise
     } catch {
       return { reason: 'not_json' }
     }
+    if (byName) {
+      // The pairs endpoint's own shape: an object whose `pairs` is a list, or null for a pool it does not know.
+      const listed = body !== null && typeof body === 'object' && !Array.isArray(body) ? (body as { pairs?: unknown }).pairs : undefined
+      if (listed !== null && !Array.isArray(listed)) return { reason: 'not_json' }
+      body = listed ?? []
+    }
     if (!Array.isArray(body) || body.length > 100) return { reason: 'not_json' }
-    return { pairs: body.map(trimPairOn(chain)).filter((pair): pair is Record<string, unknown> => pair !== null) }
+    const pairs = body.map(trimPairOn(chain)).filter((pair): pair is Record<string, unknown> => pair !== null)
+    return { pairs: byName ? pairs.filter((pair) => typeof pair.pairAddress === 'string' && pair.pairAddress.toLowerCase() === token) : pairs }
   } catch {
     return { reason: controller.signal.aborted ? 'timeout' : 'network' }
   } finally {
@@ -384,9 +412,10 @@ async function upstream(rt: DexRuntime, chain: DexChain, token: string): Promise
 
 /**
  * Where one token's answer is kept: one entry per chain and token, read by both views (2026-10-14; the key named the
- * view, so a token asked both ways was read and kept twice, and Robinhood Chain's named no chain).
+ * view, so a token asked both ways was read and kept twice, and Robinhood Chain's named no chain). A pool asked by its
+ * name (2026-11-07) is kept under `pair/<pool>`: a v3 pool's address is never taken for a token's.
  */
-const cacheKey = (origin: string, chain: DexChain, token: string) => `${origin}/api/read/dex/cache/v2/${chain}/${token}`
+const cacheKey = (origin: string, chain: DexChain, token: string, kind: Kind = 'token-pairs') => `${origin}/api/read/dex/cache/v2/${chain}/${kind === 'pairs' ? 'pair/' : ''}${token}`
 
 /** A kept answer for one token, when it was retrieved and its age, while younger than DEX_KEPT_SECONDS; null otherwise. */
 async function keptPart(rt: DexRuntime, key: string): Promise<{ pairs: Pairs; at: number; age: number } | null> {
@@ -434,9 +463,9 @@ function liveFlight(inflight: Map<string, DexFlight>, key: string, now: number):
  * was retrieved; what it does not bring is remembered: the provider's 429 stops every read from this isolate for its
  * Retry-After, anything else stops this token's for DEX_MISS_SECONDS, doubling up to DEX_MISS_MAX_SECONDS.
  */
-function startRead(rt: DexRuntime, memory: DexMemory, inflight: Map<string, DexFlight>, key: string, chain: DexChain, token: string): DexFlight {
+function startRead(rt: DexRuntime, memory: DexMemory, inflight: Map<string, DexFlight>, key: string, chain: DexChain, token: string, kind?: Kind): DexFlight {
   const read = async (): Promise<Read> => {
-    const got = await upstream(rt, chain, token)
+    const got = await upstream(rt, chain, token, kind)
     const now = rt.now()
     if ('pairs' in got) {
       memory.misses.delete(key)
@@ -574,7 +603,7 @@ async function partsOf(asked: Asked, rt: DexRuntime, memory: DexMemory, visitor:
         free()
         return { capped: short }
       }
-      const flight = startRead(rt, memory, inflight, key, asked.chain, token)
+      const flight = startRead(rt, memory, inflight, key, asked.chain, token, asked.kind)
       void flight.work.then(free, free)
       return { flight, own: true }
     })
@@ -583,7 +612,7 @@ async function partsOf(asked: Asked, rt: DexRuntime, memory: DexMemory, visitor:
   }
 
   const one = async (token: string, progress: Progress): Promise<Part> => {
-    const key = cacheKey(asked.origin, asked.chain, token)
+    const key = cacheKey(asked.origin, asked.chain, token, asked.kind)
     const kept = await keptPart(rt, key)
     if (kept) {
       if (kept.age < (kept.pairs.length === 0 ? DEX_NONE_FRESH_SECONDS : DEX_FRESH_SECONDS) * 1000) return { pairs: kept.pairs, at: kept.at, made: 'hit' }
@@ -596,7 +625,7 @@ async function partsOf(asked: Asked, rt: DexRuntime, memory: DexMemory, visitor:
           const forget = () => {
             refreshing.delete(key)
           }
-          void startRead(rt, memory, inflight, key, asked.chain, token).work.then(forget, forget)
+          void startRead(rt, memory, inflight, key, asked.chain, token, asked.kind).work.then(forget, forget)
         }
         return { pairs: kept.pairs, at: kept.at, made: 'stale', ...(stop ? { gap: stop } : {}) }
       }

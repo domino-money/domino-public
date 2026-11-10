@@ -115,6 +115,26 @@ owner's decision of 5 Nov 2026 ([GOVERNANCE_SAFE.md](GOVERNANCE_SAFE.md)). The r
   needs a new release candidate. Enabling also touches the profile tests and the API schemas that list the enabled
   chain ids (`schemaGaps` names them).
 
+## Elysium mainnet (9 Nov 2026)
+Kinetiq published chain 99901 on 9 Nov 2026 (docs "Connecting to Elysium" and "Contract addresses"). The run, read-only
+through Kinetiq's public RPC (the owner's Alchemy app was not enabled for the network yet), took 72 calls in 11 s at
+block 3,233,210:
+- **Chain:** ArbOS 61, 0.096 s blocks, `finalized` 350 s behind, base fee 0.1 gwei, Cancun opcodes and
+  `eth_simulateV1`.
+- **Canonical:** CreateX, Arachnid, Multicall3, Permit2 and Safe 1.3.0. The Safe Singleton Factory is absent, as on the
+  testnet.
+- **Uniswap v4 only** (the addresses from Ascend's documents, verified by their bytes and wiring): PoolManager
+  byte-identical to the three profiles' once its own address is substituted; hookless HYPE/USDC pools at 0.05%, 0.3%
+  and 1%.
+- **Universal Router:** the one Ascend lists (23,233 B) is not the 2.1.2 build (24,380 B), nor 2.0 (19,499 B). The
+  owner chose a copy of Uniswap's own 2.1.2: Arbitrum One's creation code (Uniswap's deployer, tx
+  0x42ed46c9b29461557ef12d2588165dffe4909f6f248a3564f904fbe1f1dc78a4) with Elysium's router parameters, created
+  through the Arachnid proxy at 0x32ca6537934D333B776283d38834309CAc06b3E7. Simulated there, its runtime is Arbitrum's
+  2.1.2 with every PUSH32 operand masked.
+The enabled profile (`api-contracts/v2/chains/elysium-99901.json`) replaced the placeholder, which stays as the
+backend's test fixture (`backend/tests/fixtures/v2-pending-elysium.json`) for the pending-profile rules and this tool's
+tests.
+
 ## Rehearsal on the testnet (5 Nov 2026)
 
 `--rpc-env` pointing at `https://testnet-rpc.elysium.kinetiq.xyz`, with `--pending elysium --chain-id 99801` and the

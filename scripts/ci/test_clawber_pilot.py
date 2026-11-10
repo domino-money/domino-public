@@ -84,6 +84,31 @@ class PilotTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_default_storage_requires_the_dedicated_mount_before_path_or_lock_access(self):
+        self.assertEqual(pilot.ROOT, Path('/mnt/domino-ci/domino-ci-pilot'))
+        config = replace(self.config, root=pilot.ROOT)
+        with patch.object(Path, 'is_mount', return_value=False) as mounted, \
+             patch.object(pilot, 'owned_path') as owned:
+            with self.assertRaisesRegex(pilot.PilotError, 'required_storage_mount_missing'):
+                pilot.validate_roots(config)
+            mounted.assert_called_once_with()
+            owned.assert_not_called()
+        with patch.object(Path, 'is_mount', return_value=True), \
+             patch.object(pilot, 'owned_path') as owned:
+            pilot.validate_roots(config)
+            self.assertEqual(owned.call_args_list[0].args, (pilot.ROOT,))
+            self.assertEqual(owned.call_args_list[1].args, (pilot.ROOT / 'jobs', pilot.ROOT))
+
+    def test_service_and_image_builder_require_the_same_dedicated_storage(self):
+        source = Path(__file__).parent
+        unit = (source / 'domino-clawber-broker.service').read_text()
+        builder = (source / 'prepare-image.sh').read_text()
+        self.assertIn(f'RequiresMountsFor={pilot.ROOT}\n', unit)
+        self.assertIn(f'ConditionPathIsMountPoint={pilot.ROOT.parent}\n', unit)
+        self.assertIn(f'base_dir={pilot.ROOT}/base\n', builder)
+        self.assertLess(builder.index(f'mountpoint -q {pilot.ROOT.parent}\n'),
+                        builder.index('install -d '))
+
     def test_only_ephemeral_jit_accepted(self):
         self.assertEqual(pilot.read_jit(io.BytesIO(jit().encode())), jit())
         with self.assertRaisesRegex(pilot.PilotError, 'must_be_ephemeral'):

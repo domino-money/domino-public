@@ -95,8 +95,8 @@ The automation (3a, docs/v2/V2_AUTOMATION_BACKEND.md, "Why a vault or a mandate 
 | `POST /v6/read/activity` `{wallet, limit?, cursor?}` | Receipts newest first, `limit` 1–50 (20); `nextCursor` = `timestamp.chain.block.logIndex` of the last item, exclusive |
 | `POST /v6/read/chain-pools` `{chainId, token, pairedToken?}` | The token's standard hookless pools on a chain, read at its head (≤ 32) |
 | `POST /v6/read/chain-balances` `{wallet, tokens?}` | A wallet's balances per chain, each Domino chain's base currencies by default; Ethereum and OP Mainnet when asked |
-| `POST /v6/read/chain-tokens` `{chainId, query, limit?}` | Known tokens on Base or Arbitrum One that match (≤ 24) |
-| `POST /v6/read/position-fees` `{chainId, positions}` (`1.2.0-rc.1`) | Each position's fee history as the chain's fee follower stored it: settlements, transfers, points, its state now ([V2_FEES.md](V2_FEES.md)). Closed at the gateway until `DOMINO_BRIDGE_V6_READS` names it |
+| `POST /v6/read/chain-tokens` `{chainId, query, limit?}` | Known tokens on Base, Arbitrum One or Elysium that match (≤ 24) |
+| `POST /v6/read/position-fees` `{chainId, positions}` (`1.2.0-rc.1`) | Each position's fee history as the chain's fee follower stored it: settlements, transfers, points, its state now ([V2_FEES.md](V2_FEES.md)). Closed at the gateway until `DOMINO_BRIDGE_V6_READS` names it (`install_read_activation.py --position-fees`; the opening order is [V2_FEES.md](V2_FEES.md) step 7) |
 
 Served by the local reader (`read_api.py`, stored lane, header `X-Domino-Read-Contract: 1.1.0-rc.1`; since `1.2.0-rc.1`'s window each answer in the version its request names, [V2_FEES.md](V2_FEES.md#the-read-read-v6-120-rc1)) when `DOMINO_V2_READ=1`, and through the gateway (`read_gateway.py`, `--enable-v6`, `DOMINO_BRIDGE_V6_READS=portfolio,activity`; it re-validates every answer and that it is about the wallet asked); `bridge_http.py`'s client knows the routes. Field by field, the package's [README](../../api-contracts/read-v6/README.md) is the reference; the generated schemas and `types.ts` are the contract.
 

@@ -141,12 +141,19 @@ function listFiles(root, dir) {
  * literals (src/lib/elysiumIdentity.ts), the registry's one import now, so V2's
  * chain list follows the build's switch; literals and the switch's define only,
  * importing nothing (a Function has no define, so it reads Elysium as off).
+ * Added 2026-11-07 (edge hardening): read-v6's runtime, its generated schemas
+ * and the closed-schema checker they share, which the two chain reads' routes
+ * (functions/api/read/v6/chain-pools.ts and chain-tokens.ts) check each answer
+ * with before it is kept or served.
  */
 export const BUNDLED = Object.freeze([
   '../api-contracts/read-v1/runtime.mjs',
   '../api-contracts/read-v2/runtime.mjs',
   '../api-contracts/read-v3/runtime.mjs',
   '../api-contracts/read-v5/runtime.mjs',
+  '../api-contracts/read-v6/runtime.mjs',
+  '../api-contracts/read-v6/schema-data.mjs',
+  '../api-contracts/shared/closed-schema.mjs',
   'src/chains/elysium/mode.ts',
   'src/config/chainElysium.ts',
   'src/config/chainIdentity.ts',

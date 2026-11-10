@@ -32,17 +32,21 @@ export const WALLET_NAME = 'Journey Wallet';
  * as the site does (src/v2in/journey/source.ts testPlannerOn); the wallet a suite connects stays signed out. `clock`
  * (2026-10-06): Playwright's fake clock, installed before the page loads; it ticks on its own, and a suite jumps it
  * forward with `page.clock.fastForward`. `locale` (2026-11-02): the browser's language ("pt-BR", "en-US"), for a suite about
- * how a typed decimal comma is read (src/lib/create/typedFigure.ts); Chrome's own when absent.
+ * how a typed decimal comma is read (src/lib/create/typedFigure.ts); Chrome's own when absent. `prepare(context, origin)`
+ * (2026-11-07): run once the context is set up, before the page loads (the DEX resolver built as production builds it).
+ * Added 2026-11-07 (Elysium's pre-launch): `clock` may be `{ time }`, the moment the fake clock starts at (it still ticks
+ * on its own); `timezoneId`, the browser's own time zone ("Etc/GMT+12", "Pacific/Kiritimati"); `reducedMotion`
+ * ('reduce'), the browser's motion preference. Each is the browser's default when absent.
  */
-export async function openJourney(browser, chain, { dist, hash = '#/new', planner = () => undefined, intercept = () => undefined, contracts = {}, live = [], originOpen = true, connect = true, routes = [], viewport = { width: 1280, height: 1000 }, zapOnRobinhood = false, artwork = false, chainReads = null, read6 = null, dex = null, clock = false, refresh = false, locale = null } = {}) {
+export async function openJourney(browser, chain, { dist, hash = '#/new', planner = () => undefined, intercept = () => undefined, contracts = {}, live = [], originOpen = true, connect = true, routes = [], viewport = { width: 1280, height: 1000 }, zapOnRobinhood = false, artwork = false, chainReads = null, read6 = null, dex = null, clock = false, refresh = false, locale = null, timezoneId = null, reducedMotion = null, prepare = null } = {}) {
   const fake = createFakeSession();
   const server = createWalletServer({ fake, dist, routes: [...routes, confirmationRoute(chain)] });
   await new Promise((done) => server.listen(0, '127.0.0.1', done));
   const origin = `http://127.0.0.1:${server.address().port}`;
   fake.origin = origin;
   // `locale` (2026-11-02, review M4): the browser's language, which says how a typed decimal comma is read; Chrome's own otherwise.
-  const context = await browser.newContext({ viewport, ...(locale ? { locale } : {}) });
-  if (clock) await context.clock.install();
+  const context = await browser.newContext({ viewport, ...(locale ? { locale } : {}), ...(timezoneId ? { timezoneId } : {}), ...(reducedMotion ? { reducedMotion } : {}) });
+  if (clock) await context.clock.install(clock === true ? undefined : clock);
   const foreign = [], csp = [], errors = [], planned = [];
   await context.route((url) => !url.href.startsWith(origin), (route) => {
     foreign.push(route.request().url());
@@ -109,6 +113,8 @@ export async function openJourney(browser, chain, { dist, hash = '#/new', planne
     },
   };
   try {
+    // `prepare(context, origin)` (2026-11-07): a suite's own setup before the page loads (./dex-edge-route.mjs edgeOnInTestBuild).
+    if (prepare) await prepare(context, origin);
     await page.goto(`${origin}/${hash}`);
     if (connect) {
       await page.waitForFunction(() => ['no_wallet', 'signed_out'].includes(window.__dominoSessionProbe?.view().status));

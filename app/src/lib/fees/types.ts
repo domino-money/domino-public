@@ -44,7 +44,11 @@ export type FeesReason = 'rpc_unavailable' | 'not_exact' | 'hooked_pool' | 'not_
  */
 export type FeeHistoryView =
   | { phase: 'idle' }
-  | { phase: 'loading'; state: PositionState | null; mintedAt?: PositionMint }
+  /**
+   * `waited` (2026-11-09, core flows): read for LIST_LOADING_MS already (lib/fees/store.ts): a list row's APR is a dash
+   * from then on, the read going on, and the rate takes its place once read.
+   */
+  | { phase: 'loading'; state: PositionState | null; mintedAt?: PositionMint; waited?: true }
   | { phase: 'unclaimed-only'; state: PositionState; reason: FeesReason; why?: LedgerWhy; events?: ReadonlyArray<FeeEvent>; mintedAt?: PositionMint }
   | { phase: 'verified'; state: PositionState; history: FeeHistory }
   /** A previous visit's public history, presentation only; never an authoritative current state. */

@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
-import { decodeFunctionData, parseAbi } from 'viem';
+import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem';
 import { closeBrowser } from '../support/close-browser.mjs';
 import { confirmationRoute } from '../support/confirmation-route.mjs';
 import { openJourney, WALLET_NAME } from '../support/journey-browser.mjs';
@@ -16,6 +16,7 @@ import { footerButton, press, pressContinue } from '../support/new-position.mjs'
 import { createReadStub, FIXTURE_POOL, FIXTURE_TOKEN, gatewayError } from '../support/read-stub.mjs';
 import { createChainReads } from '../support/chain-reads.mjs';
 import { activityOf, indexedToken, livePosition, portfolioOf, s1Action } from '../support/s1-read6.mjs';
+import { ELYSIUM_REPO_FUNDS_FROM, ELYSIUM_REPO_LIVE } from '../support/elysium-profile.mjs';
 
 const require = createRequire(import.meta.url);
 const position = require('../../.test-build/app/src/finance/position.js');
@@ -74,7 +75,9 @@ after(async () => { await closeBrowser(browser); });
 
 test('(a) with the gate closed, New position is today\'s journey exactly: no network choice and no zap path', async () => {
   const chain = createV2Chain({ chainId: 4663, timestamp: now() });
-  const s = await openJourney(browser, chain, { dist: WALLET_V2_DIST, originOpen: false, connect: false });
+  // Changed on purpose 2026-11-07 (launch sweep F3): step 1's Top pools ask DEX Screener for their tokens' artwork, answered
+  // here as every other suite answers it; unanswered, the request was refused and failed close().
+  const s = await openJourney(browser, chain, { dist: WALLET_V2_DIST, originOpen: false, connect: false, artwork: true });
   try {
     const page = s.page;
     await page.locator('[data-create-journey]').waitFor();
@@ -90,7 +93,9 @@ test('(a) with the gate closed, New position is today\'s journey exactly: no net
 // 2026-10-05 (the owner: his New position screens, as he built them): as before 2026-10-04's switch.
 test('(b) preview keeps Robinhood creation with the advanced finder, without a network picker or invented examples', async () => {
   const chain = createV2Chain({ chainId: 4663, timestamp: now() });
-  const s = await openJourney(browser, chain, { dist: WALLET_V2_DIST, connect: false });
+  // Changed on purpose 2026-11-07 (launch sweep F3): step 1's Top pools ask DEX Screener for their tokens' artwork, answered
+  // here as every other suite answers it; unanswered, the request was refused and failed close().
+  const s = await openJourney(browser, chain, { dist: WALLET_V2_DIST, connect: false, artwork: true });
   try {
     const page = s.page;
     await page.locator('#create-token-search').waitFor();
@@ -152,7 +157,9 @@ test('(c) Robinhood live fake-chain creation: review, exact approve and create o
   const chain = createV2Chain({ chainId: 4663, timestamp: now(), balances: { [USDG_RH]: 5_000_000_000n }, pools: [{ pool: POOL_RH, sqrtPriceX96: SQRT, tick: TICK, liquidity: 10n ** 16n }] });
   chain.switchTo(4663);
   const answers = [];
-  const s = await openJourney(browser, chain, { dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, planner: robinhoodPlanner(answers), zapOnRobinhood: true });
+  // Changed on purpose 2026-11-07 (launch sweep F3): step 1's Top pools ask DEX Screener for their tokens' artwork, answered
+  // here as every other suite answers it; unanswered, the request was refused and failed close().
+  const s = await openJourney(browser, chain, { dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, planner: robinhoodPlanner(answers), zapOnRobinhood: true, artwork: true });
   try {
     const page = s.page;
     const zap = page.locator('[data-zap-journey="4663"][data-zap-gate="live"]');
@@ -290,7 +297,7 @@ test('(c) Robinhood live fake-chain creation: review, exact approve and create o
     assert.equal(await created.locator('[data-fact="receipt-fee"] dd span').getAttribute('title'), '3.25 USDG');
     for (const text of await created.locator('[data-receipt] dd').allInnerTexts()) assert.doesNotMatch(text, /\.\d{7,}/, `${text}: at most 6 decimals`);
     assert.equal(await created.locator('[data-fact="receipt-gas"]').getAttribute('data-receipt-gas'), 'available', 'Robinhood Chain: gasUsed × price plus the L1 data fee');
-    assert.match(await created.locator('a[data-created-next="position"]').getAttribute('href'), /^#\/positions\/robinhood-v4-\d+$/);
+    assert.match(await created.locator('a[data-created-next="position"]').getAttribute('href'), /^\/positions\/robinhood-v4-\d+$/);
     // Added 2026-10-06 (the review of point 5): Auto-exit beside it, to the same page; the range holds today's price, so
     // it is offered without "Recommended".
     const exit = created.locator('a[data-created-next="autoexit"]');
@@ -464,7 +471,7 @@ test('(d) the owner’s journey on V2: his steps, his preview and balances, the 
     const createTx = chain.sends.map((entry) => entry.tx).find((tx) => tx.to === ZAP_V4);
     assert.ok(createTx, 'the create went to the zap');
     assert.equal(createTx.data, answers.at(-1).plan.call.data, 'the call data the plan carried');
-    assert.equal(await page.locator('a[href^="#/sequence/compound/"]').count() >= 1, true, 'his created view, with what comes next');
+    assert.equal(await page.locator('a[href^="/sequence/compound/"]').count() >= 1, true, 'his created view, with what comes next');
     // Added 2026-10-06 (the final check's F1/F6): Back rests under his created view. A done step reopened leaves it (a second
     // position from the same choices), and Back is there again, as with today's Create position: it stayed hidden there,
     // and in every flow after it, for the rest of the visit.
@@ -744,12 +751,12 @@ for (const outcome of ['reincluded', 'reverted', 'navigation', 'atomic-navigatio
     assert.match(createdLine, /^Position NFT \d+ is in your wallet\.\s+What should Domino do with it\?$/, 'Robinhood Chain’s words');
     assert.equal(await page.locator('[data-created-position] [data-receipt]').count(), 0, 'no receipt in the created view, as on Robinhood Chain');
     const plain = page.locator('a[data-created-next="plain"]');
-    assert.match(await plain.getAttribute('href'), /^#\/positions\/base-v4-\d+$/);
+    assert.match(await plain.getAttribute('href'), /^\/positions\/base-v4-\d+$/);
     assert.match(await plain.innerText(), /^Plain position\s+Fees wait in the position until you collect them\.\s+View position$/);
     for (const mode of ['compound', 'domino']) {
       const setup = page.locator(`a[data-created-next="${mode}"]`);
       await setup.waitFor();
-      assert.match(await setup.getAttribute('href'), new RegExp(`^#/sequence/${mode}/base-v4-\\d+$`), 'each automation keeps the new NFT’s network and protocol');
+      assert.match(await setup.getAttribute('href'), new RegExp(`^/sequence/${mode}/base-v4-\\d+$`), 'each automation keeps the new NFT’s network and protocol');
       assert.match(await setup.innerText(), mode === 'compound' ? /2%/ : /4%/, 'fees remain visible before choosing setup');
     }
     const createdId = await page.locator('[data-created-position]').getAttribute('data-created-position');
@@ -841,7 +848,7 @@ for (const outcome of ['reincluded', 'reverted', 'navigation', 'atomic-navigatio
     // "Recommended"); test (e2) follows its link.
     const exit = page.locator('a[data-created-next="autoexit"]');
     await exit.waitFor({ timeout: 30_000 });
-    assert.match(await exit.getAttribute('href'), /^#\/positions\/base-v4-\d+$/);
+    assert.match(await exit.getAttribute('href'), /^\/positions\/base-v4-\d+$/);
     assert.equal(await exit.getAttribute('data-created-recommended'), null);
     // Added 2026-10-06 (the review of point 5, a second look): the position's link opens its page at once, before read-v6
     // lists it (the index runs behind the chain). The page waits on its loading frame and reads the list again meanwhile,
@@ -911,7 +918,7 @@ test('(e2) his journey on Base, a range above the price: the success recommends 
     await exit.waitFor({ timeout: 30_000 });
     assert.equal(await exit.getAttribute('data-created-recommended'), '');
     assert.match(await exit.innerText(), /^Auto-exit · 0\.2% of the position’s value, only if it closes\s+Recommended\s+Closes it at the end of its range and sends the tokens to your wallet\.\s+Turn on$/);
-    assert.equal(await exit.getAttribute('href'), `#/positions/base-v4-${tokenId}`);
+    assert.equal(await exit.getAttribute('href'), `/positions/base-v4-${tokenId}`);
     await success.screenshot({ path: join(shots(), 'journey-base-created-autoexit.png'), animations: 'disabled' });
     await watchEmpty(page);
     const before = served.length;
@@ -1070,7 +1077,7 @@ test('(b4) a Base token chosen: Base’s finder on a pool with a price goes on i
     await page.locator('[data-pool-advanced] summary').click();
     await page.locator('[data-network-find-other="8453"]').click();
     await zap.waitFor();
-    const hash = await page.evaluate(() => location.hash);
+    const hash = await page.evaluate(() => location.pathname + location.hash);
     const finder = zap.locator('[data-pool-find]');
     await finder.getByRole('radiogroup', { name: 'Uniswap version' }).getByRole('radio', { name: 'Uniswap v4' }).click();
     await finder.getByRole('radiogroup', { name: 'First token' }).getByRole('radio', { name: 'ETH', exact: true }).click();
@@ -1084,7 +1091,7 @@ test('(b4) a Base token chosen: Base’s finder on a pool with a price goes on i
     assert.equal(await chosen.locator('[data-dex-chip]').count(), 0, 'O-17: no "Uniswap" chip on Base');
     await zap.locator('[data-zap-continue="pool"]').click();
     await zap.locator('[data-stage="range"]').waitFor();
-    assert.equal(await page.evaluate(() => location.hash), hash, 'never Robinhood Chain’s #/new/<id> link');
+    assert.equal(await page.evaluate(() => location.pathname + location.hash), hash, 'never Robinhood Chain’s #/new/<id> link');
     assert.equal(s.planned.length, 0, 'nothing planned before Review');
     assert.equal(chain.sends.length, 0, 'nothing sent');
   } finally { await s.close(); }
@@ -1174,7 +1181,7 @@ test('(f) his journey on Arbitrum One: both networks in his search, each with it
     assert.equal(txs.at(-1).to, ZAP_V3, 'the create on Arbitrum One\'s v3 zap');
     // Two tokens to pull: the client takes one Permit2 signature for both (createWithPermit), else the direct create.
     assert.ok(['0x0e97b041', '0xec627dfe'].includes(txs.at(-1).data.slice(0, 10)), 'create, or create with its Permit2 signature');
-    assert.match(await page.locator('a[data-created-next="plain"]').getAttribute('href'), /^#\/positions\/arbitrum-v3-\d+$/);
+    assert.match(await page.locator('a[data-created-next="plain"]').getAttribute('href'), /^\/positions\/arbitrum-v3-\d+$/);
     // Added 2026-10-06 (the final check's F1/F6): Back rests under it, as on Robinhood Chain.
     assert.equal(await backOf(page).isHidden(), true, 'Back rests once the position exists');
     // Changed on purpose 2026-11-06 (the replica rule, O-18): Robinhood Chain's created view on Arbitrum One too, so no
@@ -1760,7 +1767,7 @@ test('(t4) his journey on Base while read-v6 says Base’s automation is halted:
     assert.match(await success.locator('#created-title').innerText(), /^Position NFT \d+ is in your wallet\.\s+What should Domino do with it\?$/);
     const plain = success.locator('a[data-created-next="plain"]');
     await plain.waitFor();
-    assert.match(await plain.getAttribute('href'), /^#\/positions\/base-v4-\d+$/);
+    assert.match(await plain.getAttribute('href'), /^\/positions\/base-v4-\d+$/);
     // The gates are open (a live vault and Auto-exit on this fake Base) and the page has had time to read read-v6: still
     // the plain position alone, and nothing said about the others.
     await until(() => read6Asked > 0, 'read-v6 asked about the wallet');
@@ -1978,13 +1985,13 @@ test('(t3) his journey on Base: once the position exists, New position from the 
     const success = page.locator('[data-created-position][data-zap-receipt]');
     await success.waitFor({ timeout: 60_000 });
     assert.equal(await backOf(page).isHidden(), true, 'the flow rests on its success');
-    assert.equal(await page.evaluate(() => location.hash), '#/new');
+    assert.equal(await page.evaluate(() => location.pathname + location.hash), '/new');
     // The menu's New position is the hash already open: it starts again at the first step, with nothing chosen.
     await page.getByRole('button', { name: 'Menu', exact: true }).click();
     await page.locator('#site-menu [role="menuitem"]', { hasText: 'New position' }).click();
     await success.waitFor({ state: 'detached', timeout: 10_000 });
     await page.locator('li[data-step="pool"][data-state="current"]').waitFor({ timeout: 10_000 });
-    assert.equal(await page.evaluate(() => location.hash), '#/new', 'the same page');
+    assert.equal(await page.evaluate(() => location.pathname + location.hash), '/new', 'the same page');
     assert.equal(await page.locator('li[data-step-done], [data-create-position], [data-created-position]').count(), 0, 'no step done, no Create position, no success');
     assert.equal(await page.locator('[data-chosen-pool]').count(), 0, 'nothing chosen');
     assert.equal(chain.sends.length, 2, 'the approval and the create, once: nothing more was sent');
@@ -2103,6 +2110,92 @@ test('(w) a quote that failed before any review: never "Press Create position" u
     assert.equal(chain.chainNow(), 8453, 'the wallet on Base for the review');
     assert.equal(chain.log.filter((method) => method === 'wallet_switchEthereumChain').length, 1, 'the switch the wallet took');
     assert.deepEqual([s.planned.length, s.planned[0].chainId], [1, 8453]);
+    assert.equal(chain.sends.length, 0);
+  } finally { await s.close(); }
+});
+
+// Added 2026-11-09 (core flows, errors): friends met "The transaction would fail. Review again." on Review when their
+// wallet's network failed a read (JSON-RPC -32603, "Internal JSON-RPC error."). A read through the wallet that fails so is
+// asked once more without a word (src/v2in/journey/run.ts onceMore), the plan is never asked again for it, and a failure
+// that stays says the wallet's network did not answer, its code in data-error-code and the whole error on the console.
+test('(w3) the wallet\'s network failing a review read: asked once more without a word; failing again, Review says so, never "The transaction would fail"', async () => {
+  const RANK = toFunctionSelector('function chargeCurrencyRank(address)');
+  const registry = contractsFor(4663).addresses.registry.toLowerCase();
+  for (const run of ['once', 'always']) {
+    const chain = createV2Chain({ chainId: 4663, timestamp: now(), balances: { [USDG_RH]: 5_000_000_000n }, pools: [{ pool: POOL_RH, sqrtPriceX96: SQRT, tick: TICK, liquidity: 10n ** 16n }] });
+    chain.switchTo(4663);
+    const read = createReadStub({ answer: robinhoodRead });
+    let refused = 0;
+    let rankReads = 0;
+    const intercept = (method, params) => {
+      if (method !== 'eth_call' || params[0]?.to?.toLowerCase() !== registry || !params[0]?.data?.startsWith(RANK)) return undefined;
+      rankReads += 1;
+      if (run === 'once' && refused > 0) return undefined;
+      refused += 1;
+      return { error: { code: -32603, message: 'Internal JSON-RPC error.' } };
+    };
+    const s = await openJourney(browser, chain, {
+      dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, planner: robinhoodPlanner([]), intercept,
+      routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
+    });
+    const logged = [];
+    s.page.on('console', (message) => { if (message.type() === 'debug') logged.push(message.text()); });
+    try {
+      const page = s.page;
+      await toReview(page);
+      if (run === 'once') {
+        // The first review's rank read failed; the review asked again a second later, and went on as if nothing happened.
+        await page.locator('[data-stage-card="review"] [data-zap-review="live"][data-zap-review-stage="reviewed"]').waitFor({ timeout: 30_000 });
+        await page.locator('[data-create-position="live"]:not([disabled])').waitFor({ timeout: 30_000 });
+        assert.equal(refused, 1, 'one read refused');
+        assert.ok(rankReads > refused, 'and asked again');
+        assert.equal(await page.locator('[data-stage-card="review"] [role="alert"]').count(), 0, 'nothing said');
+      } else {
+        const review = page.locator('[data-stage-card="review"] [data-zap-review="live"][data-zap-review-stage="failed"]');
+        await review.waitFor({ timeout: 30_000 });
+        const alert = review.locator('[role="alert"][data-error-code="wallet_rpc_internal"]');
+        assert.equal(await alert.innerText(), 'Your wallet’s network didn’t answer. Try again.');
+        assert.ok(refused >= 2, 'the review was asked twice before anything was said');
+        assert.equal(await page.getByText('The transaction would fail. Review again.').count(), 0);
+        assert.equal(await page.locator('#create-reason').innerText(), 'No quote yet.');
+        assert.equal(await page.locator('[data-journey-footer] [data-create-review-again]').innerText(), 'Review again', 'its way on, as before');
+        assert.ok(logged.some((text) => text.startsWith('[domino] New position: wallet_rpc_internal')), `the whole failure on the console: ${JSON.stringify(logged)}`);
+        await page.locator('[data-stage-card="review"]').screenshot({ path: join(shots(), 'journey-review-wallet-network.png'), animations: 'disabled' });
+      }
+      assert.equal(s.planned.length, 1, 'the plan asked once: only the wallet\'s read was asked again');
+      assert.equal(chain.sends.length, 0);
+    } finally { await s.close(); }
+  }
+});
+
+// Added 2026-11-09 (core flows, errors): the plan service's simulation refused by a token's transfer reports the error's
+// selector alone, so the sentence could not name the token and said "The transaction would fail. Review again.". It names
+// the tokens the plan moves now, without guessing which one refused, and says what the person can change.
+test('(w4) a token\'s transfer refused in the plan\'s simulation: Review names the pool\'s tokens and what to change, never "The transaction would fail"', async () => {
+  const chain = createV2Chain({ chainId: 4663, timestamp: now(), balances: { [USDG_RH]: 5_000_000_000n }, pools: [{ pool: POOL_RH, sqrtPriceX96: SQRT, tick: TICK, liquidity: 10n ** 16n }] });
+  chain.switchTo(4663);
+  const read = createReadStub({ answer: robinhoodRead });
+  const planner = robinhoodPlanner([]);
+  const refusing = (wire) => {
+    const body = planner(wire);
+    if (!body) return body;
+    body.plan.simulation = { status: 'reverted', reason: null, method: 'eth_simulateV1', error: { selector: toFunctionSelector('function TokenCallFailed(address)'), name: 'TokenCallFailed(address)' }, gasUnits: null, result: null };
+    body.plan.warnings = ['simulation_reverted'];
+    return body;
+  };
+  const s = await openJourney(browser, chain, {
+    dist: WALLET_V2_DIST, live: [4663], contracts: { 4663: contractsFor(4663) }, planner: refusing,
+    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
+  });
+  try {
+    const page = s.page;
+    await toReview(page);
+    const review = page.locator('[data-stage-card="review"] [data-zap-review="live"][data-zap-review-stage="failed"]');
+    await review.waitFor({ timeout: 30_000 });
+    const alert = review.locator('[role="alert"][data-error-code="TokenCallFailed"]');
+    assert.equal(await alert.innerText(), 'ETH or USDG may limit transfers, so this position can’t be created. Try a smaller amount or another pool.');
+    assert.equal(await page.getByText('The transaction would fail. Review again.').count(), 0);
+    await page.locator('[data-stage-card="review"]').screenshot({ path: join(shots(), 'journey-review-token-transfer.png'), animations: 'disabled' });
     assert.equal(chain.sends.length, 0);
   } finally { await s.close(); }
 });
@@ -2508,6 +2601,9 @@ test('(i) a pasted address: named on the network where it is a token, left out w
   chain.switchTo(4663);
   const reads = virtualReads();
   const arbitrum = createChainReads({ chainId: 42161, tokens: [] });
+  // Changed on purpose 2026-11-07 (day-9 rehearsal, finding F3): where the repository turns Elysium on, Elysium is searched
+  // too, and answers as Arbitrum One does (no such token there).
+  const elysium = ELYSIUM_REPO_LIVE ? createChainReads({ chainId: 99901, tokens: [] }) : null;
   const UNREAD = '0x7777777777777777777777777777777777777777';
   const NOWHERE = '0x6666666666666666666666666666666666666666';
   const FLAKY = '0x5555555555555555555555555555555555555555';
@@ -2516,6 +2612,7 @@ test('(i) a pasted address: named on the network where it is a token, left out w
     calls: reads.calls,
     answer: (route, request) => {
       if (route === 'chain-pools' && request.token === UNREAD) return { status: 503, body: { error: 'upstream_unavailable' } };
+      if (elysium !== null && request.chainId === 99901) return elysium.answer(route, request);
       return (request.chainId === 42161 ? arbitrum : reads).answer(route, request);
     },
   };
@@ -2547,7 +2644,9 @@ test('(i) a pasted address: named on the network where it is a token, left out w
     await page.locator(`[data-token-network-option="8453:${UNREAD}"]`).waitFor();
     await page.locator('[data-token-search] .dm-flow-combo:not([data-searching])').waitFor();
     assert.equal(await page.locator(`[data-token-network-option="42161:${UNREAD}"]`).count(), 1);
-    assert.equal(await page.getByText('Look up this address').count(), 2);
+    // Changed on purpose 2026-11-07 (day-9 rehearsal, finding F3): once per other network searched, Elysium too where the
+    // repository turns it on (the usual build is then live, and Elysium's read of UNREAD fails as the others' do).
+    assert.equal(await page.getByText('Look up this address').count(), ELYSIUM_REPO_LIVE ? 3 : 2);
     assert.equal(await page.locator('[data-token-option]').count(), 0);
     assert.equal(await page.locator('[role="option"][data-active]').count(), 0, 'two networks to look it up on: Enter waits for the person’s choice');
     // Changed on purpose 2026-10-30 (QA round 2, N98): no metadata and no pool on either network is "No token at this
@@ -2662,6 +2761,37 @@ test('(j2) Top pools name Robinhood Chain from the first paint and stay put when
     await page.evaluate(() => { location.hash = '#/markets'; });
     await page.waitForFunction(() => document.getElementById('markets-catalogue-token')?.getAttribute('placeholder') === 'Search a token on any network', undefined, { timeout: 30_000 });
   } finally { release(); await s.close(); }
+});
+
+// Added 2026-11-07 (launch sweep F3): New position opened by its own link (a deep link, a reload, a fresh tab) drew plain
+// discs for the Top pools' tokens that have no bundled artwork (PONS, TORCH, CASHCAT) until Home or Markets had read
+// them: their marks asked for nothing. Each now asks for its own, as Home's rows' marks do, and shows the provider's image.
+test('(j3) Top pools opened directly read the artwork of their tokens without bundled art, and show it', async () => {
+  const chain = createV2Chain({ chainId: 8453, timestamp: now() });
+  chain.switchTo(4663);
+  const reads = createChainReads({ chainId: 8453, tokens: BASE_TOKENS });
+  const read = createReadStub({ answer: robinhoodRead });
+  const unbundled = ['0x39dbed3a2bd333467115de45665cc57f813c4571', '0x000050e18ffa3f8f7ad170eb9cef160eb3ed1111', '0x020bfc650a365f8bb26819deaabf3e21291018b4'];
+  const image = (address) => `https://cdn.dexscreener.com/cms/images/art${address.slice(2, 14)}`;
+  const art = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="12" fill="#fb985b"/></svg>';
+  const dex = (url) => {
+    if (url.startsWith('https://cdn.dexscreener.com/cms/images/art')) return { image: art };
+    const address = unbundled.find((token) => url === `https://api.dexscreener.com/token-pairs/v1/robinhood/${token}`);
+    return address ? [{ chainId: 'robinhood', dexId: 'uniswap', pairAddress: `0x${'12'.repeat(32)}`, baseToken: { address }, quoteToken: { address: USDG_RH }, info: { imageUrl: image(address) } }] : undefined;
+  };
+  const s = await openJourney(browser, chain, { dist: WALLET_V2_DIST, connect: false, routes: [(request, url) => read.handle(request, url) ?? undefined], chainReads: reads, dex });
+  try {
+    const top = s.page.locator('[data-top-pools]');
+    await top.waitFor();
+    for (const address of unbundled) {
+      const mark = top.locator(`img[data-token-mark="provider"][src^="${image(address)}"]`);
+      await mark.waitFor({ timeout: 20_000 });
+      await s.page.waitForFunction((node) => node.complete && node.naturalWidth > 0, await mark.elementHandle());
+    }
+    assert.equal(await top.locator('[data-token-mark="unknown"]').count(), 0, 'no plain disc is left');
+    for (const address of unbundled) assert.equal(s.dexAsked.filter((url) => url === `https://api.dexscreener.com/token-pairs/v1/robinhood/${address}`).length, 1, `one read for ${address}`);
+    assert.equal(chain.sends.length, 0);
+  } finally { await s.close(); }
 });
 
 test('(k) a read that failed for the moment is asked again quietly: the name search while its list is open, the pools once before the wallet is ever asked to move', async () => {
@@ -2976,7 +3106,8 @@ test('(y) a Robinhood Chain pair without USDG shows a dollar estimate: ETH at it
   const chain = createV2Chain({ chainId: 4663, timestamp: now(), eth: 10n ** 19n, balances: { [FIXTURE_TOKEN]: 5n * 10n ** 12n }, pools: [{ pool: POOL_ETH_TOKEN, sqrtPriceX96: TOKEN_SQRT, tick: TOKEN_TICK, liquidity: 10n ** 16n }] });
   chain.switchTo(4663);
   const reads = createChainReads({ chainId: 4663, tokens: RH_TOKENS, pools: [{ pool: POOL_ETH_TOKEN, sqrtPriceX96: TOKEN_SQRT, tick: TOKEN_TICK, liquidity: 10n ** 16n }] });
-  const discovery = new Map([8453, 42161].map((chainId) => [chainId, createChainReads({ chainId })]));
+  // Changed on purpose 2026-11-07 (day-9 rehearsal, finding F3): Elysium's discovery too where the repository turns it on.
+  const discovery = new Map([8453, 42161, ...(ELYSIUM_REPO_LIVE ? [99901] : [])].map((chainId) => [chainId, createChainReads({ chainId })]));
   const chainReads = { answer: (route, request) => (discovery.get(request.chainId) ?? reads).answer(route, request) };
   const read = createReadStub({ answer: ethTokenRead });
   const s = await openJourney(browser, chain, {
@@ -3027,7 +3158,8 @@ test('(y2) a busy reader’s Retry-After is waited before the pair’s prices ar
   const chain = createV2Chain({ chainId: 4663, timestamp: now(), eth: 10n ** 19n, balances: { [FIXTURE_TOKEN]: 5n * 10n ** 12n }, pools: [{ pool: POOL_ETH_TOKEN, sqrtPriceX96: TOKEN_SQRT, tick: TOKEN_TICK, liquidity: 10n ** 16n }] });
   chain.switchTo(4663);
   const reads = createChainReads({ chainId: 4663, tokens: RH_TOKENS, pools: [{ pool: POOL_ETH_TOKEN, sqrtPriceX96: TOKEN_SQRT, tick: TOKEN_TICK, liquidity: 10n ** 16n }] });
-  const discovery = new Map([8453, 42161].map((chainId) => [chainId, createChainReads({ chainId })]));
+  // Changed on purpose 2026-11-07 (day-9 rehearsal, finding F3): Elysium's discovery too where the repository turns it on.
+  const discovery = new Map([8453, 42161, ...(ELYSIUM_REPO_LIVE ? [99901] : [])].map((chainId) => [chainId, createChainReads({ chainId })]));
   // Only the selected Robinhood pair is refused. Public pasted-address discovery has its own chain identities.
   const asked = [];
   const chainReads = {
@@ -3295,7 +3427,8 @@ test('(z5) Ethereum and OP Mainnet never hold local payment back or replace it w
     assert.equal(await line.getAttribute('data-pay-with'), ZERO);
     assert.equal(await words(line), 'Use your ETH on Robinhood Chain Convert to TOKEN and OTHER. Use ETH', 'from Domino’s read alone');
     assert.ok(reads.calls.some((call) => call.route === 'chain-balances'), 'Domino’s three read');
-    assert.ok(asked.length >= 1 && asked.every((request) => request.tokens.every((t) => t.chainId === 1 || t.chainId === 10)), 'Ethereum and OP Mainnet asked, in a request of their own');
+    // Changed on purpose 2026-11-09 (rugged97's #488: Relay for Elysium): and Elysium, where funds can come from it.
+    assert.ok(asked.length >= 1 && asked.every((request) => request.tokens.every((t) => t.chainId === 1 || t.chainId === 10 || (ELYSIUM_REPO_FUNDS_FROM && t.chainId === 99901))), 'Ethereum and OP Mainnet asked, in a request of their own');
     assert.equal(ethereum.calls.length, 0, 'and not answered yet');
     release();
     await page.waitForFunction(() => true);

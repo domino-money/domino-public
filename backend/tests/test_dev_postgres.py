@@ -1,6 +1,7 @@
 """Cleanup never targets the shared development cluster in these tests."""
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -174,6 +175,18 @@ class DisposableStopTests(unittest.TestCase):
                     if (data/'postmaster.pid').exists():
                         pg.pg_command([str(pg.BIN/'pg_ctl'), '-D', str(data), '-m', 'immediate',
                                        '-w', '-t', '15', 'stop'])
+
+
+class MigrationListTests(unittest.TestCase):
+    def test_create_database_applies_every_migration_but_039(self):
+        # A test database without a migration tests against the wrong schema: 060's index, for one, decides the
+        # plans that test_ledger_predecessor reads. 039 creates a policy that cannot be created twice, and
+        # create_database runs again on every start, so test_automation_store applies 039 in its own transaction.
+        source = Path(pg.__file__).read_text()
+        applied = set(re.findall(r"migrations/([0-9]{3}_[a-z0-9_]+\.sql)", source))
+        on_disk = {path.name for path in (Path(pg.__file__).parent/'migrations').glob('*.sql')}
+        self.assertEqual(on_disk - applied, {'039_automation_readiness.sql'})
+        self.assertEqual(applied - on_disk, set())
 
 
 if __name__ == '__main__':

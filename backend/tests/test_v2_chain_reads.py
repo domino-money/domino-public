@@ -346,8 +346,9 @@ class BalanceTests(unittest.TestCase):
             (WETH, selector('balanceOf(address)'), encode(['address'], [WALLET])): (False, b'')}), FakeChain(fail=True)
         answer = chain_reads({8453: source(BASE, base), 42161: source(ARBITRUM, arbitrum)}).balances(WALLET)
         validate_v6_request_response('chain-balances', {'wallet': WALLET, 'tokens': None}, answer)
-        self.assertEqual([c['chainId'] for c in answer['chains']], [4663, 8453, 42161])
-        robinhood, on_base, on_arbitrum = answer['chains']
+        self.assertEqual([c['chainId'] for c in answer['chains']], [4663, 8453, 42161, 99901])
+        robinhood, on_base, on_arbitrum, elysium = answer['chains']
+        self.assertEqual((elysium['status'], elysium['reason']), ('unavailable', 'chain_not_configured'))
         self.assertEqual((robinhood['status'], robinhood['reason']), ('unavailable', 'chain_not_configured'))
         self.assertEqual((on_arbitrum['status'], on_arbitrum['reason']), ('unavailable', 'chain_read_failed'))
         self.assertTrue(all(b['balanceRaw'] is None and b['status'] == 'unavailable' for b in on_arbitrum['balances']))
@@ -444,6 +445,31 @@ class SearchTests(unittest.TestCase):
                          ['AERO'])
 
 
+    def test_elysium_searches_with_base_s_sources_and_no_list_tokens_yet(self):
+        # Elysium joined chain-tokens on 9 Nov 2026 (0xdecimal's item 6, the owner's parity) with Base's sources. The
+        # pinned Uniswap list (22.24.0) has none of its tokens, so its profile, its V2 index and what chain-pools
+        # looked up there find them; another chain's tokens never answer for it.
+        elysium = REGISTRY.chain(99901)
+        learned = reads.LearnedTokens()
+        learned.learn(99901, '0x' + '44' * 20, 'KHYPE', 'Kinetiq Staked HYPE', 18)
+        learned.learn(8453, '0x' + '45' * 20, 'BHYPE', 'Base HYPE', 18)
+        listed = ({'name': 'Uniswap Labs Default', 'version': '22.24.0', 'sha256': 'ab' * 32},
+                  {8453: [('0x' + '46' * 20, 'LHYPE', 'Listed HYPE', 18)], 42161: [], 99901: []})
+
+        def index(chain_id, limit):
+            return [('0x' + '66' * 20, 18, 'HYPEX')] if chain_id == 99901 else [('0x' + '67' * 20, 18, 'HYPEB')]
+        reader = chain_reads({99901: source(elysium, FakeChain())}, learned=learned, token_list=listed,
+                             index_tokens=index)
+        answer = reader.tokens(99901, 'hype', 20)
+        validate_v6_request_response('chain-tokens', {'chainId': 99901, 'query': 'hype', 'limit': 20}, answer)
+        # The native HYPE exactly, the index's HYPEX by prefix, KHYPE by a word of its name, WHYPE anywhere.
+        self.assertEqual([(t['symbol'], t['sources']) for t in answer['tokens']],
+                         [('HYPE', ['profile']), ('HYPEX', ['v2_activity']), ('KHYPE', ['looked_up']),
+                          ('WHYPE', ['profile'])])
+        usdc, = reader.tokens(99901, 'usdc', 20)['tokens']
+        self.assertEqual((usdc['address'], usdc['sources']), ('0xb47c4c8f73f009cc0c0d3f92b388d13e293f0b65', ['profile']))
+
+
 class CacheTests(unittest.TestCase):
     def test_entries_expire_after_their_seconds_and_the_oldest_go_past_the_bound(self):
         clock = Clock(0.0)
@@ -495,6 +521,7 @@ class TokenListTests(unittest.TestCase):
         source, listed = reads.load_token_list()
         self.assertEqual(source['name'], 'Uniswap Labs Default')
         self.assertTrue(listed[8453] and listed[42161])
+        self.assertEqual(listed[99901], [])  # extracted for Elysium too; 22.24.0 predates it
         document = json.loads(reads.TOKEN_LIST.read_text())
         self.assertEqual(document['source']['license'], 'GPL-3.0')
         self.assertTrue((reads.TOKEN_LIST.parent / document['source']['licenseFile']).is_file())
@@ -1069,7 +1096,7 @@ class ValueTests(unittest.TestCase):
         # Every chain by default: Robinhood and Arbitrum have no endpoints here, so no answer-wide total.
         answer = reader.balances(WALLET)
         validate_v6_request_response('chain-balances', {'wallet': WALLET, 'tokens': None}, answer)
-        self.assertEqual([c['totalUsd'] for c in answer['chains']], [None, '402.500000', None])
+        self.assertEqual([c['totalUsd'] for c in answer['chains']], [None, '402.500000', None, None])
         self.assertIsNone(answer['totalUsd'])
 
     def test_a_zero_balance_needs_no_price_an_unread_one_leaves_the_total_unknown(self):
@@ -1117,7 +1144,7 @@ class BalanceChainTests(unittest.TestCase):
         reader = chain_reads({1: source(ETHEREUM, ethereum), 10: source(OPTIMISM, optimism), 8453: source(BASE, base)})
         default = reader.balances(WALLET)
         validate_v6_request_response('chain-balances', {'wallet': WALLET, 'tokens': None}, default)
-        self.assertEqual([c['chainId'] for c in default['chains']], [4663, 8453, 42161])
+        self.assertEqual([c['chainId'] for c in default['chains']], [4663, 8453, 42161, 99901])
         self.assertEqual((ethereum.requests, optimism.requests), ([], []))
         asked = [(10, OPTIMISM_USDC), (10, ZERO), (1, ETHEREUM_USDC), (1, ZERO), (8453, USDC)]
         answer = reader.balances(WALLET, asked)
@@ -1255,8 +1282,9 @@ class AtOnceTests(unittest.TestCase):
         sources = self.sources(barrier=threading.Barrier(3))
         answer = chain_reads(sources).balances(WALLET)
         validate_v6_request_response('chain-balances', {'wallet': WALLET, 'tokens': None}, answer)
+        # Elysium (99901), without a source here, answers unavailable at once.
         self.assertEqual([(c['chainId'], c['status']) for c in answer['chains']],
-                         [(4663, 'current'), (8453, 'current'), (42161, 'current')])
+                         [(4663, 'current'), (8453, 'current'), (42161, 'current'), (99901, 'unavailable')])
 
     def test_a_pass_prices_its_chains_at_once(self):
         pricer = reads.Pricer(self.sources(barrier=threading.Barrier(3)), monotonic=Clock(0.0))
@@ -1269,7 +1297,7 @@ class AtOnceTests(unittest.TestCase):
         with self.assertRaisesRegex(DataError, '^read_deadline_exceeded$'):  # the budget, spent, says so on the way out
             with read_deadline(0.05):
                 answer = reader.balances(WALLET)
-        self.assertEqual([c['reason'] for c in answer['chains']], ['chain_read_failed'] * 3)
+        self.assertEqual([c['reason'] for c in answer['chains']], ['chain_read_failed'] * 3 + ['chain_not_configured'])
 
     def test_each_chain_in_order_with_the_callers_deadline_and_failures_after_all(self):
         seen = {}

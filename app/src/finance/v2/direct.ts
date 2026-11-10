@@ -37,10 +37,16 @@ import { WalletNotAsked, createTransactor, refused, revertIn, type PreparedV2, t
  * supported yet, OP6). Nothing here names a Domino contract.
  *
  * A position under Domino automation (rev2 §2.13, decision #5): a direct exit of an armed root pauses its automation (v4:
- * the vault's subscription is notified of the change; v3: the collect moves the vault's checkpoint), so it is allowed
- * only after the person acknowledges the warning (`acknowledgePause`, refused `automation_pause_unacknowledged` before),
- * exactly as the zap's actions; a successor is held by its vault (`position_vault_successor`). Which addresses are
- * Domino vaults is asked of the probe the caller hands in (the zap client's `vaultProbe`, over the chain's manifest).
+ * the vault's subscription is notified of the change; v3: the collect moves the vault's checkpoint); a successor is held
+ * by its vault (`position_vault_successor`). Which addresses are Domino vaults is asked of the probe the caller hands in
+ * (the zap client's `vaultProbe`, over the chain's manifest).
+ *
+ * Changed on purpose 2026-11-09 (the owner: closing a position with automation must be easy; the core-flows fix): a
+ * direct exit of an armed root is no longer refused until a tick (`automation_pause_unacknowledged`). The vault never
+ * reverts for the position manager (DominoV2VaultV4._notified; notifyModifyLiquidity and notifyBurn only disarm the
+ * root), so the owner's own exit always runs and simply turns that automation off; the screens say so in one plain line
+ * instead of a tick box. `pausesAutomation` still names the vault, for that line and the offer to turn it back on;
+ * every other check (the chain read again right before the wallet, the in-flight latch, the close journal) stays.
  */
 
 // Declared here, module-scoped, as finance/pin.ts does: a compile outside Vite sees no ambient flag.
@@ -95,7 +101,7 @@ export interface DirectPrepared {
   atLeast: readonly [bigint, bigint]
   /** The transaction, through the shared sender. */
   step: PreparedV2
-  /** The armed root's vault whose automation this exit pauses (rev2 §2.13), or null: sent only after `acknowledgePause`. */
+  /** The armed root's vault whose automation this exit turns off (rev2 §2.13), or null. */
   pausesAutomation: Address | null
   /**
    * The vault whose root this position is, armed or not: its reserves stay behind an exit (rev3 §2.13). Changed on purpose
@@ -197,7 +203,6 @@ export function createDirectClient(wallet: V2Wallet, chain: V2Chain, now: () => 
   const verified = new Set<Dex>()
   const ownPrepared = new WeakSet<DirectPrepared>()
   const ownGroups = new WeakSet<DirectCloseMany>()
-  const pauseAcknowledged = new WeakSet<DirectPrepared>()
   /**
    * Review fix F2: a direct exit is not idempotent (a second partial withdrawal or collect would run), and Uniswap consumes
    * nothing that would refuse a repeat. So one direct exit per position is in flight from this client at a time: held
@@ -594,9 +599,10 @@ export function createDirectClient(wallet: V2Wallet, chain: V2Chain, now: () => 
       }
       return { receipt, description, replaced: recovered.replaced, replacementFinal: recovered.final }
     },
-    sendCloseMany: async (prepared: DirectCloseMany, acknowledged: boolean, acknowledgePause = false, onRefusal?: () => Promise<void>): Promise<Hex> => {
+    // Changed on purpose 2026-11-09 (the core-flows fix): no pause acknowledgement; the closes turn their roots' automation
+    // off by themselves (see the header). The third argument is kept for its callers' order and is not read.
+    sendCloseMany: async (prepared: DirectCloseMany, acknowledged: boolean, _acknowledgePause = true, onRefusal?: () => Promise<void>): Promise<Hex> => {
       if (!ownGroups.has(prepared)) fail('wallet_review_required')
-      if (prepared.pausesAutomation.length && !acknowledgePause) fail('automation_pause_unacknowledged')
       const keys = prepared.positions.map((position) => flightKey(prepared.dex, position.tokenId))
       if (keys.some((key) => inFlight.has(key))) fail('review_already_sent')
       const flights = prepared.positions.map((position) => ({ kind: 'close' as const, liquidity: position.liquidity, block: position.blockNumber, hash: null as Hex | null, data: prepared.step.transaction.data, nonce: prepared.step.transaction.nonce }))
@@ -631,14 +637,16 @@ export function createDirectClient(wallet: V2Wallet, chain: V2Chain, now: () => 
      * Offers a prepared exit to the wallet once (the shared sender's discipline: simulated again, the chain read last),
      * holding its position's in-flight latch (fix F2) from before the wallet is asked.
      */
-    /** The person ticked the §2.13 warning for this prepared exit of an armed root: it may be sent. */
+    /**
+     * Changed on purpose 2026-11-09 (the core-flows fix): kept for its callers, asks nothing. An exit of an armed root is
+     * sent like any other; the screens say that it turns the automation off.
+     */
     acknowledgePause: (prepared: DirectPrepared): void => {
-      if (ownPrepared.has(prepared) && prepared.pausesAutomation !== null) pauseAcknowledged.add(prepared)
+      void prepared
     },
     send: async (prepared: DirectPrepared, acknowledged: boolean): Promise<Hex> => {
       if (!ownPrepared.has(prepared)) return fail('wallet_review_required')
       if (heldByJournal(prepared.dex, [prepared.tokenId])) return fail('review_already_sent')
-      if (prepared.pausesAutomation !== null && !pauseAcknowledged.has(prepared)) return fail('automation_pause_unacknowledged')
       const key = flightKey(prepared.dex, prepared.tokenId)
       if (inFlight.has(key)) return fail(t.wasOffered(prepared.step) ? 'wallet_review_required' : 'review_already_sent')
       const flight = { kind: prepared.kind, liquidity: prepared.liquidity, block: prepared.state.blockNumber, hash: null as Hex | null }

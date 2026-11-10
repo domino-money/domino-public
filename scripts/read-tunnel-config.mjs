@@ -12,20 +12,25 @@
  * since 2026-09-26 (featured-pools v1 §10.3) read-v5's featured pools list
  * and, since 2026-10-02 (spec F7 §6.2), read-v6's Domino V2 wallet reads
  * (portfolio and activity; since 2026-10-05 its live chain reads chain-pools,
- * chain-balances and chain-tokens too). Each such state is `next` plus the
- * protocols it opens, in version order (storedPath), so the states published
- * before read-v5 and read-v6 existed are among them, spelled as they were
- * published, and so are the states that opened read-v6's two first routes
- * (V6_FIRST_READS), which a publication widens to all five;
- * scripts/read-tunnel-config.test.mjs holds those spellings. An ordinary
- * publication keeps every stored protocol a tunnel already opens; only that
- * protocol's own rollback option closes it.
+ * chain-balances and chain-tokens too; and, from the owner's approval of
+ * 2026-11-07, read-v6 1.2.0-rc.1's position-fees, Fees earned on Base and
+ * Arbitrum, named last). Each such state is `next` plus the protocols it
+ * opens, in version order (storedPath), so the states published before read-v5
+ * and read-v6 existed are among them, spelled as they were published, and so
+ * are the states that opened read-v6's two first routes (V6_FIRST_READS) or
+ * its five 1.1.0-rc.1 routes (V6_CHAIN_READS), which a publication widens to
+ * all six; scripts/read-tunnel-config.test.mjs holds those spellings. An
+ * ordinary publication keeps every stored protocol a tunnel already opens;
+ * only that protocol's own rollback option closes it.
  */
 const PROD_NEXT_V1 = 'v1/(token|pools|pool-market|wallet-assets|nft-positions|catalogue|pool-activity|pool-positions|pool-metrics|markets-snapshot)';
 const STORED = Object.freeze({ v3: 'v3/(overview|history|search)', v4: 'v4/sequence-snapshot', v5: 'v5/featured-pools',
-  v6: 'v6/(portfolio|activity|chain-pools|chain-balances|chain-tokens)' });
+  v6: 'v6/(portfolio|activity|chain-pools|chain-balances|chain-tokens|position-fees)' });
 /** read-v6 as published from 2026-10-02 to 2026-10-05, before its chain reads: still a known state, written anew. */
 const V6_FIRST_READS = 'v6/(portfolio|activity)';
+/** read-v6 as published from 2026-10-05 until position-fees opens, its five 1.1.0-rc.1 routes: still a known state,
+ * written anew. */
+const V6_CHAIN_READS = 'v6/(portfolio|activity|chain-pools|chain-balances|chain-tokens)';
 const NONE = Object.freeze({ v3: false, v4: false, v5: false, v6: false });
 const DEV_NEXT = '^/internal/(read/v1/(token|pools|pool-market|wallet-assets|nft-positions|catalogue|pool-activity|pool-positions|pool-metrics|markets-snapshot|capabilities)|read/v2/(pool-market|capabilities)|dev/v1/status)$';
 
@@ -36,11 +41,14 @@ export function storedPath(open = NONE, spelling = STORED) {
 }
 
 /** Every combination of stored protocols, each with the one path that opens exactly those. The first is `next`. Then
- * the states that opened read-v6's two first routes only, which every publication rewrites with all five. */
+ * the states that opened read-v6's two first routes only, and those that opened its five 1.1.0-rc.1 routes, which
+ * every publication rewrites with all six. */
 const STORED_STATES = [false, true].flatMap((v3) => [false, true].flatMap((v4) => [false, true].flatMap((v5) =>
   [false, true].map((v6) => Object.freeze({ path: storedPath({ v3, v4, v5, v6 }), v3, v4, v5, v6 })))));
 const FIRST_V6_STATES = STORED_STATES.filter((state) => state.v6).map((state) =>
   Object.freeze({ ...state, path: storedPath(state, { ...STORED, v6: V6_FIRST_READS }) }));
+const CHAIN_V6_STATES = STORED_STATES.filter((state) => state.v6).map((state) =>
+  Object.freeze({ ...state, path: storedPath(state, { ...STORED, v6: V6_CHAIN_READS }) }));
 
 const TARGETS = Object.freeze({
   '31526265-ca63-40f2-bbb7-bd37a537f899': {
@@ -51,6 +59,7 @@ const TARGETS = Object.freeze({
       { path: '^/internal/read/(v1/(token|pools|pool-market|wallet-assets|nft-positions|catalogue|pool-activity|pool-positions|pool-metrics)|v2/pool-market)$', ...NONE },
       ...STORED_STATES,
       ...FIRST_V6_STATES,
+      ...CHAIN_V6_STATES,
     ],
     write: storedPath,
     stored: true,

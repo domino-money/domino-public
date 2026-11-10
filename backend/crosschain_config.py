@@ -33,8 +33,9 @@ ZERO = '0x' + '00' * 20
 CREDENTIAL = re.compile(r'[a-z0-9][a-z0-9-]{0,62}')
 SECRET = re.compile(r'[\x21-\x7e]{1,512}')
 MAX_SECRET_BYTES = 2048
-# The chains an Across fee proof may read: every chain S2 serves (crosschain_common.load_destinations).
-DESTINATION_RPC_CHAINS = tuple(sorted(load_destinations()))
+# The chains an Across fee proof may read: every chain S2 serves through Across (crosschain_common.load_destinations;
+# not Elysium, which Relay alone serves).
+DESTINATION_RPC_CHAINS = tuple(sorted(chain for chain, row in load_destinations().items() if 'across' in row['providers']))
 
 
 class ConfigError(ValueError):

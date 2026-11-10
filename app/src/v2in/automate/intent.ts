@@ -27,11 +27,11 @@ export function setupIntent(hash: string): SetupIntent {
 
 export function setupHref(ref: V2PositionRef, mode: SetupMode | null = null): string {
   const param = ref.chainId === 4663 && ref.dex === 4 ? ref.tokenId.toString() : v2PositionHref(ref).split('/').at(-1)!
-  return `#/sequence/${mode ? `${mode}/` : ''}${param}`
+  return `/sequence/${mode ? `${mode}/` : ''}${param}`
 }
 
 /** Keep the established Robinhood v4 return link; all other managers use the qualified detail route. */
-export const setupPositionHref = (ref: V2PositionRef): string => ref.chainId === 4663 && ref.dex === 4 ? `#/positions/${ref.tokenId}` : v2PositionHref(ref)
+export const setupPositionHref = (ref: V2PositionRef): string => ref.chainId === 4663 && ref.dex === 4 ? `/positions/${ref.tokenId}` : v2PositionHref(ref)
 
 /** `#/sequence/protection[/<id>]`: Auto-exit, and the position the link names (a canonical decimal NFT id). */
 export function protectionIntent(hash: string): { mode: SetupMode; tokenId: string | null } | null {

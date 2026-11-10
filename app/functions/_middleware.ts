@@ -47,6 +47,12 @@
  * the site again: a beta cookie still inside its week then works as before.
  * app/docs/OPEN_THE_SITE.md has the owner's steps.
  *
+ * 2026-11-07 (the owner: Domino in Google): in rule 6, a page (a GET or HEAD of a path that names no file) answers at its
+ * own address with its own head, a 301 from an older name or a trailing slash, and a 404 where the app has nothing; the
+ * noindex every answer carries is lifted only on domino.money with SEARCH_INDEX exactly "on", for the pages listed for
+ * search, the favicon and the shared picture (functions/_lib/seo.ts). The gate's own answers are unchanged; its access
+ * page carries the asked page through the password as the `#/…` route it always carried.
+ *
  * Rule 0 holds where CANONICAL_HOSTS_ONLY is "true", which wrangler.toml sets
  * for production only. A production deployment then answers on its own hosts
  * and none of its pages.dev or hash URLs is an entrance; previews keep the gate.
@@ -92,6 +98,7 @@ import { BOOT_SCRIPT_HASH } from './_lib/boot'
 import { ELYSIUM } from '../src/config/chains'
 import { withChains } from '../src/lib/chain/csp'
 import { SECTION_READS } from '../src/chains/elysium/mode'
+import { askedRoute, pageFromFiles, pageRedirect, pageRequest, searchRobots, shapePage, type SearchEnv } from './_lib/seo'
 import {
   GATE_FONTS,
   PAGE_CSP,
@@ -508,7 +515,7 @@ function secured(response: Response, url: URL, pageCsp: string = APP_CSP): Respo
 }
 
 /** onRequest's context: the gate's part, plus the bindings forward() reads and the middleware's own setting. */
-type Context = GateContext & { env: BridgeEnv & Chain2Env }
+type Context = GateContext & { env: BridgeEnv & Chain2Env & SearchEnv }
 
 /**
  * Where a request goes once the gate admits it. Pages hands
@@ -566,7 +573,7 @@ export async function onRequest(context: Context): Promise<Response> {
   }
 
   // Rule 3: the public files that need no cookie, as they are, and nothing else under them.
-  if (UNGATED.has(url.pathname) && (request.method === 'GET' || request.method === 'HEAD')) return secured(await context.next(), url, pageCsp)
+  if (UNGATED.has(url.pathname) && (request.method === 'GET' || request.method === 'HEAD')) return searchRobots(secured(await context.next(), url, pageCsp), url, env, null)
 
   if (url.pathname === LOGIN_PATH || url.pathname === LOGOUT_PATH) {
     // Rules 4 and 5. With the gate open there is nothing to sign in to or out of: both go home, and no cookie is set,
@@ -582,14 +589,26 @@ export async function onRequest(context: Context): Promise<Response> {
     // A public read, and since 2026-10-01 (the chain2 workstream, part B) the second chain's services and (RPC-SPEC
     // §2.7) Domino's own chain routes, go on with no cookie at all.
     const bare = url.pathname.startsWith(PUBLIC_READ_PREFIX) || UNISWAP_V3_PATH.test(url.pathname) || CHAIN_ROUTE.test(url.pathname)
-    const response = secured(await (bare ? next(withoutCookies(request)) : next()), url, pageCsp)
+    // 2026-11-07 (the owner: Domino in Google, functions/_lib/seo.ts): a page answers at its own address (an older name or
+    // a trailing slash moves there for good), with its own head, 404 where the app has nothing, and noindex lifted only
+    // where search is on for domino.money. The request goes on exactly as before, but a page's HEAD, asked as its GET so
+    // that it answers as the GET does, without the body.
+    const asPage = pageRequest(request, url)
+    const own = asPage ? pageRedirect(url) : null
+    if (own !== null) return new Response(null, { status: 301, headers: { ...BASE_HEADERS, Location: own, 'Cache-Control': 'no-store' } })
+    const asked = asPage ? pageFromFiles(request) : undefined
+    const served = await (bare ? next(withoutCookies(request)) : asked ? next(asked) : next())
+    const shaped = asPage ? await shapePage(served, url, request.method === 'HEAD') : null
+    const response = searchRobots(secured(shaped?.response ?? served, url, pageCsp), url, env, shaped)
     // D3 (2026-10-01): the week runs from the last visit. A page load (also one the browser's copy answers, a 304) with
     // a cookie more than a day old gets a fresh one; nothing else does, so a visit renews it at most once a day. With the
     // gate open nothing is renewed: there is no cookie to keep.
-    if (config !== null && expires !== null && renewable(expires, now) && wantsPage(request) && (response.status === 200 || response.status === 304)) {
+    if (config !== null && expires !== null && renewable(expires, now) && wantsPage(request) && (response.status === 200 || response.status === 304 || shaped?.kind === 'missing')) {
       response.headers.append('Set-Cookie', await issueCookie(config, now))
     }
     return response
   }
-  return wantsPage(request) ? page('ask', 401) : json('beta_access_required', 401)
+  // The access page carries the asked page through the password as the route it already carries (2026-11-07,
+  // functions/_lib/seo.ts askedRoute): `/markets` opens `/#/markets` after it, which the app turns into `/markets`.
+  return wantsPage(request) ? page('ask', 401, askedRoute(url)) : json('beta_access_required', 401)
 }

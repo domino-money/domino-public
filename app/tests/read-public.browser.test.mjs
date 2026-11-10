@@ -396,7 +396,7 @@ test('a token outside the selected list opens from one stored overview and pool 
   assert.match(await explorer.innerText(), /11\.0% est\./)
   assert.deepEqual(calls.map(call => call.route), ['overview'])
   assert.deepEqual(calls[0].request, { token: TOKEN, limit: 24 })
-  const link = explorer.locator(`a[href="#/pool/${POOL}/${TOKEN}"]`).first()
+  const link = explorer.locator(`a[href="/pool/${POOL}/${TOKEN}"]`).first()
   assert.equal(await link.count(), 1, 'generic pool links preserve the verified token identity')
   await link.click()
   await page.locator('[data-pool-ratio-chart]').waitFor()
@@ -683,7 +683,7 @@ test('Home, Markets and its cards show one set of figures for the six pools; poo
     for (const poolId of SELECTED.slice(0, 4)) assert.match(first[poolId].tvl, /^\$/)
     assert.equal(await page.locator('[data-ticker]').count(), 0, 'Home has one selection, without a duplicate ticker')
     // The figures dialog of a waiting row says the same: loading, not "no provider figure".
-    await page.locator(`#pools tr.dm-mkt-row:has(a.dm-mkt-name[href^="#/pool/${behind[0]}"]) [data-pool-figures]`).click()
+    await page.locator(`#pools tr.dm-mkt-row:has(a.dm-mkt-name[href^="/pool/${behind[0]}"]) [data-pool-figures]`).click()
     const dialog = page.locator('[data-pool-figures-dialog]')
     await dialog.waitFor()
     assert.equal(await dialog.locator('[data-figures-summary] [data-figure-summary="pending"]').count(), 2)
@@ -727,13 +727,14 @@ test('Home, Markets and its cards show one set of figures for the six pools; poo
     // Unavailable at once, as before this change, and the page asks nothing more before its minute.
     store = 'failed'
     const visit = edge.length
-    await page.goto(`${at}/#/`)
-    await page.reload()
+    // Changed on purpose 2026-11-07 (pages of their own, src/lib/route.ts): Markets is /markets now, so going to Home is
+    // a load of its own; one load, as the hash change and reload were.
+    await page.goto(`${at}/`)
     await page.waitForFunction(() => document.querySelectorAll('#pools tbody tr.dm-mkt-row:not([data-pool-catalogue])').length === 6, null, { timeout: 15000 })
     // Changed on purpose 2026-09-27 (r6/marketsdata): the reload paints this browser's copy of the last overview at
     // once (marketsPaint.ts), the two pools' figures included; the live answer then says what it has.
     await page.waitForFunction(ids => ids.every(id => {
-      const cell = document.querySelector(`#pools tr.dm-mkt-row:has(a.dm-mkt-name[href^="#/pool/${id}"]) td:nth-child(3)`)
+      const cell = document.querySelector(`#pools tr.dm-mkt-row:has(a.dm-mkt-name[href^="/pool/${id}"]) td:nth-child(3)`)
       if (!cell) return false
       const figure = cell.cloneNode(true)
       figure.querySelectorAll('.dm-home-pool-label').forEach(label => label.remove())
@@ -848,7 +849,7 @@ test('Home on the first day of the daily list: a pool the collector holds no fig
     // The first answer: five rows read; the pool with no figures waits in its row, the new one in its catalogue row.
     await page.waitForFunction(() => document.querySelectorAll('#pools tbody tr.dm-mkt-row:not([data-pool-catalogue])').length === 5, null, { timeout: 15000 })
     assert.equal(site.counts.overview, 1)
-    assert.equal(await page.locator(`#pools tr.dm-mkt-row:has(a.dm-mkt-name[href^="#/pool/${limited}"]) [data-metric="pending"]`).count(), 2, 'TVL and 24h volume wait')
+    assert.equal(await page.locator(`#pools tr.dm-mkt-row:has(a.dm-mkt-name[href^="/pool/${limited}"]) [data-metric="pending"]`).count(), 2, 'TVL and 24h volume wait')
     assert.equal(await page.locator(`#pools tr[data-pool-catalogue="${fresh}"][data-row-loading]`).count(), 1, 'the new pool keeps its placeholder')
     // Asked again at the store's collection, then once more after the rate limited one, within seconds.
     await page.waitForFunction(() => document.querySelectorAll('#pools [data-metric="pending"], #pools [data-apr-estimate="pending"], #pools tr[data-row-loading]').length === 0
@@ -857,7 +858,7 @@ test('Home on the first day of the daily list: a pool the collector holds no fig
     assert.ok(caughtUp < 12_000, `the two pools had their figures after ${caughtUp} ms`)
     assert.equal(site.counts.overview, 3, 'the first answer and two catch-ups')
     for (const poolId of [limited, fresh]) {
-      const cells = await page.locator(`#pools tr.dm-mkt-row:has(a.dm-mkt-name[href^="#/pool/${poolId}"]) td`).allInnerTexts()
+      const cells = await page.locator(`#pools tr.dm-mkt-row:has(a.dm-mkt-name[href^="/pool/${poolId}"]) td`).allInnerTexts()
       assert.deepEqual(cells.slice(2, 5).map(text => text.trim().replace(/\s+/g, ' ')), RECORDED_FIGURES[poolId], `the recorded figures for ${poolId}`)
     }
     assert.equal(await page.evaluate(() => window.__said), 0, 'no row said Unavailable meanwhile')
@@ -1030,7 +1031,9 @@ test('Home and Markets adopt daily featured publications, fresh figures and orde
         if (hash === '#/markets') assert.equal(await assetFilter.innerText(), 'USDG', 'the selected token survives a same-day repair')
       }
       assert.equal(featuredReads, 6, 'initial publication, two daily refreshes and three same-day repairs')
-      assert.deepEqual(navigations, [`${at}/${hash}`], 'the document stayed mounted')
+      // Changed on purpose 2026-11-07 (pages of their own, src/lib/route.ts): the link from before becomes the page's own
+      // address in place, a same-document change the frame reports once; nothing else.
+      assert.deepEqual(navigations, [`${at}/${hash}`, `${at}${hash.slice(1)}`], 'the document stayed mounted')
       assert.deepEqual(errors, [])
     } finally {
       await context.close()

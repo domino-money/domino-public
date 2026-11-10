@@ -144,7 +144,9 @@ test('market rows: every observation reaches the table and the ticker as itself,
   const blank = [price, unavailable, unavailable, noEstimate];
   const expected = {
     provider,
-    zero: [price, ['$0.00', 'provider'], ['$0.00', 'provider'], noEstimate],
+    // Changed on purpose 2026-11-09 (core flows): a provider's zero TVL is the dash (src/lib/markets.ts shownTvl); a zero
+    // 24h volume is still a figure.
+    zero: [price, ['—', 'absent'], ['$0.00', 'provider'], noEstimate],
     missing: [price, ['—', 'absent'], ['—', 'absent'], noEstimate],
     // A stale figure has no "· stale" beside it (the owner's decision on the redesign): its state and its title say so, below.
     stale: [price, ['$12.3K', 'stale'], ['$0.00', 'stale'], noEstimate],

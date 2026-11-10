@@ -700,7 +700,9 @@ test('while the ledger is read the card shows the chain’s unclaimed figure and
 });
 
 test('a measured zero remains a full chart, then the first atomic fee and APR appear automatically without a reload', async () => {
-  const world = plain({ mint: { block: HEAD - 200, liquidity: 1_000_000_000_000n }, steps: [], unclaimed: [0n, 0n] });
+  // Changed on purpose 2026-11-09 (core flows: lib/positionApr.ts DUST_CAPITAL): two cents in the position, was 0.95 of a
+  // cent, under the floor a rate is worked out on now (its Your APR would be the dash, "Nothing in the position").
+  const world = plain({ mint: { block: HEAD - 200, liquidity: 2_000_000_000_000n }, steps: [], unclaimed: [0n, 0n] });
   const s = await scenario(world, HASH, PHONE, () => { window.__dominoRefresh = true; });
   try {
     const { page } = s;

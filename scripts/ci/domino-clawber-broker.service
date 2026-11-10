@@ -2,6 +2,8 @@
 Description=Domino resource-bounded eight-slot ephemeral GitHub Actions broker
 After=network-online.target libvirtd.service
 Wants=network-online.target
+RequiresMountsFor=/mnt/domino-ci/domino-ci-pilot
+ConditionPathIsMountPoint=/mnt/domino-ci
 StartLimitIntervalSec=300
 StartLimitBurst=5
 

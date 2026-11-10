@@ -8,8 +8,8 @@
  *
  * What the page does instead: when a file of its own fails to load, it asks the deployment, once, which entry its page
  * loads now (the same fetch of `/` a reload would make, and nothing else). When that entry is not the one this tab
- * runs, or the access gate asks for the password again, the tab reloads once, on the same route (the route is the hash,
- * which a reload keeps). Any other failure (offline, a refused request) is left to the screen's own message: a reload
+ * runs, or the access gate asks for the password again, the tab reloads once, on the same route (the route is the
+ * address, the page's own path since 2026-11-07, lib/route.ts, which a reload keeps). Any other failure (offline, a refused request) is left to the screen's own message: a reload
  * would not help, and a reload loop is never possible: at most one automatic reload per RELOAD_GAP_MS in a tab, kept in
  * that tab's sessionStorage.
  *
@@ -20,6 +20,7 @@
  */
 
 import { ROUTES } from '../routeTable'
+import { currentRoute, onRoute } from './route'
 
 /** The sessionStorage key of the last automatic reload's time. */
 export const RELOAD_MARK = 'domino.release-reload.v1'
@@ -176,7 +177,7 @@ export function dialogOpen(doc: Pick<Document, 'querySelector'> | null = typeof 
  * or, while a money flow or a dialog is open, at the person's next navigation.
  */
 export function recoverWhenSafe(): void {
-  releaseRecovery.whenSafe(!moneyFlowOpen(window.location.hash) && !dialogOpen(), (run) => window.addEventListener('hashchange', run, { once: true }))
+  releaseRecovery.whenSafe(!moneyFlowOpen(currentRoute()) && !dialogOpen(), (run) => onRoute(run, true))
 }
 
 /**

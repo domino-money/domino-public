@@ -89,6 +89,12 @@ export interface KeyedReader<T> {
   getLatest(key: string): T | null
   /** Asks `key` again now (after something the page did). */
   again(key?: string): void
+  /**
+   * Added 2026-11-09 (core flows, the owner: nothing slow when it can be fast): asks `key` again within `ms` while someone
+   * watches it, unless a read of it is on its way or one is already due sooner. Never sooner than a failure's wait (the
+   * Retry-After a busy reader named), and never a read in flight dropped for a new one (`again` drops it).
+   */
+  soon(key: string, ms: number): void
   /** Reprojects already known data without starting another network request. */
   update(project: (value: T, key: string) => T): void
 }
@@ -135,14 +141,14 @@ const browserTimers: ReaderTimers = {
  */
 export function createKeyedReader<T>(read: (key: string, active: () => boolean) => Promise<T>, policy: { next: (answer: T, failures: number) => number | null; failed: (answer: T) => boolean }, timers: ReaderTimers = browserTimers): KeyedReader<T> {
   /** `goodAt` and `period` (2026-10-14, Q1): when the last good answer came, and the wait its policy set after it (null: none). */
-  interface Entry { value: T | null; latest: T | null; listeners: Set<() => void>; timer: unknown; reading: boolean; failures: number; due: boolean; generation: number; observing: number; notBefore: number; waking: (() => void) | null; goodAt: number | null; period: number | null }
+  interface Entry { value: T | null; latest: T | null; listeners: Set<() => void>; timer: unknown; dueAt: number; reading: boolean; failures: number; due: boolean; generation: number; observing: number; notBefore: number; waking: (() => void) | null; goodAt: number | null; period: number | null }
   const entries = new Map<string, Entry>()
   const now = () => timers.now?.() ?? Date.now()
   let stopWake: (() => void) | null = null
   const entry = (key: string): Entry => {
     let found = entries.get(key)
     if (!found) {
-      found = { value: null, latest: null, listeners: new Set(), timer: null, reading: false, failures: 0, due: true, generation: 0, observing: 0, notBefore: 0, waking: null, goodAt: null, period: null }
+      found = { value: null, latest: null, listeners: new Set(), timer: null, dueAt: 0, reading: false, failures: 0, due: true, generation: 0, observing: 0, notBefore: 0, waking: null, goodAt: null, period: null }
       entries.set(key, found)
     }
     return found
@@ -151,6 +157,7 @@ export function createKeyedReader<T>(read: (key: string, active: () => boolean) 
     if (e.timer !== null) timers.clear(e.timer)
     e.timer = null
     if (e.listeners.size === 0) { e.due = true; return }
+    e.dueAt = now() + ms
     e.timer = timers.set(() => { e.timer = null; start(key, e) }, ms)
   }
   const start = (key: string, e: Entry) => {
@@ -249,6 +256,13 @@ export function createKeyedReader<T>(read: (key: string, active: () => boolean) 
     get: (key) => entries.get(key)?.value ?? null,
     getLatest: (key) => entries.get(key)?.latest ?? null,
     again,
+    soon(key, ms) {
+      const e = entries.get(key)
+      if (!e || e.listeners.size === 0 || e.reading || e.waking) return
+      const at = Math.max(now() + Math.max(0, ms), e.notBefore)
+      if (e.timer !== null && e.dueAt <= at) return
+      schedule(key, e, at - now())
+    },
     update(project) {
       for (const [key, e] of entries) {
         if (e.value === null) continue

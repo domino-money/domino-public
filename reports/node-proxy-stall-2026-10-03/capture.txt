@@ -1,6 +1,6 @@
 # Public copy: 192.0.2.1 is an RFC 5737 documentation address replacing
 # the private network address; ports and packet timings are preserved.
-# One kept connection from domino-prod-02 straight to clawber's socket (192.0.2.1:18549),
+# One kept connection from production-services-host straight to clawber's socket (192.0.2.1:18549),
 # bypassing HAProxy, 4 Oct 2026 UTC, after the probe run. tcpdump on tailscale0, headers only:
 # time since the first packet, direction, TCP payload length. Four eth_blockNumber calls,
 # 300 ms apart; the client sets TCP_NODELAY, so each write leaves at once.

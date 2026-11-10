@@ -212,3 +212,19 @@ test('before the batch is offered, a quote past its deadline asks for a new one:
   assert.deepEqual(asked().filter((method) => method.startsWith('wallet_') || method === 'eth_sendTransaction'), []);
   assert.deepEqual(s.stages, ['reviewing']);
 });
+
+// Added 2026-11-09 (core flows, the owner: nothing may load forever): a batch the wallet took is followed at a pace that
+// slows down, and after FUNDS_BATCH_FOLLOW_MS with no transaction named the run hands it over (`batch_slow`, offered, so its
+// deposit is never offered again while its result is unknown) to the offer's card for it, which goes on asking.
+test('a batch the wallet took and has not sent after three minutes is handed over as offered, never followed for good', async () => {
+  const { FUNDS_BATCH_FOLLOW_MS, FUNDS_BATCH_POLL_MAX_MS, batchPollMs } = require('../../.test-build/app/src/v2in/funds/constants.js');
+  assert.equal(FUNDS_BATCH_FOLLOW_MS, 180_000);
+  assert.deepEqual([0, 59_999, 60_000, 120_000, 180_000, 240_000, 600_000].map((ms) => batchPollMs(ms)), [3_000, 3_000, 6_000, 12_000, 24_000, FUNDS_BATCH_POLL_MAX_MS, FUNDS_BATCH_POLL_MAX_MS]);
+  const s = lab({ walletOn: 42161, atomic: 'supported', mine: 'manual' });
+  const waited = [];
+  s.deps.wait = async (ms) => { waited.push(ms); s.clock.now += 30_000; };
+  assert.deepEqual(await s.run(), { kind: 'error', step: 'deposit', code: 'batch_slow', hash: null, offered: true });
+  assert.deepEqual(waited, [1, 1, 2, 2, 4, 4, 8], 'the flow’s own pace through the first minute, then slower');
+  assert.ok(s.stages.includes('batch_sent'));
+  assert.equal(s.origin.state.batches.length, 1, 'one batch, never offered again');
+});

@@ -135,6 +135,8 @@ const FAMILIES = ['read', 'session', 'onboarding', 'deposit', 'performance', 'ex
 const PLAN_SERVICE = { binding: 'POSITION_PLAN_BRIDGE', service: 'domino-position-plan-bridge' };
 /** 2026-10-05 (the owner: everything integrated and ready on our side): S2's crosschain Worker, bound after it, deployed off. */
 const XC_SERVICE = { binding: 'CROSSCHAIN_BRIDGE', service: 'domino-crosschain-bridge' };
+/** 2026-11-08 (the owner: Season 1 of points): the points Worker, bound last, deployed off (its tests at the end). */
+const POINTS_SERVICE = { binding: 'POINTS_BRIDGE', service: 'domino-points-bridge' };
 
 /** A well-formed browser call per family, on a route each Worker really has. */
 const ROUTE = {
@@ -1228,10 +1230,12 @@ test('wrangler.toml: preview gets its public-read opt-in, its setup release and 
   const services = tables.filter(({ header }) => header === '[[env.production.services]]');
   // Changed on purpose 2026-10-04 (the owner: the site runs on Domino V2): and S1's plan Worker (PLAN_SERVICE), deployed off.
   // Changed on purpose 2026-10-05 (the owner: everything integrated on our side): then S2's crosschain Worker, deployed off.
-  assert.equal(services.length, FAMILIES.length + 2);
+  // Changed on purpose 2026-11-08 (the owner: Season 1 of points): then the points Worker, deployed off.
+  assert.equal(services.length, FAMILIES.length + 3);
   for (const { keys } of services) assert.deepEqual(Object.keys(keys).sort(), ['binding', 'service']);
-  assert.deepEqual(services.at(-2).keys, { binding: `"${PLAN_SERVICE.binding}"`, service: `"${PLAN_SERVICE.service}"` });
-  assert.deepEqual(services.at(-1).keys, { binding: `"${XC_SERVICE.binding}"`, service: `"${XC_SERVICE.service}"` });
+  assert.deepEqual(services.at(-3).keys, { binding: `"${PLAN_SERVICE.binding}"`, service: `"${PLAN_SERVICE.service}"` });
+  assert.deepEqual(services.at(-2).keys, { binding: `"${XC_SERVICE.binding}"`, service: `"${XC_SERVICE.service}"` });
+  assert.deepEqual(services.at(-1).keys, { binding: `"${POINTS_SERVICE.binding}"`, service: `"${POINTS_SERVICE.service}"` });
   // Changed on purpose 2026-10-01 (platform workstream, H7): and the setup release, public deployment identities, named
   // in PREVIEW_FAMILIES and bound to production's own setup Worker (reached like the reads, translated).
   // Changed on purpose 2026-10-01 (the chain2 workstream, part B): and CHAIN2_PREVIEW, the middleware's own setting that
@@ -1324,8 +1328,8 @@ test('wrangler 4.130.0 reads seven production Workers, and for preview only the 
   // Changed on purpose 2026-10-04 (the owner: the site runs on Domino V2): and S1's plan Worker, last.
   assert.deepEqual(
     read.production.services,
-    // 2026-10-05: then S2's crosschain Worker, last.
-    [...FAMILIES.map((family) => ({ binding: FAMILY[family].binding, service: FAMILY[family].service })), PLAN_SERVICE, XC_SERVICE],
+    // 2026-10-05: then S2's crosschain Worker. 2026-11-08: then the points Worker, last.
+    [...FAMILIES.map((family) => ({ binding: FAMILY[family].binding, service: FAMILY[family].service })), PLAN_SERVICE, XC_SERVICE, POINTS_SERVICE],
   );
   assert.equal(read.preview.targetEnvironment, 'preview');
   // Changed on purpose 2026-10-01 (the chain2 workstream, part B): and CHAIN2_PREVIEW, for the preview alone.
@@ -1350,7 +1354,10 @@ test("the binding names forward() looks up are exactly the names wrangler.toml b
   assert.equal(bound[PLAN_SERVICE.binding], PLAN_SERVICE.service);
   // 2026-10-05: and S2's deposits theirs, bound to the crosschain Worker (their tests below).
   assert.equal(bound[XC_SERVICE.binding], XC_SERVICE.service);
-  assert.deepEqual(looked.sort(), Object.keys(bound).filter((name) => name !== PLAN_SERVICE.binding && name !== XC_SERVICE.binding).sort());
+  // 2026-11-08: and the points routes theirs, bound to the points Worker (their tests at the end).
+  assert.equal(bound[POINTS_SERVICE.binding], POINTS_SERVICE.service);
+  const own = [PLAN_SERVICE.binding, XC_SERVICE.binding, POINTS_SERVICE.binding];
+  assert.deepEqual(looked.sort(), Object.keys(bound).filter((name) => !own.includes(name)).sort());
 });
 
 test('both deploys target the Pages project wrangler.toml names, domino-app, and no doc calls domino-app-e65 anything but its pages.dev hostname', async () => {
@@ -1418,6 +1425,16 @@ function deployed(environment) {
         fetch(request) {
           calls.push(`${service} ${request.method} ${request.url}`);
           return XC_WORKER.fetch(request, XC_DISABLED);
+        },
+      };
+      continue;
+    }
+    // 2026-11-08: the points Worker, under its committed disabled config (bridge/wrangler.points.toml [vars]).
+    if (service === POINTS_SERVICE.service) {
+      env[binding] = {
+        fetch(request) {
+          calls.push(`${service} ${request.method} ${request.url}`);
+          return POINTS_WORKER.fetch(request, POINTS_DISABLED);
         },
       };
       continue;
@@ -2261,5 +2278,73 @@ test('S2 deposits on the preview alias: shut unless PREVIEW_FAMILIES names cross
   });
   assert.equal(wrong.status, 403);
   assert.deepEqual(await wrong.json(), { error: 'origin_not_allowed' });
+  assert.deepEqual(upstream, []);
+});
+
+// ---------------------------------------------------------------------------
+// 2026-11-07 (Season 1 of points, rugged97's PR #467, api-contracts/points-v1; the owner's Points page): the points family
+// (POST points and link with the session cookie and CSRF, GET capabilities with no session), declared ahead of its Worker
+// (domino-points-bridge) as crosschain was: until wrangler.toml binds it, its paths answer as before (404 not_found, no
+// contract header), which the Points page reads as off. The Worker is the real one from bridge/src under its committed
+// disabled config (bridge/wrangler.points.toml [vars]).
+// ---------------------------------------------------------------------------
+
+const POINTS_WORKER = (await import('../../bridge/src/points-worker.mjs')).default;
+const POINTS_RUNTIME = await import('../../api-contracts/points-v1/runtime.mjs');
+const POINTS_DISABLED = { POINTS_BRIDGE_ENABLED: 'false', APP_ORIGIN: ORIGIN, POINTS_GATEWAY_ORIGIN: 'https://points-gateway.example.invalid', PREVIEW_ORIGINS: '' };
+const POINTS_HEADER = 'x-domino-points-contract';
+
+// Changed on purpose 2026-11-08 (the owner: Season 1 of points; the Worker domino-points-bridge now exists, deployed off):
+// production binds it; it answered 404 not_found with no contract header while no Worker was bound. Nothing bound is
+// still that 404 (below), and the preview binds nothing for it.
+test('points: production as wrangler.toml binds it reaches the points Worker, off: capabilities "disabled", the two routes route_not_available, nothing upstream', async () => {
+  const { env, calls } = deployed('production');
+  assert.equal(typeof env.POINTS_BRIDGE?.fetch, 'function', 'wrangler.toml binds the points Worker');
+  for (const route of ['points', 'link']) {
+    const answer = await pages(call(`/api/points/v1/${route}`, { method: 'POST', body: '{}', cookie: `${BETA}; ${SESSION}`, headers: { 'X-Domino-CSRF': CSRF } }), env);
+    assert.equal(answer.status, 404, route);
+    assert.equal(answer.headers.get(POINTS_HEADER), POINTS_RUNTIME.CONTRACT_VERSION, 'the Worker’s own answer');
+    assert.deepEqual(await answer.json(), { error: 'route_not_available' });
+  }
+  const capability = await pages(call('/api/points/v1/capabilities'), env);
+  assert.equal(capability.status, 200);
+  assert.deepEqual(await capability.json(), { contractVersion: POINTS_RUNTIME.CONTRACT_VERSION, dataMode: 'disabled', enabledRoutes: [] });
+  assert.deepEqual(calls, [
+    `${POINTS_SERVICE.service} POST https://domino.money/api/points/v1/points`,
+    `${POINTS_SERVICE.service} POST https://domino.money/api/points/v1/link`,
+    `${POINTS_SERVICE.service} GET https://domino.money/api/points/v1/capabilities`,
+  ]);
+  assert.equal(served, 0);
+  assert.deepEqual(upstream, []);
+});
+
+test('points: with nothing bound (a preview, or before the Worker) the paths answer 404 not_found, no contract header, nothing forwarded', async () => {
+  assert.equal(deployed('preview').env.POINTS_BRIDGE, undefined, 'the preview binds no points Worker');
+  const env = { ...GATE };
+  for (const [path, method] of [['/api/points/v1/capabilities', 'GET'], ['/api/points/v1/points', 'POST'], ['/api/points/v1/link', 'POST']]) {
+    const response = await pages(call(path, { method, ...(method === 'POST' ? { body: '{}', cookie: `${BETA}; ${SESSION}`, headers: { 'X-Domino-CSRF': CSRF } } : {}) }), env);
+    await refused(response, 404, 'not_found');
+    assert.equal(response.headers.get(POINTS_HEADER), null, path);
+  }
+  assert.ok(PREVIEW_FAMILY_NAMES.includes('points'));
+  assert.deepEqual(upstream, []);
+});
+
+test('points through the real Worker, disabled: capabilities "disabled" with no session, the two routes route_not_available, the session cookie and CSRF only', async () => {
+  const seen = [];
+  const env = { ...GATE, POINTS_BRIDGE: { fetch: (request) => { seen.push({ method: request.method, url: request.url, cookie: request.headers.get('cookie'), csrf: request.headers.get('x-domino-csrf') }); return POINTS_WORKER.fetch(request, POINTS_DISABLED); } } };
+  const capability = await pages(call('/api/points/v1/capabilities'), env);
+  assert.equal(capability.status, 200);
+  assert.equal(capability.headers.get(POINTS_HEADER), POINTS_RUNTIME.CONTRACT_VERSION);
+  assert.deepEqual(await capability.json(), { contractVersion: POINTS_RUNTIME.CONTRACT_VERSION, dataMode: 'disabled', enabledRoutes: [] });
+  for (const route of ['points', 'link']) {
+    const response = await pages(call(`/api/points/v1/${route}`, { method: 'POST', body: '{}', cookie: JAR, headers: { 'X-Domino-CSRF': CSRF } }), env);
+    assert.equal(response.status, 404, route);
+    assert.equal(response.headers.get(POINTS_HEADER), POINTS_RUNTIME.CONTRACT_VERSION, 'the Worker’s own answer');
+    assert.deepEqual(await response.json(), { error: 'route_not_available' });
+  }
+  assert.deepEqual(seen.map((entry) => `${entry.method} ${entry.url}`), ['GET https://domino.money/api/points/v1/capabilities', 'POST https://domino.money/api/points/v1/points', 'POST https://domino.money/api/points/v1/link']);
+  assert.equal(seen[0].cookie, BETA.includes('domino-session') ? SESSION : null, 'no cookie of another family');
+  for (const entry of seen.slice(1)) assert.deepEqual([entry.cookie, entry.csrf], [SESSION, CSRF], 'the session cookie only, and the CSRF');
   assert.deepEqual(upstream, []);
 });

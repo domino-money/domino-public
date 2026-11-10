@@ -19,7 +19,7 @@
     "test:pages": "node --test --test-force-exit tests/page-watch.test.mjs tests/render.test.mjs && npm run test:session && npm run test:consumer",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src functions",
-    "test:gate": "node --test --test-force-exit tests/gate.browser.test.mjs tests/release.browser.test.mjs && npm run test:read",
+    "test:gate": "node --test --test-force-exit tests/gate.browser.test.mjs tests/release.browser.test.mjs tests/routes.browser.test.mjs && npm run test:read",
     "build:fixtures": "vite build --mode fixtures",
     "build:bridge-test": "vite build --mode bridge-test",
     "test:read": "npm run build:fixtures && npm run build:bridge-test && node --test --test-force-exit tests/read-states.browser.test.mjs tests/read-bridge.browser.test.mjs tests/read-screens.browser.test.mjs tests/read-screens.bridge.test.mjs tests/read-public.browser.test.mjs",

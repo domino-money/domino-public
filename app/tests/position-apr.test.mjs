@@ -212,3 +212,74 @@ test('the last 24 hours from a read made a day ago, and the line says where it s
   assert.equal(day.from.block, h.points.find((point) => point.t === readAt).block);
   close(day.rate, (24 * YEAR) / (worth(L) * 24 * HOUR), 'the day from the read');
 });
+
+// ---------------------------------------------------------------------------
+// Added on purpose 2026-11-09 (core flows: a position in a collapsed pool read "1.7,957…e+26%"): a rate is worked out on
+// money, never on dust (positionApr.ts DUST_CAPITAL), and every rate is written in whole grouped digits (format/apr.ts).
+// The owner's D9 stays: a rate from the first reading (APR_MIN_SECONDS = 1).
+// ---------------------------------------------------------------------------
+const { DUST_CAPITAL } = require('../.test-build/app/src/lib/positionApr.js');
+const USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168';
+/** A pair whose second side is USDG (6 decimals), the first `decimals0`: Robinhood Chain's pools. */
+const usdgPair = (decimals0 = 6) => [{ address: '0x00000000000000000000000000000000000000a1', symbol: 'MEME', decimals: decimals0 }, { address: USDG, symbol: 'USDG', decimals: 6 }];
+
+test('a pool whose price collapsed: the money in the position is dust at today’s price, so no rate (`empty`, the dash), never 1e+20', () => {
+  // 1e18 of liquidity of an 18-decimal token below its range at a price of ~1.7e-18 USDG: ~1e-19 USDG in the position.
+  // About 5 USDG earned over the week, before the price fell.
+  const h = history({ hours: 7 * 24, perHour: () => 0.03 });
+  h.events[0] = { ...h.events[0], liquidityDelta: 10n ** 18n };
+  const state = { ...stateAt(T0 + 7 * 24 * HOUR, 10n ** 14n), currencies: usdgPair(18) };
+  const apr = positionApr(h, state, 1, 'all');
+  assert.deepEqual(apr, { ok: false, reason: 'empty', seconds: 7 * 24 * HOUR });
+  assert.equal(APR_MISSING[apr.reason], 'Nothing in the position');
+  assert.equal(positionApr(h, state, 1, '24h').reason, 'empty', 'the last day too');
+});
+
+test('the dust floor is one cent of USDG (a millionth of a token otherwise), on the time-weighted capital: just above it a rate, just under it the dash', () => {
+  assert.deepEqual(DUST_CAPITAL, { usdg: 0.01, token: 0.000001 });
+  const at = (l, pair) => {
+    const h = firstReading(HOUR, [0n, 1n]);
+    h.events[0] = { ...h.events[0], liquidityDelta: l };
+    return positionApr(h, { ...stateAt(T0 + HOUR), currencies: pair }, 1, 'all');
+  };
+  // USDG: about two cents and about half a cent in the position.
+  assert.ok(worth(340_000n) > 0.02 && worth(85_000n) < 0.0051);
+  const cents = at(340_000n, usdgPair());
+  assert.equal(cents.ok, true);
+  close(cents.rate, (0.000001 * YEAR) / (worth(340_000n) * HOUR), 'two cents for an hour');
+  assert.equal(at(85_000n, usdgPair()).reason, 'empty');
+  // Another token: about two millionths, and under half of one.
+  assert.equal(at(34n, currencies).ok, true);
+  assert.equal(at(8n, currencies).reason, 'empty');
+  // On the time-weighted capital: two cents for half the window is a cent on average, a rate; for a third of it, not.
+  const half = firstReading(2 * HOUR, [0n, 1n]);
+  half.events = [{ ...half.events[0], liquidityDelta: 340_000n }, { ...half.events[0], kind: 'decrease', block: 2, timestamp: T0 + HOUR, tx: '0x2', liquidityDelta: -340_000n }];
+  assert.equal(positionApr(half, { ...stateAt(T0 + 2 * HOUR), currencies: usdgPair() }, 1, 'all').ok, true);
+  const third = firstReading(3 * HOUR, [0n, 1n]);
+  third.events = [{ ...half.events[0] }, { ...half.events[1] }];
+  assert.equal(positionApr(third, { ...stateAt(T0 + 3 * HOUR), currencies: usdgPair() }, 1, 'all').reason, 'empty');
+});
+
+test('D9 stays: a position opened a second ago with money in it shows its early rate, however large, in whole grouped digits', () => {
+  assert.equal(APR_MIN_SECONDS, 1);
+  // About 59,000 USDG in it for one second, a dollar earned.
+  const apr = positionApr(firstReading(1, [0n, 1_000_000n]), { ...stateAt(T0 + 1), currencies: usdgPair() }, 1, 'all');
+  assert.equal(apr.ok, true);
+  assert.equal(apr.seconds, 1);
+  close(apr.rate, YEAR / (worth(L) * 1), 'a second of a big position');
+  // Two cents for one second that earned a millionth of a dollar: about 157,000%, a real if early rate.
+  const h = firstReading(1, [0n, 1n]);
+  h.events[0] = { ...h.events[0], liquidityDelta: 340_000n };
+  const early = positionApr(h, { ...stateAt(T0 + 1), currencies: usdgPair() }, 1, 'all');
+  assert.equal(early.ok, true);
+  assert.match(aprText(early.rate), /^\d{1,3}(,\d{3})+%$/);
+  assert.doesNotMatch(aprText(early.rate), /e/i);
+});
+
+test('a rate of any size is written in whole grouped digits: never exponent notation', () => {
+  assert.equal(aprText(1.7957e24), '179,570,000,000,000,000,000,000,000%');
+  assert.equal(aprText(1e19), '1,000,000,000,000,000,000,000%');
+  assert.equal(aprText(9.99e18), '999,000,000,000,000,000,000%');
+  assert.equal(aprText(14.284), '1,428%');
+  for (const rate of [1e19, 3.3e25, 1.2e40, Number.MAX_VALUE / 1000]) assert.doesNotMatch(aprText(rate), /e|E|\+/, String(rate));
+});

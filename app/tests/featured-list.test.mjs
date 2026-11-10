@@ -315,20 +315,25 @@ test('the first reads take the replies the page sent before the app started, onc
   assert.deepEqual([...script.matchAll(/localStorage\.(\w+)/g)].map((match) => match[1]), ['getItem'], 'the copy is only read');
   assert.match(script, /if \(data\.early !== true \|\| window\.__dominoEarly !== undefined\) return/, 'nothing once the app has read, nor in a build that reads no live list');
   assert.match(script, /if \(page !== 'overview' && \(page !== 'markets' \|\| second\)\) return/, 'Home and Markets only');
-  const run = (hash, slot, early = true) => {
+  // Changed on purpose 2026-11-07 (pages of their own, src/lib/route.ts): the script reads the address's path, or a link
+  // from before (`/#/markets`) as it is; `route` is either, as the address bar shows it.
+  const at = (route) => (route === '' || route.startsWith('#') ? { pathname: '/', hash: route } : { pathname: route.split('#')[0], hash: route.includes('#') ? route.slice(route.indexOf('#')) : '' });
+  const run = (route, slot, early = true) => {
     const sent = [];
     const data = { early, pages: ROUTES, chunks: {} };
     const document = { getElementById: (id) => (id === 'dm-boot' ? { textContent: JSON.stringify(data) } : null), createElement: () => ({ setAttribute() {} }), head: { appendChild() {} } };
-    const context = { location: { hash }, performance, window: slot === undefined ? {} : { __dominoEarly: slot }, fetch: (path, init) => (sent.push([init.method, path, init.body ?? null]), new Promise(() => {})) };
+    const context = { location: at(route), performance, window: slot === undefined ? {} : { __dominoEarly: slot }, fetch: (path, init) => (sent.push([init.method, path, init.body ?? null]), new Promise(() => {})) };
     new Function('window', 'document', 'location', 'performance', 'fetch', script)(context.window, document, context.location, context.performance, context.fetch);
     return [sent, Object.keys(context.window.__dominoEarly?.replies ?? {})];
   };
   const both = [[['POST', '/api/read/v5/featured-pools', '{}'], ['GET', '/api/read/v3/capabilities', null]], ['POST /api/read/v5/featured-pools', 'GET /api/read/v3/capabilities']];
   assert.deepEqual(['', '#/', '#/#pools', '#/markets', '#/pools'].map((hash) => run(hash)), Array(5).fill(both));
+  assert.deepEqual(['/', '/#pools', '/markets', '/pools', '/markets#top'].map((path) => run(path)), Array(5).fill(both));
   assert.deepEqual(['#/pool/0xab', '#/positions', '#/new', '#/docs'].map((hash) => run(hash)), Array(4).fill([[], []]));
+  assert.deepEqual(['/pool/0xab', '/positions', '/new', '/docs', '/docs#x'].map((path) => run(path)), Array(5).fill([[], []]));
   // A token's own view shows no list (src/components/explore/routes.ts), and since 2026-10-01 Markets with anything else
   // after it is not found (src/App.tsx parseHash): nothing is sent there.
-  assert.deepEqual([`#/markets/0x${'1'.repeat(40)}`, `#/pools/0x${'aB'.repeat(20)}#x`, '#/explore/0xab', '#/nope'].map((hash) => run(hash)), Array(4).fill([[], []]));
+  assert.deepEqual([`#/markets/0x${'1'.repeat(40)}`, `#/pools/0x${'aB'.repeat(20)}#x`, '#/explore/0xab', '#/nope', `/markets/0x${'1'.repeat(40)}`, '/nope'].map((hash) => run(hash)), Array(6).fill([[], []]));
   assert.deepEqual(run('#/', { at: -Infinity, replies: {} }), [[], []], 'the app read first');
   assert.deepEqual(run('#/', undefined, false), [[], []], 'a build that reads no live list sends nothing');
 
@@ -350,7 +355,7 @@ test('the first reads take the replies the page sent before the app started, onc
       return path === '/api/read/v3/overview' ? overview() : new Promise(() => {});
     };
     const document = { getElementById: (id) => (id === 'dm-boot' ? { textContent: JSON.stringify({ early: true, pages: ROUTES, chunks: {} }) } : null), createElement: () => ({ setAttribute() {} }), head: { appendChild() {} } };
-    new Function('window', 'document', 'location', 'performance', 'fetch', 'localStorage', script)(window, document, { hash: '#/' }, performance, fetch, storage);
+    new Function('window', 'document', 'location', 'performance', 'fetch', 'localStorage', script)(window, document, { pathname: '/', hash: '' }, performance, fetch, storage);
     await new Promise((resolve) => setTimeout(resolve, 10));
     return [sent.slice(2), Object.keys(window.__dominoEarly.replies).slice(2), window.__dominoEarly.replies];
   };

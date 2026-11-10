@@ -21,6 +21,7 @@ import {
   parseAbi, toFunctionSelector, concatHex, zeroAddress,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import { ELYSIUM_SUITE_PROFILE } from './elysium-profile.mjs';
 
 const require = createRequire(import.meta.url);
 const position = require('../../.test-build/app/src/finance/position.js');
@@ -30,7 +31,8 @@ const PROFILES = {
   8453: require('../../../api-contracts/v2/chains/base-8453.json'),
   42161: require('../../../api-contracts/v2/chains/arbitrum-42161.json'),
   // Added 2026-11-07 (Elysium's screens): Elysium as the builds forcing it on serve it, Uniswap v4 alone (no v3 here).
-  99901: require('../fixtures/v2-chains/elysium-99901.json'),
+  // Changed on purpose 2026-11-07 (day-9 rehearsal, finding F5): the repository's own profile once it turns Elysium on.
+  99901: ELYSIUM_SUITE_PROFILE,
 };
 export const OWNER_KEY = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
 const lower = (value) => String(value).toLowerCase();

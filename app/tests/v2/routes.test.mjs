@@ -11,7 +11,9 @@ import { test } from 'node:test';
 import { createWorker } from '../../../bridge/src/worker.mjs';
 import { createPositionPlanWorker } from '../../../bridge/src/position-plan-worker.mjs';
 import { createCrosschainWorker } from '../../../bridge/src/crosschain-worker.mjs';
-import { CONTRACT_VERSION as V6_VERSION } from '../../../api-contracts/read-v6/runtime.mjs';
+// Changed on purpose 2026-11-07 (day-9 rehearsal, finding F8): read-v6's versions are the package's own
+// (api-contracts/read-v6/runtime.mjs), never literals, so a day-9 version move needs only docs/ELYSIUM_DAY9.md step 3.
+import { CONTRACT_VERSION as V6_VERSION, NEXT_VERSION as V6_NEXT } from '../../../api-contracts/read-v6/runtime.mjs';
 import { CONTRACT_VERSION as PLAN_VERSION } from '../../../api-contracts/position-plan-v1/runtime.mjs';
 import { CONTRACT_VERSION as XC_VERSION } from '../../../api-contracts/crosschain-v1/runtime.mjs';
 
@@ -80,7 +82,7 @@ test('end to end, every state of both routes, through the real forwarder and Wor
     // Changed on purpose 2026-11-06 (read-v6 1.2.0-rc.1's window, src/v2/routes.ts): the read route is asked in 1.2.0-rc.1
     // first; a Worker that does not speak it (this branch's, which refuses it with a 502) is asked again in 1.1.0-rc.1.
     const versions = seen.map(({ options }) => options.headers[V2_ROUTE_SPECS[route].header]);
-    if (route === 'readV6') assert.ok(versions.length === 1 ? versions[0] === '1.2.0-rc.1' : versions.join() === '1.2.0-rc.1,1.1.0-rc.1', versions.join());
+    if (route === 'readV6') assert.ok(versions.length === 1 ? versions[0] === V6_NEXT : versions.join() === `${V6_NEXT},${V6_VERSION}`, versions.join());
     else assert.deepEqual(versions, [V2_ROUTE_SPECS[route].version]);
   }
   assert.deepEqual(upstream, []);
@@ -96,9 +98,11 @@ test('askV2Route sends one GET of the route\'s capabilities, in its contract\'s 
     // its Worker refused the first in its own version (review F2: a GET no Worker answered is not asked twice).
     const refusal = { kind: 'reply', reply: { status: 502, opaqueRedirect: false, contentType: 'application/json', contractHeader: V6_VERSION, requestIdHeader: null, retryAfterHeader: null, body: { kind: 'text', text: '{"error":"upstream_contract_mismatch"}' } } };
     await askV2Route(route, async (...args) => { seen.push(args); return route === 'readV6' && seen.length === 1 ? refusal : { kind: 'network' }; }, controller.signal);
-    assert.equal(seen.length, route === 'readV6' ? 2 : 1);
+    // Changed on purpose 2026-11-07 (day-9 rehearsal, finding F8): a package of one version (its NEXT_VERSION its own) has
+    // no second version to ask: that refusal is then its own version's, asked once.
+    assert.equal(seen.length, route === 'readV6' && V6_NEXT !== V6_VERSION ? 2 : 1);
     const [askedPath, options] = seen.at(-1);
-    if (route === 'readV6') assert.deepEqual(seen[0][1].headers, { Accept: 'application/json', [header]: '1.2.0-rc.1' });
+    if (route === 'readV6') assert.deepEqual(seen[0][1].headers, { Accept: 'application/json', [header]: V6_NEXT });
     assert.equal(askedPath, path);
     assert.deepEqual(options.headers, { Accept: 'application/json', [header]: version });
     assert.equal(options.contractHeader, header);

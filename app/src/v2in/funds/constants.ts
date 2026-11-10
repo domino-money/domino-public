@@ -90,6 +90,22 @@ export const FUNDS_ETHEREUM_GAS_RESERVE_WEI = 3_000_000_000_000_000n
 
 /** How often a sent step's receipt is read while waiting for it. */
 export const FUNDS_RECEIPT_POLL_MS = 3_000
+/**
+ * Added 2026-11-09 (core flows, the owner: nothing may load forever): how long a batch the wallet took (approval and deposit
+ * together) is followed before the page says the wallet has not sent it yet, and the longest wait between two asks of the
+ * wallet about it. It was asked every FUNDS_RECEIPT_POLL_MS for good, "Preparing your transfer…" or "Sent, waiting to be
+ * included…" with nothing else to do.
+ */
+export const FUNDS_BATCH_FOLLOW_MS = 180_000
+export const FUNDS_BATCH_POLL_MAX_MS = 30_000
+/**
+ * The wait before the next ask about a batch the wallet took `followedMs` ago: `base` (FUNDS_RECEIPT_POLL_MS) through the
+ * first minute, then doubled each minute, never more than FUNDS_BATCH_POLL_MAX_MS. Pure.
+ */
+export function batchPollMs(followedMs: number, base: number = FUNDS_RECEIPT_POLL_MS): number {
+  const minutes = Math.max(0, Math.floor(followedMs / 60_000))
+  return Math.min(Math.max(base, FUNDS_BATCH_POLL_MAX_MS), base * 2 ** Math.min(minutes, 16))
+}
 /** How long the deposit's receipt is watched for "Finalized" once included; past it the step stays "Included". */
 export const FUNDS_FINALITY_WATCH_MS = 60 * 60_000
 /** The first wait before an origins or quote request asks again by itself after a transient failure (doubling, to 5 min). */

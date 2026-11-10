@@ -11,6 +11,7 @@
  *     Nothing is sent, so the wallet is never asked to switch chain for it: a wallet on another chain is said so instead.
  */
 import { createDirectClient, type DirectClient, type DirectCode } from '../../finance/v2/direct'
+import { contractsLive } from '../../finance/v2/liveLock'
 import type { V2Wallet } from '../../finance/v2/transact'
 import { v2Wallet } from '../../finance/v2/wallet'
 import { createZapClient, type ZapClient } from '../../finance/v2/zap'
@@ -63,20 +64,38 @@ export function inTurn<T>(work: () => Promise<T>): Promise<T> {
   return next
 }
 
-export async function connectPosition(gate: OpenGate, allowSwitch = true): Promise<PositionConnection> {
+/**
+ * Added 2026-11-09 (the core-flows fix, item b): whether the direct exits (Collect fees, Withdraw in both tokens, Close
+ * position: straight at Uniswap's own position manager, no Domino contract, no plan) may be sent under this gate. Under
+ * `live`, always; under `preview` (the planner's route not serving yet, or a passing failure of its probe) whenever the
+ * chain itself is live (finance/v2/liveLock.ts contractsLive with no set: the one check the direct client's own sends
+ * make). They locked behind the planner's word before, which they never needed.
+ */
+export function directSendable(gate: OpenGate): boolean {
+  return gate.mode === 'live' || contractsLive(gate.chainId, null)
+}
+
+/**
+ * `direct` (Added 2026-11-09, item b): the connection for a direct exit under `preview` where the chain is live
+ * (directSendable): the wallet is switched to the position's chain as under `live`, and the direct client gets the zap's
+ * vault and root probes whenever the gate's set is the chain's live one (so an automation's root or successor is known
+ * to it as under `live`); its zap client is never handed out under `preview`.
+ */
+export async function connectPosition(gate: OpenGate, allowSwitch = true, direct = false): Promise<PositionConnection> {
   const chainId = gate.chainId
   const chain = v2Chain(chainId)
   const wallet = await v2Wallet()
   if (!wallet.current()) throw new Error('wallet_identity_changed')
+  const sendsDirect = gate.mode === 'preview' && direct && directSendable(gate)
   if (wallet.chainId() !== chainId) {
     // The preview only reads: no switch is asked for a read (the dialog asks for it only on the position's chain anyway).
-    if (gate.mode === 'preview' || !allowSwitch) throw new Error('wallet_wrong_chain')
+    if ((gate.mode === 'preview' && !sendsDirect) || !allowSwitch) throw new Error('wallet_wrong_chain')
     const outcome = await switchToChain(chainId)
     if (!wallet.current()) throw new Error('wallet_identity_changed')
     if (outcome !== 'switched') throw new WalletNotice(v2SwitchNotice(outcome, chain.name), outcome)
   }
   const contracts = gate.contracts
-  const key = `${gate.mode}|${chainId}|${wallet.owner}|${contracts.addresses.zapV3}|${contracts.addresses.zapV4}|${contracts.codeHashes.zapV4}`
+  const key = `${gate.mode}${sendsDirect ? '+direct' : ''}|${chainId}|${wallet.owner}|${contracts.addresses.zapV3}|${contracts.addresses.zapV4}|${contracts.codeHashes.zapV4}`
   const known = kept.get(key)
   if (known && known.wallet.current()) return known
   const code = directCode(chainId)
@@ -86,6 +105,10 @@ export async function connectPosition(gate: OpenGate, allowSwitch = true): Promi
     // Every step's budget is read by the clients themselves at its review. The zap's probes tell the direct exits a
     // vault's root (armed or not, rev2 review L2) or a successor (rev2 §2.13).
     connection = { chainId, wallet, zap, direct: createDirectClient(wallet, chain, undefined, code, zap.vaultProbe, zap.rootProbe) }
+  } else if (sendsDirect && contractsLive(chainId, contracts)) {
+    // Its probes only: the zap client itself is not handed out under the preview.
+    const probes = createZapClient(wallet, chain, contracts)
+    connection = { chainId, wallet, zap: null, direct: createDirectClient(wallet, chain, undefined, code, probes.vaultProbe, probes.rootProbe) }
   } else {
     connection = { chainId, wallet, zap: null, direct: createDirectClient(wallet, chain, undefined, code, null, null) }
   }

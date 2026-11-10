@@ -7,8 +7,12 @@
  *     writes into the page, beside this script, a table of the route names (src/routeTable.ts) and, for each route, the
  *     files its screen needs that the entry does not carry (vite.config.ts, the domino:boot plugin). This script adds a
  *     <link rel="modulepreload"> for each script and a <link rel="preload" as="style"> for each stylesheet, so they
- *     download beside the entry instead of after it. A position's page (#/positions/<id>) gets its own screen's files
- *     (vite.config.ts ROUTE_MODULES `position`); until 2026-10-01 it also got the chain code its first read ran (F2),
+ *     download beside the entry instead of after it. Changed on purpose 2026-11-07 (pages of their own, src/lib/route.ts):
+ *     the route is the address's path (`/markets`), or a link from before (`/#/markets`) as it is, which the app turns
+ *     into the path once it starts. A position's page (/positions/<id>) gets its own screen's files
+ *     (vite.config.ts ROUTE_MODULES `position`), and since 2026-11-07 (launch sweep F11) Receipts (/positions/receipts)
+ *     its own (`receipts`): it took the list's, whose stylesheet it never applies, a console warning a few seconds
+ *     after load; until 2026-10-01 a position's page also got the chain code its first read ran (F2),
  *     which runs at the edge since (RPC-SPEC). The links are the ones the app's own loader would add later, with the
  *     same href and crossorigin, so nothing is fetched twice.
  *  2. On Home and Markets only, in the build that reads the live list, it sends the two first reads the app would send
@@ -46,12 +50,13 @@ export const MARKETS_COPY_KEY = 'domino-markets-v2:4663'
 export const BOOT_SCRIPT = `(function () {
   try {
     var data = JSON.parse(document.getElementById('${BOOT_DATA_ID}').textContent)
-    var segments = location.hash.replace(/^#/, '').split('#')[0].split('/')
+    var route = /^#\\//.test(location.hash) ? location.hash.slice(1) : location.pathname
+    var segments = route.split('#')[0].split('/')
     var first = segments[1] || ''
     var second = segments[2] || ''
     var page = Object.prototype.hasOwnProperty.call(data.pages, first) ? data.pages[first] : null
     if (page === 'markets' && second && !/^0x[0-9a-fA-F]{40}$/.test(second)) page = null
-    var key = page === 'positions' && /^[1-9][0-9]{0,77}$/.test(second) ? 'position' : page
+    var key = page === 'positions' && /^[1-9][0-9]{0,77}$/.test(second) ? 'position' : page === 'positions' && second === 'receipts' ? 'receipts' : page
     var files = key && Object.prototype.hasOwnProperty.call(data.chunks, key) ? data.chunks[key] : []
     for (var i = 0; i < files.length; i++) {
       var link = document.createElement('link')
@@ -117,7 +122,7 @@ export const BOOT_SCRIPT = `(function () {
 })()`
 
 /** The CSP source that admits BOOT_SCRIPT and nothing else: its SHA-256, base64. tests/gate.test.mjs recomputes it. */
-export const BOOT_SCRIPT_HASH = "'sha256-m5CGXfh+p7AkJ1tUYXYdZ3+6/5ReFZZMF0a4RLPSYF8='"
+export const BOOT_SCRIPT_HASH = "'sha256-URUDaaI5RXsAaPdixlfFQ1Ki6D4iKQTyx3vo7lEXXOY='"
 
 /** What the build writes into the page for the boot script: the data block, then the script itself. */
 export interface BootData {
@@ -125,7 +130,7 @@ export interface BootData {
   early: boolean
   /** The route table: first hash segment to page (src/routeTable.ts). */
   pages: Readonly<Record<string, string>>
-  /** Per page (and `position`, a position's own page), the site's files to ask for at once. */
+  /** Per page (and `position`, a position's own page, and `receipts`, Receipts' since 2026-11-07), the site's files to ask for at once. */
   chunks: Readonly<Record<string, readonly string[]>>
 }
 

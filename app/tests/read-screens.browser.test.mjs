@@ -247,7 +247,7 @@ test('a link that carries a list of ids is the list: nothing of it is read or ke
   await page.locator('[data-owned]').waitFor();
   assert.equal(await page.locator('[data-position-detail], [data-position-loading], #chain-lookup').count(), 0);
   assert.deepEqual((await fixtureReads(page)).filter((r) => r.route === 'nft-positions'), [], 'no id of the link is read');
-  assert.equal(await page.evaluate(() => location.hash), `#/positions/1,${BIG}`, 'the link stays as it was');
+  assert.equal(await page.evaluate(() => location.pathname + location.hash), `/positions/1,${BIG}`, 'the link stays as it was');
   assert.deepEqual(await keptKeys(page), [], 'nothing about the ids is kept');
   await quiet(page, errors);
   await page.close();
@@ -262,7 +262,7 @@ test('a link with one NFT id opens that position’s own page: no lookup, no rea
   await page.goto(`${origin}/#/positions/${BIG}`, { waitUntil: 'networkidle' });
   await page.locator('[data-position-detail], [data-position-reason], [data-position-loading], [data-empty="position-gone"]').first().waitFor();
   assert.equal(await page.locator('#chain-lookup, [data-owned]').count(), 0, 'the position’s page, not the list');
-  assert.equal(await page.locator('main').getByRole('link', { name: 'Positions', exact: true }).first().getAttribute('href'), '#/positions');
+  assert.equal(await page.locator('main').getByRole('link', { name: 'Positions', exact: true }).first().getAttribute('href'), '/positions');
   // Changed on purpose 2026-10-01 (RPC-SPEC D2, P2): while the page's own state cannot be read (this build reads no
   // chain, so it answers unavailable), the read gateway's row of that one NFT is the page's fallback (lib/positions/
   // gatewayRow.ts): its nft-positions read of the link's id, once, and the pool's price only for a live NFT. Never a
@@ -1014,7 +1014,9 @@ test('stale, expired, missing and zero figures stay honest, without unrelated ac
 
   const zero = await openCase('figures.zero');
   await table(zero.page);
-  assert.deepEqual(await cellsOf(zero.page), [['provider', '$0.00'], ['provider', '$0.00']], 'zero is a figure, not a missing one');
+  // Changed on purpose 2026-11-09 (core flows, the lead's sweep of a token page): a TVL a provider reported as exactly zero
+  // is the dash every other gap on the table is (src/lib/markets.ts shownTvl); a zero 24h volume is still a figure.
+  assert.deepEqual(await cellsOf(zero.page), [['absent', '—'], ['provider', '$0.00']], 'a provider’s zero TVL is the dash; a zero volume is a figure');
   await zero.page.close();
 
   const unavailable = await openCase('figures.activityUnavailable');

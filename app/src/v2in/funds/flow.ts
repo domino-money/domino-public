@@ -34,7 +34,7 @@ import type { Timing } from '../../v2/crosschain/client'
 import { stillSendable, walletSteps } from '../../v2/crosschain/steps'
 import type { CrosschainTransport } from '../../v2/crosschain/transport'
 import type { CrosschainValidators, QuotePlan } from '../../v2/crosschain/types'
-import { FUNDS_BATCH_APPROVAL_AND_DEPOSIT } from './constants'
+import { FUNDS_BATCH_APPROVAL_AND_DEPOSIT, FUNDS_BATCH_FOLLOW_MS, batchPollMs } from './constants'
 
 type Hex = `0x${string}`
 
@@ -67,7 +67,8 @@ export type FlowOutcome =
    * The sender stopped (OriginStepError's code), at a step, with the hash that step already holds if any. `offered`: the
    * step reached the wallet and its outcome is not known (wallet_result_unknown): it counts as sent on this page.
    * Added 2026-10-06, a batch's own stops, at the deposit: `batch_not_included` and `batch_reverted` (nothing of it ran),
-   * `batch_unknown` (the wallet took it and cannot say what became of it: offered).
+   * `batch_unknown` (the wallet took it and cannot say what became of it: offered). Added 2026-11-09: `batch_slow` (the
+   * wallet took it and has not sent it after FUNDS_BATCH_FOLLOW_MS: offered, followed on by the offer's card).
    */
   | { kind: 'error'; step: FlowStep; code: string; hash: Hex | null; offered: boolean }
   /** The approval was included and reverted: nothing was approved. */
@@ -120,9 +121,15 @@ async function sendBatched(deps: FlowDeps, sender: BatchSender, review: OriginRe
     return { kind: 'error', step: 'deposit', code, hash: null, offered: code === 'wallet_result_unknown' }
   }
   report({ stage: 'batch_sent', batchId: entry.batchId })
+  const started = deps.monoMs()
   for (;;) {
     // The batch is the wallet's from here on, kept by the sender: a page that moved on finds it again from there.
     if (deps.aborted()) return { kind: 'aborted' }
+    // Changed on purpose 2026-11-09 (core flows, the owner: nothing may load forever): followed at a pace that slows down,
+    // and past FUNDS_BATCH_FOLLOW_MS the run hands it over (`batch_slow`, offered: never sent again while its result is
+    // unknown) to the offer's own card for it (DepositStatus.tsx PendingDeposit), which goes on asking and says what to do.
+    const followed = deps.monoMs() - started
+    if (followed > FUNDS_BATCH_FOLLOW_MS) return { kind: 'error', step: 'deposit', code: 'batch_slow', hash: null, offered: true }
     let said: BatchState
     try {
       said = await sender.batchStatus(entry)
@@ -134,7 +141,7 @@ async function sendBatched(deps: FlowDeps, sender: BatchSender, review: OriginRe
     if (said.state === 'sent') return { kind: 'sent', sent: said.sent, review }
     if (said.state === 'gone') return { kind: 'error', step: 'deposit', code: said.reverted ? 'batch_reverted' : 'batch_not_included', hash: null, offered: false }
     if (said.state === 'unknown') return { kind: 'error', step: 'deposit', code: 'batch_unknown', hash: null, offered: true }
-    await deps.wait(deps.receiptPollMs)
+    await deps.wait(batchPollMs(followed, deps.receiptPollMs))
   }
 }
 

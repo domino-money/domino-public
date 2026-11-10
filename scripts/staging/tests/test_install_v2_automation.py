@@ -14,6 +14,8 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import install_v2_automation as installer
 
+LISTED_CHAINS = tuple(installer.v2_release_chains.CHAINS)
+
 COMMIT, NEXT = 'a' * 40, 'b' * 40
 MANIFESTS = [f'docs/deployments/v2-{chain}-2026-10-04/deployment.json'
              for chain in ('arbitrum-42161', 'base-8453', 'robinhood-4663')]
@@ -23,7 +25,7 @@ def archive():
     files = {'backend/v2_automation.py': (b'print()\n', False), 'backend/requirements-api.lock': (b'lock', False),
              'backend/v2_chains.py': (b'', False), 'backend/tests/test_x.py': (b'', False),
              'docs/v2/V2_AUTOMATION_BACKEND.md': (b'', False), 'app/src/main.ts': (b'', False)}
-    for chain in ('robinhood-4663', 'base-8453', 'arbitrum-42161'):
+    for chain in LISTED_CHAINS:  # v2-chains.json as committed (Elysium joined on 9 Nov 2026), read before any patch
         files[f'api-contracts/v2/chains/{chain}.json'] = (b'{}', False)
     files.update({name: (b'{}', False) for name in MANIFESTS})
     return files

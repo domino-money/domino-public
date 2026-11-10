@@ -32,8 +32,8 @@ export function NotFound() {
           description="The link may be out of date or mistyped. Everything else on Domino works as usual."
         />
         <div className="dm-nf-acts dm-k-up2 mt-8 flex flex-wrap items-center gap-3">
-          <LinkButton href="#/">Go to Home</LinkButton>
-          <LinkButton href="#/markets" variant="outline">
+          <LinkButton href="/">Go to Home</LinkButton>
+          <LinkButton href="/markets" variant="outline">
             Explore markets
           </LinkButton>
         </div>

@@ -31,6 +31,12 @@ export interface PositionVault {
    * only an action that moves that approval pauses it; one that keeps it (Collect fees, Withdraw to both tokens) does not.
    */
   exitLive: boolean
+  /**
+   * Added 2026-11-09 (the core-flows fix): the automation's name as the screens say it (Auto-compound, Domino-compound,
+   * Auto-exit), for Close position's one line; null when read-v6 did not read the vault. A successor is Domino-compound's
+   * (only Domino-compound opens one).
+   */
+  name?: 'Auto-compound' | 'Domino-compound' | 'Auto-exit' | null
 }
 
 /** One position, as every action takes it. */
@@ -200,7 +206,9 @@ export function positionVault(answer: Pick<PortfolioResponse, 'vaults' | 'mandat
   if (!vault) return null
   const found = vault.role === 'root' ? answer.vaults.find((one) => one.chainId === chainId && one.address.toLowerCase() === vault.address) : undefined
   const exit = found ? protectionStanding(found, answer.mandates ?? []) : null
-  return { ...vault, armed: found ? found.custody.armed : null, exitLive: exit === 'on' || exit === 'paused' }
+  const name = vault.role === 'successor' ? 'Domino-compound' as const : exit !== null ? 'Auto-exit' as const
+    : found && found.state.status === 'read' ? (found.state.policy.mode === 'domino' ? 'Domino-compound' as const : 'Auto-compound' as const) : null
+  return { ...vault, armed: found ? found.custody.armed : null, exitLive: exit === 'on' || exit === 'paused', name }
 }
 
 /**

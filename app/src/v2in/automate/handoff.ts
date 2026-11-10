@@ -21,11 +21,15 @@ export interface VaultHandoff {
   chainId: V2ChainId
   /** The vault (lowercase). */
   vault: Address
-  focus: 'rearm' | 'reserves' | 'leave'
+  /**
+   * `withdraw` (Added 2026-11-09, the core-flows fix): Withdraw to wallet itself, asked from the Positions list for a closed
+   * position whose automation still holds its fees, so the list's "Withdraw to wallet" lands on that very dialog.
+   */
+  focus: 'rearm' | 'reserves' | 'leave' | 'withdraw'
 }
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/
-const FOCUS: readonly VaultHandoff['focus'][] = ['rearm', 'reserves', 'leave']
+const FOCUS: readonly VaultHandoff['focus'][] = ['rearm', 'reserves', 'leave', 'withdraw']
 
 let pending: VaultHandoff | null = null
 const listeners = new Set<(handoff: VaultHandoff) => void>()

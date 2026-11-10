@@ -377,8 +377,8 @@ test('a portfolio link carries an address and nothing else; what is written is w
   assert.deepEqual(positions.portfolioRoute(`#/portfolio/${FIXTURE_OWNER}`), { onRoute: true, address: FIXTURE_OWNER });
   assert.deepEqual(positions.portfolioRoute('#/portfolio'), { onRoute: true, address: '' });
   assert.deepEqual(positions.portfolioRoute('#/positions/1'), { onRoute: false });
-  assert.equal(positions.portfolioHash(FIXTURE_OWNER), `#/portfolio/${FIXTURE_OWNER}`);
-  assert.equal(positions.portfolioHash(null), '#/portfolio');
+  assert.equal(positions.portfolioHash(FIXTURE_OWNER), `/portfolio/${FIXTURE_OWNER}`);
+  assert.equal(positions.portfolioHash(null), '/portfolio');
   // The address in a link is checked exactly as a pasted one: 0x plus 40 hex characters, as typed, no trimming, no checksum needed.
   assert.equal(identity.parseAddressInput(positions.portfolioRoute(`#/portfolio/${FIXTURE_OWNER}`).address).ok, true);
   assert.equal(identity.parseAddressInput(positions.portfolioRoute(`#/portfolio/${FIXTURE_OWNER.toUpperCase().replace('0X', '0x')}`).address).ok, true);

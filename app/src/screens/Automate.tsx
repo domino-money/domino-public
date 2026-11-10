@@ -36,10 +36,10 @@ export function Automate() {
       {/* The rows' card, lit under the ember (.dm-lit); painted under the rows. */}
       <span className="dm-automate-card dm-lit" aria-hidden="true" />
       <AutomationChoice kind="compound" chosen={chosen === 'compound'}>
-        {__DOMINO_WALLET_SESSION__ ? <LinkButton href="#/sequence/compound" variant="outline">Set up Auto-compound<ActChevron /></LinkButton> : OFF}
+        {__DOMINO_WALLET_SESSION__ ? <LinkButton href="/sequence/compound" variant="outline">Set up Auto-compound<ActChevron /></LinkButton> : OFF}
       </AutomationChoice>
       <AutomationChoice kind="domino" chosen={chosen === 'domino'}>
-        {__DOMINO_WALLET_SESSION__ ? <LinkButton href="#/sequence/domino" variant="outline">Set up Domino-compound<ActChevron /></LinkButton> : OFF}
+        {__DOMINO_WALLET_SESSION__ ? <LinkButton href="/sequence/domino" variant="outline">Set up Domino-compound<ActChevron /></LinkButton> : OFF}
       </AutomationChoice>
       {V2Protection && <AutomationChoice kind="protection" chosen={chosen === 'autoexit'}>
         <Suspense fallback={<Button disabled>Checking availability…</Button>}><V2Protection /></Suspense>

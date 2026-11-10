@@ -148,10 +148,13 @@ test('the server\'s simulation: ok; not_run only with approvals_missing; reverte
   const reverted = clone(body);
   reverted.plan.simulation = { status: 'reverted', reason: null, method: 'eth_simulateV1', error: { selector: '0x374aa3d7', name: 'SwapEffectMismatch()' }, gasUnits: null, result: null };
   reverted.plan.warnings = ['simulation_reverted'];
-  assert.deepEqual(parseFixture(reverted), { kind: 'reverted', selector: '0x374aa3d7', name: 'SwapEffectMismatch()' });
+  // Changed on purpose 2026-11-09 (core flows, errors): a revert carries the tokens the plan moves, the pool's two first,
+  // for a token's transfer refused by selector alone to name them (src/v2in/journey/errors.ts).
+  const moved = [body.plan.zapPlan.intent.pool.currency0, body.plan.zapPlan.intent.pool.currency1].map((token) => token.toLowerCase());
+  assert.deepEqual(parseFixture(reverted), { kind: 'reverted', selector: '0x374aa3d7', name: 'SwapEffectMismatch()', tokens: moved });
   const low = clone(body);
   low.plan.warnings = ['simulated_liquidity_below_minimum'];
-  assert.deepEqual(parseFixture(low), { kind: 'reverted', selector: '0xe49b763d', name: 'InsufficientLiquidity(uint128,uint128)' });
+  assert.deepEqual(parseFixture(low), { kind: 'reverted', selector: '0xe49b763d', name: 'InsufficientLiquidity(uint128,uint128)', tokens: moved });
 });
 
 test('error answers: every code of the package, validated, is refused with its code; anything else is unavailable', () => {

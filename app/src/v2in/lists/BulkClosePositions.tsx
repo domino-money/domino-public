@@ -11,9 +11,9 @@ import type { Hex } from '../../v2/types'
 import { nativeSymbolOf, v2Chain } from '../../v2/chains'
 import { v2PageProbe } from '../transports'
 import { actionError, REJECTED_IN_WALLET, STILL_PENDING_COPY, type ActionError } from '../position/errors'
-import { ActionDialog, ErrorLine, Note, Tick } from '../position/ui'
+import { ActionDialog, ErrorLine, Note } from '../position/ui'
 import { connectPosition, connectPositionReceipt, inTurn, onChain, type PositionConnection } from '../position/wallet'
-import { canCloseTogether, closeGroups } from './closeGroups'
+import { bulkTurnsOffCopy, canCloseTogether, closeGroups } from './closeGroups'
 import { amountWords, tokenNamer, weiWords, type PositionRowView, type TokenName } from './model'
 import { positionChanged } from './positionSync'
 import { forgetLocalClose, recordLocalClose } from './localReceipts'
@@ -256,7 +256,7 @@ function createRun(owner: string) {
     },
     /** Review A1: "I rejected it in my wallet", for a close whose wallet answer never came. */
     rejected: () => lost(true),
-    send: async (pause: boolean) => {
+    send: async () => {
       if (state.stage !== 'review' || !state.prepared || !connection) return
       const prepared = state.prepared
       update({ stage: 'wallet', error: null })
@@ -268,7 +268,7 @@ function createRun(owner: string) {
           nonce: `0x${BigInt(transaction.nonce).toString(16)}`, hash: null }
         await beginClose(intent)
         pending = intent
-        const hash = await connection.direct.sendCloseMany(prepared, true, pause, async () => {
+        const hash = await connection.direct.sendCloseMany(prepared, true, true, async () => {
           // The wallet may deliver an explicit refusal after the request timed out. That proof releases both latches.
           try { await settleClose(intent); pending = null; update({ stage: 'failed', prepared: null, hash: null, error: { code: 'wallet_refused', copy: 'You declined this request in your wallet.', recovery: 'none' } }) }
           catch { update({ stage: 'unknown', error: null }) }
@@ -292,14 +292,12 @@ const runs = new Map<string, ReturnType<typeof createRun>>()
 const runFor = (owner: string) => { const key = owner.toLowerCase(); let run = runs.get(key); if (!run) { run = createRun(key); runs.set(key, run) } return run }
 
 const pairName = (row: PositionRowView) => row.tokens ? row.tokens.map((token) => token.label).join(' / ') : `Position #${row.tokenId}`
-
 /** The list has one quiet entry point. Checkboxes appear only after choosing to close positions. */
 export function BulkClosePositions({ owner, rows }: { owner: string; rows: readonly PositionRowView[] }) {
   const run = useMemo(() => runFor(owner), [owner])
   const state = useSyncExternalStore(run.subscribe, run.snapshot, run.snapshot)
   const [open, setOpen] = useState(false)
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
-  const [pause, setPause] = useState(false)
   const [recoveryHash, setRecoveryHash] = useState('')
   const eligible = rows.filter(canCloseTogether)
   const chosen = eligible.filter((row) => selected.has(row.key))
@@ -320,7 +318,7 @@ export function BulkClosePositions({ owner, rows }: { owner: string; rows: reado
     return <span key={index}>{index > 0 && <span className="dm-bulk-plus"> + </span>}{cut > 0 ? <span className="dm-bulk-amt">{words.slice(0, cut)}<span className="dm-bulk-sym"> {words.slice(cut + 1)}</span></span> : <span className="dm-bulk-amt">{words}</span>}</span>
   })
   if (eligible.length < 2 && state.stage === 'selection') return null
-  const close = () => { setOpen(false); setPause(false) }
+  const close = () => { setOpen(false) }
   // Where the stage stands, and how many are already closed: the same lines in the same words, drawn beside the dominoes
   // while a group is under way (V4, positions.html .prog), in the body's flow otherwise.
   const stageLine = state.stage === 'reading' ? <SheetStatus>Checking your positions…</SheetStatus>
@@ -333,19 +331,21 @@ export function BulkClosePositions({ owner, rows }: { owner: string; rows: reado
   const completedLine = state.completed > 0 && <Note>{state.completed} {state.completed === 1 ? 'position already closed' : 'positions already closed'}.</Note>
   const progress = ['reading', 'wallet', 'sent', 'waiting', 'unknown', 'done'].includes(state.stage) && current.length > 0
   let footer
-  if (state.stage === 'selection') footer = <Button disabled={chosen.length < 2} onClick={() => run.start(chosen)}>Review {chosen.length || ''} positions</Button>
-  else if (state.stage === 'review') footer = <Button disabled={!!prepared?.pausesAutomation.length && !pause} onClick={() => void run.send(pause)}>Close {current.length} {current.length === 1 ? 'position' : 'positions'}</Button>
-  else if (state.stage === 'failed') footer = <Button onClick={() => { setPause(false); run.review() }}>Review again</Button>
+  // Changed on purpose 2026-11-09 (the core-flows fix): one position is enough to review, and a waiting button says what it
+  // waits for (the dialogs' rule, never a dead grey bar); the review's button is never held for a tick box.
+  if (state.stage === 'selection') footer = <Button disabled={chosen.length < 1} onClick={() => run.start(chosen)}>{chosen.length === 0 ? 'Choose positions' : `Review ${chosen.length} ${chosen.length === 1 ? 'position' : 'positions'}`}</Button>
+  else if (state.stage === 'review') footer = <Button onClick={() => void run.send()}>Close {current.length} {current.length === 1 ? 'position' : 'positions'}</Button>
+  else if (state.stage === 'failed') footer = <Button onClick={() => { run.review() }}>Review again</Button>
   // Changed on purpose 2026-11-02 (review A1): Check status with no hash entered asks the chain whether the request can still go through.
   else if (state.stage === 'waiting' || state.stage === 'unknown' && current.length > 0) footer = <Button onClick={() => void run.check(recoveryHash)}>Check status</Button>
-  else if (state.stage === 'done' && state.index + 1 < state.groups.length) footer = <Button onClick={() => { setPause(false); run.next() }}>Continue to next group</Button>
+  else if (state.stage === 'done' && state.index + 1 < state.groups.length) footer = <Button onClick={() => { run.next() }}>Continue to next group</Button>
   else if (state.stage === 'done') footer = <Button onClick={() => { run.reset(); setSelected(new Set()); close() }}>Done</Button>
   else footer = <Button disabled={busy} onClick={close}>{state.stage === 'unknown' ? 'Close' : 'Confirming…'}</Button>
   return <>
     <Button variant="ghost" size="sm" onClick={() => setOpen(true)} data-bulk-close-open="">{['wallet', 'sent', 'waiting', 'unknown'].includes(state.stage) ? 'View closing progress' : 'Close positions'}</Button>
     {open && <ActionDialog id="close-many" title="Close positions" onClose={close} footer={footer} data-bulk-close={state.stage}
       lede={state.stage === 'selection' ? 'Choose positions to close. Both tokens return to your wallet.' : current.length ? `${current[0].chain} · Group ${state.index + 1} of ${state.groups.length}` : undefined}
-      back={['review', 'failed'].includes(state.stage) ? { onClick: () => { run.reset(); setPause(false) } } : null}>
+      back={['review', 'failed'].includes(state.stage) ? { onClick: () => { run.reset() } } : null}>
       {state.stage === 'selection' ? <>
         <div className="dm-bulk-choices">{eligible.map((row) => <label key={row.key} className="dm-bulk-choice" aria-label={`Close ${pairName(row)}, position ${row.tokenId} on ${row.chain}`}>
           <input type="checkbox" checked={selected.has(row.key)} onChange={(event) => { const checked = event.currentTarget.checked; setSelected((before) => { const next = new Set(before); if (checked) next.add(row.key); else next.delete(row.key); return next }) }} />
@@ -374,8 +374,10 @@ export function BulkClosePositions({ owner, rows }: { owner: string; rows: reado
           <SheetCard caption="Estimated to your wallet"><p className="dm-bulk-total tnum">{totalInks(prepared.receive)}</p><p className="dm-bulk-names">{current.map((row) => pairName(row)).join(' · ')}</p></SheetCard>
           <SheetFacts><SheetFact label="Network fee, at most">{weiWords(prepared.step.networkFeeWei, nativeSymbolOf(current[0]?.chainId ?? 0))}</SheetFact><SheetFact label="Domino fee">None</SheetFact></SheetFacts>
           <details className="dm-bulk-details"><summary>Details</summary><SheetFacts><SheetFact label="Minimum returned">{totals(prepared.minimums)}</SheetFact><SheetFact label="Slippage tolerance">0.5%</SheetFact></SheetFacts><p>Closes #{current.map((row) => row.tokenId).join(', #')}. The empty position NFTs stay in your wallet.</p></details>
+          {/* Changed on purpose 2026-11-09 (the core-flows fix): one plain line instead of the tick box "I understand that closing
+              these positions stops their automation.", which held the button. */}
+          {prepared.pausesAutomation.length > 0 && <Note data-bulk-close-line="turns-off">{bulkTurnsOffCopy(current)}</Note>}
           {prepared.vaultRoots.length > 0 && <Note>Any funds or other positions held by your automation stay there. You can manage them inside the position.</Note>}
-          {prepared.pausesAutomation.length > 0 && <Tick checked={pause} onChange={setPause}>I understand that closing these positions stops their automation.</Tick>}
         </>}
         {!progress && state.stage !== 'reading' && stageLine}
         {['unknown', 'waiting'].includes(state.stage) && current.length > 0 && <details className="dm-bulk-details" open={recoveryHash.length > 0}><summary>{state.hash ? 'Updated transaction in your wallet?' : 'Find your transaction'}</summary><label htmlFor="close-recovery-hash">Transaction hash from your wallet</label><input id="close-recovery-hash" value={recoveryHash} onChange={(event) => setRecoveryHash(event.currentTarget.value.trim())} placeholder="0x…" autoComplete="off" /></details>}

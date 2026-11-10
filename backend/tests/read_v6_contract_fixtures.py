@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from v2_activity import Context, derive_transaction  # noqa: E402
 from v2_events import catalog, decode_log, event_keys, json_args  # noqa: E402
 from v2_index_fixtures import block_hash, encode_log, tx_hash  # noqa: E402
-from v2_read_contract import CONTRACT_VERSION, NEXT_VERSION, ROUTES, ALL_ROUTES, validate_v6_response  # noqa: E402
+from v2_read_contract import CHAIN_IDS, CONTRACT_VERSION, NEXT_VERSION, ROUTES, ALL_ROUTES, validate_v6_response  # noqa: E402
 from v2_read_service import build_activity, build_portfolio, build_position_fees, fee_follower  # noqa: E402
 
 NOW = 1_790_431_234
@@ -639,7 +639,7 @@ def valid():
     book = ledger()
     rows = book.newest_first()
     all_chains = [deployment(c, through=(100 + c, NOW - 5), head=(105 + c, NOW - 1), observed_at=NOW - 2,
-                             halted=False) for c in (4663, 8453, 42161)]
+                             halted=False) for c in CHAIN_IDS]  # every chain read-v6 serves (Elysium since 9 Nov 2026)
     return {
         'portfolio': portfolio(),
         'portfolio-empty': portfolio(deployments=[], vaults=[], positions=[], mandates=[], credits=[],

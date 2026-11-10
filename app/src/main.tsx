@@ -1,13 +1,15 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './styles/tokens.css'
-import App, { parseHash, preloadScreen } from './App'
+import App, { isPagePath, parseHash, preloadScreen } from './App'
 import { parseExploreHash } from './components/explore/routes'
 import { startMarkets } from './lib/read/buildMode'
 import { startLoadTimings } from './lib/loadTiming'
 import { recoverWhenSafe } from './lib/staleRelease'
 import { sweepCopies } from './lib/browserCopies'
 import { prefetchRoutes } from './lib/prefetchRoutes'
+import { currentRoute, dropSearchParam, installRoutes, routeOfHref } from './lib/route'
+import { captureRef } from './points/capture'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('Missing #root')
@@ -25,10 +27,13 @@ if (!root) throw new Error('Missing #root')
 const warmed = new Set<string>()
 function warmRoute(event: Event) {
   if (typeof PointerEvent !== 'undefined' && event instanceof PointerEvent && event.pointerType === 'touch') return
-  const href = event.target instanceof Element ? event.target.closest('a[href^="#/"]')?.getAttribute('href') : null
-  if (!href) return
-  const { page, param } = parseHash(href)
-  const key = page === 'positions' && /^[1-9]\d*$/.test(param) ? 'position' : page
+  // Changed on purpose 2026-11-07 (pages of their own, lib/route.ts): a link of the site is a path now (`/markets`).
+  const href = event.target instanceof Element ? event.target.closest('a[href^="/"]')?.getAttribute('href') : null
+  const route = href ? routeOfHref(href) : null
+  if (!route) return
+  const { page, param } = parseHash(route)
+  // The boot script's keys (functions/_lib/boot.ts): Receipts has its own since 2026-11-07 (launch sweep F11).
+  const key = page === 'positions' && /^[1-9]\d*$/.test(param) ? 'position' : page === 'positions' && param === 'receipts' ? 'receipts' : page
   const connection = (navigator as { connection?: { saveData?: boolean; effectiveType?: string } }).connection
   if (warmed.has(key) || connection?.saveData === true || /(^|-)2g$/.test(connection?.effectiveType ?? '')) return
   warmed.add(key)
@@ -41,8 +46,11 @@ function warmRoute(event: Event) {
   if (Array.isArray(files)) for (const file of files) {
     if (typeof file !== 'string' || !/^\/assets\/[\w.-]+\.(js|css)$/.test(file) || document.querySelector(`[href="${file}"],[src="${file}"]`)) continue
     const preload = document.createElement('link')
+    // Changed on purpose 2026-11-07 (launch sweep F11): a stylesheet is prefetched, as the idle prefetch asks for it
+    // (lib/prefetchRoutes.ts): a preload the page did not apply within seconds (a link pointed at, or focused by a menu,
+    // and not followed) was a console warning. The script keeps its modulepreload, which never warns.
     if (file.endsWith('.css')) {
-      preload.rel = 'preload'
+      preload.rel = 'prefetch'
       preload.as = 'style'
     } else preload.rel = 'modulepreload'
     preload.crossOrigin = ''
@@ -55,6 +63,21 @@ function warmRoute(event: Event) {
 // from there through a chunk the read screens share with the app, and must
 // not mount the app over the lab's own root.
 if (!('dominoLab' in document.documentElement.dataset)) {
+  // The page's own address before anything reads it (2026-11-07, lib/route.ts): a link from before, `/#/markets`, becomes
+  // `/markets` in place, and every later move of the route is told from here. On a path the site has no page at, a link
+  // from before is not read: that page is not found, whatever its hash (App.tsx isPagePath, launch sweep F12).
+  installRoutes(isPagePath)
+  // A referral link's `?ref=` on any page (2026-11-07, the Points page): the first one is kept in this browser, and the
+  // parameter leaves the address bar at once (src/points/capture.ts). Nothing is signed or sent for it here.
+  {
+    let store: Storage | null = null
+    try {
+      store = window.localStorage
+    } catch {
+      // Storage refused: the link opens the page, and nothing is kept.
+    }
+    if (captureRef(window.location.search, store)) dropSearchParam('ref')
+  }
   startLoadTimings(window)
   // A file of this page that failed to load anywhere (Vite tells every lazily loaded chunk's failure here, then hands
   // the error on to the code that asked for it): if a release replaced it, the tab reloads once into the new release,
@@ -65,8 +88,8 @@ if (!('dominoLab' in document.documentElement.dataset)) {
   setTimeout(() => sweepCopies(), 3_000)
   // Home and Markets ask for their pools now, not once the page has rendered (speed wave, item 9, 2026-09-28). A
   // token's own view on Markets (#/markets/<address>) shows no list, and asks for none.
-  const { page } = parseHash(window.location.hash)
-  if (page === 'overview' || (page === 'markets' && !parseExploreHash(window.location.hash).token)) startMarkets()
+  const { page } = parseHash(currentRoute())
+  if (page === 'overview' || (page === 'markets' && !parseExploreHash(currentRoute()).token)) startMarkets()
   // The opened screen's chunk, asked for before the first draw (2026-10-01, F1).
   preloadScreen(page)
   // And the other main screens' files once the page has loaded and gone quiet, at the lowest priority, so a first move to

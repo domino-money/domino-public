@@ -21,6 +21,7 @@ import { ELYSIUM } from '../../../config/chainElysium'
 import { createChainClient, pauseFor } from '../../../lib/chain/client'
 import { browserStore } from '../../../lib/chainStorage'
 import { useRouteTitle } from '../../../lib/routeTitle'
+import { currentRoute, onRoute } from '../../../lib/route'
 import * as readRuntime from '../../../../functions/_lib/uniswap-v3/contracts/uniswap-v3-read-v1/runtime.mjs'
 import * as actionsRuntime from '../../../../functions/_lib/uniswap-v3/contracts/uniswap-v3-actions-v1/runtime.mjs'
 import readPin from '../../../../functions/_lib/uniswap-v3/contracts/uniswap-v3-read-v1/pin.json'
@@ -65,20 +66,16 @@ const RUNTIMES = {
 }
 
 function useSectionRoute(): SectionRoute {
-  const read = () => parseSectionHash(typeof window === 'undefined' ? '' : window.location.hash, ELYSIUM) ?? { screen: 'markets' as const, param: '' }
+  const read = () => parseSectionHash(currentRoute(), ELYSIUM) ?? { screen: 'markets' as const, param: '' }
   const [route, setRoute] = useState<SectionRoute>(read)
-  useEffect(() => {
-    const onChange = () => setRoute(read())
-    window.addEventListener('hashchange', onChange)
-    return () => window.removeEventListener('hashchange', onChange)
-  }, [])
+  useEffect(() => onRoute(() => setRoute(read())), [])
   return route
 }
 
 function Closed({ title, body }: { title: string; body: string }) {
   return (
     <PageShell data-chain2-section="closed">
-      <PageHeader title={title} description={body} actions={<LinkButton variant="secondary" href="#/">Back to Domino</LinkButton>} />
+      <PageHeader title={title} description={body} actions={<LinkButton variant="secondary" href="/">Back to Domino</LinkButton>} />
     </PageShell>
   )
 }

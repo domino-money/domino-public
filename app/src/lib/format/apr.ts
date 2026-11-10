@@ -10,6 +10,12 @@ import { compare, toFixed } from '../read/decimal'
 export const APR_SLIVER = '<0.1'
 
 const group = (whole: string) => whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+/**
+ * Added on purpose 2026-11-09 (core flows: "1.7,957…e+26%" reached a screen): from 1e21 on, String() writes a number in
+ * exponent form and `group` put commas in it. Intl writes every whole digit, grouped, at any size.
+ */
+const WHOLE = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0, useGrouping: true })
+const wholeText = (n: number) => (Math.abs(n) < 1e21 ? group(String(n)) : WHOLE.format(n))
 
 /** A rate in percent, from a decimal string ("27.18" → "27.2", "529.83" → "530", "0.02" → "<0.1"). Null when it is not one. */
 export function aprDigits(percent: string): string | null {
@@ -32,5 +38,5 @@ export function aprDigitsOf(percent: number): string {
   if (percent <= 0.05) return APR_SLIVER
   const tenths = Math.round(percent * 10) / 10
   if (tenths < 100) return tenths.toFixed(1)
-  return group(String(Math.round(percent)))
+  return wholeText(Math.round(percent))
 }

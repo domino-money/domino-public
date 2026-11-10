@@ -84,7 +84,7 @@ jobs:
       # read-v6 (Domino V2's reads, spec F7 §6.2): opened only by its own operations, which no other release changes.
       # worker-v6 deploys the Worker with the dispatched commit's read-v6 package: dispatch it from the commit whose
       # contract the reader serves.
-      - name: Open only read-v6's production tunnel path (portfolio, activity and the chain reads)
+      - name: Open only read-v6's production tunnel path (portfolio, activity, the chain reads and position-fees)
         if: inputs.operation == 'tunnels-v6'
         run: node scripts/publish-read-path.mjs tunnels-v6
         env:

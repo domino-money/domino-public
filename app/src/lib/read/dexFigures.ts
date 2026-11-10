@@ -19,8 +19,13 @@
  * its 32-byte id, a v3 pool by its address (the provider labels neither reliably there, and Arbitrum's v3 pairs carry no
  * label at all), so a pool is taken only under Uniswap and only by that exact name; New position then checks both
  * currencies too (lib/create/otherChains.ts). Every key names the chain: an id or an address can repeat across chains.
+ *
+ * Changed on purpose 2026-11-07 (Base USDC's and Arbitrum One WETH's WETH/USDC rows were dashes): the provider lists 30
+ * pairs a token, not ranked by liquidity, and those pools were not among the token's. The pools a list's token leaves out
+ * are asked of our edge by their own names (`askPairs`, tokenArtwork.edgePairs) and taken exactly as a token-pairs body's
+ * pools are: Uniswap's alone, each under the very name the provider gives it, both currencies checked by the reader.
  */
-import { dexChainSlug, tokenArtwork } from '../tokenArtwork'
+import { dexChainSlug, tokenArtwork, type EdgeTokenPairs } from '../tokenArtwork'
 import { NATIVE_ETH, USDG, WETH } from '../../config/mainTokens'
 
 const POOL_ID = /^0x[0-9a-fA-F]{64}$/
@@ -31,8 +36,13 @@ const POOL_NAME = /^0x(?:[0-9a-fA-F]{64}|[0-9a-fA-F]{40})$/
 const HOME = 4663
 /** Figures older than this, in seconds, are not given out. */
 export const DEX_MAX_AGE_S = 600
-/** A token is not asked about again sooner than this. */
+/** A token is not asked about again sooner than this; nor, since 2026-11-07, a pool by its name. */
 export const DEX_ASK_EVERY_MS = 60_000
+/**
+ * The most pools one `askPairs` considers (2026-11-07), the first of those it is given (read-v6's chain-pools lists at most
+ * 32 a token, the most liquid first): three GETs of ten at most (tokenArtwork.edgePairs).
+ */
+export const DEX_PAIRS_MAX = 30
 
 /** One pool's figures as DEX Screener reported them. */
 export interface DexPool {
@@ -148,13 +158,26 @@ export interface DexStore {
   chainToken(chainId: number, address: string, nowMs?: number): DexToken | null
   /** Added 2026-10-06: asks about a token on Base or Arbitrum One, unless it was asked within DEX_ASK_EVERY_MS. */
   askOn(chainId: number, address: string): void
+  /**
+   * Added 2026-11-07: asks our edge about pools on Base or Arbitrum One by their own names (v4 id or v3 address), those
+   * of the first DEX_PAIRS_MAX not asked within DEX_ASK_EVERY_MS; their pairs are taken as a token-pairs body's pools are.
+   * Settles once its GETs did, whatever they brought (at once when it sent none); never rejects.
+   */
+  askPairs(chainId: number, names: readonly string[]): Promise<void>
   subscribe(listener: () => void): () => void
   /** Moves on every change: React's snapshot. */
   version(): number
 }
 
-/** `read(address, chainId)`: the token-pairs body of a token on a chain (the store passes Robinhood Chain's as 4663). */
-export function createDexStore(read: (address: string, chainId: number) => Promise<unknown>, wall: () => number = Date.now): DexStore {
+/**
+ * `read(address, chainId)`: the token-pairs body of a token on a chain (the store passes Robinhood Chain's as 4663).
+ * `readPairs(chainId, names)` (2026-11-07): our edge's answer about pools by their names (tokenArtwork.edgePairs).
+ */
+export function createDexStore(
+  read: (address: string, chainId: number) => Promise<unknown>,
+  wall: () => number = Date.now,
+  readPairs: (chainId: number, names: string[]) => Promise<ReadonlyMap<string, EdgeTokenPairs> | null> = async () => null,
+): DexStore {
   // Every key is chain plus id or address (2026-10-06).
   const pools = new Map<string, DexPool>()
   const tokens = new Map<string, DexToken>()
@@ -163,18 +186,21 @@ export function createDexStore(read: (address: string, chainId: number) => Promi
   let version = 0
   const fresh = <T extends { retrievedAt: number }>(entry: T | undefined, nowMs: number) => (entry && nowMs / 1000 - entry.retrievedAt <= DEX_MAX_AGE_S ? entry : null)
   const keyOf = (chainId: number, name: string) => `${chainId}:${name.toLowerCase()}`
-  function askAbout(chainId: number, address: string) {
-    const lowered = address.toLowerCase()
-    if (!ADDRESS.test(lowered) || dexChainSlug(chainId) === null) return
-    const key = keyOf(chainId, lowered)
+  /** Whether `key` may be asked now, not having been within DEX_ASK_EVERY_MS; if so it counts as asked from now. */
+  function due(key: string): boolean {
     const at = wall()
     const last = asked.get(key)
-    if (last !== undefined && at - last < DEX_ASK_EVERY_MS) return
+    if (last !== undefined && at - last < DEX_ASK_EVERY_MS) return false
     asked.set(key, at)
     while (asked.size > 512) asked.delete(asked.keys().next().value!)
+    return true
+  }
+  function askAbout(chainId: number, address: string) {
+    const lowered = address.toLowerCase()
+    if (!ADDRESS.test(lowered) || dexChainSlug(chainId) === null || !due(keyOf(chainId, lowered))) return
     void read(lowered, chainId).catch(() => undefined)
   }
-  return {
+  const store: DexStore = {
     take(address, body, retrievedAtMs, chainId = HOME) {
       if (dexChainSlug(chainId) === null) return
       let changed = false
@@ -203,12 +229,20 @@ export function createDexStore(read: (address: string, chainId: number) => Promi
     chainPoolSeen: (chainId, name) => (chainId === HOME ? null : (pools.get(keyOf(chainId, name)) ?? null)),
     chainToken: (chainId, address, nowMs = wall()) => fresh(tokens.get(keyOf(chainId, address)), nowMs),
     askOn: (chainId, address) => askAbout(chainId, address),
+    async askPairs(chainId, names) {
+      // A pool's key is not a token's (a v3 pool's address is 20 bytes too); a name repeated is asked once, being due once.
+      const list = chainId === HOME || dexChainSlug(chainId) === null ? [] : names.slice(0, DEX_PAIRS_MAX).map((name) => name.toLowerCase()).filter((name) => POOL_NAME.test(name) && due(keyOf(chainId, `pair:${name}`)))
+      const found = list.length ? await readPairs(chainId, list).catch(() => null) : null
+      // No address: the pools alone are taken, never a token's liquidity.
+      for (const { pairs, retrievedAt } of found?.values() ?? []) store.take('', pairs, retrievedAt, chainId)
+    },
     subscribe(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
     version: () => version,
   }
+  return store
 }
 
 /**
@@ -222,8 +256,11 @@ export function subjectOf(currencies: readonly [string, string]): string {
   return plain ?? (keys.includes(USDG) ? NATIVE_ETH : keys[0])
 }
 
-/** The page's one store, fed by every token-pairs body the artwork resolver reads, on every chain it reads. */
-export const dexStore = createDexStore((address, chainId) => tokenArtwork.pairs(chainId, address))
+/**
+ * The page's one store, fed by every token-pairs body the artwork resolver reads, on every chain it reads, and since
+ * 2026-11-07 by our edge's answers about Base's and Arbitrum One's pools by name.
+ */
+export const dexStore = createDexStore((address, chainId) => tokenArtwork.pairs(chainId, address), Date.now, tokenArtwork.edgePairs)
 tokenArtwork.onPairs((address, body, retrievedAt, chainId) => dexStore.take(address, body, retrievedAt, chainId))
 
 /** What settleSearchHits needs of the artwork resolver and the store: the page's own, unless a test gives its own. */

@@ -9,10 +9,12 @@
  * Domino V2's wallet reads (read-v6, spec F7 §6.2, 2026-10-02) follow the same
  * rule: `tunnels-v6` opens their production tunnel path and `worker-v6` alone
  * switches READ_V6_BRIDGE_ENABLED on, with ENABLED_V6_READS exactly
- * `portfolio,activity,chain-pools,chain-balances,chain-tokens` (since 2026-10-05; a Worker
- * still holding the first two, `portfolio,activity`, is a known state that worker-v6
- * widens). Rollback is `worker-disable-v6`, then `tunnels-disable-v6`. Every other
- * operation keeps the v6 state it finds.
+ * `portfolio,activity,chain-pools,chain-balances,chain-tokens,position-fees`
+ * (read-v6 1.2.0-rc.1's position-fees named last since the owner's approval of
+ * 2026-11-07; a Worker still holding the five 1.1.0-rc.1 routes, as published
+ * from 2026-10-06, or the first two, `portfolio,activity`, is a known state that
+ * worker-v6 widens). Rollback is `worker-disable-v6`, then `tunnels-disable-v6`.
+ * Every other operation keeps the v6 state it finds.
  * The app uses its existing build-once, preview-then-production release helper.
  */
 import { spawnSync } from 'node:child_process'
@@ -30,9 +32,10 @@ const VISIBLE_VARS = ['READ_BRIDGE_ENABLED', 'READ_V2_BRIDGE_ENABLED', 'READ_V3_
   'APP_ORIGIN', 'GATEWAY_ORIGIN']
 /** read-v5's one route: the only value ENABLED_V5_READS may hold. */
 const V5_READS = 'featured-pools'
-/** read-v6's routes, as this release writes them; with the first two, as published from 2026-10-02, the only values
- * ENABLED_V6_READS may hold. */
-const V6_READS = 'portfolio,activity,chain-pools,chain-balances,chain-tokens'
+/** read-v6's routes, as this release writes them; with the five 1.1.0-rc.1 routes, as published from 2026-10-06, and
+ * the first two, as published from 2026-10-02, the only values ENABLED_V6_READS may hold. */
+const V6_READS = 'portfolio,activity,chain-pools,chain-balances,chain-tokens,position-fees'
+const V6_CHAIN_READS = 'portfolio,activity,chain-pools,chain-balances,chain-tokens'
 const V6_FIRST_READS = 'portfolio,activity'
 
 export function publicDataRelease(operation, selected = 'false') {
@@ -87,8 +90,8 @@ export function releaseVars(settings, { enableV3 = false, enableV4 = false, disa
       || vars.READ_V5_BRIDGE_ENABLED === 'true' && vars.ENABLED_V5_READS !== V5_READS)
     throw new Error('Unexpected existing V5 featured pools routes; refusing to replace them.')
   // The same lock for read-v6: nothing, or exactly its routes as worker-v6 writes or wrote them.
-  if (![undefined, '', V6_READS, V6_FIRST_READS].includes(vars.ENABLED_V6_READS)
-      || vars.READ_V6_BRIDGE_ENABLED === 'true' && ![V6_READS, V6_FIRST_READS].includes(vars.ENABLED_V6_READS))
+  if (![undefined, '', V6_READS, V6_CHAIN_READS, V6_FIRST_READS].includes(vars.ENABLED_V6_READS)
+      || vars.READ_V6_BRIDGE_ENABLED === 'true' && ![V6_READS, V6_CHAIN_READS, V6_FIRST_READS].includes(vars.ENABLED_V6_READS))
     throw new Error('Unexpected existing V6 wallet read routes; refusing to replace them.')
   const rollback = disableV4 || disableV5 || disableV6
   return { ...vars, ...(rollback ? {} : { READ_V2_BRIDGE_ENABLED: 'true', ENABLED_V2_READS: 'pool-market' }),

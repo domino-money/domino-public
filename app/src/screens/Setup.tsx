@@ -225,7 +225,7 @@ export default function Setup() {
     <Display as="h1" className="dm-display-title">Deposits and recovery</Display>
     <p className="dm-acct-lede">Continue a deposit or recover tokens from an unfinished operation.</p>
     {/* Positions are created from New position's Create position. This page keeps the deposit service's drafts and owner recovery. */}
-    <p className="dm-setup-entry text-body text-fg-muted" data-setup-new-position="">Opening a position? Start with <a className="underline" href="#/new">New position</a>.</p>
+    <p className="dm-setup-entry text-body text-fg-muted" data-setup-new-position="">Opening a position? Start with <a className="underline" href="/new">New position</a>.</p>
     {/* The pool comes from New position with the rest of the choices; the explorer is for choosing one here, or another one, and folds away once there is one. */}
     <details className="dm-details dm-acct-disclosure dm-acct-block" open={pool ? undefined : true} data-setup-explorer={pool ? 'folded' : 'open'}>
       <summary>{pool ? 'Choose another pool' : 'Choose a pool'}</summary>

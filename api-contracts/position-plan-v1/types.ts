@@ -75,7 +75,7 @@ export type CreatePlan = {
 export type DominoDomain = {
   "name": "Domino";
   "version": "2";
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 4663 | 8453 | 42161 | 99901;
   "verifyingContract": string;
 };
 
@@ -223,7 +223,7 @@ export type Permit = {
 
 export type Permit2Domain = {
   "name": "Permit2";
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 4663 | 8453 | 42161 | 99901;
   "verifyingContract": string;
 };
 
@@ -260,7 +260,7 @@ export type Permit2Types = {
 export type PlanDocument = {
   "schemaVersion": 1;
   "source": "position_plan_v1";
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 4663 | 8453 | 42161 | 99901;
   "action": "create" | "increase" | "changeRange" | "exit";
   "consent": "direct" | "permit2" | "relayed";
   "owner": string;
@@ -402,7 +402,7 @@ export type RelayedTypes = {
 };
 
 export type RequestIdentity = {
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 4663 | 8453 | 42161 | 99901;
   "action": "create" | "increase" | "changeRange" | "exit";
   "consent": "direct" | "permit2" | "relayed";
   "pool"?: PoolIn | null;
@@ -475,7 +475,7 @@ export type TypedField = {
 };
 
 export type PlanRequest = {
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 4663 | 8453 | 42161 | 99901;
   "action": "create" | "increase" | "changeRange" | "exit";
   "consent": "direct" | "permit2" | "relayed";
   "pool"?: PoolIn | null;

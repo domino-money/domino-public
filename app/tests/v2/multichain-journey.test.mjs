@@ -14,6 +14,7 @@
  *   - lib/read/orientation.ts: those networks' USDC and WETH as quotes, so "1 ETH = X USDC" on every step.
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import { createV2Chain, walletOf, poolIdOf } from '../support/v2-chain.mjs';
@@ -411,6 +412,137 @@ test('networkRows: rows without figures keep the order they came in (ETH and WET
   assert.deepEqual(order(otherChains.networkRows(rows, none, { ...depths, [poolIdOf(ETH_30)]: { depthUsd: null, liquidity: '1' } })), listed);
   // A reported TVL first, as Robinhood Chain's list; the rest after it as they came.
   assert.deepEqual(order(otherChains.networkRows(rows, dexOf([figuresOf(8453, poolIdOf(WETH_100), TOKEN, WETH_BASE, '12.00')]))), [poolIdOf(WETH_100), poolIdOf(ETH_30), poolIdOf(USDC_1)]);
+});
+
+// ---------------------------------------------------------------------------
+// 2026-11-07: Base USDC's and Arbitrum One WETH's WETH/USDC rows were dashes on the live site. DEX Screener lists 30
+// pairs a token, not ranked by liquidity (recorded that day: tests/support/dexscreener-cap-2026-11-07.json), and the
+// pools those pages list were not among them. They are asked about by their own names (lib/read/dexFigures.ts askPairs).
+// ---------------------------------------------------------------------------
+
+const dexFigures = require(`${BUILD}lib/read/dexFigures.js`);
+const RECORDED = JSON.parse(readFileSync(new URL('../support/dexscreener-cap-2026-11-07.json', import.meta.url), 'utf8'));
+/** A pool's key as the read lists it: a v3 pool's address as a 32-byte word. */
+const v3Key = (address) => `0x${'0'.repeat(24)}${address.slice(2).toLowerCase()}`;
+/** What our edge answers about pools by name, from the recorded pairs endpoint (none for a pool it does not list). */
+const recordedByName = (chain, at, asked) => async (chainId, names) => {
+  asked.push([chainId, names]);
+  return new Map(names.map((name) => [name, { pairs: RECORDED.pairs[chain].filter((pair) => pair.pairAddress.toLowerCase() === name), retrievedAt: at }]));
+};
+
+test('2026-11-07 (recorded): Base USDC’s 30 pairs name none of its WETH/USDC pools; asked by their own names they get DEX Screener’s own figures, dated, in the order of their TVL', async () => {
+  const { NETWORK_FIGURE_MISSING: WHY } = otherChains;
+  const token = networks.displayOf(8453, { address: USDC_BASE, symbol: 'USDC', decimals: 6 });
+  const V3_30 = { dex: 3, currency0: WETH_BASE, currency1: USDC_BASE, fee: 3000, tickSpacing: 60, hooks: ZERO };
+  const V3_05 = { ...V3_30, fee: 500, tickSpacing: 10 };
+  const V3_30_ADDRESS = '0x6c561b446416e1a00e8e93e221854d6ea4171372';
+  const V3_05_ADDRESS = '0xd0b53d9277642d899df5c87a3966a349a798f224';
+  // ETH/USDC 0.30% on Base: its id is the one DEX Screener names.
+  assert.equal(poolIdOf(ETH_USDC_V4_30), '0xe070797535b13431808f8fc81fdbe7b41362960ed0b55bc2b6117c49c51b7eb9');
+  // As the read lists them: ETH and WETH partners first, the most liquid first; a v3 pool by its address.
+  const rows = networks.listedPools(8453, token, [onChain(V3_30, { id: V3_30_ADDRESS }), onChain(ETH_USDC_V4_30), onChain(V3_05, { id: V3_05_ADDRESS })], 1)
+    .map((row) => ({ ...row, protocolFeeRaw: 0 }));
+  assert.deepEqual(rows.map((row) => row.key), [v3Key(V3_30_ADDRESS), poolIdOf(ETH_USDC_V4_30), v3Key(V3_05_ADDRESS)]);
+  const AT = Date.UTC(2026, 10, 7, 11, 28);
+  let wall = AT;
+  const asked = [];
+  const store = dexFigures.createDexStore(async () => null, () => wall, recordedByName('base', AT - 2_000, asked));
+  store.take(USDC_BASE, RECORDED.tokenPairs[`base/${USDC_BASE}`], AT, 8453);
+  const seen = (chainId, name) => store.chainPoolSeen(chainId, name);
+  const nowS = Math.floor(AT / 1000);
+  const shown = () => otherChains.networkRows(rows, seen, {}, null, { nowS: Math.floor(wall / 1000), listed: true });
+  const said = (list) => list.map((row) => [row.key, ...[row.liquidity, row.volume].map((figure) => (figure.state === 'attributed' ? figure.raw : figure.reason))]);
+  // What the live page showed: the token's pairs were read, and none names these pools.
+  assert.equal(store.chainToken(8453, USDC_BASE).pools, 30);
+  assert.deepEqual(said(shown()).map((row) => row.slice(1)), Array(3).fill([WHY.noPair, WHY.noPair]));
+  const names = otherChains.unnamedPools(rows, seen, nowS);
+  assert.deepEqual(names, [V3_30_ADDRESS, poolIdOf(ETH_USDC_V4_30), V3_05_ADDRESS], 'every row the token’s pairs leave out, by its name there, in the list’s order');
+  await store.askPairs(8453, names);
+  assert.deepEqual(asked, [[8453, names]], 'one ask for the three');
+  assert.deepEqual(said(shown()), [
+    [v3Key(V3_30_ADDRESS), '146056184.05', '46354331.24'],
+    [v3Key(V3_05_ADDRESS), '8090054.33', '9991770.05'],
+    [poolIdOf(ETH_USDC_V4_30), '4381526.99', '640192.36'],
+  ], 'DEX Screener’s own figures, the largest TVL first, as on Base WETH’s page');
+  const [top] = shown();
+  assert.deepEqual([top.liquidity.provider, top.liquidity.retrievedAt], ['dexscreener', Math.floor((AT - 2_000) / 1000)], 'attributed and dated by the edge’s own retrieval');
+  assert.match(top.providerNote, /^Provider figures retrieved 11:27:58 UTC/);
+  assert.equal(rowApr.rowApr({ integration: top.integration, currentLpFeePips: top.feePips, protocolFeeRaw: top.protocolFeeRaw, liquidity: top.liquidity, volume: top.volume }).kind, 'estimate', 'and the APR estimate follows from them');
+  assert.deepEqual(otherChains.unnamedPools(rows, seen, nowS), [], 'none left to ask');
+  // Asked again within the minute: nothing goes out; ten minutes on they are asked again, never sooner.
+  await store.askPairs(8453, names);
+  assert.equal(asked.length, 1);
+  wall = AT + 9 * 60_000;
+  assert.deepEqual(otherChains.unnamedPools(rows, seen, Math.floor(wall / 1000)), [], 'fresh for ten minutes from their retrieval');
+  wall = AT - 2_000 + 601_000;
+  assert.deepEqual(said(shown()).map((row) => row[1]), Array(3).fill(WHY.tooOld), 'past ten minutes: a dash saying so');
+  assert.deepEqual(otherChains.unnamedPools(rows, seen, Math.floor(wall / 1000)).length, 3);
+  // Robinhood Chain, and a chain these reads do not cover, never ask.
+  await store.askPairs(4663, names);
+  await store.askPairs(99901, names);
+  assert.equal(asked.length, 1);
+});
+
+test('2026-11-07 (recorded): Arbitrum One WETH’s 30 pairs are its bridged-USDC pools; its native-USDC pool asked by name is matched on both currencies, whichever the provider names first', async () => {
+  const { NETWORK_FIGURE_MISSING: WHY } = otherChains;
+  const token = networks.displayOf(42161, { address: WETH_ARB, symbol: 'WETH', decimals: 18 });
+  const NATIVE_05 = '0xc6962004f452be9203591991d15f6b388e09e8d0';
+  const pool = { dex: 3, currency0: WETH_ARB, currency1: USDC_ARB, fee: 500, tickSpacing: 10, hooks: ZERO };
+  const [row] = networks.listedPools(42161, token, [onChain(pool, { id: NATIVE_05 })], 1).map((one) => ({ ...one, protocolFeeRaw: 0 }));
+  const AT = Date.UTC(2026, 10, 7, 11, 30);
+  const asked = [];
+  const store = dexFigures.createDexStore(async () => null, () => AT, recordedByName('arbitrum', AT, asked));
+  const weth = RECORDED.tokenPairs[`arbitrum/${WETH_ARB}`];
+  assert.ok(weth.every((pair) => pair.pairAddress.toLowerCase() !== NATIVE_05) && weth.some((pair) => pair.quoteToken.symbol === 'USDC'), 'the token’s 30 pairs: USDC.e pools, never this one');
+  store.take(WETH_ARB, weth, AT, 42161);
+  const seen = (chainId, name) => store.chainPoolSeen(chainId, name);
+  const nowS = Math.floor(AT / 1000);
+  assert.equal(otherChains.networkRows([row], seen, {}, null, { nowS, listed: true })[0].liquidity.reason, WHY.noPair);
+  await store.askPairs(42161, otherChains.unnamedPools([row], seen, nowS));
+  assert.deepEqual(asked, [[42161, [NATIVE_05]]]);
+  const [figured] = otherChains.networkRows([row], seen, {}, null, { nowS, listed: true });
+  assert.equal(RECORDED.pairs.arbitrum[0].baseToken.symbol, 'USDC', 'the provider names USDC first, the pool WETH first');
+  assert.deepEqual([figured.liquidity.raw, figured.volume.raw], [RECORDED.pairs.arbitrum[0].liquidity.usd.toFixed(2), RECORDED.pairs.arbitrum[0].volume.h24.toFixed(2)]);
+  // A pair under the pool's name that holds other tokens is no pair for it: both currencies are checked.
+  const other = dexFigures.createDexStore(async () => null, () => AT, async (_chainId, names) => new Map(names.map((name) => [name, {
+    pairs: [{ chainId: 'arbitrum', dexId: 'uniswap', pairAddress: name, baseToken: { address: USDC_ARB }, quoteToken: { address: TOKEN }, liquidity: { usd: 5 }, volume: { h24: 5 } }], retrievedAt: AT,
+  }])));
+  await other.askPairs(42161, [NATIVE_05]);
+  assert.equal(otherChains.networkRows([row], (chainId, name) => other.chainPoolSeen(chainId, name), {}, null, { nowS, listed: true })[0].liquidity.reason, WHY.noPair);
+  // Another exchange's pool under the name is not Uniswap's: not taken.
+  const elsewhere = dexFigures.createDexStore(async () => null, () => AT, async (_chainId, names) => new Map(names.map((name) => [name, { pairs: [{ ...RECORDED.pairs.arbitrum[0], dexId: 'sushiswap' }], retrievedAt: AT }])));
+  await elsewhere.askPairs(42161, [NATIVE_05]);
+  assert.equal(elsewhere.chainPoolSeen(42161, NATIVE_05), null);
+  // Our edge away or refusing: nothing taken, and the ask settles all the same.
+  const away = dexFigures.createDexStore(async () => null, () => AT, async () => { throw new Error('edge away'); });
+  await away.askPairs(42161, [NATIVE_05]);
+  assert.equal(away.chainPoolSeen(42161, NATIVE_05), null);
+});
+
+test('2026-11-07: askPairs considers the first thirty names it is given, each once, not again within the minute; a bad name is never asked', async () => {
+  let wall = Date.UTC(2026, 10, 7, 12);
+  const asked = [];
+  const store = dexFigures.createDexStore(async () => null, () => wall, async (chainId, names) => { asked.push(names); return null; });
+  const name = (i) => `0x${(i + 1).toString(16).padStart(64, '0')}`;
+  const many = Array.from({ length: 33 }, (_, i) => name(i));
+  await store.askPairs(8453, [many[0].toUpperCase().replace('0X', '0x'), ...many, '0x123', 'pool']);
+  assert.equal(dexFigures.DEX_PAIRS_MAX, 30);
+  assert.deepEqual(asked, [many.slice(0, 29)], 'the first thirty given (one written twice), lowercase, each once');
+  await store.askPairs(8453, many);
+  assert.deepEqual(asked.at(-1), [many[29]], 'the ones not asked yet, within the first thirty');
+  wall += dexFigures.DEX_ASK_EVERY_MS - 1;
+  await store.askPairs(8453, many.slice(0, 5));
+  assert.equal(asked.length, 2, 'not within the minute');
+  wall += 1;
+  await store.askPairs(8453, many.slice(0, 5));
+  assert.deepEqual(asked.at(-1), many.slice(0, 5));
+  // A pool's name is not a token's: asking about one never stops the other.
+  const tokens = [];
+  const both = dexFigures.createDexStore(async (address, chainId) => { tokens.push([address, chainId]); return null; }, () => wall, async (_chainId, names) => { asked.push(names); return null; });
+  const address = '0x6c561b446416e1a00e8e93e221854d6ea4171372';
+  await both.askPairs(8453, [address]);
+  both.askOn(8453, address);
+  assert.deepEqual([asked.at(-1), tokens], [[address], [[address, 8453]]]);
 });
 
 test('mergeHits: every network’s hits by match quality, exact first, today’s first between two of one quality, each list in its own order', () => {

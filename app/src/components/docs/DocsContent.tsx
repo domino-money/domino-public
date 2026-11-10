@@ -4,7 +4,8 @@ import { docGroupOf, tocOf } from '../../lib/docs/registry'
 import { SHOTS, type Shot } from '../../lib/docs/shots'
 import type { Block, DocChain, DocPage, DocSection, Inline } from '../../lib/docs/types'
 import { ROBINHOOD_EXPLORER } from '../../config/chainIdentity'
-import { ELYSIUM_EXPLORER, ELYSIUM_EXPLORER_NAME, ELYSIUM_LIVE, ELYSIUM_V2_ID } from '../../lib/elysiumIdentity'
+import { ELYSIUM_EXPLORER, ELYSIUM_EXPLORER_NAME, ELYSIUM_LIVE, ELYSIUM_OPENING, ELYSIUM_PRELAUNCH, ELYSIUM_V2_ID } from '../../lib/elysiumIdentity'
+import { useBeforeElysiumOpens } from '../../lib/elysiumOpening'
 import { RoadmapPill } from '../automate/RoadmapPill'
 import { docsHref } from '../explore/routes'
 import { IconInfo } from '../icons'
@@ -63,7 +64,20 @@ function ExplorerLinks({ name, address, chains, domino }: { name: string; addres
   )
 }
 
-/** Inline text: words, bold words, code-like words and links inside this app. */
+/**
+ * Words shown only while the visitor's own date is before Elysium's opening day, `{day}` as that day; nothing from that
+ * day on, without a reload (added 2026-11-07, Elysium's pre-launch; lib/elysiumOpening.ts).
+ */
+function BeforeElysiumOpens({ text }: { text: string }) {
+  const before = useBeforeElysiumOpens()
+  return before && ELYSIUM_OPENING ? <>{text.replace('{day}', ELYSIUM_OPENING.long)}</> : null
+}
+
+/**
+ * Inline text: words, bold words, code-like words and links inside this app. Changed on purpose 2026-11-07 (Elysium's
+ * pre-launch): and words dated before Elysium's opening day, drawn only in a pre-launch build (the guard folds the part
+ * and its hook out of every other build).
+ */
 function Text({ parts }: { parts: readonly Inline[] }) {
   return (
     <>
@@ -76,11 +90,19 @@ function Text({ parts }: { parts: readonly Inline[] }) {
           <code key={index} className="dm-docs-mono">
             {part.mono}
           </code>
-        ) : (
+        ) : 'to' in part ? (
           <a key={index} href={part.to} className="dm-docs-link">
             {part.text}
           </a>
-        ),
+        ) : 'out' in part ? (
+          // 2026-11-08 (the owner): Domino's public source on GitHub, in a new tab with no opener and no referrer, like an
+          // address row's explorer link.
+          <a key={index} href={part.out} target="_blank" rel="noreferrer noopener" className="dm-docs-link" aria-label={`${part.text} on GitHub (opens in a new tab)`} data-docs-source="">
+            {part.text}
+          </a>
+        ) : ELYSIUM_PRELAUNCH ? (
+          <BeforeElysiumOpens key={index} text={part.beforeElysiumOpens} />
+        ) : null,
       )}
     </>
   )

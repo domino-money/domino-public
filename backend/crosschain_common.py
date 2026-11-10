@@ -159,6 +159,15 @@ def load_pins(path=PINS_PATH):
         if 'relay' in entry:
             row['relay'] = {'slug': entry['relay']['slug'],
                             'depository': address(entry['relay']['depository'], 'invalid_crosschain_pins')}
+            # The tokens Relay bridges on that chain, where it bridges only some (Elysium: USDC). Absent: every token
+            # its listing names. A deposit starts from them there and delivers only them there.
+            if 'tokens' in entry['relay']:
+                tokens = entry['relay']['tokens']
+                if type(tokens) is not list or not tokens:
+                    raise DataError('invalid_crosschain_pins')
+                row['relay']['tokens'] = tuple(sorted({address(token, 'invalid_crosschain_pins') for token in tokens}))
+                if len(row['relay']['tokens']) != len(tokens):
+                    raise DataError('invalid_crosschain_pins')
         if 'across' in entry:
             across = entry['across']
             row['across'] = {name: address(across[name], 'invalid_crosschain_pins')
@@ -174,10 +183,15 @@ def load_pins(path=PINS_PATH):
     return {'chains': chains, 'destinations': destinations}
 
 
-def load_destinations(path=PROFILES_PATH):
-    """Enabled V2 chains S2 serves and the tokens a deposit may deliver there: the charge currencies (stable, ETH,
-    WETH). A profile whose bridge names no provider is a chain S2 does not serve (Elysium until its bridges are known):
-    no destination, and nothing else here is read from it; one that names any must name both, at the app fee."""
+def load_destinations(path=PROFILES_PATH, pins_path=PINS_PATH):
+    """Enabled V2 chains S2 serves, the providers that serve each and the tokens a deposit may deliver there: the
+    charge currencies (stable, native, wrapped native), or only those its providers' pins list (Elysium: USDC).
+
+    A profile whose bridge names no provider is a chain S2 does not serve: no destination, and nothing else here is
+    read from it. One that names any names each at most once, at the app fee, and only providers pinned on that chain
+    (crosschain_pins.json), so that every deposit to it is checked against reviewed contracts: Robinhood, Base and
+    Arbitrum name Relay and Across, Elysium Relay alone (Across has no route there, 9 Nov 2026)."""
+    pins = load_pins(pins_path)['chains']
     result = {}
     for file in sorted(Path(path).glob('*.json')):
         profile = json.loads(file.read_text())
@@ -186,20 +200,29 @@ def load_destinations(path=PROFILES_PATH):
         bridge = profile.get('bridge')
         if type(bridge) is not dict or bridge.get('appFeeBps') != APP_FEE_BPS:
             raise DataError('invalid_chain_profile')
-        if bridge.get('providers') == []:
+        named = bridge.get('providers')
+        if named == []:
             continue  # S2 is off on this chain
         cid = chain_id(profile['chainId'], 'invalid_chain_profile')
+        if (type(named) is not list or len(set(named)) != len(named) or not set(named) <= set(PROVIDERS)
+                or any(pins.get(cid, {}).get(provider) is None for provider in named)):
+            raise DataError('invalid_chain_profile')
+        providers = tuple(provider for provider in PROVIDERS if provider in named)
+        # A destination delivers what its providers bridge: every charge currency, unless each of its providers'
+        # pins lists the tokens it bridges there.
+        listed = [pins[cid][provider].get('tokens') for provider in providers]
+        deliverable = None if any(tokens is None for tokens in listed) else set().union(*listed)
         tokens = {}
         for currency in profile['chargeCurrencies']:
             token = address(currency['address'], 'invalid_chain_profile')
-            tokens[token] = {'symbol': currency['symbol'], 'decimals': currency['decimals'],
-                             'native': bool(currency.get('native')), 'rank': currency['rank']}
-        result[cid] = {'slug': profile['slug'], 'name': profile['name'], 'tokens': tokens,
+            if deliverable is None or token in deliverable:
+                tokens[token] = {'symbol': currency['symbol'], 'decimals': currency['decimals'],
+                                 'native': bool(currency.get('native')), 'rank': currency['rank']}
+        if not tokens:
+            raise DataError('invalid_chain_profile')
+        result[cid] = {'slug': profile['slug'], 'name': profile['name'], 'tokens': tokens, 'providers': providers,
                        'wrappedNative': address(profile['wrappedNative']['address'], 'invalid_chain_profile'),
                        'bridge': profile['bridge']}
     if not result:
         raise DataError('invalid_chain_profile')
-    for row in result.values():
-        if row['bridge'].get('appFeeBps') != APP_FEE_BPS or set(row['bridge'].get('providers', ())) != set(PROVIDERS):
-            raise DataError('invalid_chain_profile')
     return result

@@ -43,6 +43,41 @@ class DeadlineConnection:
 # migrations/047_provider_ceiling.sql (GeckoTerminal's free API allows 10 per address).
 PROVIDER_CALLS_PER_MINUTE = 8
 
+# The collector's claim, one statement per demand class. statement_timestamp() holds still for the statement,
+# so it can bound an index scan; clock_timestamp() cannot.
+# - 'hot': on screen in the last minute, or kept warm by the featured list (#278). The planner ORs
+#   public_entities_interest (last_requested_at) with public_entities_keep_warm (061); few rows are hot.
+# - 'background': the rest. last_requested_at is NOT NULL, but keep_warm_until is NULL for an entity never kept
+#   warm, which is most of them, so the predicate names that case. NOT(hot) would be NULL there and lose it.
+#   public_entities_due (kind,next_due,entity_id) gives this class in its order.
+# - None: any due row, in public_entities_due's order.
+_CLAIM = """UPDATE domino_public.entities e SET
+  lease_token=%s,lease_until=clock_timestamp()+(%s*interval '1 second'),
+  generation=e.generation+1,attempts=e.attempts+1
+  WHERE (e.chain_id,e.kind,e.entity_id) IN
+    (SELECT chain_id,kind,entity_id FROM domino_public.entities
+     WHERE kind=%s AND next_due<=statement_timestamp()
+       AND (lease_until IS NULL OR lease_until<statement_timestamp())
+       AND NOT(entity_id=ANY(%s)) AND {}
+     ORDER BY next_due,entity_id FOR UPDATE SKIP LOCKED LIMIT %s)
+  RETURNING *"""
+CLAIM = {
+    None: _CLAIM.format('TRUE'),
+    'hot': _CLAIM.format("""(last_requested_at>=statement_timestamp()-interval '60 seconds'
+       OR keep_warm_until>statement_timestamp())"""),
+    'background': _CLAIM.format("""last_requested_at<statement_timestamp()-interval '60 seconds'
+       AND (keep_warm_until IS NULL OR keep_warm_until<=statement_timestamp())"""),
+}
+OTHER = {'hot': 'background', 'background': 'hot'}
+
+# The scheduled cadence's count of persisted claims, one row per chain and kind (062); a missing row counts as
+# zero. A scheduled claim advances it by the rows it took, in its own transaction, as the sum of the kind's
+# generations did. That sum read every row of the kind on each scheduled claim: 6,601 pages and 10-17 ms, about
+# ten times a second, on 9 Nov 2026.
+CADENCE = 'SELECT claims FROM domino_public.claim_cadence WHERE chain_id=%s AND kind=%s'
+ADVANCE = """INSERT INTO domino_public.claim_cadence(chain_id,kind,claims) VALUES(%s,%s,%s)
+  ON CONFLICT (chain_id,kind) DO UPDATE SET claims=domino_public.claim_cadence.claims+EXCLUDED.claims"""
+
 class PgPublicData:
     def __init__(self, catalogue, *, writer=False, clock=time.time):
         self.catalogue, self.writer, self.clock = catalogue, writer, clock
@@ -113,8 +148,10 @@ class PgPublicData:
         """Persist a background prerequisite without requesting its discovery."""
         entity_id=self.identity(kind,entity_id)
         with self.connection(write=True) as conn:
-            if conn.execute('SELECT 1 FROM domino_public.entities WHERE kind=%s AND entity_id=%s',
-                            (kind,entity_id)).fetchone():return True
+            # Named by its whole primary key (chain_id,kind,entity_id): one entry read. Without chain_id this
+            # walked the kind's whole range of public_entities_due, 566 buffers a pool (8 Nov 2026).
+            if conn.execute('SELECT 1 FROM domino_public.entities WHERE chain_id=%s AND kind=%s AND entity_id=%s',
+                            (CHAIN_ID,kind,entity_id)).fetchone():return True
             conn.execute('SELECT pg_advisory_xact_lock(46630240)')
             count=conn.execute("""SELECT count(*) AS n FROM domino_public.entities
               WHERE payload IS NULL AND status='pending' AND last_requested_at='epoch'::timestamptz""").fetchone()['n']
@@ -182,32 +219,30 @@ class PgPublicData:
         lease = secrets.token_hex(16)
         with self.connection(write=True) as conn:
             preferred=None
+            scheduled=demand=='scheduled'
             # 'hot': a pool on screen in the last minute, or one the featured list keeps
             # warm (#278): both go ahead of the background backlog in three turns of four.
-            if demand=='scheduled':
+            if scheduled:
                 # Count persisted claims rather than invocations: a deadline,
                 # spent RPC budget or restart must not erase background's turn.
                 conn.execute('SELECT pg_advisory_xact_lock(%s)',(46630242 if kind=='pool' else 46630243,))
-                count=conn.execute('SELECT COALESCE(sum(generation),0) AS n FROM domino_public.entities WHERE kind=%s',(kind,)).fetchone()['n']
+                row=conn.execute(CADENCE,(CHAIN_ID,kind)).fetchone()
+                count=row['claims'] if row else 0
                 cycle=4 if kind=='pool' else 2
                 preferred='background' if int(count)%cycle==cycle-1 else 'hot'
                 demand=None
-            return conn.execute("""UPDATE domino_public.entities e SET
-              lease_token=%s,lease_until=clock_timestamp()+(%s*interval '1 second'),
-              generation=e.generation+1,attempts=e.attempts+1
-              WHERE (e.chain_id,e.kind,e.entity_id) IN
-                (SELECT chain_id,kind,entity_id FROM domino_public.entities
-                 WHERE kind=%s AND next_due<=clock_timestamp()
-                   AND (lease_until IS NULL OR lease_until<clock_timestamp())
-                   AND NOT(entity_id=ANY(%s))
-                   AND (%s::text IS NULL OR
-                     (last_requested_at>=clock_timestamp()-interval '60 seconds'
-                      OR keep_warm_until>clock_timestamp())=(%s='hot'))
-                 ORDER BY CASE WHEN %s::text IS NULL OR
-                   (last_requested_at>=clock_timestamp()-interval '60 seconds'
-                    OR keep_warm_until>clock_timestamp())=(%s='hot') THEN 0 ELSE 1 END,
-                   next_due,entity_id FOR UPDATE SKIP LOCKED LIMIT %s)
-              RETURNING *""", (lease, lease_seconds, kind,exclude,demand,demand,preferred,preferred,limit)).fetchall()
+            # One statement per class, the preferred class first, each in next_due order. A CASE that ranked
+            # both classes at the head of one ORDER BY read the whole table and sorted every due row: 6,490
+            # pages and 13 ms a claim on 8 Nov 2026. Each statement now reads only a few index entries.
+            order=(demand,) if demand else (preferred,OTHER[preferred]) if preferred else (None,)
+            claimed=[]
+            for which in order:
+                claimed+=conn.execute(CLAIM[which],(lease,lease_seconds,kind,exclude,limit-len(claimed))).fetchall()
+                if len(claimed)==limit:break
+            # Under the lock, in the claim's transaction: a claim that took nothing, or rolled back, is no turn.
+            if scheduled and claimed:
+                conn.execute(ADVANCE,(CHAIN_ID,kind,len(claimed)))
+            return claimed
 
     @staticmethod
     def guard(conn, claim):

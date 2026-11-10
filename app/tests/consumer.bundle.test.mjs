@@ -176,7 +176,9 @@ function productionClosures() {
   const poolChartRoots = scripts.filter((file) => /^PoolHistoryChart-/.test(file));
   assert.equal(poolChartRoots.length, 1, 'one shared deferred pool chart');
   const v2Roots = scripts.filter((file) => V2_ROOTS.test(file));
-  const otherRoots = scripts.filter((file) => /^(index|WalletSessionIsland|PoolExplorer|TokenPicker|Sequence|Execution|Performance|DepositAmounts|OwnedPositions|PositionDetail|PositionActions|HeldDeposits|FeeReserves|PriceVsRange|feesReplay\.worker|chainCode|Explore|PoolDetail|Positions|NewPosition|Automate|Docs|walletConnectProvider|ElysiumEntry)-/.test(file) || V2_ROOTS.test(file));
+  // 2026-11-08 (Points, Season 1): the points page (screens/Points.tsx) is a lazy root of its own, opened only by its
+  // route /points (src/App.tsx), like every screen but Home; tests/session.bundle.test.mjs measures it.
+  const otherRoots = scripts.filter((file) => /^(index|WalletSessionIsland|PoolExplorer|TokenPicker|Sequence|Execution|Performance|DepositAmounts|OwnedPositions|PositionDetail|PositionActions|HeldDeposits|FeeReserves|PriceVsRange|feesReplay\.worker|chainCode|Explore|PoolDetail|Positions|NewPosition|Automate|Docs|walletConnectProvider|ElysiumEntry|Points)-/.test(file) || V2_ROOTS.test(file));
   const shared = reach([...entry, ...otherRoots, ...poolChartRoots]);
   const setupClosure = reach(setup);
   assert.ok(!shared.has(setup[0]), 'Setup must not be loaded statically by the entry or another screen');
@@ -207,7 +209,11 @@ function productionClosures() {
   // 2026-10-04 (the owner: the site runs on Domino V2): V2's lazy closures say the same expiry code (a plan's or a quote's),
   // and stay out of the entry like the deposit and onboarding closures.
   const v2Closure = new Set([...reach(v2Roots)].filter((file) => !entryClosure.has(file)));
-  const sharedCodeAdmitted = new Set([...setupOnly, ...onboardingAdmitted, ...v2Closure]);
+  // 2026-11-08 (Points, Season 1): points-v1 (api-contracts/points-v1, schemas/error.response.schema.json) answers with
+  // the same session reason codes, preview_expired among them, so the points page's lazy closure says them too, still
+  // out of the entry.
+  const pointsClosure = new Set([...reach(scripts.filter((file) => /^Points-/.test(file)))].filter((file) => !entryClosure.has(file)));
+  const sharedCodeAdmitted = new Set([...setupOnly, ...onboardingAdmitted, ...v2Closure, ...pointsClosure]);
   return { setupOnly, setupClosure, createClosure, onboardingAdmitted, sharedCodeAdmitted };
 }
 
@@ -229,7 +235,8 @@ test('production excludes preview/deposit labs and confines the live deposit cli
   assert.ok(files.some(({ text }) => SHARED_CODE_MARKERS.every((marker) => text.includes(marker))), 'the shared error codes are still in the build, so the confinement above is checked against something');
   // Creation uses the V2 planner and money client. A failed chunk or closed gate cannot import the old setup client.
   const createText = [...createClosure].map((file) => readFileSync(join(DIST, 'assets', file), 'utf8')).join('\n');
-  for (const marker of ['/api/position-plan/v1/', '#/positions/']) {
+  // Changed on purpose 2026-11-07 (pages of their own, src/lib/route.ts): a position's link is its own address, /positions/<id>.
+  for (const marker of ['/api/position-plan/v1/', '/positions/']) {
     assert.ok(createText.includes(marker), `the production V2 creation closure is missing ${marker}`);
   }
   for (const marker of ['/api/setup/v1/', '/api/onboarding/v1/', 'X-Domino-Onboarding-Contract', ...SETUP_DEPOSIT_MARKERS]) assert.ok(!createText.includes(marker), `V2 creation carries retired setup marker ${marker}`);
@@ -248,9 +255,11 @@ test('the default stylesheets load nothing from elsewhere (BUN-2)', (t) => {
   // Collection styles and transfer illustrations load with their lazy production chunks;
   // the consumer lab remains V2-free below.
   const css = readdirSync(join(DIST, 'assets')).filter((file) => file.endsWith('.css'));
-  assert.deepEqual(css.map((file) => file.split('-')[0]).sort(), ['OwnedRows', 'index', 'screens', 'services']);
+  // Changed on purpose 2026-11-08 (Points, Season 1): the points page's styles (src/styles/v4-points.css) load with its
+  // lazy chunk, never with the entry.
+  assert.deepEqual(css.map((file) => file.split('-')[0]).sort(), ['OwnedRows', 'Points', 'index', 'screens', 'services']);
   const html = readFileSync(join(DIST, 'index.html'), 'utf8');
-  assert.ok(!/<link\b[^>]*href="[^\"]*(?:OwnedRows|services)[^\"]*\.css/.test(html), 'entry HTML never preloads collection or transfer styles');
+  assert.ok(!/<link\b[^>]*href="[^\"]*(?:OwnedRows|Points|services)[^\"]*\.css/.test(html), 'entry HTML never preloads collection, points or transfer styles');
   const text = css.map((file) => readFileSync(join(DIST, 'assets', file), 'utf8')).join('\n');
   // Changed on purpose 2026-09-28 (speed wave, item 35): the stylesheet now names the site's own fonts
   // (src/styles/fonts.css, until then Google Fonts' stylesheet in index.html), each a content-hashed woff2 file under

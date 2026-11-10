@@ -512,3 +512,126 @@ test('the hand reader follows a dynamic argument\'s offset as viem encodes it, a
   const lying = `0x2c4029e9${'0'.repeat(63)}5${'f'.repeat(64)}`;
   assert.equal(errors.decodeRevertData(lying, 'zap', LABELS).cause, undefined);
 });
+
+// ---------------------------------------------------------------------------
+// What the screens say when the decoder has no sentence (added 2026-11-09, core flows, errors)
+// ---------------------------------------------------------------------------
+
+test('the wallet\'s network failing is found however the wallet or viem says it, each with its own code', async () => {
+  const viem = await import('viem');
+  const zeroData = (() => {
+    try {
+      viem.decodeFunctionResult({ abi: [{ type: 'function', name: 'f', inputs: [], outputs: [{ type: 'uint256' }], stateMutability: 'view' }], functionName: 'f', data: '0x' });
+    } catch (error) {
+      return error;
+    }
+    return null;
+  })();
+  assert.equal(zeroData?.name, 'AbiDecodingZeroDataError', 'viem\'s own error for an empty eth_call answer');
+  for (const [error, code] of [
+    [{ code: -32603, message: 'Internal JSON-RPC error.' }, 'wallet_rpc_internal'],
+    [new viem.InternalRpcError(new Error('upstream')), 'wallet_rpc_internal'],
+    // MetaMask's wrapping: the inner reason decides.
+    [{ code: -32603, message: 'Internal JSON-RPC error.', data: { code: -32005, message: 'rate limited' } }, 'wallet_rpc_limited'],
+    [{ code: -32603, message: 'Internal JSON-RPC error.', data: { originalError: { code: -32000, message: 'header not found' } } }, 'wallet_rpc_no_header'],
+    [{ code: -32005, message: 'Request rate exceeded' }, 'wallet_rpc_limited'],
+    [new viem.LimitExceededRpcError(new Error('upstream')), 'wallet_rpc_limited'],
+    [{ code: -32000, message: 'daily request count exceeded, request rate limited' }, 'wallet_rpc_limited'],
+    // A 429 carrying revert data is still the network's (decodeV2Error leaves it to the caller).
+    [{ code: 429, message: 'execution reverted', data: revertData('InvalidPlan()') }, 'wallet_rpc_limited'],
+    [{ code: -32000, message: 'missing trie node 4f2c (path )' }, 'wallet_rpc_no_header'],
+    [{ code: -32000, message: 'unknown block' }, 'wallet_rpc_no_header'],
+    [zeroData, 'wallet_rpc_empty'],
+    [{ message: 'The contract function "allowance" returned no data ("0x").' }, 'wallet_rpc_empty'],
+    [new viem.TimeoutError({ url: 'https://rpc.example', body: {} }), 'wallet_rpc_timeout'],
+    [{ message: 'Request timed out' }, 'wallet_rpc_timeout'],
+    [new viem.HttpRequestError({ url: 'https://rpc.example', status: 503, body: {} }), 'wallet_rpc_unreachable'],
+    [new TypeError('Failed to fetch'), 'wallet_rpc_unreachable'],
+    [{ code: 4900, message: 'Disconnected' }, 'wallet_rpc_unreachable'],
+    [{ code: 4901, message: 'Chain disconnected' }, 'wallet_rpc_unreachable'],
+  ]) assert.equal(errors.walletNetworkFailure(error), code, String(error?.message ?? error));
+});
+
+test('a call refused, a refusal in the wallet and the clients\' own codes are never the network', () => {
+  for (const error of [
+    { code: 4001, message: 'User rejected the request.' },
+    Object.assign(new Error('Ledger: 0x6985'), { code: -32603 }),
+    { code: 4902, message: 'Unrecognized chain ID' },
+    { code: 3, message: 'execution reverted', data: revertData('InvalidPlan()') },
+    { code: -32603, message: 'Internal JSON-RPC error.', data: { code: 3, message: 'execution reverted', data: revertData('InvalidPlan()') } },
+    { code: -32603, message: 'Internal JSON-RPC error.', data: { message: 'execution reverted' } },
+    { code: -32000, message: 'insufficient funds for gas * price + value' },
+    { code: -32603, message: 'Internal JSON-RPC error.', data: { message: 'gas required exceeds allowance (0)' } },
+    { code: -32603, message: 'Internal JSON-RPC error.', data: { message: 'exceeds block gas limit' } },
+    { code: -32000, message: 'nonce too low' },
+    { code: -32601, message: 'the method eth_simulateV1 does not exist/is not available' },
+    { code: -32602, message: 'Invalid parameters were provided to the RPC method.' },
+    new Error('wallet_timeout'),
+    new Error('wallet_action_expired'),
+    new Error('invalid_wallet_reply'),
+    Object.assign(new Error('registry_rank_mismatch'), { failures: ['registry_rank_mismatch'] }),
+    new Error('Something odd happened'),
+    null, undefined, 42, '', {},
+  ]) assert.equal(errors.walletNetworkFailure(error), null, JSON.stringify(error) ?? String(error));
+  // A cycle is walked once.
+  const cyclic = { message: 'oops' };
+  cyclic.cause = cyclic;
+  assert.equal(errors.walletNetworkFailure(cyclic), null);
+});
+
+test('a read worth asking once more: the network\'s failures and an unreadable wallet reply; never a refusal, a revert or a closed code', () => {
+  for (const error of [{ code: -32603, message: 'Internal JSON-RPC error.' }, { code: -32000, message: 'header not found' }, new Error('invalid_wallet_reply'), new TypeError('Failed to fetch')]) {
+    assert.equal(errors.transientWalletRead(error), true, String(error.message));
+  }
+  for (const error of [{ code: 4001, message: 'User rejected the request.' }, { code: 3, message: 'execution reverted', data: revertData('InvalidPlan()') }, new Error('wallet_timeout'), new Error('wallet_action_expired'), new Error('zap_action_unsettled'), new Error('plan_price_moved')]) {
+    assert.equal(errors.transientWalletRead(error), false, String(error.message));
+  }
+});
+
+test('the six token errors, reported by selector alone, are the decoder\'s generic case, and their tokens are said as a choice through the labeler', () => {
+  const six = ['TokenCallFailed(address)', 'TransferFailed(address)', 'SettlementMismatch(address,uint256,uint256)', 'ApprovalFailed(address)', 'FeeNotBacked(address)', 'FeeTransferMismatch(address)'];
+  assert.deepEqual([...errors.TOKEN_TRANSFER_ERRORS].sort(), [...six].sort());
+  for (const signature of six) {
+    const bare = errors.decodeRevertData(toFunctionSelector(`function ${signature}`), 'zap', LABELS);
+    assert.deepEqual([bare.code, bare.copy, bare.token], [signature, GENERIC, undefined], signature);
+    assert.ok(errors.ZAP_ERRORS.some((row) => row.signature === signature), `${signature} is a row of §2.12`);
+  }
+  // The app's labelers name the native currency themselves (src/v2in/journey/tokens.ts labelOf); without one, its symbol.
+  const labels = { chainId: 4663, token: (address) => (address === ETH ? 'ETH' : labeler(address)) };
+  assert.equal(errors.tokenChoice([USDG, ETH], labels), 'USDG or ETH');
+  assert.equal(errors.tokenChoice([ETH, MANY], { chainId: 4663 }), `ETH or ${short(MANY)}`, 'the chain\'s native currency by its symbol');
+  assert.equal(errors.tokenChoice([USDG, MANY, ETH], labels), `USDG, ${short(MANY)} or ETH`);
+  assert.equal(errors.tokenChoice([USDG, USDG.toUpperCase().replace('0X', '0x')], labels), 'USDG', 'once each');
+  assert.equal(errors.tokenChoice([MANY], { chainId: 4663 }), short(MANY), 'without a labeler, the short address');
+  assert.equal(errors.tokenChoice([MANY], { chainId: 4663, token: () => '‮EVIL\u0000 {token}' }), 'EVIL {token}', 'safe text, never re-read');
+  assert.equal(errors.tokenChoice([], labels), null);
+  assert.equal(errors.tokenChoice(undefined, labels), null);
+  assert.equal(errors.tokenChoice(['0x1234'], labels), null, 'not an address: nothing named');
+});
+
+test('the screens\' own sentences for what the decoder leaves to them say no jargon, and the console gets the whole failure in a browser only', () => {
+  for (const copy of [errors.WALLET_NETWORK_COPY, errors.WALLET_NETWORK_BUSY_COPY, errors.SLOW_WALLET_COPY, errors.UNKNOWN_FAILURE_COPY]) {
+    assert.doesNotMatch(copy, /revert|selector|rpc|simulat|transaction would fail|review again/i, copy);
+    assert.match(copy, /Try again/);
+  }
+  assert.equal(errors.walletNetworkCopy('wallet_rpc_limited'), errors.WALLET_NETWORK_BUSY_COPY);
+  for (const code of ['wallet_rpc_internal', 'wallet_rpc_no_header', 'wallet_rpc_timeout', 'wallet_rpc_empty', 'wallet_rpc_unreachable']) assert.equal(errors.walletNetworkCopy(code), errors.WALLET_NETWORK_COPY, code);
+  const logged = [];
+  const debug = console.debug;
+  console.debug = (...args) => logged.push(args);
+  try {
+    errors.debugFailure('New position', 'wallet_rpc_internal', { code: -32603 });
+    assert.deepEqual(logged, [], 'no window: nothing in the tests\' output');
+    globalThis.window = {};
+    const failure = { code: -32603, message: 'Internal JSON-RPC error.' };
+    errors.debugFailure('New position', 'wallet_rpc_internal', failure);
+    assert.equal(logged.length, 1);
+    assert.equal(logged[0][0], '[domino] New position: wallet_rpc_internal');
+    assert.equal(logged[0][1], failure, 'the error object itself, for DevTools to expand');
+    console.debug = () => { throw new Error('console refused'); };
+    assert.doesNotThrow(() => errors.debugFailure('x', 'y', null));
+  } finally {
+    console.debug = debug;
+    delete globalThis.window;
+  }
+});

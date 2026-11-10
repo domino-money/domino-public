@@ -235,6 +235,6 @@ test('where the build serves Elysium, a v4 position there is a row with its own 
   const rows = on.positionRows({ ...body, positions: [...body.positions, v4, v3] }, () => true);
   assert.equal(rows.length, before.length + 1, 'the v4 position is a row; the v3 one is left out');
   const row = rows.find((entry) => entry.chainId === ID);
-  assert.equal(row.href, '#/positions/elysium-v4-98');
+  assert.equal(row.href, '/positions/elysium-v4-98');
   assert.equal(row.dex, 4);
 });

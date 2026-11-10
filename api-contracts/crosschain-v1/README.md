@@ -1,12 +1,12 @@
 # crosschain-v1: deposit from another chain
 
-Contract `1.1.0-rc.1` for S2 of [#283](https://github.com/domino-money/domino/issues/283): the user bridges to their own wallet on Robinhood (4663), Base (8453) or Arbitrum One (42161) through Relay or Across, paying the provider's 35 bps app fee, and then creates the position with S1. The flow, the configuration and the operations are in [docs/v2/F5_BRIDGE.md](../../docs/v2/F5_BRIDGE.md).
+Contract `1.1.0-rc.1` for S2 of [#283](https://github.com/domino-money/domino/issues/283): the user bridges to their own wallet on Robinhood (4663), Base (8453) or Arbitrum One (42161) through Relay or Across, or on Elysium (99901) through Relay alone and in its USDC alone (`CONSTANTS.destinations`), paying the provider's 35 bps app fee, and then creates the position with S1. The flow, the configuration and the operations are in [docs/v2/F5_BRIDGE.md](../../docs/v2/F5_BRIDGE.md).
 
 POST `/api/crosschain/v1/<route>` through the authenticated bridge (private origin `/internal/crosschain/v1/<route>`, `backend/crosschain_api.py`), with `X-Domino-Crosschain-Contract: 1.1.0-rc.1`, a SIWE session and CSRF. The owner is always the session's wallet: it is the depositor, the recipient on the destination and the refund address. No request can name an owner, recipient, refund address or fee recipient.
 
 | Route | Request | Answer |
 | --- | --- | --- |
-| `origins` | `destinationChainId`, `destinationToken` (a charge currency of that chain: its stable, ETH `0x0…0` or WETH) | EVM origin chains and tokens each provider can bridge from, per provider; chains whose contracts are not pinned are left out |
+| `origins` | `destinationChainId`, `destinationToken` (a charge currency of that chain: its stable, ETH `0x0…0` or WETH; on Elysium its USDC only) | EVM origin chains and tokens each provider can bridge from, per provider; chains whose contracts are not pinned are left out, and a provider that does not serve the destination is `unavailable` with `destination_not_served`, never asked (Across and Elysium) |
 | `quote` | `originChainId`, `originToken`, `destinationChainId`, `destinationToken`, `amountKind`, `amountRaw`, `maxInputRaw`, `slippageBps` (10–500), `destinationGas` | Both providers' candidates, the decision and the unsigned wallet steps |
 | `status` | `provider`, `originChainId`, `destinationChainId`, `depositTxHash`, `requestId` (Relay only), `previousState` | The deposit's state, recovery path and the app fee measured |
 
@@ -21,7 +21,7 @@ The amount is asked one of two ways (`amountKind`, required):
 
 Both raws are below 2^128. `maxInputRaw` is a required key, `null` exactly when the request is `exact_input`.
 
-- `candidates`: always Relay then Across. `status` is `quoted`, or priced but not eligible: `destination_gas_unsupported` (cannot deliver the destination gas asked for) or `input_above_max` (by output, its deposit needs more than `maxInputRaw`). Otherwise it says why there is no price: `no_route`, `amount_too_low`, `amount_too_high`, `rate_limited`, `unavailable`, `rejected` (the provider refused), `unsafe` (the answer failed Domino's checks; `reason` names the check) or `origin_not_supported`. Destination gas is judged first: a candidate that cannot deliver it is `destination_gas_unsupported`, above the cap or not.
+- `candidates`: always Relay then Across. `status` is `quoted`, or priced but not eligible: `destination_gas_unsupported` (cannot deliver the destination gas asked for) or `input_above_max` (by output, its deposit needs more than `maxInputRaw`). Otherwise it says why there is no price: `no_route`, `amount_too_low`, `amount_too_high`, `rate_limited`, `unavailable`, `rejected` (the provider refused), `unsafe` (the answer failed Domino's checks; `reason` names the check) or `origin_not_supported` (`origin_chain_not_pinned`, or `origin_token_not_pinned`: a token its pin does not list, as anything but Elysium's USDC from Elysium). A provider that does not serve the destination is `no_route` with `destination_not_served`, never asked: Across, on Elysium. Destination gas is judged first: a candidate that cannot deliver it is `destination_gas_unsupported`, above the cap or not.
 - A priced candidate shows:
   - `inputRaw`: exactly what its deposit takes from the wallet on the origin. It is the request's `amountRaw` in `exact_input`; by output it is the provider's, at most `maxInputRaw` for a `quoted` candidate.
   - `outputRaw` (expected amount in the user's wallet, after every provider fee and the app fee) and `minimumOutputRaw`. By output, every priced candidate's `minimumOutputRaw` is at least `amountRaw`: what must arrive is guaranteed, not only expected.

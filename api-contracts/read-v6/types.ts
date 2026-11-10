@@ -13,7 +13,7 @@ export type Amount = {
 
 export type AutoExit = {
   "id": string;
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 4663 | 8453 | 42161 | 99901;
   "tx": Tx;
   "kind": "auto_exit";
   "module": string;
@@ -33,7 +33,7 @@ export type AutoExit = {
 
 export type AutoExitEvent = {
   "id": string;
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 4663 | 8453 | 42161 | 99901;
   "tx": Tx;
   "kind": "auto_exit_event";
   "module": string;
@@ -60,7 +60,7 @@ export type AutomationResumed = {
 };
 
 export type BalanceTokenRef = {
-  "chainId": 1 | 10 | 4663 | 8453 | 42161;
+  "chainId": 1 | 10 | 4663 | 8453 | 42161 | 99901;
   "address": string;
 };
 
@@ -71,7 +71,7 @@ export type BlockRef = {
 };
 
 export type ChainBalances = {
-  "chainId": 1 | 10 | 4663 | 8453 | 42161;
+  "chainId": 1 | 10 | 4663 | 8453 | 42161 | 99901;
   "status": "current" | "unavailable";
   "reason": "chain_not_configured" | "chain_read_failed" | null;
   "snapshot": BlockRef | null;
@@ -80,7 +80,7 @@ export type ChainBalances = {
 };
 
 export type ChainStatus = {
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 4663 | 8453 | 42161 | 99901;
   "status": "current" | "stale" | "unavailable";
   "reason": "deployment_not_registered" | "never_indexed" | "head_not_observed_recently" | "indexer_behind_head" | null;
   "deployment": Deployment | null;
@@ -111,7 +111,7 @@ export type Compounded = {
 };
 
 export type Credit = {
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 4663 | 8453 | 42161 | 99901;
   "module": string;
   "token": string;
   "unclaimed": string;
@@ -247,7 +247,7 @@ export type IndexFailure = {
 };
 
 export type IndexedToken = {
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 4663 | 8453 | 42161 | 99901;
   "address": string;
   "status": "available" | "partial" | "unavailable" | "not_read";
   "decimals": number | null;
@@ -321,7 +321,7 @@ export type Lot = {
 };
 
 export type Mandate = {
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 4663 | 8453 | 42161 | 99901;
   "mandateHash": string;
   "module": string;
   "owner": string;
@@ -404,7 +404,7 @@ export type PoolRef = {
 };
 
 export type Position = {
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 4663 | 8453 | 42161 | 99901;
   "dex": 3 | 4;
   "positionManager": string;
   "tokenId": string;
@@ -472,7 +472,7 @@ export type Reserve = {
 
 export type ReservesReturned = {
   "id": string;
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 4663 | 8453 | 42161 | 99901;
   "tx": Tx;
   "kind": "reserves_returned";
   "vault": string;
@@ -508,7 +508,7 @@ export type RootRearmed = {
 
 export type S1Action = {
   "id": string;
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 4663 | 8453 | 42161 | 99901;
   "tx": Tx;
   "kind": "s1_action";
   "zap": string;
@@ -622,7 +622,7 @@ export type TxRef = {
 };
 
 export type Vault = {
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 4663 | 8453 | 42161 | 99901;
   "address": string;
   "factory": string;
   "dex": 3 | 4;
@@ -642,7 +642,7 @@ export type Vault = {
 
 export type VaultCreated = {
   "id": string;
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 4663 | 8453 | 42161 | 99901;
   "tx": Tx;
   "kind": "vault_created";
   "vault": string;
@@ -657,7 +657,7 @@ export type VaultCreated = {
 
 export type VaultEvent = {
   "id": string;
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 4663 | 8453 | 42161 | 99901;
   "tx": Tx;
   "kind": "vault_event";
   "vault": string;
@@ -666,7 +666,7 @@ export type VaultEvent = {
 
 export type VaultExecution = {
   "id": string;
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 4663 | 8453 | 42161 | 99901;
   "tx": Tx;
   "kind": "vault_execution";
   "vault": string;
@@ -736,7 +736,7 @@ export type WaitingRevert = {
 
 export type ZapEvent = {
   "id": string;
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 4663 | 8453 | 42161 | 99901;
   "tx": Tx;
   "kind": "zap_event";
   "zap": string;
@@ -792,7 +792,7 @@ export type ActivityResponse = {
 };
 
 export type ChainPoolsRequest = {
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 4663 | 8453 | 42161 | 99901;
   "token": string;
   "pairedToken"?: string | null;
 };
@@ -801,7 +801,7 @@ export type ChainPoolsResponse = {
   "schemaVersion": 1;
   "contractVersion": "1.1.0-rc.1" | "1.2.0-rc.1";
   "mode": "live_chain_pools";
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 4663 | 8453 | 42161 | 99901;
   "token": string;
   "pairedToken": string | null;
   "servedAt": number;
@@ -834,7 +834,7 @@ export type ChainBalancesResponse = {
 };
 
 export type ChainTokensRequest = {
-  "chainId": 8453 | 42161;
+  "chainId": 8453 | 42161 | 99901;
   "query": string;
   "limit"?: number;
 };
@@ -843,7 +843,7 @@ export type ChainTokensResponse = {
   "schemaVersion": 1;
   "contractVersion": "1.1.0-rc.1" | "1.2.0-rc.1";
   "mode": "known_chain_tokens";
-  "chainId": 8453 | 42161;
+  "chainId": 8453 | 42161 | 99901;
   "query": string;
   "servedAt": number;
   "coverage": "known_tokens_only";
@@ -855,7 +855,7 @@ export type ChainTokensResponse = {
 };
 
 export type PositionFeesRequest = {
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 4663 | 8453 | 42161 | 99901;
   "positions": Array<FeePositionRef>;
 };
 
@@ -863,7 +863,7 @@ export type PositionFeesResponse = {
   "schemaVersion": 1;
   "contractVersion": "1.2.0-rc.1";
   "mode": "stored_v2_position_fees";
-  "chainId": 4663 | 8453 | 42161;
+  "chainId": 4663 | 8453 | 42161 | 99901;
   "servedAt": number;
   "follower": FeeFollower;
   "positions": Array<PositionFees>;

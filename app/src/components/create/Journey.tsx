@@ -67,6 +67,7 @@ import { useLivePoolPrice, usePayFacts, usePricedPool } from './usePricedPool'
 import { heldAmounts, rawBalances, underMinimum, usdAt } from './valuation'
 import { fundingContext, type FundingContinuation } from '../../lib/create/fundingContext'
 import { useWalletIdentity } from '../../lib/walletIdentity'
+import { currentRoute } from '../../lib/route'
 
 /** The outcomes only the verification read, or the featured list before it, can produce. */
 type Verified = Extract<PreselectStatus, { kind: 'verified' | 'not_found' | 'unsupported' | 'failed' | 'withdrawn' }>
@@ -468,7 +469,7 @@ export function Journey({
   const trail = useRef<Trail>({ flow: null, at: 0, hash: null, popped: null, steps: [] })
   useEffect(() => {
     const mine = trail.current
-    const hash = window.location.hash
+    const hash = currentRoute()
     if (mine.popped === current && mine.hash === hash) {
       mine.popped = null
       return
@@ -833,7 +834,7 @@ export function Journey({
   useEffect(() => {
     onPop.current = (event) => {
       const mine = trail.current
-      if (window.location.hash !== mine.hash) return
+      if (currentRoute() !== mine.hash) return
       const mark = markOf(event.state)
       if (!mark) return
       const was = mine.at

@@ -29,7 +29,8 @@ class PublicInstallTests(unittest.TestCase):
         self.systemd.mkdir()
         self.files={'backend/requirements-api.lock':(b'unchanged',False)}
         for name in ('manage_public_data.py','public_history.py','public_observations.py','manage_activity.py',
-                     'manage_featured.py','manage_featured_chain.py','v2_fees.py'):
+                     'manage_featured.py','manage_featured_chain.py','v2_fees.py','points_ledger.py',
+                     'points_engine.py','points_referral.py','points_season_1.json'):
             self.files['backend/'+name]=(b'pass\n',False)
         for name in installer.UNITS:self.files['ops/systemd/'+name]=((REPO/'ops/systemd'/name).read_bytes(),False)
         for item in (patch.object(installer,'BASE',self.base),patch.object(installer,'QUEUE',self.queue),
@@ -51,7 +52,7 @@ class PublicInstallTests(unittest.TestCase):
         planned=self.plan()
         self.assertEqual(planned['runtime'],str(self.queue/'release/backend/runtime'))
         self.assertEqual(planned['previousCurrent'],None)
-        self.assertEqual(len(planned['units']),15)
+        self.assertEqual(len(planned['units']),18)  # 16 with the points ledger, 18 with its snapshot (7 Nov 2026)
         for name,value in planned['units'].items():
             self.assertNotIn('@PUBLIC_ROOT@',value)
             self.assertNotIn('@QUEUE_ROOT@',value)
@@ -142,6 +143,46 @@ class PublicInstallTests(unittest.TestCase):
         del self.files['backend/v2_fees.py']
         with self.assertRaisesRegex(ValueError,'public_source_missing'):self.plan()
 
+    def test_the_points_ledger_is_installed_per_chain_but_never_enabled(self):
+        # Points, season 1 (7 Nov 2026): Domino's revenue per wallet, behind each chain's indexer.
+        unit=self.plan()['units']['domino-points-ledger@.service']
+        for field in ('User=domino-write','SupplementaryGroups=domino-db','ProtectSystem=strict',
+                      'BindsTo=domino-continuous-egress.service','PartOf=domino-public-data.target',
+                      f'points_ledger.py follow --chain %i --chain-rpc-file {self.queue}/release/backend/runtime/'
+                      'chain-rpc.json --poll 60\n','ImportCredential=v2-rpc-*\n','DeviceAllow=char-tpm rw\n',
+                      'Restart=always\n','BindReadOnlyPaths=/etc/domino/continuous-reads/write.hosts:/etc/hosts\n',
+                      f'WorkingDirectory={self.base}/current/backend\n','WantedBy=domino-public-data.target'):
+            self.assertIn(field,unit)
+        self.assertNotIn('@PUBLIC_ROOT@',unit)
+        self.assertNotIn('@QUEUE_ROOT@',unit)
+        self.assertNotIn('domino-points-ledger',self.plan()['units']['domino-public-data.target'])
+
+    def test_the_points_snapshot_is_installed_hourly_but_never_enabled(self):
+        # Points, season 1 (7 Nov 2026): the catalogue only, no chain and no provider.
+        units=self.plan()['units']
+        service,timer=units['domino-points-snapshot.service'],units['domino-points-snapshot.timer']
+        for field in ('Type=oneshot\n','User=domino-write\n','SupplementaryGroups=domino-db\n','ProtectSystem=strict\n',
+                      f'WorkingDirectory={self.base}/current/backend\n',
+                      f'ExecStart={self.queue}/venv/bin/python -B points_engine.py snapshot\n',
+                      'RestrictAddressFamilies=AF_UNIX\n','PartOf=domino-public-data.target\n'):
+            self.assertIn(field,service)
+        self.assertNotIn('ImportCredential',service)
+        for field in ('OnCalendar=*-*-* *:05:00 UTC\n','Unit=domino-points-snapshot.service\n',
+                      'WantedBy=domino-public-data.target'):
+            self.assertIn(field,timer)
+        self.assertNotIn('domino-points-snapshot',units['domino-public-data.target'])
+
+    def test_a_release_without_the_points_engine_is_refused(self):
+        for name in ('points_engine.py','points_referral.py','points_season_1.json'):
+            with self.subTest(name=name):
+                removed=self.files.pop('backend/'+name)
+                with self.assertRaisesRegex(ValueError,'public_source_missing'):self.plan()
+                self.files['backend/'+name]=removed
+
+    def test_a_release_without_the_points_ledger_is_refused(self):
+        del self.files['backend/points_ledger.py']
+        with self.assertRaisesRegex(ValueError,'public_source_missing'):self.plan()
+
     def test_the_domino_pool_follower_runs_every_minute_under_the_public_data_target(self):
         units=self.plan()['units']
         service=units['domino-activity-follow.service']
@@ -215,7 +256,7 @@ class PublicInstallTests(unittest.TestCase):
         bind=f'BindReadOnlyPaths={egress.ROOT}/write.hosts:/etc/hosts\n'
         units=self.plan()['units']
         services=[name for name in units if name.endswith(('.service','.service.d/90-public-data.conf'))]
-        self.assertEqual(len(services),10)
+        self.assertEqual(len(services),12)  # 11 with the points ledger, 12 with its snapshot (7 Nov 2026)
         for name in services:
             with self.subTest(unit=name):
                 self.assertEqual(units[name].count(bind),1)

@@ -67,6 +67,8 @@ interface ActionsProps {
   primary?: boolean
   /** (QA round 2, N49) The root of Auto-exit's own vault: Collect fees leaves Auto-exit on, so its dialog says nothing of stopping automation. */
   autoExitRoot?: boolean
+  /** (2026-11-09) Close position's press handed to the V2 actions' guided close, while they read an automation's main position. */
+  closeWith?: (() => void) | null
 }
 
 // The owner's Collect fees and Close position, in builds that carry the wallet
@@ -90,6 +92,8 @@ interface V2ActionsProps {
   owner: string
   onChanged: (block?: bigint) => void
   onAutoExitRoot?: (root: boolean) => void
+  wallet?: string
+  onCloseFlow?: (open: (() => void) | null) => void
 }
 const V2Actions = __DOMINO_V2__ ? lazy<ComponentType<V2ActionsProps>>(recovering(() => import('../v2in/position/PositionV2Actions'), couldNotLoad)) : null
 /**
@@ -149,8 +153,14 @@ type Detail =
   /** 2026-10-01 (item D5): no NFT was ever minted with this id (at or above nextTokenId), and this visit made none. */
   | { phase: 'missing'; block: number }
 
-/** The waits before a read that failed only for the moment is asked again, while the page is visible. */
+/**
+ * The waits before a read that failed only for the moment is asked again, while the page is visible. Changed on purpose
+ * 2026-11-09 (the core-flows fix, item e): after the last, every REASK_MAX_MS for as long as the page stays open and has
+ * drawn nothing (any failure, not only a passing one, on that slower beat). It stopped after three, and a fee-state read
+ * that failed left the page on its title alone until a reload.
+ */
 const REASK_MS = [3_000, 12_000, 30_000] as const
+const REASK_MAX_MS = 60_000
 /**
  * RPC-SPEC P2: while the page's own read answers `unavailable` (the site's chain routes without their node: no secret
  * yet, or the node away) and nothing is drawn, the read gateway's row of the NFT is asked, at most once this often per
@@ -346,6 +356,10 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
   }, [card.tokenId])
   // (QA round 2, N49) Whether read-v6 lists the position as Auto-exit's own vault's root (the V2 actions read it).
   const [autoExitRoot, setAutoExitRoot] = useState(false)
+  // Added 2026-11-09 (the core-flows fix): while the V2 actions read the position as an automation's main position, V1's
+  // Close position opens their guided close (it turns the automation off, then returns the fees it still holds).
+  const [closeFlow, setCloseFlow] = useState<(() => void) | null>(null)
+  const onCloseFlow = useCallback((open: (() => void) | null) => setCloseFlow(() => open), [])
   const feeHistory = useFeeHistory(card.tokenId)
   const openedAt = ledgerOpenedAt(feeHistory) ?? (indexedMint?.tokenId === card.tokenId && indexedMint.block <= block ? indexedMint.timestamp : null)
   // (2026-10-15, pack 7): minted before Domino's release, the ledger has no mint, only a bound on it (never an opening time).
@@ -431,14 +445,17 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
                 automationSlot={__DOMINO_V2__ ? <span ref={setAutomationToolbar} className="dm-position-automation-slot" data-position-automation-slot="" /> : null}
                 primary={!(automation.phase === 'ready' && 'paused' in automation.state)}
                 autoExitRoot={autoExitRoot}
+                closeWith={closeFlow}
               />
             </Suspense>
           </div>
         )}
         {/* V2 actions join the same visible action bar while retaining their own gates and lazy loading. */}
-        {__DOMINO_V2__ && V2Actions && PositionActions && mine && copy === undefined && !gateway && (
+        {/* Changed on purpose 2026-11-09 (the core-flows fix): also for a connected wallet that does not hold the NFT, where the
+            V2 actions offer Close position only for a position that wallet's Domino-compound holds (nothing otherwise). */}
+        {__DOMINO_V2__ && V2Actions && PositionActions && (mine || identity.kind === 'connected') && copy === undefined && !gateway && (
           <Suspense fallback={null}>
-            <V2Actions position={wallet} owner={card.owner.address} onChanged={onChanged} onAutoExitRoot={setAutoExitRoot} />
+            <V2Actions position={wallet} owner={card.owner.address} wallet={mine || identity.kind !== 'connected' ? undefined : identity.address.toLowerCase()} onChanged={onChanged} onAutoExitRoot={setAutoExitRoot} onCloseFlow={onCloseFlow} />
           </Suspense>
         )}
         {/* (QA round 2, N43) Anyone but the owner wallet reads this page with no action on it (by design): one quiet line says
@@ -675,8 +692,8 @@ export default function PositionDetail({ tokenId }: { tokenId: string }) {
         setDetail((before) => (before.phase === 'ready' ? before : { phase: 'failed', reason }))
         if (!answer.ok && answer.failure === 'unavailable') fromGateway()
         const passing = reason === 'unavailable' || reason === 'rate_limited' || reason === 'rpc_unavailable'
-        if (!passing || attempts >= REASK_MS.length) return
-        const wait = Math.max(REASK_MS[attempts], answer.ok ? 0 : answer.retryAfterMs)
+        const step = passing && attempts < REASK_MS.length ? REASK_MS[attempts] : REASK_MAX_MS
+        const wait = Math.min(Math.max(step, answer.ok ? 0 : answer.retryAfterMs), 5 * REASK_MAX_MS)
         attempts += 1
         askAfter(wait)
       })

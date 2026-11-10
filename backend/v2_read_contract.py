@@ -61,13 +61,15 @@ STORED_ROUTES = ('portfolio', 'activity', 'chain-tokens', 'position-fees')
 # The enabled V2 chains (api-contracts/v2/chains), ascending; a constant so the
 # reader never loads the profiles to start. tests/test_read_v6_contract.py
 # holds it to the registry.
-CHAIN_IDS = (4663, 8453, 42161)
+# Changed on purpose 2026-11-09 (Elysium's services): Elysium (99901), deployed on 9 Nov, joins under the same
+# contract versions; the read Worker and the app leave out chains they do not serve (app/docs/ELYSIUM_DAY9.md).
+CHAIN_IDS = (4663, 8453, 42161, 99901)
 # The chains chain-balances reads, ascending: Domino's, and the balance chains
 # (api-contracts/v2/balance-chains: Ethereum and OP Mainnet, the owner's decision
 # of 6 Oct 2026), read only when a request names them in `tokens`. Every other
 # route, and chain-balances without `tokens`, is CHAIN_IDS'. The test holds it
 # to both registries.
-BALANCE_CHAIN_IDS = (1, 10, 4663, 8453, 42161)
+BALANCE_CHAIN_IDS = (1, 10, 4663, 8453, 42161, 99901)
 MAX_VAULTS, MAX_POSITIONS, MAX_MANDATES, MAX_CREDITS, MAX_TOKENS = 50, 100, 100, 50, 300
 MAX_ITEMS, DEFAULT_ITEMS = 50, 20
 MAX_LEGS, MAX_STEPS, MAX_LINES, MAX_EVENTS, MAX_MEMBERS = 8, 8, 16, 32, 256
@@ -89,7 +91,8 @@ LIVE_LIMITATIONS = ('usd_from_qualified_sources_only', 'token_metadata_untrusted
 # (and past the sequencer's grace where it has an uptime feed), any other token at its deepest pool against those
 # holding at least PRICE_FLOOR_USD within PRICE_BAND_PERCENT of its price. On a chain Chainlink does not serve, the
 # native currency and its wrapped token are priced as `pool` at the pool its profile names instead, under the same
-# floor, and no price there carries a feed's round (a PRICE_PROFILES entry with `nativePool`; none yet).
+# floor, and no price there carries a feed's round (a PRICE_PROFILES entry with `nativePool`: Elysium's HYPE, priced at
+# its native HYPE/USDC v4 pool at 1%, the owner's choice of 9 Nov 2026).
 PRICE_SOURCES = ('chain_stable', 'chainlink_eth_usd', 'pool')
 PRICE_REASONS = ('no_qualified_price_source', 'price_read_failed', 'pricing_limit_reached', 'decimals_unknown',
                  'eth_usd_stale', 'sequencer_down', 'no_pool', 'pool_depth_below_floor', 'pool_depth_unmeasurable',
@@ -100,7 +103,7 @@ PRICE_FLOOR_USD, PRICE_BAND_PERCENT = '10000.000000', 10
 # Each chain's stable, wrapped native token and Chainlink ETH/USD feed, from its profile (api-contracts/v2/chains, and
 # api-contracts/v2/balance-chains for Ethereum and OP Mainnet; test_read_v6_contract holds them equal to
 # v2_chain_reads.price_profile). A chain without Chainlink would have `feed` and `heartbeatSeconds` null and
-# `nativePool`, the PoolRef its profile prices the native currency at; no chain read-v6 serves has one.
+# `nativePool`, the PoolRef its profile prices the native currency at: Elysium (99901).
 PRICE_PROFILES = {
     1: {'stable': '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', 'wrapped': '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
         'feed': '0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419', 'heartbeatSeconds': 3600},
@@ -112,8 +115,15 @@ PRICE_PROFILES = {
            'feed': '0x50015f8b17fb2c290dde41fdc246ed0dcee93a8b', 'heartbeatSeconds': 1200},
     42161: {'stable': '0xaf88d065e77c8cc2239327c5edb3a432268e5831', 'wrapped': '0x82af49447d8a07e3bd95bd0d56f35241523fbab1',
             'feed': '0x639fe6ab55c921f74e7fac1ee960c0b6293ba612', 'heartbeatSeconds': 1755},
+    99901: {'stable': '0xb47c4c8f73f009cc0c0d3f92b388d13e293f0b65', 'wrapped': '0xba876237b0f021a6c6d852d6c26e107997cc5e81',
+            'feed': None, 'heartbeatSeconds': None,
+            'nativePool': {'dex': 4, 'currency0': '0x0000000000000000000000000000000000000000',
+                           'currency1': '0xb47c4c8f73f009cc0c0d3f92b388d13e293f0b65', 'fee': 10000, 'tickSpacing': 200,
+                           'hooks': '0x0000000000000000000000000000000000000000'}},
 }
-SEARCH_CHAIN_IDS = (8453, 42161)
+# chain-tokens' chains: Base and Arbitrum One (the owner's decision of 5 Oct 2026) and Elysium (9 Nov 2026, the same
+# sources as theirs); Robinhood's search is read-v3's.
+SEARCH_CHAIN_IDS = (8453, 42161, 99901)
 MAX_CHAIN_POOLS, MAX_POOL_TOKENS, MAX_BALANCE_TOKENS, MAX_SEARCH_TOKENS = 32, 8, 24, 24
 MAX_QUERY, DEFAULT_SEARCH_TOKENS, LIVE_FRESH_SECONDS = 96, 20, 60
 # Where a known token comes from, in the order matches rank (v2_chain_reads.SOURCES).
@@ -1377,7 +1387,7 @@ class KnownToken(WireModel):
 
 
 class ChainTokensResponse(WireModel):
-    """chain-tokens: the tokens Domino knows on Base or Arbitrum One that match a query (known tokens only)."""
+    """chain-tokens: the tokens Domino knows on Base, Arbitrum One or Elysium that match a query (known tokens only)."""
     schemaVersion: Literal[1]
     contractVersion: Literal[CONTRACT_VERSIONS]
     mode: Literal['known_chain_tokens']

@@ -153,7 +153,7 @@ export function CreatedArt({ kind }: { kind: CreatedArtKind }) {
  */
 export function NewPositionAgain() {
   return (
-    <a href="#/new" className="dm-np-again">
+    <a href="/new" className="dm-np-again">
       {CREATE.page.title}
     </a>
   )

@@ -1,0 +1,28 @@
+{
+  "contractVersion": "1.0.0-rc.1",
+  "season": {
+    "configSha256": "1657735e6f3f50655e216adffbb1a879c837fcba47ad44e29961a346f787fd98",
+    "end": "2027-02-09T00:00:00Z",
+    "id": "points-s1",
+    "start": "2026-11-09T00:00:00Z",
+    "title": "Season 1"
+  },
+  "snapshot": {
+    "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "takenAt": 1794189900
+  },
+  "wallet": {
+    "address": "0x4a62316623ad457f02cdc5d997ded67a383ec569",
+    "points": "1715.000000",
+    "referees": 1,
+    "referralPoints": "65.000000",
+    "referrer": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "revenueUsd": {
+      "assistedSwap": "0.650000000000000000",
+      "autoExit": "0.000000000000000000",
+      "automation": "0.650000000000000000",
+      "bridge": "0.350000000000000000"
+    },
+    "usagePoints": "1650.000000"
+  }
+}

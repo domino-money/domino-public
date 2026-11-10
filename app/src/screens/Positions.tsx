@@ -21,6 +21,7 @@ import { portfolioRoute, positionDetailId } from '../lib/read/screens/positions'
 import { useWalletIdentity, walletKey, type WalletIdentityView } from '../lib/walletIdentity'
 import { AUTO_EXIT_FEATURE } from '../lib/automate/features'
 import { useRouteTitle } from '../lib/routeTitle'
+import { currentRoute } from '../lib/route'
 
 type Connected = Extract<WalletIdentityView, { kind: 'connected' }>
 
@@ -175,7 +176,7 @@ function ManagedCard({ hidden, onShows, receipts = null }: { hidden?: boolean; o
 }
 
 /** The full list of receipts: its own page under Positions (`#/positions/receipts`), which the Receipts card links. */
-const receiptsHref = '#/positions/receipts'
+const receiptsHref = '/positions/receipts'
 /** How many rows the Receipts card shows before See all: the cancelled ones count as one. */
 const RECENT = 4
 
@@ -274,7 +275,7 @@ function ReceiptsPage() {
   return (
     <PageShell className="dm-receipts-page">
       <div className="dm-rcpt-mast">
-        <a href="#/positions" className="dm-pos-back">
+        <a href="/positions" className="dm-pos-back">
           <IconChevronLeft size={16} />
           Positions
         </a>
@@ -365,9 +366,24 @@ function NoWalletHere() {
   )
 }
 
+/**
+ * Points (added 2026-11-07, the owner's Points page, Season 1, decision D4): always here, in every build that carries the
+ * wallet, as a small ghost button with its round star. From 768px it leads the title's actions (before Receipts or
+ * Markets); below, where those two take the row's width, it sits small on the title's own line (`narrow`). Each is drawn
+ * at its own widths only (styles/v4-positions.css), so one is ever on show.
+ */
+const PointsButton = __DOMINO_WALLET_SESSION__
+  ? ({ narrow = false }: { narrow?: boolean }) => (
+      <LinkButton href="/points" variant="ghost" size={narrow ? 'sm' : 'md'} className={narrow ? 'dm-points-narrow' : 'dm-points-wide'} data-positions-points={narrow ? 'narrow' : 'wide'}>
+        <span aria-hidden="true" className="dm-v4-pl dm-v4-pl--points" />
+        Points
+      </LinkButton>
+    )
+  : null
+
 /** The address a `#/portfolio/<address>` link names, lowercase, when it is one (audit V7); null otherwise. */
 function linkedAddress(): string | null {
-  const route = portfolioRoute(window.location.hash)
+  const route = portfolioRoute(currentRoute())
   if (!route.onRoute || !route.address) return null
   const parsed = parseAddressInput(route.address)
   return parsed.ok ? parsed.key : null
@@ -404,9 +420,11 @@ function PositionsList() {
             Positions
           </Display>
           {identity.kind === 'connected' && <ConnectedChip identity={identity} />}
+          {PointsButton && <PointsButton narrow />}
         </div>
         </div>
         <div className="dm-acct-title-actions">
+          {PointsButton && <PointsButton />}
           {identity.kind === 'connected' && !viewing ? (
             <LinkButton href={receiptsHref} variant="outline" data-positions-receipts="">
               <span aria-hidden="true" className="dm-v4-pl dm-v4-pl--receipt" />

@@ -78,6 +78,16 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/056_position_mint_scan.sql',
     # The session's origin, the session schema's like 041: apply_migrations.py applies it, never this upgrade.
     'backend/migrations/057_session_origin.sql',
+    # The points ledger (season 1): apply_migrations.py applies it, never this upgrade.
+    'backend/migrations/058_points_ledger.sql',
+    # The points engine (season 1): apply_migrations.py applies it, never this upgrade.
+    'backend/migrations/059_points_engine.sql',
+    # The chunks' (pool_id, end_block) index: apply_migrations.py applies it, never this upgrade.
+    'backend/migrations/060_chunk_end_index.sql',
+    # The entities' keep-warm index: apply_migrations.py applies it, never this upgrade.
+    'backend/migrations/061_public_entities_keep_warm.sql',
+    # The collector's scheduled cadence: apply_migrations.py applies it, never this upgrade.
+    'backend/migrations/062_public_claim_cadence.sql',
 )
 NEW_ROLES = ('domino_performance_collector', 'domino_performance_reader',
              'domino_execution_worker', 'domino_execution_ledger',

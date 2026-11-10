@@ -824,10 +824,12 @@ test('with no wallet, a phone is offered the wallet apps that open this site (do
   assert.doesNotMatch(text, /extension/, 'nothing a phone cannot do');
   // Changed on purpose 2026-10-30 (QA round 2, N56): each link carries the open route (#/app here), as the gate keeps it
   // through the password, so the wallet's browser opens the same screen; the site stays fixed.
+  // Changed on purpose 2026-11-07 (pages of their own, src/lib/route.ts): `/#/app` opened Positions at its own address,
+  // /positions, so the link carries that route in the form the gate and the app take (`#/positions`); the same screen.
   assert.deepEqual(await dialog(page).getByRole('list', { name: 'Wallet apps' }).locator('a').evaluateAll((links) => links.map((link) => link.getAttribute('href'))), [
-    'https://metamask.app.link/dapp/domino.money/#/app',
-    'https://go.cb-w.com/dapp?cb_url=https%3A%2F%2Fdomino.money%2F%23%2Fapp',
-    'https://link.trustwallet.com/open_url?coin_id=60&url=https%3A%2F%2Fdomino.money%2F%23%2Fapp',
+    'https://metamask.app.link/dapp/domino.money/#/positions',
+    'https://go.cb-w.com/dapp?cb_url=https%3A%2F%2Fdomino.money%2F%23%2Fpositions',
+    'https://link.trustwallet.com/open_url?coin_id=60&url=https%3A%2F%2Fdomino.money%2F%23%2Fpositions',
   ]);
   await phone.close();
 
@@ -1409,7 +1411,7 @@ test('Positions gives a connected wallet a visible receipts entry and signs in o
   await page.keyboard.press('Escape');
   const entrance = page.locator('[data-positions-receipts]');
   await entrance.waitFor();
-  assert.equal(await entrance.getAttribute('href'), '#/positions/receipts');
+  assert.equal(await entrance.getAttribute('href'), '/positions/receipts');
   const box = await entrance.boundingBox();
   assert.ok(box && box.x >= 0 && box.x + box.width <= 320, 'the entry fits a narrow phone');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'no horizontal overflow');

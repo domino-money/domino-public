@@ -27,6 +27,7 @@ from v2_manifest import COMPONENTS, DEPLOY_ORDER, checked_deployment  # noqa: E4
 from v2_index_store import V2Store  # noqa: E402
 from v2_indexer import V2Indexer  # noqa: E402
 from v2_index_fixtures import (IndexChain, local_endpoints, manifest, synthetic_runtime, tx_hash)  # noqa: E402
+from v2_read_contract import CHAIN_IDS  # noqa: E402
 from v2_read_service import V2ReadService  # noqa: E402
 
 DB = 'domino_v2_index_tests'
@@ -388,7 +389,8 @@ class IndexerTests(unittest.TestCase):
         robinhood = portfolio['chains'][0]
         self.assertEqual((robinhood['chainId'], robinhood['status'], robinhood['indexedThrough']['number']),
                          (4663, 'current', 40))
-        self.assertEqual([c['status'] for c in portfolio['chains'][1:]], ['unavailable', 'unavailable'])
+        # Every other chain read-v6 names has no deployment in this index.
+        self.assertEqual([c['status'] for c in portfolio['chains'][1:]], ['unavailable'] * (len(CHAIN_IDS) - 1))
         self.assertEqual(portfolio['coverage'], 'partial')
         vault, = portfolio['vaults']
         self.assertEqual((vault['address'], vault['state']['status'], vault['totals']['executions'],
@@ -532,7 +534,7 @@ class IndexerTests(unittest.TestCase):
         self.clock[0] = t0 + 100
         portfolio = V2ReadService(self.store, clock=lambda: self.clock[0]).portfolio(OWNER)
         self.assertEqual([c['waitingReasons']['status'] for c in portfolio['chains']],
-                         ['reporting', 'not_configured', 'not_configured'])
+                         ['reporting'] + ['not_configured'] * (len(CHAIN_IDS) - 1))
         vault, = portfolio['vaults']
         self.assertEqual({k: vault['waiting'][k] for k in ('reason', 'since', 'sinceBlock', 'checkedAt')},
                          {'reason': 'gas_not_covered', 'since': t0 + 30, 'sinceBlock': 30, 'checkedAt': t0 + 90})

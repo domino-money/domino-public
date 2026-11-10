@@ -1,4 +1,5 @@
 /** Local UI readiness timings. No requests, wallet identifiers, URLs, storage or analytics service. */
+import { ROUTE_EVENT, routeOf } from './route'
 export type LoadScreen = 'overview' | 'markets' | 'pool' | 'positions' | 'position' | 'other'
 export type LoadMetric = 'value' | 'tvl' | 'volume' | 'apr' | 'chart'
 export type LoadQuality = 'current' | 'estimated' | 'cached' | 'partial'
@@ -78,19 +79,20 @@ export const loadTimings = createLoadTimings({
 
 /** Install before React mounts, so lazy chunks and data reads count. Timings never leave this browser. */
 export function startLoadTimings(browser: Window): () => void {
-  let route = browser.location.hash.split('#', 2).join('#')
+  // Changed on purpose 2026-11-07 (pages of their own, lib/route.ts): the route is the address's path, and a move its event.
+  let route = routeOf(browser.location).split('#', 2).join('#')
   loadTimings.begin(loadScreen(route), 0)
   const navigate = () => {
-    const next = browser.location.hash.split('#', 2).join('#')
+    const next = routeOf(browser.location).split('#', 2).join('#')
     if (next === route) return
     route = next
     loadTimings.begin(loadScreen(route))
   }
   const visibility = () => loadTimings.visibility()
-  browser.addEventListener('hashchange', navigate)
+  browser.addEventListener(ROUTE_EVENT, navigate)
   browser.document.addEventListener('visibilitychange', visibility)
   return () => {
-    browser.removeEventListener('hashchange', navigate)
+    browser.removeEventListener(ROUTE_EVENT, navigate)
     browser.document.removeEventListener('visibilitychange', visibility)
   }
 }

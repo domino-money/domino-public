@@ -32,6 +32,7 @@ import install_automation_release as automation
 import continuous_egress_policy as egress_policy
 import install_crosschain as crosschain
 import install_monitor as monitor
+import install_points_api as points_listener
 import install_financial_release as installer
 import install_position_plan as position_plan
 import install_v2_automation as automation_v2
@@ -324,6 +325,37 @@ class RealSystemdTests(unittest.TestCase):
         self.assertEqual(shown['ProtectSystem'], 'strict')
         self.assertIn(shown['UnitFileState'], ('disabled', 'indirect'))
 
+    def test_the_points_ledger_template_runs_its_instance_chain_and_always_comes_back(self):
+        # Points, season 1 (7 Nov 2026): the V2 fees' user, sandbox, hosts and credentials; its chain is the instance.
+        ops = Path(__file__).resolve().parents[3] / 'ops/systemd'
+        template = RUNTIME_UNITS / 'domino-points-ledger-under-test@.service'
+        self.assertFalse(os.path.lexists(template), template)
+        self.written.append(template)
+        template.write_text((ops / 'domino-points-ledger@.service').read_text()
+                            .replace('@PUBLIC_ROOT@', '/opt/domino/public-data')
+                            .replace('@QUEUE_ROOT@', '/opt/domino/queue-worker'))
+        subprocess.run(['systemctl', 'daemon-reload'], check=True)
+        raw = subprocess.run(['systemctl', 'show', '--all', 'domino-points-ledger-under-test@robinhood-4663.service',
+                              '--property=LoadState,ExecStart,Restart,User,SupplementaryGroups,WorkingDirectory,'
+                              'PartOf,BindsTo,BindReadOnlyPaths,ProtectSystem,UnitFileState,ImportCredential,'
+                              'DeviceAllow'],
+                             check=True, capture_output=True, text=True).stdout
+        shown = dict(line.split('=', 1) for line in raw.splitlines() if '=' in line)
+        self.assertEqual(shown['LoadState'], 'loaded')
+        self.assertIn('argv[]=/opt/domino/queue-worker/venv/bin/python -B points_ledger.py follow --chain '
+                      'robinhood-4663 --chain-rpc-file /opt/domino/queue-worker/release/backend/runtime/chain-rpc.json '
+                      '--poll 60 ;', shown['ExecStart'])
+        self.assertEqual(shlex.split(shown['ImportCredential']), ['v2-rpc-*'])
+        self.assertIn('DeviceAllow=char-tpm rw', raw.splitlines())
+        self.assertEqual(shown['Restart'], 'always')
+        self.assertEqual((shown['User'], shown['SupplementaryGroups']), ('domino-write', 'domino-db'))
+        self.assertEqual(shown['WorkingDirectory'], '/opt/domino/public-data/current/backend')
+        self.assertEqual((shown['PartOf'], shown['BindsTo']),
+                         ('domino-public-data.target', 'domino-continuous-egress.service'))
+        self.assertEqual(shown['BindReadOnlyPaths'], '/etc/domino/continuous-reads/write.hosts:/etc/hosts:rbind')
+        self.assertEqual(shown['ProtectSystem'], 'strict')
+        self.assertIn(shown['UnitFileState'], ('disabled', 'indirect'))
+
     def test_the_v2_automation_template_runs_each_chain_with_its_sealed_passwords(self):
         # One instance per chain: its configuration, its own state directory, the two keystore passwords as
         # encrypted credentials, the hosted RPC URLs imported, and the TPM open for both.
@@ -415,6 +447,36 @@ class RealSystemdTests(unittest.TestCase):
         self.plan_reload()
         shown = self.plan_show(name, 'ExecStart')
         self.assertIn('--port 8910 --enable --rpc-config /run/domino-financial-crosschain-config/rpc.json ;',
+                      shown['ExecStart'])
+        self.assertEqual(shown['ExecStart'].count('argv[]='), 1)
+
+    def test_the_points_listener_loads_disabled_holds_no_credential_and_the_egress_drop_in_enables_it(self):
+        # As the plan and crosschain listeners: no --enable in the unit, and the continuous egress policy's drop-in
+        # is what switches it on. It holds no key, so it imports no credential and keeps the TPM out of its devices.
+        name = 'domino-points-under-test'
+        self.install(name, points_listener.unit_text(AFTER))
+        self.plan_reload()
+        shown = self.plan_show(name, 'LoadState', 'ExecStart', 'User', 'ImportCredential', 'BindReadOnlyPaths',
+                               'BindPaths', 'ProtectSystem', 'PrivateDevices')
+        self.assertEqual((shown['LoadState'], shown['User'], shown['ProtectSystem'], shown['PrivateDevices']),
+                         ('loaded', 'domino-points', 'strict', 'yes'))
+        self.assertIn('-B backend/points_api.py --port 8912 ;', shown['ExecStart'])
+        self.assertNotIn('--enable', shown['ExecStart'])
+        self.assertEqual(shown.get('ImportCredential', ''), '')
+        devices = subprocess.run(['systemctl', 'show', f'{name}.service', '--property=DeviceAllow'],
+                                 check=True, capture_output=True, text=True).stdout.splitlines()
+        self.assertNotIn('DeviceAllow=char-tpm rw', devices)
+        self.assertIn('/run/domino-financial-points-config', shown['BindReadOnlyPaths'])
+        self.assertIn('/var/lib/domino-financial/points', shown['BindPaths'])
+        enable = egress_policy.enable_command('points')
+        dropin_dir = RUNTIME_UNITS / f'{name}.service.d'
+        self.assertFalse(os.path.lexists(dropin_dir), dropin_dir)
+        self.written.append(dropin_dir)
+        dropin_dir.mkdir()
+        (dropin_dir / egress_policy.DROPIN).write_text('[Service]\nExecStart=\n' + enable + '\n')
+        self.plan_reload()
+        shown = self.plan_show(name, 'ExecStart')
+        self.assertIn('--port 8912 --enable --rpc-config /run/domino-financial-points-config/rpc.json ;',
                       shown['ExecStart'])
         self.assertEqual(shown['ExecStart'].count('argv[]='), 1)
 

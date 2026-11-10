@@ -65,6 +65,6 @@ export function WalletPrompt({ identity }: { identity: WalletIdentityView }) {
         {!elsewhere && <LinkButton href={newPositionHref()} variant="outline" size="lg" data-sequence-new-position=""><IconPlus />New position</LinkButton>}
         {elsewhere && notice && <p role="alert" className="mt-3 text-[0.8125rem] leading-[1.125rem] text-fg-muted" data-sequence-switch-notice="">{notice}</p>}
       </>} />
-    <div className="dm-acct-block" data-sequence-back=""><LinkButton href="#/automate" variant="outline">Back</LinkButton></div>
+    <div className="dm-acct-block" data-sequence-back=""><LinkButton href="/automate" variant="outline">Back</LinkButton></div>
   </>
 }

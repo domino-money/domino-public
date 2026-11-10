@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Refresh backend/data/token-lists/uniswap-default.json, the curated list behind read-v6's chain-tokens.
 
-The owner's decision of 5 Oct 2026: token search on Base and Arbitrum One starts from the Uniswap Labs Default
-token list (https://tokens.uniswap.org) and learns from use (backend/v2_chain_reads.py). The list is GPL-3.0
+The owner's decision of 5 Oct 2026, extended to Elysium on 9 Nov 2026: token search on Base, Arbitrum One and
+Elysium starts from the Uniswap Labs Default token list (https://tokens.uniswap.org) and learns from use (backend/v2_chain_reads.py). The list is GPL-3.0
 (github.com/Uniswap/default-token-list): the subset keeps its provenance (URL, version, timestamp, the SHA-256 of
 the exact bytes read) and ships with the license beside it (backend/THIRD_PARTY_NOTICES.md).
 
@@ -24,7 +24,7 @@ URL = 'https://tokens.uniswap.org'
 REPOSITORY = 'https://github.com/Uniswap/default-token-list'
 OUT = Path(__file__).resolve().parents[1] / 'backend/data/token-lists/uniswap-default.json'
 LICENSE_FILE = 'LICENSE-uniswap-default-token-list'
-CHAINS = (8453, 42161)
+CHAINS = (8453, 42161, 99901)
 MAX_BYTES = 8 * 1024 * 1024
 MAX_SYMBOL, MAX_NAME = 40, 64
 

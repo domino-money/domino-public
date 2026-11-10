@@ -83,7 +83,8 @@ export const SCHEMAS = {
               "enum": [
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Chainid",
               "type": "integer"
@@ -245,7 +246,8 @@ export const SCHEMAS = {
               "enum": [
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Chainid",
               "type": "integer"
@@ -516,7 +518,8 @@ export const SCHEMAS = {
               "enum": [
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Chainid",
               "type": "integer"
@@ -1014,7 +1017,8 @@ export const SCHEMAS = {
               "enum": [
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Chainid",
               "type": "integer"
@@ -1450,7 +1454,8 @@ export const SCHEMAS = {
               "enum": [
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Chainid",
               "type": "integer"
@@ -1689,7 +1694,8 @@ export const SCHEMAS = {
               "enum": [
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Chainid",
               "type": "integer"
@@ -2162,7 +2168,8 @@ export const SCHEMAS = {
               "enum": [
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Chainid",
               "type": "integer"
@@ -2255,7 +2262,8 @@ export const SCHEMAS = {
               "enum": [
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Chainid",
               "type": "integer"
@@ -2371,7 +2379,8 @@ export const SCHEMAS = {
               "enum": [
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Chainid",
               "type": "integer"
@@ -2546,7 +2555,8 @@ export const SCHEMAS = {
               "enum": [
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Chainid",
               "type": "integer"
@@ -2622,8 +2632,8 @@ export const SCHEMAS = {
           "items": {
             "$ref": "#/$defs/ChainStatus"
           },
-          "maxItems": 3,
-          "minItems": 3,
+          "maxItems": 4,
+          "minItems": 4,
           "title": "Chains",
           "type": "array"
         },
@@ -2799,7 +2809,8 @@ export const SCHEMAS = {
                 10,
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Chainid",
               "type": "integer"
@@ -2903,7 +2914,8 @@ export const SCHEMAS = {
                 10,
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Chainid",
               "type": "integer"
@@ -3265,7 +3277,7 @@ export const SCHEMAS = {
           "items": {
             "$ref": "#/$defs/ChainBalances"
           },
-          "maxItems": 5,
+          "maxItems": 6,
           "minItems": 1,
           "title": "Chains",
           "type": "array"
@@ -3370,7 +3382,8 @@ export const SCHEMAS = {
           "enum": [
             4663,
             8453,
-            42161
+            42161,
+            99901
           ],
           "title": "Chainid",
           "type": "integer"
@@ -3915,7 +3928,8 @@ export const SCHEMAS = {
           "enum": [
             4663,
             8453,
-            42161
+            42161,
+            99901
           ],
           "title": "Chainid",
           "type": "integer"
@@ -4049,7 +4063,8 @@ export const SCHEMAS = {
         "chainId": {
           "enum": [
             8453,
-            42161
+            42161,
+            99901
           ],
           "title": "Chainid",
           "type": "integer"
@@ -4172,12 +4187,13 @@ export const SCHEMAS = {
       "$id": "https://domino.invalid/contracts/read-v6/chain-tokens.response.schema.json",
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
-      "description": "chain-tokens: the tokens Domino knows on Base or Arbitrum One that match a query (known tokens only).",
+      "description": "chain-tokens: the tokens Domino knows on Base, Arbitrum One or Elysium that match a query (known tokens only).",
       "properties": {
         "chainId": {
           "enum": [
             8453,
-            42161
+            42161,
+            99901
           ],
           "title": "Chainid",
           "type": "integer"
@@ -4345,7 +4361,8 @@ export const SCHEMAS = {
               "enum": [
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Chainid",
               "type": "integer"
@@ -4494,7 +4511,8 @@ export const SCHEMAS = {
               "enum": [
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Chainid",
               "type": "integer"
@@ -4753,7 +4771,8 @@ export const SCHEMAS = {
               "enum": [
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Chainid",
               "type": "integer"
@@ -4964,7 +4983,8 @@ export const SCHEMAS = {
               "enum": [
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Chainid",
               "type": "integer"
@@ -5479,7 +5499,8 @@ export const SCHEMAS = {
               "enum": [
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Chainid",
               "type": "integer"
@@ -5917,7 +5938,8 @@ export const SCHEMAS = {
               "enum": [
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Chainid",
               "type": "integer"
@@ -6582,8 +6604,8 @@ export const SCHEMAS = {
           "items": {
             "$ref": "#/$defs/ChainStatus"
           },
-          "maxItems": 3,
-          "minItems": 3,
+          "maxItems": 4,
+          "minItems": 4,
           "title": "Chains",
           "type": "array"
         },
@@ -6758,7 +6780,8 @@ export const SCHEMAS = {
           "enum": [
             4663,
             8453,
-            42161
+            42161,
+            99901
           ],
           "title": "Chainid",
           "type": "integer"
@@ -7689,7 +7712,8 @@ export const SCHEMAS = {
           "enum": [
             4663,
             8453,
-            42161
+            42161,
+            99901
           ],
           "title": "Chainid",
           "type": "integer"
@@ -7832,7 +7856,8 @@ export const CONSTANTS = {
     10,
     4663,
     8453,
-    42161
+    42161,
+    99901
   ],
   "blockers": [
     "expired",
@@ -7846,7 +7871,8 @@ export const CONSTANTS = {
   "chainIds": [
     4663,
     8453,
-    42161
+    42161,
+    99901
   ],
   "chainReasons": [
     "deployment_not_registered",
@@ -7927,6 +7953,20 @@ export const CONSTANTS = {
       "heartbeatSeconds": 1200,
       "stable": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
       "wrapped": "0x4200000000000000000000000000000000000006"
+    },
+    "99901": {
+      "feed": null,
+      "heartbeatSeconds": null,
+      "nativePool": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0xb47c4c8f73f009cc0c0d3f92b388d13e293f0b65",
+        "dex": 4,
+        "fee": 10000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tickSpacing": 200
+      },
+      "stable": "0xb47c4c8f73f009cc0c0d3f92b388d13e293f0b65",
+      "wrapped": "0xba876237b0f021a6c6d852d6c26e107997cc5e81"
     }
   },
   "staleSeconds": 7200,

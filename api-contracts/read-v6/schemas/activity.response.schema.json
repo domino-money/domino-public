@@ -39,7 +39,8 @@
           "enum": [
             4663,
             8453,
-            42161
+            42161,
+            99901
           ],
           "title": "Chainid",
           "type": "integer"
@@ -201,7 +202,8 @@
           "enum": [
             4663,
             8453,
-            42161
+            42161,
+            99901
           ],
           "title": "Chainid",
           "type": "integer"
@@ -472,7 +474,8 @@
           "enum": [
             4663,
             8453,
-            42161
+            42161,
+            99901
           ],
           "title": "Chainid",
           "type": "integer"
@@ -970,7 +973,8 @@
           "enum": [
             4663,
             8453,
-            42161
+            42161,
+            99901
           ],
           "title": "Chainid",
           "type": "integer"
@@ -1406,7 +1410,8 @@
           "enum": [
             4663,
             8453,
-            42161
+            42161,
+            99901
           ],
           "title": "Chainid",
           "type": "integer"
@@ -1645,7 +1650,8 @@
           "enum": [
             4663,
             8453,
-            42161
+            42161,
+            99901
           ],
           "title": "Chainid",
           "type": "integer"
@@ -2118,7 +2124,8 @@
           "enum": [
             4663,
             8453,
-            42161
+            42161,
+            99901
           ],
           "title": "Chainid",
           "type": "integer"
@@ -2211,7 +2218,8 @@
           "enum": [
             4663,
             8453,
-            42161
+            42161,
+            99901
           ],
           "title": "Chainid",
           "type": "integer"
@@ -2327,7 +2335,8 @@
           "enum": [
             4663,
             8453,
-            42161
+            42161,
+            99901
           ],
           "title": "Chainid",
           "type": "integer"
@@ -2502,7 +2511,8 @@
           "enum": [
             4663,
             8453,
-            42161
+            42161,
+            99901
           ],
           "title": "Chainid",
           "type": "integer"
@@ -2578,8 +2588,8 @@
       "items": {
         "$ref": "#/$defs/ChainStatus"
       },
-      "maxItems": 3,
-      "minItems": 3,
+      "maxItems": 4,
+      "minItems": 4,
       "title": "Chains",
       "type": "array"
     },

@@ -176,6 +176,45 @@
       "snapshot": null,
       "status": "unavailable",
       "totalUsd": null
+    },
+    {
+      "balances": [
+        {
+          "address": "0xb47c4c8f73f009cc0c0d3f92b388d13e293f0b65",
+          "balanceRaw": null,
+          "decimals": null,
+          "price": null,
+          "priceReason": "no_qualified_price_source",
+          "status": "unavailable",
+          "symbol": null,
+          "valueUsd": null
+        },
+        {
+          "address": "0x0000000000000000000000000000000000000000",
+          "balanceRaw": null,
+          "decimals": null,
+          "price": null,
+          "priceReason": "no_qualified_price_source",
+          "status": "unavailable",
+          "symbol": null,
+          "valueUsd": null
+        },
+        {
+          "address": "0xba876237b0f021a6c6d852d6c26e107997cc5e81",
+          "balanceRaw": null,
+          "decimals": null,
+          "price": null,
+          "priceReason": "no_qualified_price_source",
+          "status": "unavailable",
+          "symbol": null,
+          "valueUsd": null
+        }
+      ],
+      "chainId": 99901,
+      "reason": "chain_not_configured",
+      "snapshot": null,
+      "status": "unavailable",
+      "totalUsd": null
     }
   ],
   "contractVersion": "1.1.0-rc.1",

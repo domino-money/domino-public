@@ -217,7 +217,7 @@ export function ExecutionReceiptRow({ item, refreshFailed, tokens, at }: { item:
           <p className="dm-rcpt-note">It can still be stopped: press Pause on your position’s page before it is signed.</p>
           {/* 2026-09-24: the sequence page no longer manages sequences (the owner's simpler page); how to pause is on the docs.
               2026-10-01 (audit E18): the note says where Pause is; a receipt names no position to link to. */}
-          <LinkButton href="#/docs/non-custodial#pause-revoke-withdraw" variant="outline" size="sm">How to pause</LinkButton>
+          <LinkButton href="/docs/non-custodial#pause-revoke-withdraw" variant="outline" size="sm">How to pause</LinkButton>
         </div>}
         {/* The technical part, last and small: whole values are one copy away, never a link out of the app. */}
         <dl className="dm-rcpt-tech">

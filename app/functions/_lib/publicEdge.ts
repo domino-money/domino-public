@@ -71,6 +71,28 @@
  *     `refreshWaitMs`), so a slow VM has the kept answer stand in within it rather than at the Worker's own time-out.
  * Nothing else changed: only a valid 200 is ever kept, under the same keys, for the same requests (plainAsk), and no
  * error body, no other question's answer and nothing of a session or a wallet is ever served from it.
+ *
+ * Added 2026-11-07 (edge hardening, after rugged97's attack test of the open site: every public read that reached the VM
+ * on every request was one more each attacking address could send):
+ *   - a route's key may join questions its producer answers alike (searchEdge.ts: a query told apart only by case or by
+ *     the spaces around it), and a route may say how a kept answer is served as the answer to another such question,
+ *     or at another moment (`serve`: the query echoed as asked; read-v6's `servedAt` and age, which its producer writes
+ *     anew on every answer it gives, its own cache's too). Whatever `serve` gives is checked with the route's `answers`
+ *     against the very request, as a kept answer always was, and so, now, is a miss's answer shared with a request that
+ *     joined it: one that is not this request's own answer leaves it to ask the Worker itself;
+ *   - `keyOf` is told the contract version the request named, so a route whose Worker answers in the version asked
+ *     (read-v6) keeps each version's answers apart;
+ *   - a stand-in served after a wait is served anew as of the moment it leaves;
+ *   - (review of the same day) a 429 (read_capacity_busy) is the gateway's refusal of that one visitor, mostly its own
+ *     address's budget: it still lets a kept answer stand in for that visitor, but it no longer guards the key, so it
+ *     never has a kept answer stand in for anyone else, nor holds off a refresh by the next visitor (`busy`). One address
+ *     past its budget could otherwise keep every visitor on the kept answer. A 408, a 5xx or a 200 that is no answer
+ *     still guards the key as before;
+ *   - (review of the same day) a route with no bound on its wait (chain-pools) has a follower wait for its leader's
+ *     read as long as the leader does, not FOLLOW_WAIT_MS, and a leader's read is seen through (waitUntil) once its own
+ *     visitor has gone, so its followers are never left on a read cut off with it.
+ * Unchanged: which requests are answered here (plainAsk), and that only a valid 200 is kept, never an error, a refusal,
+ * or anything of a session or a wallet.
  */
 import { APP_ORIGIN, PREVIEW_ORIGIN, forward, type BridgeEnv } from './bridge'
 
@@ -102,9 +124,17 @@ export interface EdgeAnswer {
 /**
  * What the Worker's answer to a miss came to (2026-10-30): a valid answer, and whether it is one worth keeping
  * (`useful`: the route's `keep` says so); a failure a kept answer may stand in for (a 408, a 429, a 5xx, a 200 that is no
- * answer to the question); or a refusal, the Worker's own say, passed on as it came.
+ * answer to the question; a 429 says `busy`, 2026-11-07); or a refusal, the Worker's own say, passed on as it came.
  */
-export type MissOutcome = { kind: 'answer'; answer: EdgeAnswer; useful: boolean } | { kind: 'failure' } | { kind: 'refusal' }
+export type MissOutcome = { kind: 'answer'; answer: EdgeAnswer; useful: boolean } | { kind: 'failure'; busy?: true } | { kind: 'refusal' }
+
+/**
+ * (2026-11-07, review of the edge hardening) A failure that was the gateway's refusal for load, a 429 (read_capacity_busy):
+ * mostly that one visitor's own budget or share of the lanes (keyed on its address), a cheap refusal at the VM's door. It
+ * says nothing of the VM for anyone else, so it never holds a key for other visitors, nor has a kept answer stand in for
+ * theirs: the visitor it was given to may still get a kept answer in its place, as before.
+ */
+const busy = (outcome: MissOutcome | null | undefined): boolean => outcome?.kind === 'failure' && outcome.busy === true
 
 /** A miss on its way to the Worker (F7), with when it began (2026-10-30): joined only while younger than LEAD_LIFE_MS. */
 export interface Inflight {
@@ -118,10 +148,22 @@ export interface EdgePolicy {
   version: string
   /** Every version the route takes, in a request's and an answer's contract header. Absent: `version` alone. */
   versions?: readonly string[]
-  /** Whether the Worker would take this body (the route's runtime), and the key it is kept under. Null: not asked of the edge. */
-  keyOf(body: unknown, origin: string): string | null
+  /**
+   * Whether the Worker would take this body (the route's runtime), and the key it is kept under. Null: not asked of the
+   * edge. (2026-11-07) `asked`: the contract version the request named in its header, null when it named none; a route
+   * whose Worker answers in the version asked (read-v6) keeps each version's answers apart.
+   */
+  keyOf(body: unknown, origin: string, asked: string | null): string | null
   /** Whether a text is an answer to this body the route's runtime accepts. */
   answers(body: unknown, text: string): boolean
+  /**
+   * (2026-11-07, edge hardening) A kept answer, or one a miss of the same key brought, as the answer to this body at
+   * `nowMs`: for a route whose key joins questions the producer answers alike but whose answers echo the question as
+   * asked (search: the query as typed), or carry when they were served (read-v6's `servedAt` and the age it implies,
+   * which the producer writes anew on every answer, its own cache's included). Null: it cannot be. The result is
+   * checked with `answers` like any kept answer. Absent: served as kept.
+   */
+  serve?(body: unknown, text: string, nowMs: number): string | null
   /** Whether a valid answer is kept. Absent: every one is. */
   keep?(text: string): boolean
   /**
@@ -236,7 +278,7 @@ function names(policy: EdgePolicy, text: string, version: string): boolean {
  * The body of a request the read Worker would answer, on a copy of it, so the request itself can still be forwarded
  * untouched; undefined for anything else, which then goes to the Worker and gets its own refusal.
  */
-async function plainAsk(request: Request, env: BridgeEnv, policy: EdgePolicy): Promise<{ body: unknown; text: string; origin: string } | undefined> {
+async function plainAsk(request: Request, env: BridgeEnv, policy: EdgePolicy): Promise<{ body: unknown; text: string; origin: string; asked: string | null } | undefined> {
   const url = new URL(request.url)
   const headers = request.headers
   const one = (name: string, accepted: readonly (string | null)[]) => accepted.includes(headers.get(name))
@@ -260,7 +302,23 @@ async function plainAsk(request: Request, env: BridgeEnv, policy: EdgePolicy): P
   if (bytes.byteLength > REQUEST_BYTES) return undefined
   // Strict UTF-8, and a byte order mark stays a character JSON refuses, as in the Worker.
   const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes)
-  return { body: JSON.parse(text), text, origin: url.origin }
+  return { body: JSON.parse(text), text, origin: url.origin, asked: headers.get(CONTRACT_HEADER) }
+}
+
+/**
+ * (2026-11-07) A kept or shared answer as the answer to `body`: the route's `serve`, then its `answers` and the version
+ * check; null when it is not one. Without `serve`, the text as it is.
+ */
+function servedFor(policy: EdgePolicy, body: unknown, text: string, version: string, nowMs: number): string | null {
+  let served: string | null = text
+  if (policy.serve) {
+    try {
+      served = policy.serve(body, text, nowMs)
+    } catch {
+      served = null
+    }
+  }
+  return served !== null && policy.answers(body, served) && names(policy, served, version) ? served : null
 }
 
 /**
@@ -269,6 +327,8 @@ async function plainAsk(request: Request, env: BridgeEnv, policy: EdgePolicy): P
  */
 interface Kept {
   text: string
+  /** (2026-11-07) The text as it was kept, before the route's `serve`: a stand-in served later is served from it anew. */
+  raw: string
   age: number
   version: string
   freshMs: number
@@ -294,11 +354,12 @@ async function kept(rt: EdgeRuntime, key: string, body: unknown, policy: EdgePol
     if (!Number.isSafeInteger(at) || age < 0 || !(age < life * 1000)) return null
     const version = entry.headers.get(STORED_CONTRACT) ?? policy.version
     if (!accepted(policy).includes(version)) return null
-    const text = await entry.text()
-    if (!policy.answers(body, text) || !names(policy, text, version)) return null
+    const raw = await entry.text()
+    const text = servedFor(policy, body, raw, version, rt.now())
+    if (text === null) return null
     const settling = entry.headers.get(STORED_SETTLING) === '1' && policy.settlingSeconds !== undefined
     const fresh = settling ? Math.min(policy.freshSeconds, policy.settlingSeconds ?? policy.freshSeconds) : policy.freshSeconds
-    return { text, age, version, freshMs: fresh * 1000, staleMs: Math.min(staleLife(policy), brief) * 1000, settling }
+    return { text, raw, age, version, freshMs: fresh * 1000, staleMs: Math.min(staleLife(policy), brief) * 1000, settling }
   } catch {
     return null
   }
@@ -347,6 +408,15 @@ function fromCache(text: string, version: string, hit: boolean, ageMs: number, m
   })
 }
 
+/**
+ * A kept answer standing in for a failure of the Worker's (2026-10-30): served anew from what was kept, as of now, where
+ * its route has a `serve` (2026-11-07: a read-v6 answer's `servedAt` is the moment it leaves), else as it was found.
+ */
+function standIn(policy: EdgePolicy, body: unknown, rt: EdgeRuntime, fallback: Kept, hit: boolean): Response {
+  const text = policy.serve ? servedFor(policy, body, fallback.raw, fallback.version, rt.now()) ?? fallback.text : fallback.text
+  return fromCache(text, fallback.version, hit, fallback.age, 'stale-if-error')
+}
+
 /** A Worker's answer the route's runtime accepts for `body`: a 200 with one of the route's contract headers, as JSON. Not yet whether it is kept. */
 async function validAnswer(response: Response, body: unknown, policy: EdgePolicy): Promise<EdgeAnswer | null> {
   const version = response.headers.get(CONTRACT_HEADER)
@@ -364,10 +434,14 @@ async function validAnswer(response: Response, body: unknown, policy: EdgePolicy
 /** Whether a valid answer is one to keep: the route's `keep` says so, or it has none. */
 const keepable = (answer: EdgeAnswer | null, policy: EdgePolicy): answer is EdgeAnswer => answer !== null && (policy.keep?.(answer.text) ?? true)
 
+/** (2026-11-07) A refresh the gateway refused for load (a 429): that visitor's own refusal (see `busy`). */
+const BUSY = Symbol('busy')
+
 /** Keep the refreshed answer for other visitors, and offer it to the caller waiting within its short bound. */
-async function refresh(request: Request, env: BridgeEnv, rt: EdgeRuntime, key: string, body: unknown, policy: EdgePolicy): Promise<Response | null> {
+async function refresh(request: Request, env: BridgeEnv, rt: EdgeRuntime, key: string, body: unknown, policy: EdgePolicy): Promise<Response | null | typeof BUSY> {
   try {
     const response = await forward(request, env)
+    if (response.status === 429) return BUSY
     if (response.status === 404 && accepted(policy).includes(response.headers.get(CONTRACT_HEADER) ?? '')) {
       await rt.cache?.delete?.(new Request(key))
       return response
@@ -399,7 +473,7 @@ function within<T>(work: Promise<T | null>, ms: number, rt: EdgeRuntime): Promis
 export async function answerFromEdge(request: Request, env: BridgeEnv, rt: EdgeRuntime, policy: EdgePolicy): Promise<Response> {
   const asked = await plainAsk(request, env, policy).catch(() => undefined)
   const body = asked?.body
-  const key = asked === undefined ? null : policy.keyOf(body, asked.origin)
+  const key = asked === undefined ? null : policy.keyOf(body, asked.origin, asked.asked)
   if (key !== null && asked !== undefined) {
     const hit = await kept(rt, key, body, policy)
     const refreshing = rt.refreshing ?? REFRESHING
@@ -407,13 +481,20 @@ export async function answerFromEdge(request: Request, env: BridgeEnv, rt: EdgeR
       const stale = hit.age >= hit.freshMs
       const renew = stale && !guarded(refreshing.get(key), rt.now())
       if (renew) {
-        refreshing.set(key, rt.now())
+        const began = rt.now()
+        refreshing.set(key, began)
         // The same request, its body as it was read here: nothing of it is read again once this answer has left.
         const again = new Request(request.url, { method: 'POST', headers: request.headers, body: asked.text })
         // (2026-10-30, review) Only a refresh that kept a newer answer, or found the route off, lifts the guard. One that
-        // failed (a 429, a 5xx, no answer) or brought nothing worth keeping holds it REFRESH_GUARD_MS from its end, and
-        // the kept answer is served as it is meanwhile: a failing VM is not asked again by the very next request.
+        // failed (a 5xx, no answer) or brought nothing worth keeping holds it REFRESH_GUARD_MS from its end, and the kept
+        // answer is served as it is meanwhile: a failing VM is not asked again by the very next request. (2026-11-07) A
+        // refresh the gateway refused for load (a 429, that visitor's own budget) lifts its own guard too: the next
+        // visitor's request refreshes with its own.
         const work = refresh(again, env, rt, key, body, policy).then((fresh) => {
+          if (fresh === BUSY) {
+            if (refreshing.get(key) === began) refreshing.delete(key)
+            return null
+          }
           if (fresh) refreshing.delete(key)
           else guardAfterFailure(refreshing, key, rt.now())
           return fresh
@@ -440,20 +521,32 @@ export async function answerFromEdge(request: Request, env: BridgeEnv, rt: EdgeR
     if (leading && at >= leading.started && at - leading.started < LEAD_LIFE_MS) {
       // (2026-10-30, review) With a kept answer to stand in, a follower waits no longer than its leader does before that
       // answer stands in for the leader's read (the route's bound, from when the leader began), FOLLOW_WAIT_MS at the most.
+      // (2026-11-07, review of the edge hardening) A route with no bound (chain-pools: a chain read of 1.7 to 3 s, waited
+      // for whole) has its followers wait for the leader's read as long as the leader does, the Worker's own result, not a
+      // second: they get the leader's answer, never a kept one in its place, and the VM is asked once.
       const bound = policy.errorWaitMs ?? policy.refreshWaitMs
-      const waitMs = fallback && bound ? Math.min(FOLLOW_WAIT_MS, Math.max(0, leading.started + bound - at)) : FOLLOW_WAIT_MS
+      const waitMs = !bound
+        ? Math.max(0, leading.started + LEAD_LIFE_MS - at)
+        : fallback ? Math.min(FOLLOW_WAIT_MS, Math.max(0, leading.started + bound - at)) : FOLLOW_WAIT_MS
       const shared = waitMs > 0 ? await within(leading.outcome, waitMs, rt) : null
       // A valid answer is shared, unless it is not worth keeping and the kept answer can stand in for it (review).
-      if (shared?.kind === 'answer' && (shared.useful || !fallback)) return fromCache(shared.answer.text, shared.answer.version, true, 0, 'coalesced')
+      // (2026-11-07) A key may join questions answered alike but asked in other words (searchEdge.ts): the leader's answer
+      // is shared as this request's own, checked against its own question; one that is not is asked of the Worker.
+      if (shared?.kind === 'answer' && (shared.useful || !fallback)) {
+        const text = servedFor(policy, body, shared.answer.text, shared.answer.version, rt.now())
+        if (text !== null) return fromCache(text, shared.answer.version, true, 0, 'coalesced')
+        if (!fallback) return answerMiss(request, env, rt, policy, key, body, null, null)
+      }
       // The leader's read failed, or is not in yet (2026-10-30): the kept answer, which no gateway counted, rather than
-      // one more read of a Worker that is failing or slow.
-      if (fallback && shared?.kind !== 'refusal') return fromCache(fallback.text, fallback.version, true, fallback.age, 'stale-if-error')
+      // one more read of a Worker that is failing or slow. (2026-11-07) Not for the leader's own 429: that was its
+      // visitor's refusal, and this request asks the Worker itself, with its own budget.
+      if (fallback && shared?.kind !== 'refusal' && !busy(shared)) return standIn(policy, body, rt, fallback, true)
       // No valid answer, or none in time: this request asks the Worker itself, as it always did.
       return answerMiss(request, env, rt, policy, key, body, null, fallback)
     }
     // (2026-10-30, review) A read of this key failed lately in this isolate, or its refresh is on its way: the kept answer,
     // which no gateway counted, rather than one more read of a Worker that is failing, until the guard is over.
-    if (fallback && guarded(refreshing.get(key), at)) return fromCache(fallback.text, fallback.version, true, fallback.age, 'stale-if-error')
+    if (fallback && guarded(refreshing.get(key), at)) return standIn(policy, body, rt, fallback, true)
     // This request leads: its miss is joined until it settles (cleared by its own settling, never by this frame).
     let settle!: (outcome: MissOutcome) => void
     const mine: Inflight = { started: at, outcome: new Promise<MissOutcome>((resolve) => { settle = resolve }) }
@@ -462,9 +555,10 @@ export async function answerFromEdge(request: Request, env: BridgeEnv, rt: EdgeR
       if (inflight.get(key) === mine) inflight.delete(key)
       // (2026-10-30, review) With a kept answer to stand in, a failure, or an answer not worth keeping, guards the key;
       // an answer worth keeping (now kept) lifts the guard. A refusal is the Worker's say and changes nothing.
+      // (2026-11-07) Nor does a 429: that visitor's own refusal holds no one else off the VM (`busy`).
       if (fallback) {
         if (outcome.kind === 'answer' && outcome.useful) refreshing.delete(key)
-        else if (outcome.kind !== 'refusal') guardAfterFailure(refreshing, key, rt.now())
+        else if (outcome.kind !== 'refusal' && !busy(outcome)) guardAfterFailure(refreshing, key, rt.now())
       }
       settle(outcome)
     }
@@ -496,7 +590,8 @@ async function askWorker(request: Request, env: BridgeEnv, rt: EdgeRuntime, poli
     if (hasEntry && response.status === 404 && accepted(policy).includes(response.headers.get(CONTRACT_HEADER) ?? '')) {
       await rt.cache?.delete?.(new Request(key))?.catch(() => false)
     }
-    return { outcome: transient(response.status) ? { kind: 'failure' } : { kind: 'refusal' }, response }
+    const outcome: MissOutcome = !transient(response.status) ? { kind: 'refusal' } : response.status === 429 ? { kind: 'failure', busy: true } : { kind: 'failure' }
+    return { outcome, response }
   }
   if (!check) return { outcome: { kind: 'refusal' }, response }
   const answer = await validAnswer(response.clone(), body, policy).catch(() => null)
@@ -539,10 +634,15 @@ async function answerMiss(
       throw error
     },
   )
-  if (fallback === null) return (await work).response
+  const bound = policy.errorWaitMs ?? policy.refreshWaitMs
+  if (fallback === null) {
+    // (2026-11-07) On a route with no bound, a leader's read is waited for by its followers until it settles, so it is
+    // seen through even once its own visitor has gone, and never leaves them waiting on a read cut off with it.
+    if (share !== null && !bound && rt.waitUntil) rt.waitUntil(work.catch(() => undefined))
+    return (await work).response
+  }
   // The read is the stand-in's to outlive: its answer is kept for the next visitor even once this one has the stand-in.
   if (rt.waitUntil) rt.waitUntil(work.catch(() => undefined))
-  const bound = policy.errorWaitMs ?? policy.refreshWaitMs
   const asked = bound ? await within(work, bound, rt) : await work.catch(() => null)
   // The Worker's say (a refusal), or an answer worth keeping, is passed on; an answer with nothing worth keeping never
   // replaces the kept one for this visitor (review).
@@ -551,5 +651,5 @@ async function answerMiss(
   if (asked === null) void work.then((late) => late.response.body?.cancel().catch(() => undefined), () => undefined)
   else await asked.response.body?.cancel().catch(() => undefined)
   // This request reached the Worker, and the gateway counted it: no `hit`.
-  return fromCache(fallback.text, fallback.version, false, fallback.age, 'stale-if-error')
+  return standIn(policy, body, rt, fallback, false)
 }

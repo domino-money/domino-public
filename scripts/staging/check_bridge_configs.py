@@ -30,6 +30,10 @@ reviewed value may be that or the one preview alias the Pages forwarder routes
 (PREVIEW_ALIAS, app/functions/_lib/bridge.ts PREVIEW_ORIGIN), nothing else,
 so no reviewed configuration names a host the forwarder never sends, however
 well formed (another Pages project, a branch host, any other site).
+
+Added 2026-11-07 (season 1 points, docs/points/POINTS.md part 3): the points
+Worker (wrangler.points.toml, POINTS_* variables, its own example gateway),
+off, a private family with PREVIEW_ORIGINS committed empty.
 """
 from pathlib import Path
 import sys
@@ -46,6 +50,7 @@ SERVICES = {
     "setup": ("setup-release", None, "2026-09-10"),
     "position-plan": ("position-plan-worker", "POSITION_PLAN_GATEWAY_ORIGIN", "2026-10-02"),
     "crosschain": ("crosschain-worker", "CROSSCHAIN_GATEWAY_ORIGIN", "2026-10-02"),
+    "points": ("points-worker", "POINTS_GATEWAY_ORIGIN", "2026-11-07"),
 }
 # The one retained record per request, and nothing else: no invocation log.
 RECORD_ONLY = {"enabled": True, "head_sampling_rate": 1, "logs": {"invocation_logs": False}}
@@ -65,7 +70,8 @@ GATE_EXPECTED = {
 }
 # The families whose Worker admits a listed preview origin: every private one (session and the authenticated
 # transport), never the read Worker or the setup release, which the preview reaches translated (functions/_lib/bridge.ts).
-PREVIEW_SERVICES = frozenset({"session", "onboarding", "deposit", "performance", "execution", "position-plan", "crosschain"})
+PREVIEW_SERVICES = frozenset({"session", "onboarding", "deposit", "performance", "execution", "position-plan", "crosschain",
+                              "points"})
 PREVIEW_ALIAS = "https://preview.domino-app-e65.pages.dev"
 KNOWN_CONFIGS = {
     "wrangler.example.toml", "wrangler.session.example.toml",
@@ -112,7 +118,8 @@ def validate(service, config):
         "vars": {
             f"{flag_prefix(service)}_BRIDGE_ENABLED": "false",
             "APP_ORIGIN": "https://domino.money",
-            origin_key: f"https://vm-{service}.domino.money",
+            origin_key: ("https://points-gateway.example.invalid" if service == "points"
+                         else f"https://vm-{service}.domino.money"),
             **({"ENABLED_READS": "", "READ_V2_BRIDGE_ENABLED": "false",
                 "ENABLED_V2_READS": "", "READ_V3_BRIDGE_ENABLED": "false",
                 "ENABLED_V3_READS": "", "READ_V4_BRIDGE_ENABLED": "false",

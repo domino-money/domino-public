@@ -11,6 +11,7 @@ import { readFeesToCome } from '../../v2/plan/present'
 import { planRequestWire } from '../../v2/plan/request'
 import { planTargetOf } from '../../v2/plan/route'
 import type { S1PlanConsent, S1PlanReply, S1PlanRequest } from '../../v2/plan/types'
+import { transientWalletRead } from '../../v2/errors'
 import type { Address, Hex, V2ChainId } from '../../v2/types'
 import { JOURNEY_QUIET_REQUOTES, NEW_POOL_RACE_COPY } from './constants'
 import { JOURNEY } from './copy'
@@ -183,6 +184,12 @@ const DIRECT_ONLY = new Set<string>()
 /** Added 2026-10-30 (INST-2): the one quick retry after a plan request that ran out of time, in ms. */
 const TIMEOUT_RETRY_MS = 750
 const TIMEOUT_CODES: ReadonlySet<string> = new Set(['request_timeout', 'upstream_timeout', 'plan_timeout'])
+/**
+ * Added 2026-11-09 (core flows, errors): how long a read through the wallet that met its network failing (a -32603, a rate
+ * limit, a node behind, a timeout, an empty or unreadable reply: src/v2/errors.ts transientWalletRead) waits before it is
+ * asked once more, before anything is said. Most of these are over a second later.
+ */
+const WALLET_READ_RETRY_MS = 1_000
 
 /** A plan's key in PLANS: the chain, the wallet and the request's own wire form (fixed key order); null for one never sent. */
 function planKeyOf(chainId: V2ChainId, owner: Address, request: S1PlanRequest): string | null {
@@ -224,7 +231,32 @@ export function useJourneyRun(input: RunInput) {
     generation.current++
     asking.current?.abort()
   }, [])
-  const errorOf = (error: unknown) => (error instanceof PlanFailure ? error.view : journeyError(error, latest.current.chainId, latest.current.label))
+  /**
+   * The wallet the latest quote reads through (added 2026-11-09, core flows, errors): a money client's
+   * `wallet_action_expired` is the wallet changing only when that wallet is no longer the connected one.
+   */
+  const readsThrough = useRef<JourneyConnection | null>(null)
+  const walletChanged = () => {
+    const connection = live.current.reviewed?.connection ?? readsThrough.current
+    return connection !== null && !connection.wallet.current()
+  }
+  const errorOf = (error: unknown) => (error instanceof PlanFailure ? error.view : journeyError(error, latest.current.chainId, latest.current.label, walletChanged()))
+
+  /**
+   * Added 2026-11-09 (core flows, errors): a read through the wallet (the consent path, the review, a step's preparation),
+   * asked once more after WALLET_READ_RETRY_MS when it met the wallet's network failing, before anything is said. Reads
+   * only: never a send, a batch offered or a signature.
+   */
+  async function onceMore<T>(gen: number, read: () => Promise<T>): Promise<T> {
+    try {
+      return await read()
+    } catch (error) {
+      if (gen !== generation.current || !transientWalletRead(error)) throw error
+      await sleep(WALLET_READ_RETRY_MS)
+      if (gen !== generation.current) throw error
+      return read()
+    }
+  }
 
   /**
    * `fresh` (added 2026-10-30, INST-2): never a kept plan, for the one quiet retry after a kept plan's review failed. A
@@ -252,10 +284,11 @@ export function useJourneyRun(input: RunInput) {
       const transport = livePlanTransport()
       if (!transport) throw new PlanFailure({ copy: JOURNEY.review.planUnavailable, code: 'plan_route_unavailable', recovery: 'none' })
       const connection = await connectJourney(chainId, gate.contracts, allowSwitch)
+      readsThrough.current = connection
       // What an earlier review still reads on this client, first (one request at a time).
       await reading.get(connection.zap)
       if (gen !== generation.current) return
-      const chosen = await connection.zap.consentFor('create', inputs)
+      const chosen = await onceMore(gen, () => connection.zap.consentFor('create', inputs))
       const owner = connection.zap.owner
       const context = liveContext(chainId, owner, gate.contracts)
       const wallet = `${chainId}:${owner.toLowerCase()}`
@@ -293,7 +326,7 @@ export function useJourneyRun(input: RunInput) {
       const target = planTargetOf(asked)
       if (!target) throw new Error('plan_target')
       reviewing = true
-      const review = await connection.zap.review({ chainId, plan: result.reply.plan, consent: consent.planConsent, quote: result.reply.quote, target, initSqrtPriceX96: asked.initialPrice?.sqrtPriceX96 })
+      const review = await onceMore(gen, () => connection.zap.review({ chainId, plan: result.reply.plan, consent: consent.planConsent, quote: result.reply.quote, target, initSqrtPriceX96: asked.initialPrice?.sqrtPriceX96 }))
       if (gen !== generation.current) return
       const path: RunPath = consent.path
       const reviewed: Reviewed = { connection, consent, review, reply: result.reply, request: asked, path, at: now(), tokens: tokens.map(token => ({ ...token })) }
@@ -372,18 +405,18 @@ export function useJourneyRun(input: RunInput) {
     const { zap } = reviewed.connection
     try {
       if (step.kind === 'batch') {
-        const batch = await held(zap, zap.prepareBatch(reviewed.review))
+        const batch = await held(zap, onceMore(gen, () => zap.prepareBatch(reviewed.review)))
         if (gen !== generation.current) return false
         state.batch = batch
         step.feeWei = batch.networkFeeWei
       } else {
-        const prepared = await held(zap, zap.prepareStep(reviewed.review, step.index))
+        const prepared = await held(zap, onceMore(gen, () => zap.prepareStep(reviewed.review, step.index)))
         if (gen !== generation.current) return false
         state.prepared = prepared
         step.feeWei = prepared.networkFeeWei
         state.feePerGas = BigInt(prepared.transaction.maxFeePerGas)
         // The approvals after this one, for their fee only (2026-10-06: Review's one network fee line counts them).
-        await held(zap, readFeesToCome(state.steps, state.current, async (index) => (await zap.prepareStep(reviewed.review, index)).networkFeeWei, () => gen === generation.current))
+        await held(zap, onceMore(gen, () => readFeesToCome(state.steps, state.current, async (index) => (await zap.prepareStep(reviewed.review, index)).networkFeeWei, () => gen === generation.current)))
         if (gen !== generation.current) return false
       }
       step.status = 'ready'
@@ -828,6 +861,7 @@ export function useJourneyRun(input: RunInput) {
     let answer: Awaited<ReturnType<JourneyConnection['zap']['forgetUnsettled']>>
     try {
       const connection = state.reviewed?.connection ?? (await connectJourney(chainId, gate.contracts))
+      readsThrough.current = connection
       await onChain(connection)
       answer = await connection.zap.forgetUnsettled()
     } catch (error) {

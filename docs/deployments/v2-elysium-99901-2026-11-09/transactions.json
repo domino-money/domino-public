@@ -1,0 +1,10 @@
+{
+ "registry": "0x85f8347ffaa5c3223a5ab4a3569d44988af0787a48e596b9ed3fada57badf628",
+ "priceAnchor": "0xccfc8cbbe8ce30484ca8406a5a40cebcc57cb6119ff35982c6fdbe00eb2ab9c7",
+ "autoExit": "0xdf6813d568cd44b61d73b5f8e03f9a127481e3770b0412e12ffa4de3ef202a98",
+ "vaultSwap": "0xd442151ea515886a470d7dafeb3db3e6b565d87a69fda85673bc821f63d57701",
+ "vault.v4": "0xb188a1d309d5c762bcf0473abadc15fd2baebc401f6b333320fd3f760899ed20",
+ "vaultFactory.v4": "0x9bd9b90843c1125a328ce7a02a549dbe7ec1cf9e8f3f38ba25bcf501ac9441fd",
+ "zap.v4.steps": "0x050e8d523df43bfd0b8ee8a5cfb47e0aaa20193c1fbe964039af907df4efe119",
+ "zap.v4": "0x51e5b4fba8a196ae6a74b0ea5a3feb761b427d7a990148c17e1d5ef60a6439b6"
+}

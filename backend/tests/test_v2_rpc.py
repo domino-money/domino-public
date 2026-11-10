@@ -30,7 +30,7 @@ ALCHEMY = 'https://robinhood-mainnet.g.alchemy.com/v2/SYNTHETIC'
 LOCAL = 'https://rpc.domino.money/SYNTHETIC_LOCAL_TOKEN_123/'
 URLS = {name: f'https://{name}.example.invalid/SYNTHETIC_{name.upper()}' for name in ('stack', 'drpc', 'alchemy', 'public')}
 REGISTRY = load_registry()
-ROBINHOOD, BASE, ARBITRUM = REGISTRY.chains
+ROBINHOOD, BASE, ARBITRUM, ELYSIUM = REGISTRY.chains
 BALANCES = load_balance_registry()
 ETHEREUM, OPTIMISM = BALANCES.chains
 ANCHOR = parse_block(HEAD)
@@ -229,8 +229,10 @@ class ConfigTests(unittest.TestCase):
             'unknown_chain': (lambda d: d['chains'].update({'optimism-10': d['chains']['base-8453']}),
                               'v2_chain_unknown'),
             'chain_by_slug': (lambda d: d['chains'].update({'base': d['chains'].pop('base-8453')}), 'v2_chain_unknown'),
-            'pending_chain': (lambda d: d['chains'].update({'elysium': d['chains']['base-8453']}),
-                              'v2_chain_not_enabled'),
+            # Changed on purpose 2026-11-09 (Elysium's mainnet): no chain is pending any more, so a slug alone is
+            # unknown like any other (the pending-chain refusal keeps its case in test_v2_chains, on the old placeholder).
+            'elysium_by_slug': (lambda d: d['chains'].update({'elysium': d['chains']['base-8453']}),
+                                'v2_chain_unknown'),
             'bad_host': (endpoint(host='*.example.invalid'), 'invalid_rpc_allowed_hosts'),
             'ip_host': (endpoint(host='127.0.0.1'), 'invalid_rpc_allowed_hosts'),
             'other_host': (endpoint(url=URLS['drpc']), 'invalid_v2_rpc_url'),
@@ -782,7 +784,8 @@ class CheckTests(unittest.TestCase):
         self.assertEqual(run('check', '--chain', 'base-8453', '--chain-rpc-file', str(path), '--endpoint', 'x'),
                          (1, {'error': 'v2_rpc_endpoint_unknown'}))
         self.assertEqual(run('check', '--chain', 'base-8453'), (1, {'error': 'v2_chain_rpc_not_configured'}))
-        self.assertEqual(run('check', '--chain', 'elysium'), (1, {'error': 'v2_chain_not_enabled'}))
+        self.assertEqual(run('check', '--chain', 'elysium'), (1, {'error': 'v2_chain_unknown'}))
+        self.assertEqual(run('check', '--chain', 'elysium-99901'), (1, {'error': 'v2_chain_rpc_not_configured'}))
         self.assertEqual(run('validate', '--chain', 'robinhood-4663', '--provider-file', str(private / 'absent.json')),
                          (1, {'error': 'v2_local_first_provider_file_required'}))
 
@@ -894,7 +897,7 @@ class BalanceCheckTests(unittest.TestCase):
                          (1, {'error': 'v2_chain_unknown'}))
         self.assertEqual(self.run_cli('check', '--chain', 'ethereum-1'), (1, {'error': 'v2_chain_rpc_not_configured'}))
         self.assertEqual(self.run_cli('check', '--chain', 'polygon-137'), (1, {'error': 'v2_chain_unknown'}))
-        self.assertEqual(self.run_cli('check', '--chain', 'elysium'), (1, {'error': 'v2_chain_not_enabled'}))
+        self.assertEqual(self.run_cli('check', '--chain', 'elysium'), (1, {'error': 'v2_chain_unknown'}))
 
 
 if __name__ == '__main__':

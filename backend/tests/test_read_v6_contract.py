@@ -119,18 +119,30 @@ class PackageTests(unittest.TestCase):
         # balance chains' (chain-balances' Ethereum and OP Mainnet) included, and every chain chain-balances reads has one.
         from v2_chains import default_balance_registry, default_registry
         from v2_read_contract import PRICE_PROFILES
+        # Changed on purpose 2026-11-09 (Elysium's services): a chain without Chainlink (Elysium) has its native pool
+        # instead of a feed, so each entry is held to v2_chain_reads.price_profile, the producer's own shape.
+        from v2_chain_reads import price_profile
         registry, balances = default_registry(), default_balance_registry()
         self.assertEqual(sorted(PRICE_PROFILES), list(BALANCE_CHAIN_IDS))
         for chain_id, profile in PRICE_PROFILES.items():
             chain = (registry if chain_id in CHAIN_IDS else balances).chain(chain_id)
-            feed = chain.gasPrice.chainlinkEthUsd
             stable = min(chain.chargeCurrencies, key=lambda currency: (currency.rank, currency.address))
             with self.subTest(chain=chain_id):
-                self.assertEqual(profile, {'stable': stable.address.lower(), 'wrapped': chain.wrappedNative.address.lower(),
-                                           'feed': feed.proxy.lower(), 'heartbeatSeconds': feed.heartbeatSeconds})
+                self.assertEqual(profile, price_profile(chain))
+                self.assertEqual((profile['stable'], profile['wrapped']),
+                                 (stable.address.lower(), chain.wrappedNative.address.lower()))
+                self.assertEqual('nativePool' in profile, chain_id == 99901)
 
-    def test_the_chains_are_the_enabled_profiles(self):
-        self.assertEqual(CHAIN_IDS, tuple(profile.chainId for profile in default_registry().chains))
+    def test_the_chains_are_the_enabled_profiles_with_a_deployment(self):
+        # Changed on purpose 2026-11-09 (Elysium's mainnet): a profile is enabled to deploy V2 on its chain, and read-v6
+        # serves the chain once that deployment's record is in the repository (docs/deployments/v2-<slug>-<id>-<date>).
+        # Between the two, Elysium (99901) is the only chain allowed to wait; its record and read-v6 move together.
+        # Changed on purpose 2026-11-09 (Elysium's services): read-v6 names Elysium (99901), deployed that day.
+        def deployed(profile):
+            return any((ROOT / 'docs/deployments').glob(f'v2-{profile.slug}-{profile.chainId}-*/deployment.json'))
+        chains = default_registry().chains
+        self.assertEqual(CHAIN_IDS, tuple(profile.chainId for profile in chains if deployed(profile)))
+        self.assertEqual(CHAIN_IDS, tuple(profile.chainId for profile in chains))
 
     def test_chain_balances_reads_the_domino_chains_and_the_balance_chains(self):
         import v2_chain_reads

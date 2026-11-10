@@ -1214,7 +1214,9 @@ test('cold questions that arrive together pay their reserves as they reach the n
   // Forty cold questions, each of a key of its own (no read to join), all at once; the history class alone admits 240.
   const cold = (i) => ({ ...BODIES.record, vault: vaultOf(i) });
   const asking = Array.from({ length: 40 }, (_, i) => e.ask('record', cold(i), visitor));
-  await new Promise((done) => setTimeout(done, 50));
+  // Changed on purpose 2026-11-09 (a local flake under load: 50 ms were not always enough for the forty to reach the node, so
+  // its bill was not there yet): waited for, up to 2 s, until the ten the node refuses have been refused; nothing is released.
+  for (let tries = 0; tries < 40 && (e.runtime.memory.nodes.size === 0 || e.routeLines().length < 10); tries++) await new Promise((done) => setTimeout(done, 50));
   // Thirty reserves spent the whole bill as they reached the node; the other ten were refused there at once, sending nothing.
   // Less than one reserve left (the isolate's own pace, LOCAL_RPC_RATE, moved the clock a little as they went).
   assert.ok([...e.runtime.memory.nodes.values()][0].tokens < routes.VISITOR_NODE.reserve, 'thirty reserves of eight');

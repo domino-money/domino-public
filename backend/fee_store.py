@@ -47,9 +47,16 @@ class FeeIndexer:
               WHERE c.pool_id=%s AND f.pool_id IS NULL ORDER BY c.start_block LIMIT 1''',(pool_id,)).fetchone()
             if not chunk:
                 return {'status':'caught_up_to_activity','through':tail['end_block']}
+            # The chunk before this one, read backwards through the primary key (pool_id,start_block). By end_block,
+            # which has no index, the lookup read every chunk of the pool and passed the 5 s statement timeout
+            # (3-7 Nov 2026). Chunks never overlap, so only the nearest earlier chunk can end at start_block-1; any
+            # other is no predecessor, exactly as the end_block lookup found none.
             previous = conn.execute('''SELECT c.*,f.model AS fee_model,f.methodology_version FROM domino_activity.chunks c
               LEFT JOIN domino_activity.fee_chunks f ON f.pool_id=c.pool_id AND f.chunk_start=c.start_block
-              WHERE c.pool_id=%s AND c.end_block=%s''',(pool_id,chunk['start_block']-1)).fetchone()
+              WHERE c.pool_id=%s AND c.start_block<%s ORDER BY c.start_block DESC LIMIT 1''',
+              (pool_id,chunk['start_block'])).fetchone()
+            if previous and previous['end_block'] != chunk['start_block']-1:
+                previous = None
             if previous and (previous['fee_model'] is None or previous['methodology_version'] != VERSION):
                 raise DataError('fee_methodology_mismatch')
             if previous is None and chunk['start_block'] != row['start_block']:

@@ -562,7 +562,8 @@ test('nothing of a preview reaches storage or the URL (INV-7)', async () => {
   await preview(page);
   const stored = await page.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }));
   assert.doesNotMatch(stored, /grossOutput|0x25431634|requestFingerprint|swap-preview|preview/i);
-  assert.equal(new URL(page.url()).hash, '#/live-preview');
+  // Changed on purpose 2026-11-07 (pages of their own, src/lib/route.ts): the preview's own address, without the `#`.
+  assert.equal(`${new URL(page.url()).pathname}${new URL(page.url()).hash}`, '/live-preview');
   await s.close();
 });
 

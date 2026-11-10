@@ -788,7 +788,6 @@ export default function FeeReserves({ owner, placement, vault, root }: FeeReserv
           hashes.push(paid)
         }
       }
-      kit.verified()
       setRun({ ...base, stage: 'done', review: reviewed, at: 0, hashes: [...hashes], received: withdrawalTotals(landed), notice: null })
       reservesChanged(owner)
     } catch (error) {
@@ -846,7 +845,7 @@ export default function FeeReserves({ owner, placement, vault, root }: FeeReserv
             {placement === 'positions' ? (
               <>
                 <span className="dm-held-pair">
-                  <a href={`#/positions/${view.rootTokenId.toString()}`} className="dm-reserves-link">
+                  <a href={`/positions/${view.rootTokenId.toString()}`} className="dm-reserves-link">
                     Position #{view.rootTokenId.toString()}
                   </a>
                   <StatusWord view={view} />

@@ -1,0 +1,130 @@
+{
+  "contract": "points-v1",
+  "contractVersion": "1.0.0-rc.1",
+  "files": [
+    {
+      "path": "fixtures/errors.json",
+      "sha256": "94bb006986ebd4cce6b040ac0e92ebfb0119e3049bea9e43b28eea1ad5a4d89e"
+    },
+    {
+      "path": "fixtures/requests/link.json",
+      "sha256": "a0f9e82334c1e4eb9393393b82e370172c1ec42c9be3b460cec3f3d7123bf27a"
+    },
+    {
+      "path": "fixtures/requests/points.json",
+      "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"
+    },
+    {
+      "path": "fixtures/responses/link.json",
+      "sha256": "57091ea82ff2443836d11a4f89eb7f0b1af69a81744dcac60b6e3e25d5ad5ce8"
+    },
+    {
+      "path": "fixtures/responses/points.json",
+      "sha256": "41fa6077550d897cd9f7776ccfc8dbbbf2151e49cf52e1a8a54bfcf5f1a0bfd4"
+    },
+    {
+      "path": "fixtures/signed-text.json",
+      "sha256": "bcd5cac528669de7074580799c798d3788fb8a9f0ee2a0e966c8c833d51991c5"
+    },
+    {
+      "path": "runtime.d.mts",
+      "sha256": "fea92fd0683343a00c79414df89ce28a48d39e30984f06d859629752324ee51c"
+    },
+    {
+      "path": "schema-data.mjs",
+      "sha256": "dc138ac6d9b19898c263f624e2fd392811f9221c5f3e1d62d6297a4c679ab31a"
+    },
+    {
+      "path": "schemas/error.response.schema.json",
+      "sha256": "28a3532014d74b53591103877e7ea0bd18970586d7e425742b4f074e4ed197d1"
+    },
+    {
+      "path": "schemas/link.request.schema.json",
+      "sha256": "2692dc31ac3055abd00288935dba7c38920eb7c153111c175015fcd00641abcb"
+    },
+    {
+      "path": "schemas/link.response.schema.json",
+      "sha256": "f1d3ebf5352d6428f5bb05afea094f5bcd516d0b59b31ef63d403b3647155555"
+    },
+    {
+      "path": "schemas/points.request.schema.json",
+      "sha256": "4e3343687baa1f4b48c349f4990a86db763a3491ccfb9a4d0dbe9af5038e20d2"
+    },
+    {
+      "path": "schemas/points.response.schema.json",
+      "sha256": "f81e1cfc3df0f2a26545b64255e9362aa2e0e90b51a8dfe77d7fe775d63bb923"
+    },
+    {
+      "path": "types.ts",
+      "sha256": "1ebfe6888759be3954968c6e2e89886c42bc2423cf0bc08adbf1f27de965e643"
+    },
+    {
+      "path": "runtime.mjs",
+      "sha256": "40f246e651bc7a48acefdfee06a755fc3ddbe701253053650e379bbdadc92ccf"
+    },
+    {
+      "path": "../shared/closed-schema.mjs",
+      "sha256": "ee18602dbc0b43267170a74aa62200b1653c38be25204318f2c93abc513e7970"
+    },
+    {
+      "path": "README.md",
+      "sha256": "93a10470e038ee7e5da774973825d26a613effa0867070447063384acb109497"
+    },
+    {
+      "path": "consumer.test.mjs",
+      "sha256": "8b74d498682ccc5f144aface4565b80822a72069117c7a95792e968af84cc71c"
+    }
+  ],
+  "generator": "scripts/export-points-contract.py",
+  "sources": [
+    {
+      "path": "backend/points_models.py",
+      "sha256": "e59cb30003ce76809ab686f1e8ed848aee1883760d41a54f1129ec38225fc159"
+    },
+    {
+      "path": "backend/points_service.py",
+      "sha256": "8c5308905c990efc7df9010d4f8e6db1f6412d96a12a6da36c49d8ef1644eb8e"
+    },
+    {
+      "path": "backend/points_api.py",
+      "sha256": "625f7f47dd61bc32f21aece8e1fa5fc7949b6297e990fb77843c37dc014e933e"
+    },
+    {
+      "path": "backend/points_referral.py",
+      "sha256": "92ab9614a3b1842652b3debf97d845f626a905b2163730872d2145acd22bd071"
+    },
+    {
+      "path": "backend/points_engine.py",
+      "sha256": "3f9c0b6977f752e365cee93bc793592eff37e97d31bc15a3e5fafee31c92d7a2"
+    },
+    {
+      "path": "backend/points_season_1.json",
+      "sha256": "1b2679d5aa673bb67480435accd1cb6173ea6e50894b2b03f100844588f5938c"
+    },
+    {
+      "path": "backend/migrations/059_points_engine.sql",
+      "sha256": "4c5104f16f8471f36e3b276ab8c7d32ee18cef495f5a9d95daa751a81f75fcc4"
+    },
+    {
+      "path": "backend/authenticated_api.py",
+      "sha256": "e600e74a55c2f0d875d59cfb699cbf2d06ad14cee5e1cbb3b670f038ddeb0a54"
+    },
+    {
+      "path": "backend/onboarding_auth.py",
+      "sha256": "e9e9d1bf7cb3365652686103638002d60d85e548d1dcaa23a0a65dec2013120c"
+    },
+    {
+      "path": "backend/onboarding_models.py",
+      "sha256": "8ae40a3208441d611e351a12ccd7912b32bfe91f98c9ee314b3cda1d3d00aa83"
+    },
+    {
+      "path": "backend/tests/points_contract_fixtures.py",
+      "sha256": "a17018ea49d0d537a8d4adc804274bab15bb936b364d77d023bf76926af71da3"
+    },
+    {
+      "path": "scripts/export-points-contract.py",
+      "sha256": "75d31a009f2040fe02bec66a97c0f8250f54978031dd4ae0f8af0f9178c18753"
+    }
+  ],
+  "status": "candidate_disabled_pending_deployment_and_worker"
+}

@@ -1,7 +1,7 @@
 import { CREATE } from '../../create/copy'
 import { b, doc, list, note, p, shot } from '../blocks'
 // 2026-11-06: Elysium's words where it is live (../elysium.ts).
-import { ELYSIUM_FUNDS_FROM, ELYSIUM_LIVE, NETWORKS, OTHERS } from '../elysium'
+import { ELYSIUM_FUNDS_FROM, ELYSIUM_FUNDS_TO, ELYSIUM_LIVE, NETWORKS, NOT_BROUGHT_TO_ELYSIUM, OTHERS } from '../elysium'
 import type { DocPage } from '../types'
 
 export const MARKETS: DocPage = {
@@ -158,8 +158,8 @@ export const NEW_POSITION: DocPage = {
       title: 'Amount',
       blocks: [
         shot('new-amount', 'Step 3: the amounts; slippage is under Advanced.'),
-        // 2026-11-07 (review P8): no funds are brought to Elysium (v2/types.ts S2_DESTINATION_CHAIN_IDS).
-        p('Type an amount in one token and the other fills in to fit your range. Hold both? Type your own amount in each: the position takes as much as both allow, and the rest stays in your wallet. ', b(CREATE.amount.fillIn), ' works out the second amount again. Short of one? Domino can swap part of the other, or offer to pay with another token you hold. A range beside today’s price takes its one token only: see ', doc('A range beside the price', 'ranges', 'one-sided'), '. A wallet that can’t fund the position is offered to ', doc('bring funds from another network', 'bring-funds'), ELYSIUM_LIVE ? ', except on Elysium.' : '.'),
+        // 2026-11-07 (review P8): no funds are brought to Elysium (v2/types.ts S2_DESTINATION_CHAIN_IDS); 2026-11-09: until they can be.
+        p('Type an amount in one token and the other fills in to fit your range. Hold both? Type your own amount in each: the position takes as much as both allow, and the rest stays in your wallet. ', b(CREATE.amount.fillIn), ' works out the second amount again. Short of one? Domino can swap part of the other, or offer to pay with another token you hold. A range beside today’s price takes its one token only: see ', doc('A range beside the price', 'ranges', 'one-sided'), '. A wallet that can’t fund the position is offered to ', doc('bring funds from another network', 'bring-funds'), NOT_BROUGHT_TO_ELYSIUM ? ', except on Elysium.' : '.'),
         // 2026-09-27 (round 6): the tolerance moved under the amount step's Advanced, closed until opened.
         p('Under ', b('Advanced'), ', slippage tolerance is how far the price may move before a step stops. It starts at 0.5%; choose 0.1% to 5%.'),
       ],
@@ -201,7 +201,7 @@ export const BRING_FUNDS: DocPage = {
         // 2026-10-10: transfer offers follow the position amount; remote funding is optional when local funds cover it.
         p('In the Amount step, Domino shows funds available on other networks. Enter your position amount to check a transfer. If you can already pay on the position’s network, ', b('Use another network'), ' lets you check this option too.'),
         // 2026-11-07 (review P8): wherever Elysium is listed; funds from it are never funds brought to it.
-        p(`Domino checks supported balances on Robinhood Chain, Ethereum, Base, Arbitrum One${ELYSIUM_FUNDS_FROM ? ', OP Mainnet and Elysium' : ' and OP Mainnet'}, excluding the position’s network. Transfers need an available route and ETH for fees${ELYSIUM_FUNDS_FROM ? ', or HYPE on Elysium' : ''}. Nothing moves until you confirm in your wallet.${ELYSIUM_LIVE ? ' A position on Elysium uses the tokens already in your wallet on Elysium.' : ''}`),
+        p(`Domino checks supported balances on Robinhood Chain, Ethereum, Base, Arbitrum One${ELYSIUM_FUNDS_FROM ? ', OP Mainnet and Elysium' : ' and OP Mainnet'}, excluding the position’s network. Transfers need an available route and ETH for fees${ELYSIUM_FUNDS_FROM ? ', or HYPE on Elysium' : ''}. Nothing moves until you confirm in your wallet.${NOT_BROUGHT_TO_ELYSIUM ? ' A position on Elysium uses the tokens already in your wallet on Elysium.' : ''}`),
       ],
     },
     {
@@ -212,7 +212,7 @@ export const BRING_FUNDS: DocPage = {
           kind: 'steps',
           items: [
             { title: 'Check your funds', body: ['Domino quotes what your position needs, using one or more networks. Each amount is the maximum to send; network fees are separate. Edit the position amount to change it.'] },
-            { title: 'Get a quote', body: ['Domino compares quotes from Relay and Across. The quote shows what you receive, the least you receive, about how long it takes, Domino’s fee and the network fee.'] },
+            { title: 'Get a quote', body: [`Domino compares quotes from Relay and Across${ELYSIUM_FUNDS_TO ? '; to Elysium, Relay alone brings funds' : ''}. The quote shows what you receive, the least you receive, about how long it takes, Domino’s fee and the network fee.`] },
             { title: 'Confirm the transfer', body: ['Select Use these funds, then confirm in your wallet: a token takes an approval of the exact amount and then the deposit, in one confirmation when your wallet can send both together; ETH takes one. Different networks may need separate confirmations.'] },
             { title: 'Continue your position', body: ['The funds arrive in your own wallet on the position’s network. Continue to review any token conversion and confirm the position. The transfer itself does not create it.'] },
           ],
@@ -303,8 +303,8 @@ export const POSITIONS: DocPage = {
       // Round 6 (2026-09-27): every token in dollars, the three largest first (the owner's rule).
       // 2026-10-01 (audit V7). Changed on purpose 2026-10-01 (integration pass 3): "read-only" is a word the docs never use
       // (tests/docs.test.mjs, the words); what it meant, said plainly.
-      // Added 2026-11-06 (R-07): its tokens on Base and Arbitrum One (src/v2in/walletNetworks/model.ts). 2026-11-07: and Elysium's.
-      blocks: [p('The Wallet card shows the tokens of the connected wallet, or any address, in dollars: the three largest first, the rest under ', b('Show all'), `. On Base and Arbitrum One it lists ETH, WETH, USDC and its positions’ tokens${ELYSIUM_LIVE ? ', and on Elysium HYPE, WHYPE, Elysium’s dollar token and its positions’ tokens' : ''}, naming each token’s network. `, b('View address'), ' also lists that address’s positions, just to look at. Balances are public data.')],
+      // Added 2026-11-06 (R-07): its tokens on Base and Arbitrum One (src/v2in/walletNetworks/model.ts). 2026-11-07: and Elysium's. Changed on purpose 2026-11-09 (Elysium's day 9, checklist step 11): its dollar token by its symbol, USDC, now its real profile names it.
+      blocks: [p('The Wallet card shows the tokens of the connected wallet, or any address, in dollars: the three largest first, the rest under ', b('Show all'), `. On Base and Arbitrum One it lists ETH, WETH, USDC and its positions’ tokens${ELYSIUM_LIVE ? ', and on Elysium HYPE, WHYPE, USDC and its positions’ tokens' : ''}, naming each token’s network. `, b('View address'), ' also lists that address’s positions, just to look at. Balances are public data.')],
     },
   ],
 }

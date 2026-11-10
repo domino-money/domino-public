@@ -22,6 +22,7 @@ import { EmptyDomino } from '../../components/positions/visual/EmptyDomino'
 import '../../styles/position-collection.css'
 import { BulkClosePositions } from './BulkClosePositions'
 import { automationState, subscribeAutomation } from '../automate/store'
+import { RELOAD_WORDS, useWaitOver } from '../../lib/readWait'
 
 /**
  * Added 2026-11-06 (R-07): the Wallet card's tokens on Base and Arbitrum One (../walletNetworks/WalletNetworks.tsx), opened from
@@ -97,7 +98,10 @@ export function OwnedCollection({ owner, readOnly = false, deposits, onEmptyActi
   const note = ownNote(latest ?? own.reply)
   const partial = own.reply?.kind === 'ok' && own.reply.body.truncated.positions
   const settled = historical.phase === 'ready' && own.reply?.kind === 'ok'
-  const empty = settled && rows.length === 0 && !note && !partial
+  // Changed on purpose 2026-11-09 (core flows, the owner: nothing may load forever): "No positions yet" stands on the last
+  // good answer (own.reply, kept through a failed refresh), as the rows do; it needed the latest attempt to be good too, so
+  // one failed refresh of an empty wallet put the loading rows back.
+  const empty = settled && rows.length === 0 && !ownNote(own.reply) && !partial
   // (QA round 2, N63) The tabs and the status line count nothing until something is known: they said "Open 0 · Closed 0"
   // for seconds while the two inventories were still on their way (the rows keep their loading rows meanwhile).
   // Changed on purpose 2026-10-31 (QA round 2 follow-ups, N63): and nothing until both inventories have answered. With the
@@ -116,6 +120,10 @@ export function OwnedCollection({ owner, readOnly = false, deposits, onEmptyActi
   }, [empty, readOnly, onEmptyAction])
   const more = matches.length - shown.length
   const held = historical.phase === 'ready' ? historical.answer.deposits : []
+  // Added 2026-11-09 (core flows, the owner: nothing may load forever): loading rows that have stood STUCK_MS with nothing
+  // listed (read-v6 failing, a network behind, the site's own inventory not answering) give way to one line that says what
+  // to do. The reads go on by themselves, and the rows replace the line the moment one answers.
+  const stuck = useWaitOver(!shown.length && !empty && !rows.length)
   return <>
     <section className="dm-card dm-lit dm-acct-nft-card dm-own-card dm-own-collection" aria-labelledby="own-title" data-owned={own.reply?.kind === 'ok' || retained ? 'ready' : failed ? 'unlisted' : 'loading'} data-owned-viewed={readOnly ? owner : undefined}>
       <div className="dm-own-head">
@@ -138,6 +146,7 @@ export function OwnedCollection({ owner, readOnly = false, deposits, onEmptyActi
           // Changed on purpose 2026-10-15 (pack 7, the owner: no status notices): a list not read yet keeps its loading rows,
           // also while its read is asked again after a failure; it said "Your positions couldn’t be read right now. We’ll keep
           // checking." (the section's data-owned says "unlisted").
+          : stuck ? <EmptyState title={readOnly ? RELOAD_WORDS.addressPositions : RELOAD_WORDS.positions} data-empty="owned-stuck" />
           : <PendingRows loading />}
       {more > 0 && <div className="dm-own-more"><Button variant="ghost" size="sm" onClick={() => setPages((before) => ({ ...before, [tab]: before[tab] + 1 }))}>Show {Math.min(more, PAGE_SIZE)} more</Button></div>}
     </section>

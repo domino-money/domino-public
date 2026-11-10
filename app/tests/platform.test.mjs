@@ -139,7 +139,9 @@ test('files that fail together share one check, and a failure inside a money flo
   assert.deepEqual([...new Set(asked)], ['[aria-modal="true"]']);
   assert.equal(release.dialogOpen(null), false, 'no document: nothing open');
   assert.equal(release.dialogOpen({ querySelector: () => { throw new Error('detached'); } }), false);
-  assert.match(source('lib/staleRelease.ts'), /whenSafe\(!moneyFlowOpen\(window\.location\.hash\) && !dialogOpen\(\),/);
+  // Changed on purpose 2026-11-07 (pages of their own, src/lib/route.ts): the open route is the address's, in the same
+  // `#/…` form, and the next navigation is the route module's next move (it was the next hashchange).
+  assert.match(source('lib/staleRelease.ts'), /whenSafe\(!moneyFlowOpen\(currentRoute\(\)\) && !dialogOpen\(\), \(run\) => onRoute\(run, true\)\)/);
 });
 
 test('every lazily loaded screen and part the app opens goes through the recovery, behind its own flag where it has one', () => {
@@ -168,7 +170,8 @@ test('every lazily loaded screen and part the app opens goes through the recover
 
 test('the route table: every page App draws, the older spellings, and Markets takes only an address after it', () => {
   // Changed on purpose 2026-10-01 (the chain2 workstream, part B): and the second chain's section, #/elysium….
-  assert.deepEqual(ROUTES, { '': 'overview', markets: 'markets', explore: 'markets', pools: 'markets', pool: 'pool', positions: 'positions', app: 'positions', portfolio: 'positions', new: 'new', automate: 'automate', settings: 'docs', docs: 'docs', sequence: 'sequence', setup: 'setup', elysium: 'elysium' });
+  // Changed on purpose 2026-11-07 (the owner's Points page, Season 1): and /points, behind the wallet's build flag (App.tsx).
+  assert.deepEqual(ROUTES, { '': 'overview', markets: 'markets', explore: 'markets', pools: 'markets', pool: 'pool', positions: 'positions', app: 'positions', portfolio: 'positions', new: 'new', automate: 'automate', settings: 'docs', docs: 'docs', sequence: 'sequence', setup: 'setup', elysium: 'elysium', points: 'points' });
   const app = source('App.tsx');
   assert.match(app, /const PAGES: Readonly<Record<string, Page>> = \{\n {2}\.\.\.ROUTES,/, 'App routes with the same table the build writes into the page');
   for (const page of new Set(Object.values(ROUTES))) assert.match(app, new RegExp(`case '${page}':`), page);
@@ -181,7 +184,7 @@ test('the route table: every page App draws, the older spellings, and Markets ta
   // Changed on purpose 2026-10-17 (V4 parity, CSP-29): the title is two staggered lines that rise one by one, the same words
   // (render.test.mjs still reads the h1's innerText as 'This page doesn’t exist').
   assert.match(page, /<span className="dm-ln-in dm-k-l1">This page<\/span>[\s\S]*<span className="dm-ln-in dm-k-l2">doesn’t exist<\/span>/);
-  assert.match(page, /<LinkButton href="#\/">Go to Home<\/LinkButton>/);
+  assert.match(page, /<LinkButton href="\/">Go to Home<\/LinkButton>/);
   assert.doesNotMatch(page, /\bimport\(|fetch|localStorage/, 'it reads and loads nothing');
 });
 
@@ -229,7 +232,7 @@ test('the tab’s name while a screen loads is the name the screen gives itself'
   assert.equal(pendingTitle('constructor', '', '#/constructor', true), null, 'only a page’s own name');
   // App names the pending tab through it, with the build's flag; the entry imports no registry or copy module for it.
   const app = source('App.tsx');
-  assert.match(app, /const title = pendingTitle\(page, param, window\.location\.hash, __DOMINO_V2__\)/);
+  assert.match(app, /const title = pendingTitle\(page, param, currentRoute\(\), __DOMINO_V2__\)/);
   assert.doesNotMatch(app, /function pendingTitle|Domino docs/);
   assert.doesNotMatch(source('routeTable.ts'), /^import /m, 'the route table keeps no imports (vite.config.ts and the boot data read it)');
 });
@@ -238,8 +241,12 @@ test('the tab’s name while a screen loads is the name the screen gives itself'
 // F1, F2, F3: the boot script, and the table the build writes beside it.
 // ---------------------------------------------------------------------------
 
-/** Runs the boot script for `hash` against a table, and says which links it added and what it sent. */
-function runBoot(hash, data) {
+/**
+ * Runs the boot script for `route` against a table, and says which links it added and what it sent. Changed on purpose
+ * 2026-11-07 (pages of their own, src/lib/route.ts): `route` is the address bar's path (`/markets`) or a link from
+ * before (`#/markets`, on Home's path), as the script reads either.
+ */
+function runBoot(route, data) {
   const links = [];
   const sent = [];
   const document = {
@@ -248,7 +255,8 @@ function runBoot(hash, data) {
     head: { appendChild: (link) => links.push(link) },
   };
   const window = {};
-  new Function('window', 'document', 'location', 'performance', 'fetch', boot.BOOT_SCRIPT)(window, document, { hash }, performance, (path, init) => (sent.push(`${init.method} ${path}`), new Promise(() => {})));
+  const location = route === '' || route.startsWith('#') ? { pathname: '/', hash: route } : { pathname: route.split('#')[0], hash: route.includes('#') ? route.slice(route.indexOf('#')) : '' };
+  new Function('window', 'document', 'location', 'performance', 'fetch', boot.BOOT_SCRIPT)(window, document, location, performance, (path, init) => (sent.push(`${init.method} ${path}`), new Promise(() => {})));
   return { links: links.map((link) => `${link.rel}${link.as ? `:${link.as}` : ''} ${link.href} ${link.crossOrigin === '' ? 'anonymous' : link.crossOrigin}`), sent };
 }
 
@@ -260,6 +268,7 @@ test('the boot script asks for the opened route’s files, the same links the ap
       markets: ['/assets/Explore-a.js', '/assets/screens-b.css'],
       positions: ['/assets/Positions-c.js', '/assets/OwnedPositions-d.js', '/assets/chainRoutes-e.js'],
       position: ['/assets/Positions-c.js', '/assets/PositionDetail-f.js', '/assets/chainRoutes-e.js'],
+      receipts: ['/assets/Positions-c.js', '/assets/Receipts-h.js'],
       docs: ['/assets/Docs-g.js'],
     },
   };
@@ -274,13 +283,21 @@ test('the boot script asks for the opened route’s files, the same links the ap
   assert.deepEqual(runBoot('#/explore', data).links, runBoot('#/markets', data).links, 'the older spelling too');
   assert.deepEqual(runBoot('#/positions/3325113', data).links, ['modulepreload /assets/Positions-c.js anonymous', 'modulepreload /assets/PositionDetail-f.js anonymous', 'modulepreload /assets/chainRoutes-e.js anonymous'], 'a position’s page, with the client its first read asks (the site’s chain routes since 2026-10-01, RPC-SPEC)');
   assert.deepEqual(runBoot('#/positions', data).links.map((line) => line.split(' ')[1]), data.chunks.positions);
-  assert.deepEqual(runBoot('#/positions/receipts', data).links.map((line) => line.split(' ')[1]), data.chunks.positions, 'Receipts is the list’s route, not a position');
+  // Changed on purpose 2026-11-07 (launch sweep F11): Receipts has its own files. It took the list's, whose stylesheet
+  // (OwnedRows) it never applies, and the browser warned of an unused preload a few seconds after load.
+  assert.deepEqual(runBoot('#/positions/receipts', data).links.map((line) => line.split(' ')[1]), data.chunks.receipts, 'Receipts is its own route, not the list’s or a position’s');
+  assert.deepEqual(runBoot('#/positions/receipts', { ...data, chunks: { ...data.chunks, receipts: undefined } }).links, [], 'a table without Receipts’ row is nothing to do');
   assert.deepEqual(runBoot('#/docs/wallet#sign-in', data).links.map((line) => line.split(' ')[1]), ['/assets/Docs-g.js']);
+  // The page's own addresses (2026-11-07): the same files as their links from before.
+  for (const [path, hash] of [['/markets', '#/markets'], ['/explore', '#/explore'], ['/positions/3325113', '#/positions/3325113'], ['/positions/receipts', '#/positions/receipts'], ['/docs/wallet#sign-in', '#/docs/wallet#sign-in'], ['/', '#/'], ['/#pools', '#/#pools'], ['/nope', '#/nope'], ['/elysium/new', '#/elysium/new']]) {
+    assert.deepEqual(runBoot(path, data), runBoot(hash, data), path);
+  }
+  assert.deepEqual(runBoot('/markets', data).links, ['modulepreload /assets/Explore-a.js anonymous', 'preload:style /assets/screens-b.css anonymous']);
   for (const hash of ['', '#/', '#/#pools', '#/nope', '#/markets/0xab', '#/new']) assert.deepEqual(runBoot(hash, data), { links: [], sent: [] }, hash);
   // A table without the route, or no table at all, is nothing to do.
   assert.deepEqual(runBoot('#/markets', { early: true, pages: ROUTES, chunks: {} }).links, []);
   const document = { getElementById: () => null, head: { appendChild: () => assert.fail('nothing is added without a table') } };
-  new Function('window', 'document', 'location', 'performance', 'fetch', boot.BOOT_SCRIPT)({}, document, { hash: '#/markets' }, performance, () => assert.fail('nothing is sent without a table'));
+  new Function('window', 'document', 'location', 'performance', 'fetch', boot.BOOT_SCRIPT)({}, document, { pathname: '/markets', hash: '' }, performance, () => assert.fail('nothing is sent without a table'));
 });
 
 test('once the page is idle, the main screens’ files are prefetched once each, as the app’s loader asks for them, and never on a saving connection', () => {

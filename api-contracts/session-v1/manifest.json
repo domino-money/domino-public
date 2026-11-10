@@ -147,7 +147,7 @@
     },
     {
       "path": "backend/session_store.py",
-      "sha256": "621c332aa47a0e954973395b3a44a96c36532c47eb2ad06b20b8da92682eb901"
+      "sha256": "236ac1f071c1cd4d6ddac2c084c354861e773c5f4b0178e761012cd0a343fe3a"
     },
     {
       "path": "backend/hop_log.py",

@@ -634,7 +634,12 @@ test('wrangler 4.130.0 routes the edge-cached reads and Domino’s own chain rou
       ['/api/read/v3/history', 'api/read/v3/history.ts:onRequest'],
       // 2026-10-01 (audit A7 b, A14): the stored overview's settled answers at the edge, the same way.
       ['/api/read/v3/overview', 'api/read/v3/overview.ts:onRequest'],
+      // 2026-11-07 (edge hardening): token search, and read-v6's two public chain reads, kept at the edge the same way;
+      // every other /api/read/v6/ path (the wallet's reads) still reaches the catch-all.
+      ['/api/read/v3/search', 'api/read/v3/search.ts:onRequest'],
       ['/api/read/v5/featured-pools', 'api/read/v5/featured-pools.ts:onRequest'],
+      ['/api/read/v6/chain-pools', 'api/read/v6/chain-pools.ts:onRequest'],
+      ['/api/read/v6/chain-tokens', 'api/read/v6/chain-tokens.ts:onRequest'],
       // 2026-10-01 (audit I3): DEX Screener through our own edge; no read family owns /api/read/dex/, and its route comes
       // before the catch-all, so it never reaches a Worker.
       ['/api/read/dex/:path*', 'api/read/dex/[[path]].ts:onRequest'],

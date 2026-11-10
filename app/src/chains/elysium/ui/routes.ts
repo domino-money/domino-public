@@ -42,4 +42,4 @@ export function sectionTitle(chain: ChainConfig, route: SectionRoute): string {
 }
 
 export const sectionHref = (chain: ChainConfig, screen: SectionScreen = 'markets', param = ''): string =>
-  `#/${chain.key}${screen === 'markets' ? '' : `/${screen}`}${param ? `/${encodeURIComponent(param)}` : ''}`
+  `/${chain.key}${screen === 'markets' ? '' : `/${screen}`}${param ? `/${encodeURIComponent(param)}` : ''}`

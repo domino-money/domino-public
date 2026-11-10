@@ -8,9 +8,10 @@ import type { ConsentChoice } from '../../v2/plan/consent'
 import { readFeesToCome } from '../../v2/plan/present'
 import { planTargetOf } from '../../v2/plan/route'
 import type { S1PlanConsent, S1PlanReply, S1PlanRequest } from '../../v2/plan/types'
+import { transientWalletRead } from '../../v2/errors'
 import type { ActionName, Address, Hex, V2ChainId } from '../../v2/types'
 import { COPY } from './copy'
-import { SENT_CHECK_WALLET_COPY, STILL_PENDING_COPY, actionError, planFailure, retryLaterWait, type ActionError } from './errors'
+import { DIALOG_REFUSED_COPY, SENT_CHECK_WALLET_COPY, STILL_PENDING_COPY, actionError, planFailure, retryLaterWait, type ActionError } from './errors'
 import { askLivePlan } from './source'
 import { connectPosition, onChain, type OpenGate, type PositionConnection } from './wallet'
 import { burnedPositionIds, positionChanged } from '../lists/positionSync'
@@ -134,6 +135,11 @@ class PlanFailure extends Error {
 
 const now = () => Date.now() / 1000
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+/**
+ * Added 2026-11-09 (core flows, errors): how long a read through the wallet that met its network failing (src/v2/errors.ts
+ * transientWalletRead) waits before it is asked once more, before anything is said, as New position's (../journey/run.ts).
+ */
+const WALLET_READ_RETRY_MS = 1_000
 const stepsOf = (review: ZapReview): RunStep[] => review.steps.map((step, index) => ({ kind: step.kind, index, step, status: 'waiting', feeWei: null, hash: null }))
 
 /**
@@ -176,7 +182,33 @@ export function useActionRun(input: RunInput) {
   })
   useEffect(() => () => void generation.current++, [])
   const chainOf = (): V2ChainId => latest.current.gate.chainId
-  const errorOf = (error: unknown) => (error instanceof PlanFailure ? error.view : actionError(error, chainOf(), latest.current.label))
+  /**
+   * The connection the latest quote reads through (added 2026-11-09, core flows, errors): a money client's
+   * `wallet_action_expired` is the wallet changing only when that wallet is no longer the connected one. A revert nothing
+   * names is said as the dialog's own choices (DIALOG_REFUSED_COPY).
+   */
+  const readsThrough = useRef<PositionConnection | null>(null)
+  const walletChanged = () => {
+    const connection = live.current.reviewed?.connection ?? readsThrough.current
+    return connection !== null && !connection.wallet.current()
+  }
+  const errorOf = (error: unknown) => (error instanceof PlanFailure ? error.view : actionError(error, chainOf(), latest.current.label, { refused: DIALOG_REFUSED_COPY, walletChanged: walletChanged() }))
+
+  /**
+   * Added 2026-11-09 (core flows, errors): a read through the wallet (the consent path, the review, a step's preparation),
+   * asked once more after WALLET_READ_RETRY_MS when it met the wallet's network failing, before anything is said. Reads
+   * only: never a send, a batch offered or a signature.
+   */
+  async function onceMore<T>(gen: number, read: () => Promise<T>): Promise<T> {
+    try {
+      return await read()
+    } catch (error) {
+      if (gen !== generation.current || !transientWalletRead(error)) throw error
+      await sleep(WALLET_READ_RETRY_MS)
+      if (gen !== generation.current) throw error
+      return read()
+    }
+  }
 
   async function quote(requoting: boolean): Promise<void> {
     const gen = ++generation.current
@@ -186,12 +218,13 @@ export function useActionRun(input: RunInput) {
     if (gate.mode === 'preview') return previewQuote(gen)
     try {
       const connection = await connectPosition(gate)
+      readsThrough.current = connection
       const zap = connection.zap
       if (!zap) throw new Error('deployment_not_live')
       // What an earlier review still reads on this client, first (one request at a time).
       await reading.get(zap)
       if (gen !== generation.current) return
-      const chosen = await zap.consentFor(action, inputs)
+      const chosen = await onceMore(gen, () => zap.consentFor(action, inputs))
       const chain = v2Chain(gate.chainId)
       // The answer is held to this wallet, the chain's pinned zaps and the profile's Uniswap and Permit2 (rev2 §2.4).
       const context = {
@@ -215,7 +248,7 @@ export function useActionRun(input: RunInput) {
       // What the person asked for (rev2 review, F1): the money client ties the plan's swaps to it.
       const target = planTargetOf(asked)
       if (!target) throw new Error('plan_target')
-      const review = await zap.review({ chainId: gate.chainId, plan: result.reply.plan, consent: consent.planConsent, quote: result.reply.quote, target })
+      const review = await onceMore(gen, () => zap.review({ chainId: gate.chainId, plan: result.reply.plan, consent: consent.planConsent, quote: result.reply.quote, target }))
       if (gen !== generation.current) return
       const path: RunPath = consent.path
       const reviewed: Reviewed = { connection: { ...connection, zap }, consent, review, reply: result.reply, request: asked, path, at: now() }
@@ -225,9 +258,12 @@ export function useActionRun(input: RunInput) {
       })
       bump()
       // An armed root's action (rev2 §2.13): nothing is prepared until the person ticks the warning (on Auto-exit's own
-      // root, only when the zap's approval replaces the one its exit needs).
+      // root, only when the zap's approval replaces the one its exit needs). Changed on purpose 2026-11-09 (the core-flows
+      // fix, the owner: taking a position's money out with automation on must be easy): a withdrawal asks for no tick; the
+      // dialog says in one line that it turns the automation off (./PositionDialog.tsx), and the run goes on at once. Add
+      // liquidity still waits for the tick.
       if (review.pausesAutomation === null) await prepareCurrent(gen)
-      else if (latest.current.exitLive && review.replacesApproval === null) await acknowledgePause()
+      else if (latest.current.action === 'exit' || (latest.current.exitLive && review.replacesApproval === null)) await acknowledgePause()
     } catch (error) {
       if (gen !== generation.current) return
       const view = errorOf(error)
@@ -284,18 +320,18 @@ export function useActionRun(input: RunInput) {
     const { zap } = reviewed.connection
     try {
       if (step.kind === 'batch') {
-        const batch = await held(zap, zap.prepareBatch(reviewed.review))
+        const batch = await held(zap, onceMore(gen, () => zap.prepareBatch(reviewed.review)))
         if (gen !== generation.current) return
         state.batch = batch
         step.feeWei = batch.networkFeeWei
       } else {
-        const prepared = await held(zap, zap.prepareStep(reviewed.review, step.index))
+        const prepared = await held(zap, onceMore(gen, () => zap.prepareStep(reviewed.review, step.index)))
         if (gen !== generation.current) return
         state.prepared = prepared
         step.feeWei = prepared.networkFeeWei
         state.feePerGas = BigInt(prepared.transaction.maxFeePerGas)
         // The approvals after this one, for their fee only (2026-10-06: the review's one network fee line counts them).
-        await held(zap, readFeesToCome(state.steps, state.current, async (index) => (await zap.prepareStep(reviewed.review, index)).networkFeeWei, () => gen === generation.current))
+        await held(zap, onceMore(gen, () => readFeesToCome(state.steps, state.current, async (index) => (await zap.prepareStep(reviewed.review, index)).networkFeeWei, () => gen === generation.current)))
         if (gen !== generation.current) return
       }
       step.status = 'ready'
@@ -629,6 +665,7 @@ export function useActionRun(input: RunInput) {
     let answer: 'forgotten' | 'settled' | 'pending' | 'none'
     try {
       const connection = state.reviewed?.connection ?? (await connectPosition(gate))
+      readsThrough.current = connection
       if (!connection.zap) throw new Error('deployment_not_live')
       await onChain(connection)
       answer = await connection.zap.forgetUnsettled()

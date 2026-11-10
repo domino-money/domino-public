@@ -22,6 +22,7 @@ import sys
 
 import egress_policy as shared
 import install_crosschain as crosschain
+import install_points_api as points_listener
 import install_position_plan as position_plan
 import upgrade_financial as financial
 import v2_release_chains
@@ -37,13 +38,15 @@ UNIT_DIR = '/etc/systemd/system/'
 # order; the four financial identities of 13 September follow deposit.
 ROLES = ('read', 'gateway', 'auth', 'onboarding', 'deposit', 'performance',
          'performance-collector', 'execution-status', 'execution-signer',
-         'tunnel', 'write', 'operator', 'admin', 'position-plan', 'v2-automation', 'crosschain', 'monitor')
+         'tunnel', 'write', 'operator', 'admin', 'position-plan', 'v2-automation', 'crosschain', 'monitor',
+         'points')
 # Identities a host may not have: the admin account, the S1 plan listener until
 # install_position_plan.py has created it, the V2 automation until
 # install_v2_automation.py has, the S2 crosschain listener until
-# install_crosschain.py has, and the monitor until install_monitor.py has. An
-# enabled role needs its own.
-OPTIONAL = ('admin', 'position-plan', 'v2-automation', 'crosschain', 'monitor')
+# install_crosschain.py has, the monitor until install_monitor.py has, and
+# season 1's points listener until install_points_api.py has. An enabled role
+# needs its own.
+OPTIONAL = ('admin', 'position-plan', 'v2-automation', 'crosschain', 'monitor', 'points')
 # Identities with no single service unit: the indexer role runs two
 # timer-driven units whose systemd layer is not this file's, and the two
 # accounts never run a service at all.
@@ -56,7 +59,8 @@ NO_UNIT = ('write', 'operator', 'admin', 'v2-automation', 'monitor')
 READ_PATH_UNITS = ('domino-read.service', 'domino-gateway.service', 'domino-tunnel.service')
 LISTENERS = {'read': 8876, 'gateway': 8878, 'auth': 8879, 'onboarding': 8880,
              'deposit': 8881, 'performance': 8900, 'execution-status': 8901,
-             'tunnel': 20241, 'position-plan': position_plan.PORT, 'crosschain': crosschain.PORT}
+             'tunnel': 20241, 'position-plan': position_plan.PORT, 'crosschain': crosschain.PORT,
+             'points': points_listener.PORT}
 # The node's proxy on this host (install_node_rpc_endpoint.py). With
 # `nodeLoopbackReads`, the reader and the writer (public-data lanes, featured,
 # queue worker, followers) lead their chain reads with it, not with Cloudflare.
@@ -120,7 +124,11 @@ CLASSES = {'read': ('rpc', 'analytics'), 'gateway': ('jwks',),
            # The monitor: balances, the node's head and the registry's logs (rpc;
            # the node's proxy with nodeLoopbackReads; chains with v2Chains), and
            # its alerts (telegram). It serves nothing and verifies no assertion.
-           'monitor': ('rpc', 'telegram')}
+           'monitor': ('rpc', 'telegram'),
+           # Season 1's points listener: its session account check reads Robinhood
+           # (rpc) and it verifies the bridge's Access assertion (jwks). Its points
+           # and links are the database's; it reaches no other host.
+           'points': ('rpc', 'jwks')}
 # Who reads the V2 chains' hosted RPC (`chains`), and only with `v2Chains`:
 # the writer's indexer instances for Base and Arbitrum, the plan listener's
 # plans there, the V2 automation, the monitor, the S2 crosschain listener's
@@ -140,7 +148,7 @@ COMPLETE = {'edges': EDGE_HOSTS, 'bridges': BRIDGE_HOSTS}
 # every listener behind an Access hostname; the gateway fronts the reader.
 ORIGINS = {'gateway': ('read',),
            'tunnel': ('gateway', 'auth', 'onboarding', 'deposit', 'performance', 'execution-status',
-                      'position-plan', 'crosschain')}
+                      'position-plan', 'crosschain', 'points')}
 # Identities that resolve names at runtime. Every other enabled unit reads a
 # pinned hosts file bound over /etc/hosts and never needs the stub resolver.
 # The writer's units bind theirs too (ops/systemd); the stub stays for the
@@ -162,7 +170,8 @@ ENABLE_ARGUMENTS = {
     'performance': f'--enable --profile {private_config("performance", "profile.json")}',
     'execution-status': f'--enable --config {private_config("execution-status", "profile.json")}',
     'position-plan': f'--enable --rpc-config {private_config("position-plan", "rpc.json")}',
-    'crosschain': f'--enable --rpc-config {private_config("crosschain", "rpc.json")}'}
+    'crosschain': f'--enable --rpc-config {private_config("crosschain", "rpc.json")}',
+    'points': f'--enable --rpc-config {private_config("points", "rpc.json")}'}
 UNSET = ('UnsetEnvironment=HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY http_proxy https_proxy '
          'all_proxy no_proxy SSL_CERT_FILE SSL_CERT_DIR REQUESTS_CA_BUNDLE CURL_CA_BUNDLE '
          'PYTHONPATH PYTHONHOME')
@@ -299,7 +308,7 @@ def ordered(values):
 
 def enable_command(role):
     """The installer's exact ExecStart for this component, plus its enable flags."""
-    installers = {'position-plan': position_plan, 'crosschain': crosschain}
+    installers = {'position-plan': position_plan, 'crosschain': crosschain, 'points': points_listener}
     text = installers[role].unit_text('0' * 40) if role in installers else financial.unit_text(role, '0' * 40)
     command = next(line for line in text.splitlines() if line.startswith('ExecStart='))
     return command + ' ' + ENABLE_ARGUMENTS[role]

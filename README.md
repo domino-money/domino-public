@@ -16,6 +16,10 @@ fees back to a position; **Domino-compound** can also create and fund successor
 positions within the owner's policy. The repository includes position creation,
 fee accounting, bounded swaps, auto-exit and owner recovery paths.
 
+The app also includes cross-chain funding and a signed-in Points page with
+Season 1 referral links. [Points](docs/points/POINTS.md) count eligible usage;
+they are not money or tokens and carry no promise of future rewards.
+
 [Run locally](#run-locally) · [Codebase](#codebase) · [Tests](#tests) · [Security and audit evidence](#security-and-audit-evidence)
 
 ## Status and network support
@@ -33,11 +37,18 @@ The committed Domino V2 profiles cover:
 | Robinhood Chain | 4663 | v3 and v4 |
 | Base | 8453 | v3 and v4 |
 | Arbitrum One | 42161 | v3 and v4 |
+| Elysium | 99901 | v4 only |
 
 These are code and profile capabilities, not a claim that every pool or operation
-is available. Elysium integration is present but disabled in this snapshot while
-its qualified profile and pinned deployment are pending. See the
+is available. This snapshot includes Elysium's enabled profile and the app's
+pinned [deployment record from 9 November 2026](docs/deployments/v2-elysium-99901-2026-11-09/README.md).
+Its native currency is HYPE, and its liquidity flows use Uniswap v4 only. See the
 [chain profiles](api-contracts/v2/chains/) and [chain qualification procedure](docs/v2/QUALIFY_CHAIN.md).
+
+Cross-chain funding follows each chain's provider and token allowlists. On
+Elysium, S2 supports transfers to and from its USDC through **Relay only**;
+Across and native HYPE transfers are not supported. See the
+[bridge design](docs/v2/F5_BRIDGE.md) and [cross-chain API contract](api-contracts/crosschain-v1/README.md).
 
 Domino V1 and V2 are application/contract release families; Uniswap v3 and v4
 name the underlying AMM protocols. Both Domino generations remain in this

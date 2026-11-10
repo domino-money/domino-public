@@ -16,7 +16,10 @@ const { positionFeesView } = require('../../.test-build/app/src/lib/fees/positio
 const { automationImpact } = require('../../.test-build/app/src/lib/automationImpact.js');
 const { valueUnits } = require('../../.test-build/app/src/components/positions/visual/value.js');
 
-const fixture = (name) => JSON.parse(readFileSync(new URL(`../../../api-contracts/read-v6/fixtures/1.2.0-rc.1/valid/${name}.json`, import.meta.url), 'utf8'));
+// Changed on purpose 2026-11-07 (day-9 rehearsal, finding F8): read-v6's versions are the package's own
+// (api-contracts/read-v6/runtime.mjs), never literals, so a day-9 version move needs only docs/ELYSIUM_DAY9.md step 3.
+const { NEXT_VERSION } = await import('../../../api-contracts/read-v6/runtime.mjs');
+const fixture = (name) => JSON.parse(readFileSync(new URL(`../../../api-contracts/read-v6/fixtures/${NEXT_VERSION}/valid/${name}.json`, import.meta.url), 'utf8'));
 const WETH = '0x4200000000000000000000000000000000000006';
 const USDC = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
 const book = tokenBook(8453, [

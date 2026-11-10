@@ -69,9 +69,19 @@ function statusOf(text: string): string | null {
   }
 }
 
-/** The synthetic GET names the validated app origin, contract version and question, in one order. */
+/** read-v3's history window and resolution when a request names none (its request schema's defaults). */
+export const HISTORY_DEFAULT_WINDOW_SECONDS = 86_400
+export const HISTORY_DEFAULT_RESOLUTION_SECONDS = 3_600
+
+/**
+ * The synthetic GET names the validated app origin, contract version and question, in one order. Changed on purpose
+ * 2026-11-07 (edge hardening): a window or resolution left out is the schema's default, the very question the producer
+ * and read-v3's runtime read it as, so leaving it out or naming it is one question, not two reads of the VM. Every screen
+ * names both (lib/read/cardReads.ts, components/read/screens/PoolHistoryChart.tsx, components/positions/visual/
+ * usePoolHistory.ts), so the app's own keys are the same as before.
+ */
 export const historyKey = (version: string, asked: Asked, origin = APP_ORIGIN) =>
-  `${origin}/api/read/v3/cache/${encodeURIComponent(version)}/history/${encodeURIComponent(JSON.stringify([asked.poolId.toLowerCase(), asked.currency.toLowerCase(), asked.windowSeconds ?? null, asked.resolutionSeconds ?? null]))}`
+  `${origin}/api/read/v3/cache/${encodeURIComponent(version)}/history/${encodeURIComponent(JSON.stringify([asked.poolId.toLowerCase(), asked.currency.toLowerCase(), asked.windowSeconds ?? HISTORY_DEFAULT_WINDOW_SECONDS, asked.resolutionSeconds ?? HISTORY_DEFAULT_RESOLUTION_SECONDS]))}`
 
 export function answerHistory(request: Request, env: BridgeEnv, rt: HistoryRuntime): Promise<Response> {
   const { contract } = rt

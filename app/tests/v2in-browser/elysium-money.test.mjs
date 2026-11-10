@@ -37,13 +37,17 @@ import { createChainReads } from '../support/chain-reads.mjs';
 import { planAnswer, v4Path, ZERO } from '../support/s1-plans.mjs';
 import { pressContinue } from '../support/new-position.mjs';
 import { ELYSIUM_DAY9_PROFILE as PROFILE, PLAN_DAY9, READ_V6_DAY9 } from '../support/elysium-day9.mjs';
+import { ELYSIUM_LIVE_DIST, ELYSIUM_REPO_FUNDS_FROM, ELYSIUM_REPO_FUNDS_TO, ELYSIUM_REPO_LIVE, ELYSIUM_REPO_STAGE } from '../support/elysium-profile.mjs';
 import { openPositionPage } from '../support/position-v2-page.mjs';
 import { createDirectChain } from '../support/v2-direct-chain.mjs';
 import { activityOf, indexedToken, livePosition, portfolioOf, s1Action } from '../support/s1-read6.mjs';
 import { walletBalancesAnswer } from '../support/wallet-networks.mjs';
 
 const APP = resolve(import.meta.dirname, '../..');
-const LIVE_DIST = resolve(APP, '.wallet-test-v2-dist-elysium');
+// Changed on purpose 2026-11-07 (day-9 rehearsal, finding F5): the build that draws Elysium live, the forced one while the
+// repository leaves it off, the usual one (rugged97's profile and our pinned record) once it turns it on
+// (../support/elysium-profile.mjs); PROFILE follows it.
+const LIVE_DIST = ELYSIUM_LIVE_DIST;
 for (const dist of [WALLET_V2_DIST, LIVE_DIST]) {
   if (!existsSync(join(dist, 'index.html'))) throw new Error(`${dist} is missing: run npm run build:wallet-test-v2 and npm run build:wallet-test-v2-elysium first.`);
 }
@@ -55,6 +59,7 @@ const shot = async (target, name, options = {}) => {
 };
 const require = createRequire(import.meta.url);
 const position = require('../../.test-build/app/src/finance/position.js');
+const { fixedFeePercent } = require('../../.test-build/app/src/lib/read/screens/fee.js');
 const ERC20 = parseAbi(['function approve(address spender, uint256 amount) returns (bool)']);
 
 const ID = 99901;
@@ -66,9 +71,22 @@ const USDC = lower(PROFILE.chargeCurrencies.find((currency) => currency.rank ===
 const WHYPE = lower(PROFILE.wrappedNative.address);
 const V4_PM = lower(PROFILE.uniswap.v4.positionManager);
 const CAT = '0x1111222233334444555566667777888899990000';
-/** Elysium's HYPE/USDC pool, the one its gas is priced at (the profile's gasPrice.poolNativeUsd). */
-const POOL = { dex: 4, currency0: ZERO, currency1: USDC, fee: 500, tickSpacing: 10, hooks: ZERO };
+/**
+ * Elysium's HYPE/USDC pool, the one its gas is priced at (the profile's gasPrice.poolNativeUsd). Changed on purpose
+ * 2026-11-07 (day-9 rehearsal, finding F5): its stable, fee and tick spacing are the profile's own (500 and 10 on the
+ * synthetic one), so the suite stands on the real profile's pool on day 9.
+ */
+const NATIVE_POOL = PROFILE.gasPrice.poolNativeUsd;
+const POOL = { dex: 4, currency0: ZERO, currency1: lower(NATIVE_POOL.stable), fee: NATIVE_POOL.fee, tickSpacing: NATIVE_POOL.tickSpacing, hooks: ZERO };
+/** That pool's fee as every chip writes it ("0.05%" on the synthetic profile), for a regular expression. */
+const POOL_FEE = fixedFeePercent(POOL.fee).replace('.', '\\.');
 const CAT_POOL = { dex: 4, currency0: ZERO, currency1: CAT, fee: 3000, tickSpacing: 60, hooks: ZERO };
+/**
+ * Added 2026-11-09 (Elysium's day 9, checklist step 6: DEX Screener lists Elysium as `elysium`): its pairs for ECAT, its
+ * HYPE pool's figures, as the provider names a v4 pool (its id) and native HYPE (the zero address), as Base's suite does.
+ */
+const CAT_PAIRS = `https://api.dexscreener.com/token-pairs/v1/elysium/${CAT}`;
+const catDex = (url) => (url === CAT_PAIRS ? [{ chainId: 'elysium', dexId: 'uniswap', labels: ['v4'], pairAddress: poolIdOf(CAT_POOL), baseToken: { address: CAT, symbol: 'ECAT' }, quoteToken: { address: ZERO, symbol: 'HYPE' }, liquidity: { usd: 250000 }, volume: { h24: 50000 } }] : undefined);
 const TICK = -276330;
 const SQRT = position.sqrtPriceAtTick(TICK);
 const CAT_SQRT = 79228162514264337593543950336n;
@@ -99,13 +117,13 @@ before(async () => { browser = await launchBrowser(); });
 after(async () => { await closeBrowser(browser); });
 
 /** A page of `dist` with Elysium's gate live on the fake chain's contracts, the wallet on Robinhood Chain. */
-async function open(dist, hash, { reads = elysiumReads(), planner = () => undefined, live = [ID], answer = null, connect = false, balances = {}, eth = 10n ** 19n } = {}) {
+async function open(dist, hash, { reads = elysiumReads(), planner = () => undefined, live = [ID], answer = null, connect = false, balances = {}, eth = 10n ** 19n, dex = null } = {}) {
   const chain = createV2Chain({ chainId: ID, timestamp: now(), eth, balances, pools: [{ pool: POOL, sqrtPriceX96: SQRT, tick: TICK, liquidity: 10n ** 18n }] });
   chain.switchTo(4663);
   const read = createReadStub();
   const s = await openJourney(browser, chain, {
     dist, hash, connect, originOpen: true, live, contracts: Object.fromEntries(live.map((id) => [id, contractsFor(id)])), planner,
-    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true,
+    routes: [(request, url) => read.handle(request, url) ?? undefined], artwork: true, dex,
     chainReads: { answer: answer ?? ((route, request) => reads.answer(route, request)) },
   });
   return { ...s, chain, reads };
@@ -115,7 +133,13 @@ async function open(dist, hash, { reads = elysiumReads(), planner = () => undefi
 // Home
 // ---------------------------------------------------------------------------------------------------------------------
 
-test('Home: where Elysium is served, "Open positions on" names the four networks, Elysium last with its own mark; today\'s build has no such row', async () => {
+// Changed on purpose 2026-11-07 (day-9 rehearsal, finding F3): the usual build's half on its own, skipped once the
+// repository turns Elysium on (that build is then the live one, below).
+test('Home where Elysium is off (the usual build until day 9): no "Open positions on" row', async (t) => {
+  if (ELYSIUM_REPO_LIVE) return t.skip('the repository turns Elysium on: the usual build is live');
+  // Changed on purpose 2026-11-07 (Elysium's pre-launch): before the opening the usual build draws the row with Elysium's
+  // chip and when it opens; tests/v2in-browser/elysium-surface.test.mjs "Elysium before live" holds that build.
+  if (ELYSIUM_REPO_STAGE !== 'off') return t.skip(`the repository's stage is ${ELYSIUM_REPO_STAGE}`);
   const off = await open(WALLET_V2_DIST, '#/', { live: [] });
   try {
     await off.page.locator('.dm-hero-funding li').first().waitFor();
@@ -124,6 +148,9 @@ test('Home: where Elysium is served, "Open positions on" names the four networks
     assert.doesNotMatch(await off.page.locator('main').innerText(), /Elysium|Open positions on/);
     await shot(off.page.locator('.dm-hero').first(), 'home-hero-today');
   } finally { await off.close(); }
+});
+
+test('Home: where Elysium is served, "Open positions on" names the four networks, Elysium last with its own mark', async () => {
   const s = await open(LIVE_DIST, '#/', { live: [] });
   try {
     const { page } = s;
@@ -132,13 +159,13 @@ test('Home: where Elysium is served, "Open positions on" names the four networks
     assert.equal(await row.getAttribute('aria-label'), 'Networks to open positions on');
     assert.equal(await text(row.locator('> span')), 'Open positions on');
     assert.deepEqual(names(await row.locator('li').allInnerTexts()), ['Robinhood Chain', 'Base', 'Arbitrum One', 'Elysium']);
-    for (const href of await row.locator('li a').evaluateAll((links) => links.map((link) => link.getAttribute('href')))) assert.equal(href, '#/new');
+    for (const href of await row.locator('li a').evaluateAll((links) => links.map((link) => link.getAttribute('href')))) assert.equal(href, '/new');
     const mark = row.locator('li:last-child [data-network="Elysium"] img');
     await page.waitForFunction(() => document.querySelector('.dm-hero-networks li:last-child img')?.complete === true);
     assert.equal(await mark.getAttribute('src'), '/chains/elysium.png');
     assert.ok(await mark.evaluate((image) => image.naturalWidth > 0 && !image.hidden), 'Elysium\'s mark is drawn, its own file');
-    // "Bring funds from" is what it was: no bridge serves Elysium, so funds cannot come from it.
-    assert.deepEqual(names(await page.locator('.dm-hero-funding:not(.dm-hero-networks) li').allInnerTexts()), ['Ethereum', 'Base', 'Arbitrum One', 'OP Mainnet', 'Robinhood Chain']);
+    // "Bring funds from": Elysium last once funds can come from it (Changed on purpose 2026-11-09 (rugged97's #488: Relay for Elysium)), else what it was.
+    assert.deepEqual(names(await page.locator('.dm-hero-funding:not(.dm-hero-networks) li').allInnerTexts()), ['Ethereum', 'Base', 'Arbitrum One', 'OP Mainnet', 'Robinhood Chain', ...(ELYSIUM_REPO_FUNDS_FROM ? ['Elysium'] : [])]);
     // One row gap under "Bring funds from", in the same chips; nothing runs off a phone.
     const [funding, networks] = await page.locator('.dm-hero-funding').evaluateAll((rows) => rows.map((node) => node.getBoundingClientRect().toJSON()));
     assert.ok(networks.top >= funding.bottom && networks.top - funding.bottom <= 16, 'directly under the funding row');
@@ -150,7 +177,7 @@ test('Home: where Elysium is served, "Open positions on" names the four networks
     await page.setViewportSize({ width: 390, height: 900 });
     await shot(page.locator('.dm-hero').first(), 'home-hero-open-positions-elysium-390');
     await row.locator('li:last-child a').click();
-    await page.waitForFunction(() => window.location.hash === '#/new');
+    await page.waitForFunction(() => window.location.pathname + location.hash === '/new');
   } finally { await s.close(); }
 });
 
@@ -159,18 +186,27 @@ test('Home: where Elysium is served, "Open positions on" names the four networks
 // ---------------------------------------------------------------------------------------------------------------------
 
 test('Markets on Elysium: the search\'s tag with its mark, the token page, and the pool page that says it is Elysium\'s, as Base\'s', async () => {
-  const s = await open(LIVE_DIST, '#/markets');
+  const s = await open(LIVE_DIST, '#/markets', { dex: catDex });
   try {
     const { page, chain, reads } = s;
     const search = page.getByRole('combobox', { name: 'Search a token', exact: true });
-    await search.fill('Elysium Cat');
+    // Changed on purpose 2026-11-09 (Elysium's day 9, rugged97's #486: read-v6's chain-tokens names Base and Arbitrum One
+    // alone for now): where the package's chain-tokens takes Elysium, a name finds its token there, as on Base; where it
+    // does not, a name finds its own currencies (New position's tests below) and any other token is found by its pasted
+    // address, named by chain-pools there. Either way the hit is the same row.
+    const byName = READ_V6_DAY9.runtime.validateRequest('chain-tokens', { chainId: ID, query: 'Elysium Cat', limit: 8 });
+    await search.fill(byName ? 'Elysium Cat' : CAT);
     const hit = page.locator(`[data-token-network-option="${ID}:${CAT}"]`);
     await hit.waitFor({ timeout: 30_000 });
     const tag = hit.locator('[data-chain-chip]');
     assert.equal((await tag.innerText()).trim(), 'Elysium');
     assert.equal(await tag.getAttribute('data-chain-chip'), String(ID));
     assert.match(await markOf(tag), ELYSIUM_MARK, 'its tag drawn from its own file');
-    assert.ok(reads.calls.some((call) => call.route === 'chain-tokens' && call.request.chainId === ID && call.request.query === 'Elysium Cat'), 'Elysium searched by Domino\'s service');
+    if (byName) assert.ok(reads.calls.some((call) => call.route === 'chain-tokens' && call.request.chainId === ID && call.request.query === 'Elysium Cat'), 'Elysium searched by Domino\'s service');
+    else {
+      assert.ok(reads.calls.some((call) => call.route === 'chain-pools' && call.request.chainId === ID), 'the pasted address read on Elysium by Domino\'s service');
+      assert.ok(!reads.calls.some((call) => call.route === 'chain-tokens' && call.request.chainId === ID), 'chain-tokens is never asked about a chain its package does not name');
+    }
     await shot(page.locator('main'), 'markets-search-elysium');
     await hit.click();
     // The token page: "Token" over the network, the token's card, its pools in the Markets table.
@@ -182,12 +218,19 @@ test('Markets on Elysium: the search\'s tag with its mark, the token page, and t
     const key = poolIdOf(CAT_POOL).toLowerCase();
     const row = view.locator(`[data-pool-row="${key}"]`);
     await row.waitFor({ timeout: 30_000 });
-    assert.equal(await row.locator('a.dm-mkt-name').getAttribute('href'), `#/pool/network/${ID}/${key}/${CAT}`);
+    assert.equal(await row.locator('a.dm-mkt-name').getAttribute('href'), `/pool/network/${ID}/${key}/${CAT}`);
     assert.equal(await row.locator(`[data-chain-chip="${ID}"]`).innerText(), 'Elysium');
     assert.equal(await row.locator('[data-pool-price="usable"]').count(), 1, 'its price, from the pool\'s own state');
+    // Added 2026-11-09 (Elysium's day 9, checklist step 6): its figures, DEX Screener's under Elysium's own name, as Base's.
+    await row.locator('[data-figure-source="discovered"]').first().waitFor({ timeout: 30_000 });
+    const rowText = await row.innerText();
+    assert.match(rowText, /\$250\.0K/, 'TVL, DEX Screener\'s');
+    assert.match(rowText, /\$50\.0K/, '24h volume, DEX Screener\'s');
+    assert.match(await row.locator('[data-apr-estimate="fallback"]').innerText(), /% est\.$/, 'the APR marked as an estimate, as Markets marks it');
+    assert.ok(s.dexAsked.some((url) => url === CAT_PAIRS), 'asked by Elysium\'s own name');
     await shot(page.locator('main'), 'markets-token-elysium');
     await row.click();
-    await page.waitForFunction((expected) => window.location.hash === expected, `#/pool/network/${ID}/${key}/${CAT}`);
+    await page.waitForFunction((expected) => window.location.pathname + location.hash === expected, `/pool/network/${ID}/${key}/${CAT}`);
     // The pool page: its network segment names Elysium with its mark; New position by Elysium's own link.
     const pool = page.locator(`[data-pool-workspace="${key}"][data-pool-network="${ID}"]`);
     await pool.waitFor({ timeout: 30_000 });
@@ -195,11 +238,16 @@ test('Markets on Elysium: the search\'s tag with its mark, the token page, and t
     assert.equal((await net.innerText()).trim(), 'Elysium');
     assert.match(await markOf(net), ELYSIUM_MARK, 'the pool page shows it is Elysium\'s: its name and its mark');
     assert.equal(await pool.locator(`dd[data-chain-chip="${ID}"]`).textContent(), 'Elysium', 'Details name its network');
+    // Added 2026-11-09 (Elysium's day 9, checklist step 6): the pool page's figures, as Base's.
+    const poolFigures = await pool.locator('[data-pool-figures]').innerText();
+    assert.match(poolFigures, /APR[\s\S]*% est\./);
+    assert.match(poolFigures, /24h volume[\s\S]*\$50\.0K/);
+    assert.match(poolFigures, /TVL[\s\S]*\$250\.0K/);
     // Added 2026-11-07 (review finding P4): its native token is HYPE in Details, never "Native ETH".
     const details = await pool.locator('.dm-pool-kv').textContent();
     assert.match(details, /Native HYPE \(0x0000/);
     assert.doesNotMatch(details, /\bETH\b/);
-    assert.equal(await pool.locator('[data-new-position]').getAttribute('href'), `#/new/network/${ID}/${CAT}/${key}`);
+    assert.equal(await pool.locator('[data-new-position]').getAttribute('href'), `/new/network/${ID}/${CAT}/${key}`);
     await shot(page.locator('main'), 'pool-page-elysium', { fullPage: true });
     for (const width of [390, 320]) {
       await page.setViewportSize({ width, height: 1000 });
@@ -238,7 +286,7 @@ test('New position on Elysium: its v4 pools alone, its balances read by Domino\'
   try {
     const { page, chain } = s;
     await page.locator('[data-create-journey]').waitFor();
-    await page.getByRole('combobox', { name: 'Search a token' }).fill('coin');
+    await page.getByRole('combobox', { name: 'Search a token' }).fill('USDC');
     const hit = page.locator(`[data-token-network-option="${ID}:${USDC}"]`);
     await hit.waitFor({ timeout: 30_000 });
     assert.equal((await hit.locator(`[data-chain-chip="${ID}"]`).innerText()).trim(), 'Elysium');
@@ -297,7 +345,7 @@ async function toAmounts(balances) {
   const s = await open(LIVE_DIST, '#/new', { reads: elysiumReads({ balances }), planner: elysiumPlanner(), connect: true, balances });
   const { page } = s;
   await page.locator('[data-create-journey]').waitFor();
-  await page.getByRole('combobox', { name: 'Search a token' }).fill('coin');
+  await page.getByRole('combobox', { name: 'Search a token' }).fill('USDC');
   await page.locator(`[data-token-network-option="${ID}:${USDC}"]`).click({ timeout: 30_000 });
   const pools = page.locator(`[data-picker="pool"][data-picker-network="${ID}"]`);
   await pools.locator(`li[data-pool-key="${poolIdOf(POOL)}"] input[name="pool-option"]`).click({ timeout: 30_000 });
@@ -323,13 +371,18 @@ test('New position on Elysium: Max on HYPE keeps 0.0005 HYPE for the network fee
 
 // Added 2026-11-07 (review finding P1): no funds are brought to Elysium, so a short amount there is never pointed at an
 // offer "below" that is not drawn; it says Robinhood Chain's own words (lower it, or add tokens to your wallet).
-test('New position on Elysium: a wallet short of the amount is told to lower it or add tokens, never to choose a funding option below', async () => {
+test('New position on Elysium: a wallet short of the amount is told what Base’s is where funds can be brought there, else to lower it or add tokens', async () => {
   const s = await toAmounts({ [ZERO]: 10n ** 15n, [USDC]: 5_000_000n });
   try {
     const { page } = s;
     await s.amount.locator('[data-pair-side="1"] input[inputmode="decimal"]').fill('1000');
     const short = s.amount.locator('[data-amount-short]');
     await short.waitFor({ timeout: 30_000 });
+    // Changed on purpose 2026-11-09 (rugged97's #488: Relay for Elysium): where funds can be brought to Elysium, its short amount says Base's words, pointing at the offer below.
+    if (ELYSIUM_REPO_FUNDS_TO) {
+      assert.equal(await text(short), 'This amount needs more funds on this network.');
+      return;
+    }
     assert.match(await text(short), /^Your wallet doesn’t have enough (?:USDC or HYPE|HYPE or USDC) for this amount\. Lower it, or add tokens to your wallet\.$/);
     await page.waitForFunction(() => /\S/.test(document.querySelector('#continue-reason')?.textContent ?? ''), null, { timeout: 30_000 });
     assert.equal(await text(page.locator('#continue-reason')), 'Lower the amount, or add tokens to your wallet.');
@@ -344,7 +397,8 @@ test('New position on Elysium: a wallet short of the amount is told to lower it 
 // ---------------------------------------------------------------------------------------------------------------------
 
 const PID = 5_200_001;
-const RANGE = { tickLower: -277330, tickUpper: -275330 };
+/** About 1,000 ticks either side of TICK, on the pool's tick spacing (-277330 and -275330 at a spacing of 10). */
+const RANGE = { tickLower: Math.floor((TICK - 1_000) / POOL.tickSpacing) * POOL.tickSpacing, tickUpper: Math.ceil((TICK + 1_000) / POOL.tickSpacing) * POOL.tickSpacing };
 const LIQUIDITY = 10n ** 15n;
 const PRINCIPAL = PLAN_DAY9.runtime.amountsForLiquidity(SQRT, PLAN_DAY9.runtime.sqrtAtTick(RANGE.tickLower), PLAN_DAY9.runtime.sqrtAtTick(RANGE.tickUpper), LIQUIDITY, false);
 const READ6_FIXTURE = (path) => JSON.parse(readFileSync(new URL(`../../../api-contracts/read-v6/fixtures/${path}`, import.meta.url), 'utf8'));
@@ -359,7 +413,8 @@ const PORTFOLIO = portfolioOf({ wallet: OWNER, tokens: TOKENS, positions: [liveP
 const ACTIVITY = activityOf({ wallet: OWNER, items: [s1Action({ chainId: ID, wallet: OWNER, zap: ZAP_V4, action: 'create', tokenId: PID, pool: POOL, inputs: [{ token: USDC, amount: '1000000000' }] })], ...DAY9 });
 /** read-v6's stored fee history of the position (position-fees, day 9's chain), at this pool's own price. */
 function positionFees() {
-  const stored = READ6_FIXTURE('1.2.0-rc.1/valid/position-fees.json');
+  // Changed on purpose 2026-11-07 (day-9 rehearsal, finding F8): the package's next version's folder, never a literal.
+  const stored = READ6_FIXTURE(`${READ_V6_DAY9.runtime.NEXT_VERSION}/valid/position-fees.json`);
   const body = { ...stored, chainId: ID, positions: [{ ...stored.positions[0], tokenId: String(PID), now: { ...stored.positions[0].now, pool: POOL, sqrtPriceX96: SQRT.toString(), tick: TICK, ...RANGE, inRange: true } }] };
   assert.equal(READ_V6_DAY9.runtime.validateExchange('position-fees', { chainId: ID, positions: [{ dex: 4, tokenId: String(PID) }] }, body), true, 'day 9\'s position-fees, naming Elysium');
   return { status: 200, body };
@@ -381,7 +436,7 @@ test('a position on Elysium: its page as Robinhood Chain\'s, Elysium\'s name and
     const detail = page.locator(`[data-position-detail][data-position-v2="elysium-v4"][data-position-id="${PID}"]`);
     await detail.waitFor({ timeout: 30_000 });
     assert.equal(await text(detail.locator('h1')), 'HYPE / USDC');
-    assert.match(await text(detail.locator('.dm-pos-chips')), new RegExp(`^Uniswap · 0\\.05% fee Elysium Position #${PID} In range`));
+    assert.match(await text(detail.locator('.dm-pos-chips')), new RegExp(`^Uniswap · ${POOL_FEE} fee Elysium Position #${PID} In range`));
     const network = detail.locator('[data-position-network="elysium"]');
     assert.equal(await text(network), 'Elysium');
     assert.match(await markOf(network), ELYSIUM_MARK, 'its chip draws Elysium\'s own mark');
@@ -393,6 +448,10 @@ test('a position on Elysium: its page as Robinhood Chain\'s, Elysium\'s name and
     const apr = detail.locator('[data-cell="apr"]');
     await page.waitForFunction(() => document.querySelector('[data-cell="apr"]')?.getAttribute('data-apr') === 'ready', null, { timeout: 30_000 });
     assert.match(await text(apr), /Your APR.*%/);
+    // Added 2026-11-09 (Elysium's day 9, the owner: Fees earned's chart as on Base, Arbitrum One and Robinhood Chain): its
+    // chart drawn from that stored history, with its periods.
+    await card.locator('.dm-fees-chart').waitFor({ timeout: 30_000 });
+    assert.match(await card.getAttribute('data-fees-period'), /^(?:24h|7d|all)$/i, 'its period');
     // Its actions, as on every network: Collect fees, the menu, Close position last; automation set up from here.
     assert.deepEqual(await detail.locator('[data-position-actions] [data-position-v2-action]').evaluateAll((nodes) => nodes.map((n) => n.getAttribute('data-position-v2-action'))), ['collect', 'increase', 'changeRange', 'exit']);
     assert.equal(await detail.locator('[data-position-v2-action="collect"]').isDisabled(), false);
@@ -404,8 +463,8 @@ test('a position on Elysium: its page as Robinhood Chain\'s, Elysium\'s name and
     await detail.locator('[data-position-details] summary').click();
     await detail.locator('[data-position-pool-link]').waitFor({ timeout: 30_000 });
     assert.ok(asked.every((request) => request.chainId === ID));
-    assert.match(await detail.locator('[data-position-pool-link]').getAttribute('href'), new RegExp(`^#/pool/network/${ID}/0x[0-9a-f]{64}/0x[0-9a-f]{40}$`));
-    assert.match(await detail.locator('[data-position-new-in-pool]').getAttribute('href'), new RegExp(`^#/new/network/${ID}/0x[0-9a-f]{40}/0x[0-9a-f]{64}$`));
+    assert.match(await detail.locator('[data-position-pool-link]').getAttribute('href'), new RegExp(`^/pool/network/${ID}/0x[0-9a-f]{64}/0x[0-9a-f]{40}$`));
+    assert.match(await detail.locator('[data-position-new-in-pool]').getAttribute('href'), new RegExp(`^/new/network/${ID}/0x[0-9a-f]{40}/0x[0-9a-f]{64}$`));
     assert.equal(await text(detail.locator('[data-position-dex]')), 'v4');
     // Its receipt, from read-v6's activity on Elysium.
     await detail.locator('[data-position-activity-item]').first().waitFor({ timeout: 30_000 });
@@ -444,7 +503,7 @@ test('a position on Elysium: its page as Robinhood Chain\'s, Elysium\'s name and
 });
 
 test('Collect fees and Close position on Elysium: straight to Uniswap\'s v4 PositionManager there, the network fee in HYPE', async () => {
-  const V4 = { tokenId: BigInt(PID), pool: { currency0: ZERO, currency1: USDC, fee: 500, tickSpacing: 10 }, ...RANGE, liquidity: LIQUIDITY, sqrtPriceX96: SQRT, tick: TICK,
+  const V4 = { tokenId: BigInt(PID), pool: { currency0: POOL.currency0, currency1: POOL.currency1, fee: POOL.fee, tickSpacing: POOL.tickSpacing }, ...RANGE, liquidity: LIQUIDITY, sqrtPriceX96: SQRT, tick: TICK,
     growthLast: [5n << 128n, 7n << 128n], growthNow: [(5n << 128n) + (10n ** 15n << 128n) / LIQUIDITY + 1n, (7n << 128n) + (3_000_000n << 128n) / LIQUIDITY + 1n] };
   const chain = createDirectChain({ chainId: ID, v4: [V4], timestamp: now() });
   const s = await openPositionPage(browser, chain, { dist: LIVE_DIST, hash: `#/positions/elysium-v4-${PID}`, contracts: ALL_SETS, read6: { portfolio: portfolioOf({ wallet: OWNER, tokens: TOKENS, positions: [livePid()], ...DAY9 }) }, s1: { directCode: { [ID]: chain.codeHashes } } });
@@ -552,7 +611,7 @@ test('New position on Elysium: its pool finder offers Uniswap v4 alone, Elysium\
   try {
     const { page } = s;
     await page.locator('[data-create-journey]').waitFor();
-    await page.getByRole('combobox', { name: 'Search a token' }).fill('coin');
+    await page.getByRole('combobox', { name: 'Search a token' }).fill('USDC');
     await page.locator(`[data-token-network-option="${ID}:${USDC}"]`).click({ timeout: 30_000 });
     await page.locator(`[data-picker="pool"][data-picker-network="${ID}"] input[name="pool-option"]`).first().waitFor({ timeout: 30_000 });
     await page.locator('[data-pool-advanced] summary').click();

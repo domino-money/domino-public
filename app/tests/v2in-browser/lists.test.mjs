@@ -52,7 +52,9 @@ const STUB_KEY = { currency0: zeroAddress, currency1: FIXTURE_TOKEN.toLowerCase(
 const onChain = (tokenId) => ({ tokenId, holder: OWNER, key: STUB_KEY, tickLower: -60, tickUpper: 60, liquidity: 2n ** 100n, unclaimed: [633825300114n, 0n] });
 const LIVE = { originOpen: true, backendOn: true, contracts: { 4663: contractsFor(4663), 8453: contractsFor(8453), 42161: contractsFor(42161) } };
 // Changed on purpose 2026-10-06: read-v6 1.1.0-rc.1 (#363, qualified USD); the route answers its version.
-const CONTRACT = '1.1.0-rc.1';
+// Changed on purpose 2026-11-07 (day-9 rehearsal, finding F8): read-v6's versions are the package's own
+// (api-contracts/read-v6/runtime.mjs), never literals, so a day-9 version move needs only docs/ELYSIUM_DAY9.md step 3.
+const CONTRACT = runtime.CONTRACT_VERSION;
 /** The read Worker's capabilities while its reads are on (bridge/src/worker.mjs; src/v2/routes.ts reads it). */
 const CAPABILITIES = { contractVersion: CONTRACT, dataMode: 'live_read_only', chainIds: [4663, 8453, 42161], enabledReads: ['portfolio', 'activity'], walletAuthentication: false, privateAccounts: false, ownerTransactions: false, automation: false };
 
@@ -284,7 +286,7 @@ const countedTabs = async (page) => {
 async function v1RowAsItIs(page) {
   const row = page.locator(`a[data-v2-position-row="${rowKey(V1_OPEN)}"]`);
   await row.waitFor();
-  assert.equal(await row.getAttribute('href'), `#/positions/robinhood-v4-${V1_OPEN}`);
+  assert.equal(await row.getAttribute('href'), `/positions/robinhood-v4-${V1_OPEN}`);
   assert.match(await row.innerText(), /Position #3135288/);
   assert.equal(await row.locator('[data-cell="apr"]').count(), 1, 'historical NFTs use the same APR column');
 }
@@ -363,6 +365,48 @@ test('the list and the detail display the same verified APR for a new V2 NFT', a
     const detail = s.page.locator('[data-position-detail] [data-cell="apr"][data-apr="ready"]');
     await detail.waitFor();
     assert.ok((await detail.innerText()).includes(listText), 'one qualified financial projection in both screens');
+  } finally { await s.close(); }
+});
+
+// Added on purpose 2026-11-09 (core flows, the owner: nothing may load forever): a row's APR was a skeleton for as long as
+// its ledger answered `reading` (up to MAX_READING answers). Now a skeleton for LIST_LOADING_MS (lib/fees/store.ts), then
+// a plain dash while the ledger is read on, then the rate in its place, with no notice.
+test('a row whose ledger is still being read: a skeleton, then a plain dash, then its rate, silently', { timeout: 90_000 }, async () => {
+  const tokenId = '3659831';
+  const world = ledgerWorld({ tokenId: BigInt(tokenId), holder: OWNER, vault: null, steps: [] });
+  const ledger = edgeFetch({ fetch: (_url, init) => world.chain.fetch(RPC_URL, init) });
+  const own = about('portfolio', fixture('portfolio.json'), OWNER);
+  own.positions = [own.positions[0]];
+  own.positions[0].tokenId = tokenId;
+  own.positions[0].vault = null;
+  own.vaults = [];
+  own.mandates = [];
+  let readThrough = false;
+  const s = await scenario({ hooks: LIVE, chainOptions: world.chain,
+    readV6: routeOn(route => ({ status: 200, body: route === 'portfolio' ? own : about('activity', fixture('activity.json'), OWNER) })),
+    ledgerReply: async request => {
+      const response = await ledger('/api/fees/v2/ledger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request) });
+      const body = await response.json();
+      if (readThrough || response.status !== 200) return { status: response.status, body };
+      return { status: 200, body: { ...body, positions: body.positions.map(position => position.ok ? { ...position, exact: false, why: 'reading', through: position.through - 1_000 } : position) } };
+    },
+  });
+  try {
+    const row = s.page.locator(`[data-v2-position-row="${rowKey(tokenId)}"]`);
+    const cell = row.locator('[data-cell="apr"]');
+    await row.locator('[data-cell="apr"][data-apr="loading"]').waitFor({ timeout: 15_000 });
+    const started = Date.now();
+    await row.locator('[data-cell="apr"][data-apr="missing"]').waitFor({ timeout: 15_000 });
+    assert.ok(Date.now() - started < 9_000, 'a skeleton for a few seconds only');
+    assert.equal(await cell.locator('.dm-own-dash').innerText(), '—');
+    assert.match(await cell.innerText(), /^Your APR\s+—$/, 'a plain dash, no notice');
+    assert.ok(s.ledgerAsked.length >= 2, 'the ledger is still read');
+    await row.screenshot({ path: join(process.env.DOMINO_APR_SHOTS ?? shots(), 'list-apr-reading-dash.png'), animations: 'disabled' });
+    readThrough = true;
+    const ready = row.locator('[data-cell="apr"][data-apr="ready"]');
+    await ready.waitFor({ timeout: 15_000 });
+    assert.match(await ready.locator('.dm-own-fig').innerText(), /^[\d,]+(\.\d)?%$/);
+    await row.screenshot({ path: join(process.env.DOMINO_APR_SHOTS ?? shots(), 'list-apr-read.png'), animations: 'disabled' });
   } finally { await s.close(); }
 });
 
@@ -557,7 +601,9 @@ test('the state route answering 429 never writes "USD unavailable": the row keep
       await s.page.clock.fastForward(31_000);
       await s.page.evaluate(() => window.dispatchEvent(new Event('online')));
       await s.page.waitForFunction(() => true);
-      for (let tries = 0; tries < 50 && s.asked.filter(entry => entry.route === 'portfolio').length === asked; tries++) await new Promise(done => setTimeout(done, 100));
+      // Changed on purpose 2026-11-09 (CI's self-hosted runner slow since that afternoon: this wait ran out at 5 s on #486,
+      // and passed on rerun): up to 15 s for the read due at the jump, as the wait before it; nothing else is asked of it.
+      for (let tries = 0; tries < 150 && s.asked.filter(entry => entry.route === 'portfolio').length === asked; tries++) await new Promise(done => setTimeout(done, 100));
       assert.ok(s.asked.filter(entry => entry.route === 'portfolio').length > asked, 'the portfolio was read again');
       await s.page.evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))));
     };
@@ -1899,6 +1945,42 @@ test("a position just created on Robinhood Chain is a row with its figures at th
     assert.equal(await s.page.locator(`[data-v2-receipt="session:4663:${hash}"]`).count(), 0, 'never both');
     assert.equal(await s.page.locator('[data-activity-rows]').getAttribute('data-activity-rows'), '1');
     await s.page.waitForFunction((key) => JSON.parse(sessionStorage.getItem(key) ?? '[]').length === 0, `domino:session-receipts:v1:${OWNER}`);
+    assert.equal(s.wallet.state.signed.length, 0);
+  } finally { await s.close(); }
+});
+
+// Added 2026-11-09 (core flows, the owner: nothing may load forever). A portfolio and a history that only ever fail kept the
+// list on its loading rows and the Receipts card blank under its title, for good. Past STUCK_MS (20 s, src/lib/readWait.ts)
+// each says what to do, in the token pages' words; the reads go on by themselves, and the first answer replaces both lines.
+test('a portfolio and a history that only fail end in what to do, never endless loading rows or a blank card; the answer replaces both', async () => {
+  let failing = true;
+  const none = portfolioOf({ wallet: OWNER, tokens: [], positions: [] }).body;
+  const s = await scenario({ hooks: LIVE, refresh: true, chainOptions: { positions: [] },
+    readV6: routeOn((route) => failing ? { status: 503, body: { error: 'upstream_unavailable' } } : { status: 200, body: route === 'portfolio' ? none : activityOf({ wallet: OWNER }).body }) });
+  try {
+    await s.page.locator('[data-owned] [data-owned-loading]').waitFor();
+    await s.page.locator('[data-activity-error]').waitFor({ state: 'attached' });
+    assert.equal(await s.page.locator('[data-empty="owned-stuck"], [data-v2-receipts-stuck]').count(), 0, 'nothing said while the first re-asks run');
+    await s.page.clock.fastForward(21_000);
+    const stuck = s.page.locator('[data-empty="owned-stuck"]');
+    await stuck.waitFor();
+    assert.equal(await text(stuck), 'Reload the page to see your positions.');
+    assert.equal(await s.page.locator('[data-owned] [data-owned-loading]').count(), 0, 'the loading rows end');
+    const receipts = s.page.locator('[data-v2-receipts-stuck]');
+    await receipts.waitFor();
+    assert.equal(await text(receipts), 'Reload the page to see your receipts.');
+    assert.doesNotMatch(await s.page.locator('main').innerText(), /couldn’t|could not|unavailable|Try again/i);
+    await s.page.screenshot({ path: join(shots(), 'core-loading-positions-stuck-desktop.png'), fullPage: true, animations: 'disabled' });
+    await s.page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'the lines fit a phone');
+    await s.page.screenshot({ path: join(shots(), 'core-loading-positions-stuck-phone.png'), fullPage: true, animations: 'disabled' });
+    await s.page.setViewportSize({ width: 1320, height: 1000 });
+    failing = false;
+    // The next re-ask (a minute at most after failures, src/v2in/lists/read.ts readAgainAfter) answers.
+    await s.page.clock.fastForward(61_000);
+    await s.page.locator('[data-empty="owned-none"]').waitFor();
+    await receipts.waitFor({ state: 'detached' });
+    assert.equal(await stuck.count(), 0);
     assert.equal(s.wallet.state.signed.length, 0);
   } finally { await s.close(); }
 });

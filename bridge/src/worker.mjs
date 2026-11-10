@@ -107,6 +107,30 @@ const V6_PROTOCOL = Object.freeze({
 });
 export const LIMITS = Object.freeze({ requestBytes: 8192, responseBytes: 1024 * 1024, bodyMs: 5000, totalMs: 20000, upstreamMs: 15000 });
 
+// Changed on purpose 2026-11-07 (the read-v6 version skew, app/docs/ELYSIUM_DAY9.md "Order"): read-v6 holds a
+// portfolio's or activity's chains to its own list exactly (api-contracts/read-v6/runtime.mjs envelope), so a read
+// gateway whose read-v6 names one chain more under the same contract version (Elysium, 99901, on day 9) would have every
+// such answer refused here, and V2 positions and Receipts blank on every chain, until this Worker is built from that
+// package. An answer this package refuses whole is therefore checked again without the chains its own `chains` lists
+// beyond this package's: only when they are distinct chain ids and the answer's coverage is its own chains'; each list's
+// entries of those chains left out unread, an entry naming any other chain kept (and refused), the coverage then the
+// remaining chains' own. What is left must pass every rule of this package and of the request (validateExchange), and
+// only it is relayed: never a byte of a chain this package does not check. An answer this package takes is relayed byte
+// for byte, exactly as before.
+const PER_CHAIN = Object.freeze(['chains', 'tokens', 'vaults', 'positions', 'mandates', 'credits', 'items']);
+const isChainId = (id) => Number.isSafeInteger(id) && id > 0;
+function ownChains(route, body, chainIds) {
+  if (!['portfolio', 'activity'].includes(route) || !Array.isArray(body.chains)) return body;
+  const ids = body.chains.map((chain) => chain?.chainId);
+  const others = ids.filter((id) => !chainIds.includes(id));
+  if (!others.length || new Set(ids).size < ids.length || !others.every(isChainId) ||
+      (body.coverage === 'complete') !== body.chains.every((chain) => chain?.status === 'current')) return body;
+  const own = { ...body };
+  for (const key of PER_CHAIN) if (Array.isArray(body[key])) own[key] = body[key].filter((entry) => !others.includes(entry?.chainId));
+  own.coverage = own.chains.every((chain) => chain.status === 'current') ? 'complete' : 'partial';
+  return own;
+}
+
 // Shared, finite and status-specific. Unknown producer failures never reach clients.
 export { ERROR_STATUS_BY_CODE };
 
@@ -408,13 +432,23 @@ async function upstreamRead(request, body, payload, route, settings, fetchImpl, 
       if (result.schemaVersion !== protocol.routes[route].schemaVersion || (!protocol.chainIds && result.chainId !== CHAIN_ID)) fail('upstream_contract_mismatch');
       // Where two versions pass, the answer names the one its header does.
       if (protocol.versions && result.contractVersion !== answered) fail('upstream_contract_mismatch');
-      const valid = protocol.validateResponse(route, result) && protocol.matchesRequest(payload, result, route);
+      let valid = protocol.validateResponse(route, result) && protocol.matchesRequest(payload, result, route);
+      let relayed = text;
+      // read-v6 alone (2026-11-07, ownChains above): an answer refused whole may stand without the chains this package
+      // does not name, and then that remainder, which it checked, is what is relayed.
+      if (!valid && protocol.chainIds) {
+        const own = ownChains(route, result, protocol.chainIds);
+        if (own !== result && protocol.validateResponse(route, own) && protocol.matchesRequest(payload, own, route)) {
+          valid = true;
+          relayed = JSON.stringify(own);
+        }
+      }
       scope.check();
       if (!valid) fail('upstream_contract_mismatch');
       // Both gateway and BFF validate the full pinned response schema. Preserve
       // original JSON bytes/names/numbers, including the gateway's opaque cursor.
       // Relayed in the version it was answered in: an rc.1 list stays rc.1 (the app takes both).
-      const output = new Response(text, { status: 200, headers: headersFor(requestId, answered) });
+      const output = new Response(relayed, { status: 200, headers: headersFor(requestId, answered) });
       scope.check();
       return { response: output, version: answered };
     }

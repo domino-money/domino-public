@@ -98,12 +98,19 @@ class CapitalIndexer:
                                   (pool_id, chunk['start_block'])).fetchone()
             if not source or source['methodology_version'] != POSITION_VERSION:
                 raise DataError('reconciled_position_chunk_required')
+            # The chunk before this one through the primary key, as in fee_store: end_block has no index. The position
+            # join is inner, so the limit applies to the chunks alone: a predecessor without a position row is then no
+            # row, as before, instead of a walk back to an older chunk that has one. Only the nearest earlier chunk can
+            # end at start_block-1; any other is no predecessor.
             previous = conn.execute('''SELECT c.*,p.model AS position_model,
               p.methodology_version AS position_version,k.methodology_version AS capital_version
-              FROM domino_activity.chunks c JOIN domino_activity.position_chunks p
-              ON p.pool_id=c.pool_id AND p.chunk_start=c.start_block
-              LEFT JOIN domino_activity.capital_chunks k ON k.pool_id=c.pool_id AND k.chunk_start=c.start_block
-              WHERE c.pool_id=%s AND c.end_block=%s''', (pool_id, chunk['start_block']-1)).fetchone()
+              FROM (SELECT * FROM domino_activity.chunks WHERE pool_id=%s AND start_block<%s
+                    ORDER BY start_block DESC LIMIT 1) c
+              JOIN domino_activity.position_chunks p ON p.pool_id=c.pool_id AND p.chunk_start=c.start_block
+              LEFT JOIN domino_activity.capital_chunks k ON k.pool_id=c.pool_id AND k.chunk_start=c.start_block''',
+              (pool_id, chunk['start_block'])).fetchone()
+            if previous and previous['end_block'] != chunk['start_block']-1:
+                previous = None
             if ((previous and (previous['capital_version'] != VERSION or previous['position_version'] != POSITION_VERSION)) or
                     (not previous and chunk['start_block'] != row['start_block'])):
                 raise DataError('capital_history_anchor_required')

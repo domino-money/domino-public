@@ -6,7 +6,7 @@ target from operator pins, and resolves or writes nothing (docs/CONTINUOUS_EGRES
 On the first VM the pins were gathered and the artifacts copied by hand, and the
 egress service itself was a hand-written unit. On a fresh host:
 
-1. `--collect` prints the renderer's input: each of the thirteen identities as the
+1. `--collect` prints the renderer's input: each of the eighteen identities as the
    accounts and units on this host define them, and the current IPv4 addresses
    of every hostname the enabled roles' classes need, resolved here;
 2. continuous_egress_policy.py < pins.json > candidate.json, reviewed;

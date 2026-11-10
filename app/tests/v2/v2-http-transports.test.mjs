@@ -38,7 +38,9 @@ function recordingPost(reply) {
   };
   return { sent, post };
 }
-const answer = (status, body, { header = '1.1.0-rc.1', contentType = 'application/json' } = {}) => ({
+// Changed on purpose 2026-11-07 (day-9 rehearsal, finding F8): read-v6's versions are the package's own
+// (api-contracts/read-v6/runtime.mjs), never literals, so a day-9 version move needs only docs/ELYSIUM_DAY9.md step 3.
+const answer = (status, body, { header = runtime.CONTRACT_VERSION, contentType = 'application/json' } = {}) => ({
   kind: 'reply',
   reply: { status, opaqueRedirect: false, contentType, contractHeader: header, requestIdHeader: null, retryAfterHeader: null, body: { kind: 'text', text: typeof body === 'string' ? body : JSON.stringify(body) } },
 });
@@ -56,7 +58,7 @@ test('read-v6 over HTTP: each route\'s path, the JSON body, the contract\'s head
     'chain-pools': '/api/read/v6/chain-pools', 'chain-balances': '/api/read/v6/chain-balances',
     'chain-tokens': '/api/read/v6/chain-tokens', 'position-fees': '/api/read/v6/position-fees' });
   for (const request of sent) {
-    assert.deepEqual(request.init.headers, { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Domino-Read-Contract': '1.1.0-rc.1' });
+    assert.deepEqual(request.init.headers, { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Domino-Read-Contract': runtime.CONTRACT_VERSION });
     assert.deepEqual(request.options, { contractHeader: 'X-Domino-Read-Contract', maxBytes: READ_V6_MAX_RESPONSE_BYTES, timeoutMs: READ_V6_TIMEOUT_MS });
   }
   assert.deepEqual(JSON.parse(sent[0].init.body), { wallet: PORTFOLIO.wallet.toLowerCase() });

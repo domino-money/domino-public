@@ -13,6 +13,7 @@ import { useWalletIdentity, walletKey } from '../lib/walletIdentity'
 import { useWalletAnswer, type WalletPosition, type WalletPositionsState } from '../lib/walletPositions'
 import SequenceCreate, { type SequenceIntent } from './SequenceCreate'
 import { Frame, Loading, WalletPrompt } from './SequenceShell'
+import { currentRoute } from '../lib/route'
 
 type Release = { kind: 'loading' } | ReleaseRead<SequenceDeployment>
 const capabilities = () => setupWallet().then((wallet) => atomicStatus(wallet))
@@ -38,7 +39,7 @@ function labSpec(text: string): Lab | null {
 export default function LegacySequence({ lab: labText }: { lab?: string } = {}) {
   const [release, setRelease] = useState<Release>({ kind: 'loading' })
   const [lab] = useState(() => __DOMINO_TEST_HOOKS__ && labText ? labSpec(labText) : null)
-  const [intent] = useState<SequenceIntent>(() => lab?.intent ?? sequenceIntent(hashParts(window.location.hash).segments))
+  const [intent] = useState<SequenceIntent>(() => lab?.intent ?? sequenceIntent(hashParts(currentRoute()).segments))
   useEffect(() => watchSequenceRelease(setRelease), [])
   const identity = useWalletIdentity()
   const owner = walletKey(identity)?.split('|')[1] ?? null
@@ -59,7 +60,7 @@ export default function LegacySequence({ lab: labText }: { lab?: string } = {}) 
   else if (list.kind === 'failed') body = <p className="dm-acct-block text-body text-fg-muted" data-sequence-release="available" data-sequence-positions="failed">Your positions couldn’t be read right now.</p>
   else if (list.kind === 'empty') body = <EmptyState plate icon={<IconAutomate />} className="dm-acct-block" data-sequence-release="available"
     data-sequence-positions="empty" title="No open positions" body="Automation runs on a position you hold. Open one first."
-    action={<LinkButton href="#/new" variant="primary" size="lg"><IconPlus />New position</LinkButton>} />
+    action={<LinkButton href="/new" variant="primary" size="lg"><IconPlus />New position</LinkButton>} />
   else body = <SequenceCreate key={owner} positions={list.positions} intent={intent} connect={connectSequence} capabilities={capabilities} />
   return <Frame>{body}</Frame>
 }

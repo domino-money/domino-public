@@ -12,7 +12,7 @@ import { NETWORK_NAMES } from '../../lib/networkName'
 import { V2_CHAINS } from '../chains'
 import { amountText, createChainNames, createTokenBook, durationText, knownDecimals, tokenLabel, unnamedChain } from './amounts'
 import { bpsPercent, CANDIDATE_COPY, CREATE_ON_DESTINATION, FEE_STATUS_WORDS, feeLines, fill, NO_ROUTE, PROVIDER_NAME, STATE_COPY } from './copy'
-import { isS2Destination } from '../types'
+import { isS2Destination, s2DestinationTokens } from '../types'
 import type { Candidate, ChainNames, DepositState, DestinationChainId, FeeStatus, OriginsList, Provider, QuotePlan, StatusReport, TokenBook, TokenInfo } from './types'
 
 export interface Naming {
@@ -101,15 +101,18 @@ export interface DestinationChoice {
  * refuses any other `destinationToken`; tests/v2/crosschain-copy.test.mjs checks this list against the package's.
  * Changed on purpose 2026-11-07 (Elysium as a fourth V2 chain): the V2 chains a deposit can reach (../types.ts
  * S2_DESTINATION_CHAIN_IDS), so not Elysium, where no bridge brings funds.
+ * Changed on purpose 2026-11-09 (Elysium's day 9, the owner: funds brought to Elysium from other networks as on Base):
+ * Elysium too where funds can be brought to it, its charge currencies that crosschain-v1 lists there alone
+ * (../types.ts s2DestinationTokens: Relay bridges its USDC, not its native HYPE).
  */
 export function destinationChoices(): DestinationChoice[] {
   return V2_CHAINS.flatMap((chain) => {
     const chainId = chain.chainId
-    return isS2Destination(chainId) ? [{
-      chainId,
-      chain: chain.name,
-      tokens: [...chain.chargeCurrencies].sort((a, b) => a.rank - b.rank).map((c) => ({ address: c.address, symbol: c.symbol, decimals: c.decimals })),
-    }] : []
+    if (!isS2Destination(chainId)) return []
+    const only = s2DestinationTokens(chainId)
+    const delivered = (c: { address: string }) => only === null || only.includes(c.address.toLowerCase())
+    const tokens = [...chain.chargeCurrencies].filter(delivered).sort((a, b) => a.rank - b.rank).map((c) => ({ address: c.address, symbol: c.symbol, decimals: c.decimals }))
+    return tokens.length ? [{ chainId, chain: chain.name, tokens }] : []
   })
 }
 

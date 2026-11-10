@@ -32,7 +32,7 @@ function DisabledConnect({ title }: { title: string }) {
 /** The mark stands upright with nothing behind it; it tips toward the pointer only while hovered (V4). */
 function Wordmark({ home }: { home: boolean }) {
   return (
-    <a href="#/" className="dm-wordmark" aria-label="Domino, home" aria-current={home ? 'page' : undefined}>
+    <a href="/" className="dm-wordmark" aria-label="Domino, home" aria-current={home ? 'page' : undefined}>
       <BrandMark width={17} height={29} />
       <span className="dm-wordmark-text">
         domino<span className="dm-wordmark-dot">.</span>

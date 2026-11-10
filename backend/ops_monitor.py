@@ -245,7 +245,8 @@ def journal_lines(unit, cursor, run, *, since='-15min', grep=None):
     """New entries of one unit: (cursor, epoch seconds, message). Without a cursor, the last `since`. With `grep` (a
     PCRE2 pattern on the message), only the entries that match it, newest first (journalctl's order then)."""
     position = [f'--after-cursor={cursor}'] if cursor else [f'--since={since}']
-    raw = run(['/usr/bin/journalctl', '--no-pager', '-o', 'json', '--output-fields=MESSAGE', '-n',
+    # Without --all, JSON fields larger than 4096 bytes become null, hiding otherwise valid automation passes.
+    raw = run(['/usr/bin/journalctl', '--no-pager', '--all', '-o', 'json', '--output-fields=MESSAGE', '-n',
                str(MAX_JOURNAL_LINES), '-u', unit, *position, *([f'--grep={grep}'] if grep else [])])
     entries = []
     for line in raw.splitlines():

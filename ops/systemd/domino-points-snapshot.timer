@@ -1,0 +1,19 @@
+[Unit]
+Description=Take the Domino points snapshot every hour (season 1)
+PartOf=domino-public-data.target
+
+[Timer]
+# Five minutes past each hour (UTC). A calendar trigger always has a next
+# elapse, whatever happened to the last run or to a reboot (#278); a run still
+# going is not started twice. Snapshots are taken from the ledger and the links
+# as they stand: a ledger behind its index is visible in the snapshot's body.
+OnCalendar=*-*-* *:05:00 UTC
+AccuracySec=1s
+RandomizedDelaySec=10s
+Unit=domino-points-snapshot.service
+
+# Installed by install_public_data.py and never enabled there: snapshots start
+# only on `systemctl enable --now domino-points-snapshot.timer`, after 059 and
+# the team's list (docs/points/POINTS.md).
+[Install]
+WantedBy=domino-public-data.target

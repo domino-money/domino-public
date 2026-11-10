@@ -1,12 +1,10 @@
 import type { Address } from 'viem'
 import { atomicStatus, type AtomicStatus } from './batch'
 import { suggestGasBudget } from './gas'
-import { readRelease } from './release'
 import {
   RESERVE_VAULT_PAGE,
   createSequenceClient,
   recoveryDeployment,
-  sequenceDeploymentFrom,
   sequenceProviderReadError,
   walkFeeReserves,
   type SequenceDeployment,
@@ -26,9 +24,9 @@ import { errorCode } from './words'
  * owner's rule allows for the money flows (RPC-SPEC, the decisions table): the wallet's vaults by the factory's nonce
  * (ownedVaults, which falls back to the trusted read snapshot of rugged97's node when the wallet rejects a read), then
  * each vault's reserves (walkFeeReserves). No public RPC is asked, and nothing is read at all without a deployment to
- * check the vaults against: the published sequence release, expired or not (a withdrawal is owner recovery, which the
- * client checks as such), else the profile this browser saved when the wallet last verified one, else the V1 release
- * this build ships for recovery (./pin.ts SEQUENCE_RECOVERY_RECORD).
+ * check the vaults against: the profile this browser saved when the wallet last verified one, else the V1 release this
+ * build ships for recovery (./pin.ts SEQUENCE_RECOVERY_RECORD). A withdrawal is owner recovery, which the client checks as
+ * such on chain through the wallet, whichever of the two it is checked against.
  *
  * Changed on purpose 2026-10-02 (review of the fee withdrawal):
  * - finding 5: with no release (expired after 2026-10-21, or switched off) and no saved profile (a phone that never set
@@ -37,16 +35,19 @@ import { errorCode } from './words'
  *   time after (readMoreReserves), not the sixteen newest alone;
  * - finding 8: a read of one vault is kept a minute, a vault whose read failed is asked again by the screen, which keeps
  *   its last good read on screen meanwhile.
+ *
+ * Changed on purpose 2026-11-09 (core flows, errors: V1 leftovers): the published sequence release is no longer asked
+ * (`/api/setup/v1/sequence-release`). Domino V1 was retired by design on 6 October and its release profile expired on
+ * 2026-10-21, so every read of the reserves (each Positions visit, each position page) met a 503 there and went on with the
+ * saved profile or the shipped record, the same deployment (./pin.ts pins its factory and position manager either way).
+ * Those are now the only sources, so what the person sees and can withdraw is the same, without the request.
  */
 
-/** Kept by Set up automation once the wallet verified the release (./sequenceLive.ts), and by a withdrawal here. */
+/** Kept by Set up automation once the wallet verified the release (./sequenceLive.ts); read here only. */
 const RECOVERY_PROFILE_KEY = 'domino.sequence.public-recovery.v1'
 const MAX_PROFILE_CHARS = 8192
 /** How long a read of an owner's reserves is kept before a screen that opens asks again. */
 export const RESERVES_KEEP_MS = 60_000
-
-/** The release read at any age: a withdrawal is owner recovery, which an expired profile may still check on chain. */
-const readRecoveryRelease = () => readRelease('/api/setup/v1/sequence-release', (value) => sequenceDeploymentFrom(value, 0))
 
 /** The profile this browser saved, parsed as strictly as the release, marked expired so it only ever reads and recovers. */
 function savedProfile(): SequenceDeployment | null {
@@ -71,18 +72,9 @@ function shippedRecord(): SequenceDeployment | null {
   return recoveryDeployment()
 }
 
-/** Release reads that may answer a moment later: a read of the reserves that met one is asked again, not said to have nothing. */
-const PASSING_RELEASE = new Set(['network', 'timeout', 'bridge_unavailable', 'upstream_unavailable', 'status_502', 'status_503', 'status_504'])
-
-/**
- * The deployment an owner's vaults are checked against, and whether it is the published one. With none at all, why:
- * `passing` when the release read may answer a moment later.
- */
-async function reserveDeployment(): Promise<{ deployment: SequenceDeployment; published: boolean } | { deployment: null; passing: boolean }> {
-  const release = await readRecoveryRelease()
-  if (release.kind === 'available') return { deployment: release.deployment, published: true }
-  const kept = savedProfile() ?? shippedRecord()
-  return kept ? { deployment: kept, published: false } : { deployment: null, passing: PASSING_RELEASE.has(release.reason) }
+/** The deployment an owner's vaults are checked against: the saved profile, else the shipped record; null with neither. */
+function reserveDeployment(): SequenceDeployment | null {
+  return savedProfile() ?? shippedRecord()
 }
 
 /** A batch simulated on the site's simulate route, for a wallet without eth_simulateV1 (as ./sequenceLive.ts). */
@@ -101,27 +93,19 @@ export interface ReserveWithdrawalKit {
   reserves: (vault: Address) => Promise<VaultReserves>
   gas: GasBudget
   atomic: () => Promise<AtomicStatus>
-  /** Keeps the published profile once the wallet verified it on chain, for a withdrawal while none is published. */
-  verified: () => void
+  // Removed on purpose 2026-11-09 (V1 leftovers): `verified`, which kept the published profile once the wallet verified
+  // it; none is published any more (see the module's comment), and the saved profile stays as it was.
 }
 
 export async function connectWithdrawal(): Promise<ReserveWithdrawalKit> {
-  const found = await reserveDeployment()
-  if (!found.deployment) throw new Error('sequence_admission_unavailable')
+  const deployment = reserveDeployment()
+  if (!deployment) throw new Error('sequence_admission_unavailable')
   const wallet = await setupWallet().catch((error) => {
     throw sequenceProviderReadError(error)
   })
-  const client = clientOver(wallet, found.deployment)
+  const client = clientOver(wallet, deployment)
   const gas = await suggestGasBudget(wallet)
-  const verified = () => {
-    if (!found.published) return
-    try {
-      localStorage.setItem(RECOVERY_PROFILE_KEY, JSON.stringify({ contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment: found.deployment }))
-    } catch {
-      /* Optional: a later withdrawal still reads the published release, or the shipped one. */
-    }
-  }
-  return { client, reserves: (vault) => walkFeeReserves(client, vault), gas, atomic: () => atomicStatus(wallet), verified }
+  return { client, reserves: (vault) => walkFeeReserves(client, vault), gas, atomic: () => atomicStatus(wallet) }
 }
 
 /** An owner's reserves as a screen shows them. */
@@ -161,15 +145,11 @@ function queued<T>(work: () => Promise<T>): Promise<T> {
 async function readerFor(owner: string): Promise<ReserveClient | null> {
   if (open && open.owner === owner && open.wallet.current()) return open.client
   open = null
-  const found = await reserveDeployment()
-  // A release read that may answer a moment later is a read that did not go through, asked again by the screen.
-  if (!found.deployment) {
-    if (found.passing) throw new Error('sequence_release_unreachable')
-    return null
-  }
+  const deployment = reserveDeployment()
+  if (!deployment) return null
   const wallet = await setupWallet()
   if (wallet.owner !== owner) throw new Error('wallet_identity_changed')
-  open = { owner, wallet, client: clientOver(wallet, found.deployment) }
+  open = { owner, wallet, client: clientOver(wallet, deployment) }
   return open.client
 }
 const letGoOf = (owner: string) => {

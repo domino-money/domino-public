@@ -44,6 +44,13 @@ UNITS=tuple(f'domino-public-{lane}.service' for lane in ('current','history','ac
     # The V2 fees (read-v6 position-fees), one instance per chain profile. Installed, never enabled
     # here: an instance starts only on `systemctl enable --now`, after 054, behind its chain's indexer.
     'domino-v2-fees@.service',
+    # The points ledger (season 1 revenue), one instance per chain profile. Installed, never enabled
+    # here: an instance starts only on `systemctl enable --now`, after 058, behind its chain's indexer.
+    'domino-points-ledger@.service',
+    # The points snapshot (season 1), hourly. Installed, never enabled here: the timer starts only on
+    # `systemctl enable --now`, after 059 and the team's list.
+    'domino-points-snapshot.service',
+    'domino-points-snapshot.timer',
     'domino-queue-worker.service.d/90-public-data.conf',
     'domino-catalogue-follower.service.d/90-public-data.conf',
     'domino-queue-worker.timer.d/90-public-data.conf',
@@ -75,7 +82,8 @@ def plan(files,commit,digest):
     require(sha(read_installed(QUEUE/'release/backend/requirements-api.lock'))==
             sha(files['backend/requirements-api.lock'][0]),'dependency_change_needs_a_venv')
     for name in ('manage_public_data.py','public_history.py','public_observations.py','manage_activity.py',
-                 'manage_featured.py','manage_featured_chain.py','v2_fees.py'):
+                 'manage_featured.py','manage_featured_chain.py','v2_fees.py','points_ledger.py',
+                 'points_engine.py','points_referral.py','points_season_1.json'):
         require('backend/'+name in files,'public_source_missing')
     units={}
     for name in UNITS:

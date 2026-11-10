@@ -100,11 +100,13 @@ export async function openFundingPage(browser, { gateOpen = true, ethWei = 0n, b
   };
   // Added 2026-10-06: read-v6's chain-balances served by the site's route (`served`, ../support/chain-reads.mjs), as the read
   // Worker answers it: its capabilities naming that read alone, and each answer with the contract's header.
-  const readV6 = { 'X-Domino-Read-Contract': '1.1.0-rc.1' };
+  // Changed on purpose 2026-11-07 (day-9 rehearsal, finding F8): read-v6's versions are the package's own
+  // (api-contracts/read-v6/runtime.mjs), never literals, so a day-9 version move needs only docs/ELYSIUM_DAY9.md step 3.
+  const readV6 = { 'X-Domino-Read-Contract': readV6Runtime.CONTRACT_VERSION };
   const servedRoute = async (request, url) => {
     if (!served || !url.pathname.startsWith('/api/read/v6/')) return undefined;
     const route = url.pathname.split('/').at(-1);
-    if (route === 'capabilities') return Response.json({ contractVersion: '1.1.0-rc.1', dataMode: 'live_read_only', chainIds: [4663, 8453, 42161], enabledReads: ['chain-balances'], walletAuthentication: false, privateAccounts: false, ownerTransactions: false, automation: false }, { headers: readV6 });
+    if (route === 'capabilities') return Response.json({ contractVersion: readV6Runtime.CONTRACT_VERSION, dataMode: 'live_read_only', chainIds: [4663, 8453, 42161], enabledReads: ['chain-balances'], walletAuthentication: false, privateAccounts: false, ownerTransactions: false, automation: false }, { headers: readV6 });
     const said = await served.answer(route, await request.json());
     return said ? Response.json(said.body, { status: said.status, headers: { ...readV6, ...said.headers } }) : Response.json({ error: 'route_not_available' }, { status: 404, headers: readV6 });
   };

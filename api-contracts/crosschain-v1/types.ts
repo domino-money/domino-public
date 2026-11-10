@@ -70,7 +70,7 @@ export type OriginToken = {
 
 export type OriginsList = {
   "schemaVersion": 1;
-  "destinationChainId": 4663 | 8453 | 42161;
+  "destinationChainId": 4663 | 8453 | 42161 | 99901;
   "destinationToken": string;
   "retrievedAt": number;
   "providers": Array<ProviderListing>;
@@ -86,7 +86,7 @@ export type ProviderListing = {
 export type QuoteIdentity = {
   "originChainId": number;
   "originToken": string;
-  "destinationChainId": 4663 | 8453 | 42161;
+  "destinationChainId": 4663 | 8453 | 42161 | 99901;
   "destinationToken": string;
   "amountKind": "exact_input" | "output";
   "amountRaw": string;
@@ -127,7 +127,7 @@ export type Refund = {
 export type StatusIdentity = {
   "provider": "relay" | "across";
   "originChainId": number;
-  "destinationChainId": 4663 | 8453 | 42161;
+  "destinationChainId": 4663 | 8453 | 42161 | 99901;
   "depositTxHash": string;
   "requestId": string | null;
   "previousState": "awaiting_deposit" | "pending" | "refund_pending" | "failed" | "refund_failed" | "filled" | "refunded" | null;
@@ -174,7 +174,7 @@ export type Transaction = {
 };
 
 export type OriginsRequest = {
-  "destinationChainId": 4663 | 8453 | 42161;
+  "destinationChainId": 4663 | 8453 | 42161 | 99901;
   "destinationToken": string;
 };
 
@@ -186,7 +186,7 @@ export type OriginsResponse = {
 export type QuoteRequest = {
   "originChainId": number;
   "originToken": string;
-  "destinationChainId": 4663 | 8453 | 42161;
+  "destinationChainId": 4663 | 8453 | 42161 | 99901;
   "destinationToken": string;
   "amountKind": "exact_input" | "output";
   "amountRaw": string;
@@ -203,7 +203,7 @@ export type QuoteResponse = {
 export type StatusRequest = {
   "provider": "relay" | "across";
   "originChainId": number;
-  "destinationChainId": 4663 | 8453 | 42161;
+  "destinationChainId": 4663 | 8453 | 42161 | 99901;
   "depositTxHash": string;
   "requestId": string | null;
   "previousState": "awaiting_deposit" | "pending" | "refund_pending" | "failed" | "refund_failed" | "filled" | "refunded" | null;

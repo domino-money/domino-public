@@ -67,8 +67,8 @@ test('automation routes preserve Robinhood numeric links and qualify every other
     const href = setupHref(position, mode);
     assert.deepEqual(setupIntent(href), { mode, tokenId: '9', position });
   }
-  assert.equal(setupHref({ chainId: 4663, dex: 4, tokenId: 9n }), '#/sequence/9');
-  assert.equal(setupHref({ chainId: 4663, dex: 4, tokenId: 9n }, 'compound'), '#/sequence/compound/9');
+  assert.equal(setupHref({ chainId: 4663, dex: 4, tokenId: 9n }), '/sequence/9');
+  assert.equal(setupHref({ chainId: 4663, dex: 4, tokenId: 9n }, 'compound'), '/sequence/compound/9');
   for (const hash of ['#/sequence/base-v5-9', '#/sequence/compound/base-v3-0', '#/sequence/domino/unknown-v3-9']) {
     assert.equal(setupIntent(hash).position, null, 'invalid qualified links never resolve to Robinhood');
   }

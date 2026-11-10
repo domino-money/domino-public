@@ -120,6 +120,16 @@ export function presentMetric(metric: Metric, format: (m: Metric) => string = co
   }
 }
 
+/**
+ * Added 2026-11-09 (core flows, the owner's sweep of a token page): a TVL a market data provider reported as exactly zero is
+ * no figure: the dash every missing value on the same table is ("$0.00" stood beside dashes). Domino's own figures and any
+ * other value are themselves. Pure.
+ */
+export function shownTvl(metric: Metric): Metric {
+  if (metric.value === null || (metric.source === undefined && metric.fallback === undefined && metric.state !== 'provider')) return metric
+  return compare(metric.value, '0') === 0 ? { ...metric, value: null, state: 'absent' } : metric
+}
+
 export interface Market {
   /** `4663:<poolId>`, lowercase. Rows are keyed and merged by this, never by symbol. */
   key: string

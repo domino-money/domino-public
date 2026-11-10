@@ -4,7 +4,7 @@ import type { Hex } from '../../v2/types'
 import { COPY } from './copy'
 import { actionError, type ActionError } from './errors'
 import type { ActionPosition } from './model'
-import { connectPosition, type OpenGate, type PositionConnection } from './wallet'
+import { connectPosition, directSendable, type OpenGate, type PositionConnection } from './wallet'
 import { positionChanged } from '../lists/positionSync'
 import { positionManagerOf, v2Chain } from '../../v2/chains'
 import { RECEIPT_STILL_WAITING_MS, receiptPause, receiptWalletAway } from '../receiptWait'
@@ -23,6 +23,13 @@ import type { TokenBook } from './tokens'
  *   - `preview`: prepared the same way (its figures are the chain's), never sent: the dialog shows the gate's locked
  *     sentence instead of the button. The dialog asks for this read only while the wallet is already on the position's
  *     chain, and ./wallet.ts never asks a wallet to switch for the preview: nothing is sent, so nothing moves the wallet.
+ *     Changed on purpose 2026-11-09 (the core-flows fix, item b): only where the chain itself is not live
+ *     (./wallet.ts directSendable). A direct exit needs no plan and no Domino contract, so under a `preview` gate on a live
+ *     chain (the planner's route off, or its probe failing for a moment) it is read and sent exactly as under `live`.
+ *
+ * Changed on purpose 2026-11-09 (the core-flows fix): no pause tick. An exit of an armed root is sent like any other
+ * (finance/v2/direct.ts: the vault never refuses its owner's exit, it only turns its automation off); the dialog says so
+ * in one plain line.
  */
 export type DirectKind = 'collect' | 'close'
 
@@ -38,8 +45,6 @@ export interface DirectState {
   includedBlock?: bigint
   /** A failed send that certainly did not go out may be confirmed again; a failed review may not. */
   retry: boolean
-  /** Rev2 §2.13: the pause warning ticked (asked only when the exit pauses an armed root's automation). */
-  ticked: boolean
   /** The hash the wallet gave, and whether its block is still not seen 20 s later (C3: the sheet says so, with its link). */
   hash?: Hex
   slow?: boolean
@@ -47,14 +52,11 @@ export interface DirectState {
   away?: 'chain' | 'account'
 }
 
-const IDLE: DirectState = { stage: 'idle', prepared: null, error: null, receipt: null, retry: false, ticked: false }
+const IDLE: DirectState = { stage: 'idle', prepared: null, error: null, receipt: null, retry: false }
 
 export function useDirectExit(gate: OpenGate, position: ActionPosition, label: (token: `0x${string}`) => string, book?: TokenBook) {
   const [state, setState] = useState<DirectState>(IDLE)
-  // Changed on purpose 2026-10-06 (the integration review, rugged-literal #1): on the root of Auto-exit's own automation,
-  // its Auto-exit on or paused, a direct action keeps the position's approval, all its exit needs: the armed root's pause
-  // is acknowledged without a tick (that automation never reinvests), and nothing is offered after (./PositionDialog.tsx).
-  const quiet = position.vault?.exitLive === true
+  const sendable = directSendable(gate)
   // `part` undefined: everything the position holds when the chain is read (Close position, Withdraw of all), as V1's
   // Close position takes it (finance/position.ts); a figure: that much of it (a partial withdrawal).
   const asked = useRef<{ kind: DirectKind; bps: number; part: bigint | undefined } | null>(null)
@@ -83,7 +85,7 @@ export function useDirectExit(gate: OpenGate, position: ActionPosition, label: (
     asked.current = { kind, bps, part }
     setState({ ...IDLE, stage: 'reading' })
     try {
-      const prepared = await prepareNow(await connectPosition(gate), kind, bps, part)
+      const prepared = await prepareNow(await connectPosition(gate, true, true), kind, bps, part)
       if (gen === generation.current) setState({ ...IDLE, stage: 'ready', prepared })
     } catch (error) {
       if (gen === generation.current) failed(error)
@@ -93,21 +95,15 @@ export function useDirectExit(gate: OpenGate, position: ActionPosition, label: (
   async function send() {
     const gen = generation.current
     const ask = asked.current
-    // The preview never sends: its dialog offers no button, and nothing here asks the wallet.
-    if (gate.mode !== 'live' || !ask || (state.stage !== 'ready' && !(state.stage === 'failed' && state.retry))) return
-    if (state.prepared?.pausesAutomation && !state.ticked && !quiet) return
+    // A preview on a chain that is not live never sends: its dialog offers no button, and nothing here asks the wallet.
+    if (!sendable || !ask || (state.stage !== 'ready' && !(state.stage === 'failed' && state.retry))) return
     setState((now) => ({ ...now, stage: 'wallet', error: null }))
     let connection: PositionConnection
     let prepared: DirectPrepared
     try {
-      connection = await connectPosition(gate)
+      connection = await connectPosition(gate, true, true)
       const kept = state.prepared
       prepared = kept && !handed.current.has(kept) && kept.step.expiresAt > Date.now() / 1000 + 2 ? kept : await prepareNow(connection, ask.kind, ask.bps, ask.part)
-      // The warning was ticked on this review: a fresh preparation of the same exit carries it (rev2 §2.13).
-      if (prepared.pausesAutomation !== null) {
-        if (!state.ticked && !quiet) throw new Error('automation_pause_unacknowledged')
-        connection.direct.acknowledgePause(prepared)
-      }
     } catch (error) {
       if (gen === generation.current) failed(error)
       return
@@ -210,7 +206,7 @@ export function useDirectExit(gate: OpenGate, position: ActionPosition, label: (
     ...state,
     quote,
     send,
-    tick: () => setState((now) => ({ ...now, ticked: true })),
+    sendable,
     reset: () => {
       generation.current++
       handOn()

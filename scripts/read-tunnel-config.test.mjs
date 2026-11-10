@@ -171,6 +171,8 @@ const PRE_V6 = {
   v5: '^/internal/read/(v1/(token|pools|pool-market|wallet-assets|nft-positions|catalogue|pool-activity|pool-positions|pool-metrics|markets-snapshot)|v2/pool-market|v5/featured-pools)$',
   v3v4v5: '^/internal/read/(v1/(token|pools|pool-market|wallet-assets|nft-positions|catalogue|pool-activity|pool-positions|pool-metrics|markets-snapshot)|v2/pool-market|v3/(overview|history|search)|v4/sequence-snapshot|v5/featured-pools)$',
 };
+/** read-v6's routes as this release writes them: 1.1.0-rc.1's five, then 1.2.0-rc.1's position-fees (2026-11-07). */
+const V6_ROUTES = ['portfolio', 'activity', 'chain-pools', 'chain-balances', 'chain-tokens', 'position-fees'];
 
 test('the states published before read-v6 keep their spelling, stay accepted and keep their meaning', () => {
   assert.equal(storedPath({ v5: true }), PRE_V6.v5);
@@ -179,7 +181,7 @@ test('the states published before read-v6 keep their spelling, stay accepted and
     const input = fixture(PROD, path);
     assert.deepEqual(extendReadTunnelConfig(PROD, input), input, name);
     const pattern = new RegExp(extendReadTunnelConfig(PROD, input, { enableV6: true }).ingress[1].path);
-    for (const route of ['portfolio', 'activity', 'chain-pools', 'chain-balances', 'chain-tokens']) {
+    for (const route of V6_ROUTES) {
       assert.equal(pattern.test(`/internal/read/v6/${route}`), true, name);
     }
     assert.equal(pattern.test('/internal/read/v5/featured-pools'), name.includes('v5'), name);
@@ -187,7 +189,7 @@ test('the states published before read-v6 keep their spelling, stay accepted and
   }
 });
 
-test('V6 opens only its five fixed production read paths and preserves V3, V4 and V5', () => {
+test('V6 opens only its six fixed production read paths and preserves V3, V4 and V5', () => {
   assert.deepEqual(V6_READ_TUNNEL_IDS, [PROD]);
   const baseline = extendReadTunnelConfig(PROD, fixture(PROD, PRE_V6.v3v4v5));
   const before = structuredClone(baseline);
@@ -196,18 +198,26 @@ test('V6 opens only its five fixed production read paths and preserves V3, V4 an
   const expected = structuredClone(before);
   expected.ingress[1].path = v6.ingress[1].path;
   assert.deepEqual(v6, expected, 'only the one path changes');
-  assert.equal(v6.ingress[1].path, PRE_V6.v3v4v5.replace(')$', '|v6/(portfolio|activity|chain-pools|chain-balances|chain-tokens))$'),
+  // Changed on purpose 2026-11-07 (the owner's approval): position-fees joins, named last, as the gateway and the Worker name it.
+  assert.equal(v6.ingress[1].path,
+    PRE_V6.v3v4v5.replace(')$', '|v6/(portfolio|activity|chain-pools|chain-balances|chain-tokens|position-fees))$'),
     'v6 last, in version order');
   const pattern = new RegExp(v6.ingress[1].path);
   for (const path of ['/internal/read/v6/portfolio', '/internal/read/v6/activity', '/internal/read/v6/chain-pools',
-    '/internal/read/v6/chain-balances', '/internal/read/v6/chain-tokens', '/internal/read/v5/featured-pools',
-    '/internal/read/v4/sequence-snapshot', '/internal/read/v3/overview', '/internal/read/v2/pool-market']) {
+    '/internal/read/v6/chain-balances', '/internal/read/v6/chain-tokens', '/internal/read/v6/position-fees',
+    '/internal/read/v5/featured-pools', '/internal/read/v4/sequence-snapshot', '/internal/read/v3/overview',
+    '/internal/read/v2/pool-market']) {
     assert.equal(pattern.test(path), true, path);
   }
   for (const path of ['/internal/read/v6/capabilities', '/internal/read/v6/portfolio/', '/internal/read/v6/portfolio/extra',
     '/internal/read/v6/%70ortfolio', '/internal/read/v6/activity?limit=1', '/internal/read/v6/Portfolio', '/internal/read/v6/',
     '/internal/read/v6/featured-pools', '/internal/read/v5/portfolio', '/internal/read/v1/activity', '/prefix/internal/read/v6/portfolio',
-    '/internal/read/v6/chain-pools/', '/internal/read/v6/chain-swaps', '/internal/read/v1/chain-pools']) {
+    '/internal/read/v6/chain-pools/', '/internal/read/v6/chain-swaps', '/internal/read/v1/chain-pools',
+    '/internal/read/v6/position-fees/', '/internal/read/v6/position-fees/extra', '/internal/read/v6/%70osition-fees',
+    '/internal/read/v6/position-fees?chainId=8453', '/internal/read/v6/Position-fees', '/internal/read/v6/position_fees',
+    '/internal/read/v6/position-fee', '/internal/read/v6/positions-fees', '/internal/read/v6/position-fees-extra',
+    '/internal/read/v6/fees', '/internal/read/v5/position-fees', '/internal/read/v1/position-fees',
+    '/internal/read/v2/position-fees', '/prefix/internal/read/v6/position-fees']) {
     assert.equal(pattern.test(path), false, path);
   }
   // Idempotent, and an ordinary publication keeps it.
@@ -223,8 +233,10 @@ test('V6 opens only its five fixed production read paths and preserves V3, V4 an
   assert.equal(extendReadTunnelConfig(PROD, extendReadTunnelConfig(PROD, fixture(PROD), { enableV6: true }), { disableV6: true }).ingress[1].path, PRE_V5.next);
 });
 
-test('a tunnel published with the two first read-v6 routes is a known state that any publication widens to five', () => {
-  const first = (path) => path.replace('|v6/(portfolio|activity|chain-pools|chain-balances|chain-tokens))$', '|v6/(portfolio|activity))$');
+// Changed on purpose 2026-11-07: a publication now widens the two first routes to all six, position-fees included.
+test('a tunnel published with the two first read-v6 routes is a known state that any publication widens to six', () => {
+  const first = (path) => path.replace('|v6/(portfolio|activity|chain-pools|chain-balances|chain-tokens|position-fees))$',
+    '|v6/(portfolio|activity))$');
   const widened = extendReadTunnelConfig(PROD, extendReadTunnelConfig(PROD, fixture(PROD, PRE_V6.v3v4v5)), { enableV6: true });
   const published = fixture(PROD, first(widened.ingress[1].path));
   assert.notEqual(published.ingress[1].path, widened.ingress[1].path);
@@ -232,9 +244,58 @@ test('a tunnel published with the two first read-v6 routes is a known state that
     const next = extendReadTunnelConfig(PROD, published, options);
     assert.equal(new RegExp(next.ingress[1].path).test('/internal/read/v6/chain-pools'), true, JSON.stringify(options));
     assert.equal(new RegExp(next.ingress[1].path).test('/internal/read/v6/portfolio'), true, JSON.stringify(options));
+    assert.equal(new RegExp(next.ingress[1].path).test('/internal/read/v6/position-fees'), true, JSON.stringify(options));
   }
   assert.deepEqual(extendReadTunnelConfig(PROD, published), widened);
   assert.equal(extendReadTunnelConfig(PROD, published, { disableV6: true }).ingress[1].path, PRE_V6.v3v4v5);
+});
+
+/**
+ * 2026-11-07 (the owner's approval of position-fees): read-v6's five 1.1.0-rc.1 routes, the path `tunnels-v6` wrote
+ * from 2026-10-05, spelled exactly as published. Each mix of v3, v4 and v5 with them stays a known state, and any
+ * publication writes the same mix with all six.
+ */
+const FIVE_V6 = '|v6/(portfolio|activity|chain-pools|chain-balances|chain-tokens))$';
+const PRE_FEES = {
+  v6: PRE_V6.next.replace(')$', FIVE_V6),
+  v5v6: PRE_V6.v5.replace(')$', FIVE_V6),
+  v3v4v5v6: PRE_V6.v3v4v5.replace(')$', FIVE_V6),
+};
+
+test('a tunnel published with read-v6\'s five 1.1.0-rc.1 routes is a known state that any publication widens to six', () => {
+  assert.equal(PRE_FEES.v3v4v5v6, '^/internal/read/(v1/(token|pools|pool-market|wallet-assets|nft-positions|catalogue|pool-activity|pool-positions|pool-metrics|markets-snapshot)|v2/pool-market|v3/(overview|history|search)|v4/sequence-snapshot|v5/featured-pools|v6/(portfolio|activity|chain-pools|chain-balances|chain-tokens))$');
+  for (const [name, path] of Object.entries(PRE_FEES)) {
+    const published = fixture(PROD, path);
+    const before = structuredClone(published);
+    const widened = extendReadTunnelConfig(PROD, published);
+    assert.deepEqual(published, before, name);
+    const expected = structuredClone(before);
+    expected.ingress[1].path = path.replace(FIVE_V6, '|v6/(portfolio|activity|chain-pools|chain-balances|chain-tokens|position-fees))$');
+    assert.deepEqual(widened, expected, `${name}: only the one path changes, to the same mix with all six`);
+    // Any publication: an ordinary one, tunnels-v6, or another protocol's rollback where that protocol is open (where it
+    // is not, its rollback is a true no-op and leaves the five routes as they are, still a known state).
+    for (const options of [{}, { enableV6: true }, { disableV4: true }, { disableV5: true }]) {
+      const next = extendReadTunnelConfig(PROD, published, options);
+      if ((options.disableV4 && !name.includes('v4')) || (options.disableV5 && !name.includes('v5'))) {
+        assert.deepEqual(next, published, `${name} ${JSON.stringify(options)}`);
+        continue;
+      }
+      const pattern = new RegExp(next.ingress[1].path);
+      for (const route of V6_ROUTES) assert.equal(pattern.test(`/internal/read/v6/${route}`), true, `${name} ${route} ${JSON.stringify(options)}`);
+      assert.equal(pattern.test('/internal/read/v6/position-fees/'), false, name);
+    }
+    // Idempotent once widened, and read-v6's own rollback closes all six, returning to the state published before it.
+    assert.deepEqual(extendReadTunnelConfig(PROD, widened), widened, name);
+    assert.deepEqual(extendReadTunnelConfig(PROD, published, { enableV6: true }), widened, name);
+    assert.equal(extendReadTunnelConfig(PROD, published, { disableV6: true }).ingress[1].path, path.replace(FIVE_V6, ')$'), name);
+  }
+  // Every mix of the other stored protocols with the five routes, not only those spelled out above.
+  for (const v3 of [false, true]) for (const v4 of [false, true]) for (const v5 of [false, true]) {
+    const six = storedPath({ v3, v4, v5, v6: true });
+    const five = six.replace('|chain-tokens|position-fees))$', '|chain-tokens))$');
+    assert.notEqual(five, six);
+    assert.equal(extendReadTunnelConfig(PROD, fixture(PROD, five)).ingress[1].path, six, five);
+  }
 });
 
 test('a V6 rollback on a tunnel that never opened V6 is a true no-op, and a rollback opens nothing', () => {
@@ -253,7 +314,21 @@ test('a V6 rollback on a tunnel that never opened V6 is a true no-op, and a roll
   // A path that opens V6 some other way is not a state this rule knows.
   for (const path of [PRE_V5.next.replace('v2/pool-market', 'v2/pool-market|v6/(portfolio|activity|capabilities)'),
     PRE_V5.next.replace('v2/pool-market', 'v6/(portfolio|activity)|v2/pool-market'), PRE_V5.next.replace('v2/pool-market', 'v2/pool-market|v6/.*'),
-    PRE_V5.next.replace('v2/pool-market', 'v2/pool-market|v6/portfolio')]) {
+    PRE_V5.next.replace('v2/pool-market', 'v2/pool-market|v6/portfolio'),
+    // 2026-11-07: nor is one that names position-fees but not as this release writes it.
+    ...['v6/position-fees', 'v6/(position-fees)', 'v6/(portfolio|activity|position-fees)',
+      'v6/(portfolio|activity|chain-pools|chain-balances|chain-tokens|position-fees|capabilities)',
+      'v6/(position-fees|portfolio|activity|chain-pools|chain-balances|chain-tokens)',
+      'v6/(portfolio|activity|chain-pools|chain-balances|chain-tokens|position-fees|position-fees)',
+      'v6/(portfolio|activity|chain-pools|chain-balances|chain-tokens)|v6/position-fees',
+      'v6/(portfolio|activity|chain-pools|chain-balances|chain-tokens|position_fees)',
+      'v6/(portfolio|activity|chain-pools|chain-balances|position-fees)']
+      .map((v6) => PRE_V5.next.replace('v2/pool-market', `v2/pool-market|${v6}`))]) {
+    assert.throws(() => extendReadTunnelConfig(PROD, fixture(PROD, path)), /mismatch/, path);
+  }
+  // A known state with position-fees in another protocol's place is not one either.
+  for (const path of [PRE_V6.v5.replace('v5/featured-pools', 'v5/(featured-pools|position-fees)'),
+    PRE_FEES.v3v4v5v6.replace('v4/sequence-snapshot', 'v4/(sequence-snapshot|position-fees)')]) {
     assert.throws(() => extendReadTunnelConfig(PROD, fixture(PROD, path)), /mismatch/, path);
   }
 });

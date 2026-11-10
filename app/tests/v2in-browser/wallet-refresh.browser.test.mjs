@@ -146,6 +146,9 @@ test('returning to Positions retains one complete wallet valuation and stable ro
     assert.equal(await row.locator('[data-usd]').textContent(), price);
     // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the kept valuation's title is its own basis, never "Previous complete valuation. Checking the current balance.".
     assert.doesNotMatch(await row.locator('[data-usd]').getAttribute('title'), /Previous complete valuation|Checking/);
+    // Changed on purpose 2026-11-09 (a local flake under load: the rows were measured while the card's entry animation still
+    // ran): measured once every finite animation of the page has ended, so the check is of the layout, never of a frame.
+    await s.page.evaluate(() => Promise.all(document.getAnimations().filter((one) => one.effect?.getTiming().iterations !== Infinity).map((one) => one.finished.catch(() => undefined))));
     const updating = await geometry();
     const totalHeightDelta = Math.abs(updating.total.height - before.total.height);
     const rowHeightDelta = Math.abs(updating.row.height - before.row.height);
@@ -163,7 +166,10 @@ test('returning to Positions retains one complete wallet valuation and stable ro
       assert.equal(layout.oldHidden, true, 'the read status is a hidden marker, with no visible extra label');
       assert.equal(layout.overflow, false, `the wallet fits ${width}px`);
       assert.ok(layout.height <= layout.line + 0.5, 'the token quantity occupies exactly one line');
-      const directory = resolve(process.env.DOMINO_POSITION_SHOTS ?? 'app/.test-artifacts');
+      // Changed on purpose 2026-11-07 (day-9 rehearsal, finding F12): app/.test-artifacts from this file's own place, which
+      // the root .gitignore ignores; the path from the working directory wrote app/app/.test-artifacts when run from app/,
+      // an untracked folder that stopped npm run release:build ("uncommitted changes").
+      const directory = process.env.DOMINO_POSITION_SHOTS ? resolve(process.env.DOMINO_POSITION_SHOTS) : resolve(import.meta.dirname, '../../.test-artifacts');
       mkdirSync(directory, { recursive: true });
       await card.screenshot({ path: join(directory, `wallet-refresh-stable-${width}.png`), animations: 'disabled' });
     }

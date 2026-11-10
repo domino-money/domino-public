@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
-import { ELYSIUM_FORCED, loadWith, withFunds } from './support/elysium-live.mjs';
+import { ELYSIUM_FORCED, ELYSIUM_STABLE, loadWith, withFunds, withFundsTo } from './support/elysium-live.mjs';
 
 const require = createRequire(import.meta.url);
 const BUILD = '../../.test-build/app/src/';
@@ -40,6 +40,8 @@ const modules = () => ({
 const OFF = modules();
 const ON = loadWith(require, ELYSIUM_FORCED, modules);
 const FUNDS = loadWith(require, withFunds, modules);
+// Added 2026-11-09 (Elysium's day 9): a build where funds can be brought to Elysium (its stable alone).
+const TO = loadWith(require, withFundsTo, () => ({ ...modules(), present: require(`${BUILD}v2/crosschain/present.js`) }));
 
 /** A gate of each mode, as src/v2/gate.ts hands them (only `mode` is read here). */
 const gates = (chains, mode) => Object.freeze(Object.fromEntries(chains.map((chainId) => [chainId, Object.freeze({ mode, chainId })])));
@@ -171,13 +173,27 @@ test('funds from Elysium: nowhere today or on day 9; only where crosschain pins 
 // Added 2026-11-07 (review finding P1): New position's V1 screens ask lib/elysiumIdentity.ts fundsBroughtTo whether an offer
 // to bring funds sits below a short amount; it says what V2's own list of deposit destinations says, on every V2 network.
 test('New position offers to bring funds exactly where a deposit can reach: every V2 network but Elysium', () => {
-  for (const [label, build] of [['off', OFF], ['on', ON], ['funds', FUNDS]]) {
+  for (const [label, build] of [['off', OFF], ['on', ON], ['funds', FUNDS], ['to', TO]]) {
     for (const chainId of build.identity.V2_CHAIN_IDS) assert.equal(build.elysium.fundsBroughtTo(chainId), build.types.isS2Destination(chainId), `${label}: ${chainId}`);
   }
   for (const chainId of [4663, 8453, 42161]) assert.equal(OFF.elysium.fundsBroughtTo(chainId), true);
   assert.equal(OFF.elysium.fundsBroughtTo(ID), true, 'today no network is Elysium: nothing changes');
   assert.equal(ON.elysium.fundsBroughtTo(ID), false);
   assert.equal(FUNDS.elysium.fundsBroughtTo(ID), false, 'funds coming from Elysium are never funds brought to it');
+  // Added 2026-11-09 (Elysium's day 9, the owner: funds brought to Elysium from other networks as on Base): once a bridge
+  // brings funds there, Elysium is a deposit's destination like the three, its stable alone (what Relay bridges).
+  assert.equal(TO.elysium.fundsBroughtTo(ID), true);
+  // A profile naming Relay alone (rugged97's: Across does not serve 99901) parses and serves as the others' do.
+  assert.deepEqual([...TO.chains.v2Chain(ID).bridgeProviders], ['relay']);
+  assert.deepEqual([...TO.identity.V2_CHAIN_IDS], [4663, 8453, 42161, ID]);
+  assert.deepEqual([...TO.types.S2_DESTINATION_CHAIN_IDS], [4663, 8453, 42161, ID]);
+  assert.deepEqual([...TO.elysium.ELYSIUM_DESTINATION_TOKENS], [ELYSIUM_STABLE]);
+  const elysiumChoice = TO.present.destinationChoices().find((choice) => choice.chainId === ID);
+  assert.deepEqual(elysiumChoice?.tokens.map((token) => token.address.toLowerCase()), [ELYSIUM_STABLE], 'never its native HYPE nor WHYPE');
+  assert.deepEqual([...FUNDS.types.S2_DESTINATION_CHAIN_IDS], [4663, 8453, 42161]);
+  assert.deepEqual([...FUNDS.elysium.ELYSIUM_DESTINATION_TOKENS], []);
+  // The deposit's two records take Elysium as a destination exactly there (finance/v2/crosschain.ts, v2/crosschain/steps.ts).
+  assert.deepEqual([OFF.types.isS2Destination(ID), ON.types.isS2Destination(ID), FUNDS.types.isS2Destination(ID), TO.types.isS2Destination(ID)], [false, false, false, true]);
 });
 
 // Added 2026-11-07 (review finding P6): the V1 sentences New position shares with V2's networks name Elysium's own

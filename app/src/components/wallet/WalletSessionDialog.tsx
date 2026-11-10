@@ -8,6 +8,7 @@ import { sessionController } from '../../wallet/session'
 import { walletConnectOffered } from '../../wallet/walletConnect'
 import { PREVIEW_ALIAS } from '../../chains/elysium/mode'
 import { useDialog } from '../../lib/useDialog'
+import { currentRoute } from '../../lib/route'
 import { Button, Card } from '../ui'
 import { IconChevronRight, IconClose } from '../icons'
 import { knownDelegateAt } from '../../finance/delegates'
@@ -47,7 +48,9 @@ const NEXT_PATTERN = '^#\\/[A-Za-z0-9\\/_.,-]{0,200}(?:#[A-Za-z0-9_-]{1,64})?$'
  * Home, so a link from Home is exactly the fixed one it always was. Typed amounts and ranges are never carried.
  */
 function openRoute(): string {
-  const hash = typeof location === 'undefined' ? '' : location.hash
+  // Changed on purpose 2026-11-07 (pages of their own, lib/route.ts): the route in its `#/…` form, as the gate carries it;
+  // the wallet's browser opens `/#/markets`, which the page turns into `/markets`.
+  const hash = currentRoute()
   const home = (hash.replace(/^#/, '').split('#')[0] || '/') === '/'
   return !home && new RegExp(NEXT_PATTERN).test(hash) ? hash : ''
 }

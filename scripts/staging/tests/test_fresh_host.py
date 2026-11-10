@@ -229,11 +229,12 @@ class RuntimeTests(unittest.TestCase):
 class MigrationTests(unittest.TestCase):
     def test_each_migration_runs_as_the_identity_the_first_vm_used(self):
         admin = {name for name, who in apply_migrations.HAND_APPLIED.items() if who == apply_migrations.ADMIN}
-        # 053 and 056 are no first-VM migrations: the catalogue owner owns domino_activity, events included,
-        # which 053 indexes and to which 056 adds the activity follower's mint-scan checkpoint.
+        # 053, 056 and 060 are no first-VM migrations: the catalogue owner owns domino_activity, events and
+        # chunks included, which 053 and 060 index and to which 056 adds the activity follower's mint-scan
+        # checkpoint.
         self.assertEqual(admin, {'020_pool_requests', '021_reference_price_sources',
                                  '022_event_timestamp_source', '023_pool_request_scheduling',
-                                 '053_activity_chunk_index', '056_position_mint_scan'})
+                                 '053_activity_chunk_index', '056_position_mint_scan', '060_chunk_end_index'})
         self.assertTrue(all(who == apply_migrations.POSTGRES for name, who in apply_migrations.HAND_APPLIED.items()
                             if name not in admin))
         for name in apply_migrations.HAND_APPLIED:
@@ -242,6 +243,12 @@ class MigrationTests(unittest.TestCase):
     def test_only_known_migrations_in_order_once(self):
         self.assertEqual(apply_migrations.selected('020_pool_requests,027_remove_wallet_access_gate'),
                          ['020_pool_requests', '027_remove_wallet_access_gate'])
+        # A fresh host applies 061, the entities' keep-warm index, after 060, and 062, the collector's
+        # scheduled cadence, after 061; as postgres, as the test above holds every migration outside its
+        # catalogue-owner set.
+        self.assertEqual(apply_migrations.selected('060_chunk_end_index,061_public_entities_keep_warm,'
+                                                   '062_public_claim_cadence'),
+                         ['060_chunk_end_index', '061_public_entities_keep_warm', '062_public_claim_cadence'])
         for bad, reason in (('028_automation_cycle', 'migration_not_hand_applied'),
                             ('027_remove_wallet_access_gate,020_pool_requests', 'migrations_out_of_order'),
                             ('020_pool_requests,020_pool_requests', 'migration_list_invalid'),
@@ -371,6 +378,41 @@ class ReadActivationTests(unittest.TestCase):
                          activation.drop_in('gateway', COMMIT, Path('/runtime/gateway'), read_v6=True, chain_reads=True,
                                             balance_chains=True))
 
+    def test_position_fees_is_opt_in_on_top_of_the_chain_reads(self):
+        # 7 Nov 2026 (the owner's approval; docs/v2/V2_FEES.md): read-v6 1.2.0-rc.1's position-fees, named last.
+        for component in activation.DROP_INS:
+            for read_v6 in (False, True):
+                with self.assertRaisesRegex(ValueError, 'position_fees_need_chain_reads'):
+                    activation.drop_in(component, COMMIT, Path(f'/runtime/{component}'), read_v6=read_v6,
+                                       position_fees=True)
+        chain_reads = activation.drop_in('gateway', COMMIT, Path('/runtime/gateway'), read_v6=True, chain_reads=True)
+        gateway = activation.drop_in('gateway', COMMIT, Path('/runtime/gateway'), read_v6=True, chain_reads=True,
+                                     position_fees=True)
+        self.assertIn('--enable --enable-v2 --enable-v3 --enable-v4 --enable-v5 --enable-v6\n', gateway)
+        self.assertIn('Environment=DOMINO_BRIDGE_V5_READS=featured-pools\nEnvironment=DOMINO_BRIDGE_V6_READS='
+                      'portfolio,activity,chain-pools,chain-balances,chain-tokens,position-fees\n', gateway)
+        self.assertEqual((gateway.count('Environment='), gateway.count('DOMINO_BRIDGE_V6_READS='),
+                          gateway.count('position-fees')), (5, 1, 1))
+        # Only the gateway's list moves; the balance chains change nothing there.
+        self.assertEqual(gateway, chain_reads.replace(',chain-tokens\n', ',chain-tokens,position-fees\n'))
+        self.assertEqual(gateway, activation.drop_in('gateway', COMMIT, Path('/runtime/gateway'), read_v6=True,
+                                                     chain_reads=True, balance_chains=True, position_fees=True))
+        # The reader already serves it with DOMINO_V2_READ=1: its drop-in is byte for byte what it was.
+        for balance_chains in (False, True):
+            self.assertEqual(activation.drop_in('read', COMMIT, Path('/runtime/read'), read_v6=True, chain_reads=True,
+                                                balance_chains=balance_chains, position_fees=True),
+                             activation.drop_in('read', COMMIT, Path('/runtime/read'), read_v6=True, chain_reads=True,
+                                                balance_chains=balance_chains))
+        # Without the option, the chain reads' drop-ins are what they were: the route stays closed at the gateway.
+        for component in activation.DROP_INS:
+            runtime = Path(f'/runtime/{component}')
+            for balance_chains in (False, True):
+                live = activation.drop_in(component, COMMIT, runtime, read_v6=True, chain_reads=True,
+                                          balance_chains=balance_chains)
+                self.assertEqual(live, activation.drop_in(component, COMMIT, runtime, read_v6=True, chain_reads=True,
+                                                          balance_chains=balance_chains, position_fees=False))
+                self.assertNotIn('position-fees', live)
+
     def test_the_balance_chains_wait_for_their_private_file(self):
         with tempfile.TemporaryDirectory() as folder:
             private = Path(folder)
@@ -425,6 +467,51 @@ class ReadActivationTests(unittest.TestCase):
                 (units / 'domino-read.service.d' / activation.DROP_INS['read']).write_text('')
                 with self.assertRaisesRegex(ValueError, 'read_activation_exists'):
                     activation.plan(COMMIT)
+
+    def test_the_cli_takes_position_fees_into_the_plan(self):
+        with tempfile.TemporaryDirectory() as folder:
+            releases, units, private = Path(folder) / 'releases', Path(folder) / 'units', Path(folder) / 'private'
+            units.mkdir()
+            private.mkdir()
+            for name in (activation.CHAIN_RPC_FILE, activation.BALANCE_CHAIN_RPC_FILE):
+                (private / name).write_text('{}')
+            for component in activation.DROP_INS:
+                (units / f'domino-{component}.service').write_text('[Service]\n')
+                backend = releases / COMMIT / component / 'backend'
+                backend.mkdir(parents=True)
+                (backend / '.venv').symlink_to(folder)
+                runtime = Path(folder) / 'runtime' / component
+                runtime.mkdir(parents=True)
+                (backend / 'runtime').symlink_to(runtime)
+
+            def inspect(*flags):
+                with patch('sys.stdout', new_callable=io.StringIO) as printed:
+                    code = activation.main(['--commit', COMMIT, *flags, '--inspect'])
+                return code, json.loads(printed.getvalue())
+
+            reader = str(units / 'domino-read.service.d' / activation.DROP_INS['read'])
+            gateway = str(units / 'domino-gateway.service.d' / activation.DROP_INS['gateway'])
+            with patch.object(activation, 'RELEASES', releases), patch.object(activation.install, 'UNIT_DIR', units), \
+                    patch.object(activation, 'CHAIN_RPC_DIRECTORY', private):
+                # Production's flags today, then with the route: the gateway's list gains it, the reader's drop-in
+                # does not move, and the receipt says so.
+                code, live = inspect('--read-v6', '--chain-reads', '--balance-chains')
+                self.assertEqual((code, live['ok'], live['applied'], live['positionFees']), (0, True, False, False))
+                code, fees = inspect('--read-v6', '--chain-reads', '--balance-chains', '--position-fees')
+                self.assertEqual((code, fees['ok'], fees['applied'], fees['positionFees']), (0, True, False, True))
+                self.assertEqual(sorted(fees['dropIns']), sorted([reader, gateway]))
+                self.assertEqual(fees['dropIns'][reader], live['dropIns'][reader])
+                self.assertIn('Environment=DOMINO_BRIDGE_V6_READS=portfolio,activity,chain-pools,chain-balances,'
+                              'chain-tokens,position-fees\n', fees['dropIns'][gateway])
+                self.assertEqual(fees['dropIns'][gateway],
+                                 live['dropIns'][gateway].replace(',chain-tokens\n', ',chain-tokens,position-fees\n'))
+                self.assertNotIn('position-fees', json.dumps(live))
+                self.assertEqual({key: value for key, value in fees.items() if key not in ('positionFees', 'dropIns')},
+                                 {key: value for key, value in live.items() if key not in ('positionFees', 'dropIns')})
+                # Without the chain reads it is refused, with its reason, and nothing is planned.
+                for flags in (('--position-fees',), ('--read-v6', '--position-fees')):
+                    self.assertEqual(inspect(*flags), (1, {'ok': False, 'reason': 'position_fees_need_chain_reads',
+                                                          'action': 'no drop-in written'}), flags)
 
 
 class CloudflaredTests(unittest.TestCase):

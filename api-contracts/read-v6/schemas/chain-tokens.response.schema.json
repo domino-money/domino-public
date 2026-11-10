@@ -94,12 +94,13 @@
   "$id": "https://domino.invalid/contracts/read-v6/chain-tokens.response.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "chain-tokens: the tokens Domino knows on Base or Arbitrum One that match a query (known tokens only).",
+  "description": "chain-tokens: the tokens Domino knows on Base, Arbitrum One or Elysium that match a query (known tokens only).",
   "properties": {
     "chainId": {
       "enum": [
         8453,
-        42161
+        42161,
+        99901
       ],
       "title": "Chainid",
       "type": "integer"

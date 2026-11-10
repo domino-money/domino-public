@@ -1,5 +1,6 @@
 import { positionsHref } from '../explore/routes'
 import { portfolioHash } from '../../lib/read/screens/positions'
+import { currentRoute, onRoute } from '../../lib/route'
 
 /**
  * Where a position page's "Positions" link goes back to (QA round 2, N62): the list as it was left. Opened from another
@@ -22,7 +23,7 @@ const POSITION_PAGE = /^#\/positions\/[^/?#]+/
 const POSITIONS_OR_PORTFOLIO = /^#\/(positions|portfolio)(\/|$)/
 
 const follow = () => {
-  const hash = window.location.hash
+  const hash = currentRoute()
   const shown = PORTFOLIO_ADDRESS.exec(hash)
   if (shown) viewed = shown[1].toLowerCase()
   else if (!POSITIONS_OR_PORTFOLIO.test(hash)) viewed = null
@@ -32,10 +33,10 @@ const follow = () => {
 export function rememberPositionsList(address: string | null): void {
   if (!listening && typeof window !== 'undefined') {
     listening = true
-    window.addEventListener('hashchange', follow)
+    onRoute(follow)
   }
   // A position page keeps the list it was opened from: the list's own null after it opened one changes nothing.
-  if (address === null && typeof window !== 'undefined' && POSITION_PAGE.test(window.location.hash)) return
+  if (address === null && typeof window !== 'undefined' && POSITION_PAGE.test(currentRoute())) return
   viewed = address
 }
 

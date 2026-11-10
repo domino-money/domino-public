@@ -109,6 +109,8 @@ export interface BridgeEnv {
   POSITION_PLAN_BRIDGE?: unknown
   /** 2026-10-02 (Domino V2, spec F7 §3.2): S2's crosschain Worker, domino-crosschain-bridge. Not bound until it is deployed. */
   CROSSCHAIN_BRIDGE?: unknown
+  /** 2026-11-07 (Season 1 of points, rugged97's PR #467): the points Worker, domino-points-bridge. Bound in production since 2026-11-08. */
+  POINTS_BRIDGE?: unknown
 }
 
 /** The Workers' APP_ORIGIN, exactly: the only origin whose API calls are forwarded. */
@@ -199,6 +201,22 @@ const FAMILIES: readonly Family[] = [
     prefix: '/api/crosschain/v1/',
     binding: 'CROSSCHAIN_BRIDGE',
     contract: 'x-domino-crosschain-contract',
+    csrf: true,
+    cookies: ['__Host-domino-session'],
+    preview: 'private',
+    ahead: true,
+  },
+  // 2026-11-07 (Season 1 of points, rugged97's PR #467, api-contracts/points-v1): the signed-in wallet's points and its
+  // referral link (POST points and link, the session cookie and CSRF) and the routes' capabilities (a GET with no
+  // session, answered by the Worker itself, bridge/src/points-worker.mjs). Declared ahead of its Worker, as crosschain was:
+  // nothing bound under POINTS_BRIDGE is the 404 not_found this path answered before the family existed, which the
+  // Points page reads as off. Production binds it since 2026-11-08 (wrangler.toml), the Worker deployed off; the preview
+  // does not.
+  {
+    name: 'points',
+    prefix: '/api/points/v1/',
+    binding: 'POINTS_BRIDGE',
+    contract: 'x-domino-points-contract',
     csrf: true,
     cookies: ['__Host-domino-session'],
     preview: 'private',

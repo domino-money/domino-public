@@ -49,10 +49,13 @@ export function loadMiddleware() {
 async function staticResponse(dist, url) {
   let file = normalize(join(dist, decodeURIComponent(url.pathname)));
   if (!file.startsWith(dist)) return new Response('forbidden', { status: 403 });
+  // Changed on purpose 2026-11-07 (pages of their own): a directory without an index.html is a page's address too
+  // (/docs, where public/docs holds the docs' pictures), answered with the app's index.html as Pages answers it.
   try {
     if ((await stat(file)).isDirectory()) file = join(file, 'index.html');
+    await stat(file);
   } catch {
-    if (extname(file)) return new Response('not found', { status: 404 });
+    if (extname(file) && extname(file) !== '.html') return new Response('not found', { status: 404 });
     file = join(dist, 'index.html');
   }
   const body = await readFile(file);

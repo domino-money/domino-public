@@ -114,6 +114,17 @@ function approveSpender(data: string | null): Address | null {
   return /^0{24}[0-9a-fA-F]{40}$/.test(word) ? (`0x${word.slice(24).toLowerCase()}` as Address) : null
 }
 
+/**
+ * Added 2026-11-09 (core flows, errors): every token a checked plan moves, once each, lowercase: the pool's two in its
+ * order, then any other it is paid with, then any a swap leg reaches.
+ */
+function movedTokens(d: PlanDocument): readonly Address[] {
+  const pool = d.zapPlan.intent.pool
+  const inputs = (d.zapPlan as { inputs?: readonly { token: string }[] }).inputs ?? []
+  const all = [pool.currency0, pool.currency1, ...inputs.map((input) => input.token), ...d.zapPlan.legs.flatMap((leg) => [leg.tokenIn, leg.tokenOut])]
+  return Object.freeze([...new Set(all.filter((token) => /^0x[0-9a-fA-F]{40}$/.test(token)).map(lower))])
+}
+
 /** App checks 1 and 3 and the request it answers (see the module's comment); throws Invalid with the first that fails. */
 function appChecks(d: PlanDocument, request: S1PlanRequest, wire: Record<string, unknown>, ctx: S1PlanContext): void {
   // The request it answers: exactly the one sent, for this wallet, on this chain.
@@ -185,11 +196,13 @@ export function parsePlanAnswer(answer: { status: number; body: unknown }, reque
   }
   // The quote's life: never consent at or after expiresAt (decision #3).
   if (Math.floor(ctx.now) >= d.expiresAt) return { kind: 'expired' }
-  // The server's simulation (the module's comment).
+  // The server's simulation (the module's comment). Changed on purpose 2026-11-09 (core flows, errors): a revert carries
+  // the tokens the plan moves (`movedTokens`), checked above, for the screen to name them when the error's own token is
+  // not reported (a selector alone).
   const sim = d.simulation
-  if (sim.status === 'reverted') return { kind: 'reverted', selector: (sim.error?.selector?.toLowerCase() as Hex | undefined) ?? null, name: sim.error?.name ?? null }
+  if (sim.status === 'reverted') return { kind: 'reverted', selector: (sim.error?.selector?.toLowerCase() as Hex | undefined) ?? null, name: sim.error?.name ?? null, tokens: movedTokens(d) }
   if (sim.status === 'not_run' && sim.reason !== S1_ACCEPTED_NOT_RUN) return { kind: 'unsimulated', reason: sim.reason ?? 'unknown' }
-  if (d.warnings.includes('simulated_liquidity_below_minimum') || d.warnings.includes('simulation_reverted')) return { kind: 'reverted', selector: INSUFFICIENT_LIQUIDITY, name: 'InsufficientLiquidity(uint128,uint128)' }
+  if (d.warnings.includes('simulated_liquidity_below_minimum') || d.warnings.includes('simulation_reverted')) return { kind: 'reverted', selector: INSUFFICIENT_LIQUIDITY, name: 'InsufficientLiquidity(uint128,uint128)', tokens: movedTokens(d) }
 
   const plan = zapPlanOf(d)
   const removes = d.action === 'changeRange' || d.action === 'exit'

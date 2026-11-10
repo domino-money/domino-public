@@ -35,7 +35,9 @@ test('Details, Collect fees and a burned NFT say what Robinhood Chain\'s page sa
   assert.ok(detail.includes('body={`NFT #${tokenId} was not found at block ${current.block}.`}'));
   assert.equal(COPY.page.goneAt('41', 52500000), 'NFT #41 was not found at block 52500000.');
   assert.ok(actions.includes(`'${COPY.page.noFees}'`));
-  assert.ok(actions.includes(`'${COPY.page.feesUnread}'`));
+  // Changed on purpose 2026-11-09 (the core-flows fix, item d): fees not read no longer turn Collect fees off on either
+  // page (its dialog reads them on chain), so neither says "The fees could not be read just now." on a button any more.
+  assert.ok(!actions.includes(`'${COPY.page.feesUnread}'`));
   assert.ok(actions.includes(`'${COPY.page.closedNoLiquidity}'`), 'a closed position: Robinhood Chain\'s own reason');
   const [before, after] = COPY.page.ownerOnly.connected;
   assert.ok(detail.includes(`${before} <Address value={card.owner.address} short /> ${after}`));

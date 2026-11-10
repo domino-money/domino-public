@@ -39,13 +39,22 @@ const LOADING: RowApr = { kind: 'loading' }
 
 /** A ledger that cannot measure this position's fees earned (an owner's add or withdrawal, say): a dash and why, in its title. */
 const NOT_MEASURED: RowApr = { kind: 'missing', words: 'Not measured for this position', short: 'not measured' }
+/**
+ * Added on purpose 2026-11-09 (core flows, the owner: nothing may load forever): a history read for LIST_LOADING_MS
+ * already (lib/fees/store.ts `waited`): a plain dash, no word beside it, while the store reads on; the rate takes its
+ * place once read.
+ */
+const WAITED: RowApr = { kind: 'missing', words: 'Not measured yet', short: 'reading' }
 
-/** Each row's APR cell, by its token id: the store's drawn history, a skeleton while one is read, else a dash. */
+/**
+ * Each row's APR cell, by its token id: the store's drawn history, a skeleton while one is read (for LIST_LOADING_MS, then
+ * a dash while it is read on, 2026-11-09), else a dash.
+ */
 export function rowAprs(ids: readonly string[], views: ReadonlyMap<string, FeeHistoryView>): ReadonlyMap<string, RowApr> {
   const aprs = new Map<string, RowApr>()
   for (const id of ids) {
     const view = views.get(id)
-    aprs.set(id, (view && aprOfView(view)) ?? (view?.phase === 'loading' ? LOADING : view?.phase === 'unclaimed-only' && view.reason === 'not_exact' ? NOT_MEASURED : NONE))
+    aprs.set(id, (view && aprOfView(view)) ?? (view?.phase === 'loading' ? (view.waited ? WAITED : LOADING) : view?.phase === 'unclaimed-only' && view.reason === 'not_exact' ? NOT_MEASURED : NONE))
   }
   return aprs
 }

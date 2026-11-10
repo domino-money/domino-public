@@ -119,7 +119,7 @@ export const RANGES: DocPage = {
       blocks: [
         // 2026-09-27 (the owner's round 6, points 3 and 7): the simulator on Home, redone in plain words for beginners, and
         // the pool page's typical range in place of Plan a range.
-        p('The ', screen('range simulator on Home', '#/#ranges'), ' lets you move the price and see, in plain words, whether a position earns fees and what it holds.'),
+        p('The ', screen('range simulator on Home', '/#ranges'), ' lets you move the price and see, in plain words, whether a position earns fees and what it holds.'),
         // Changed on purpose 2026-10-31 (QA round 2 follow-ups, R48): the pool page's own name.
         p('On a pool’s page, ', b('Choosing a price range'), ' draws the band New position starts on against that pool’s price. Nothing is saved or sent.'),
       ],

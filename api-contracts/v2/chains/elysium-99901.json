@@ -1,0 +1,171 @@
+{
+  "schemaVersion": 1,
+  "chainId": 99901,
+  "slug": "elysium",
+  "name": "Elysium (Kinetiq)",
+  "enabled": true,
+  "nativeSymbol": "HYPE",
+  "stack": "arbitrum-nitro",
+  "blockTimeSeconds": 0.096,
+  "uniswap": {
+    "v3": null,
+    "v4": {
+      "poolManager": "0xE2e105d3F7209A9DA11f83cCf3E7398a753823F1",
+      "positionManager": "0x1d1C51b9d07fD27d36412A2b66CC23D19Eb3E518",
+      "stateView": "0x27eD73aE0652fdCf71d6793412A7525f32bE9dfE",
+      "quoter": "0x379F556c5a748BD7Cc9baF0F7A344094Ac1814f5"
+    },
+    "universalRouter": {
+      "address": "0x32ca6537934D333B776283d38834309CAc06b3E7",
+      "version": "2.1.2"
+    }
+  },
+  "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+  "multicall3": "0xcA11bde05977b3631167028862bE2a173976CA11",
+  "deployer": {
+    "kind": "createx",
+    "address": "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed",
+    "codehash": "0xbd8a7ea8cfca7b4e5f5041d7d4b17bc317c5ce42cfbc42066a00cf26b43eb53f"
+  },
+  "wrappedNative": {
+    "symbol": "WHYPE",
+    "address": "0xbA876237B0F021A6c6D852d6c26E107997cC5E81",
+    "decimals": 18
+  },
+  "chargeCurrencies": [
+    {
+      "rank": 1,
+      "symbol": "USDC",
+      "address": "0xb47c4C8F73F009CC0C0d3f92B388d13E293F0B65",
+      "decimals": 6
+    },
+    {
+      "rank": 2,
+      "symbol": "HYPE",
+      "address": "0x0000000000000000000000000000000000000000",
+      "decimals": 18,
+      "native": true
+    },
+    {
+      "rank": 2,
+      "symbol": "WHYPE",
+      "address": "0xbA876237B0F021A6c6D852d6c26E107997cC5E81",
+      "decimals": 18
+    }
+  ],
+  "gasPrice": {
+    "poolNativeUsd": {
+      "dex": 4,
+      "poolId": "0x7766bc8f2fd542e52b6cbeac406cf0f49e353aa38963ccaf0adc1e9fbeaa62e5",
+      "currency": "0x0000000000000000000000000000000000000000",
+      "stable": "0xb47c4C8F73F009CC0C0d3f92B388d13E293F0B65",
+      "fee": 10000,
+      "tickSpacing": 200
+    }
+  },
+  "bridge": {
+    "providers": ["relay"],
+    "appFeeBps": 35
+  },
+  "finality": "Measured at block 3233210: 'safe' trails the head by 3595 blocks (350 s), 'finalized' by 3595 blocks (350 s). On Nitro, 'finalized' follows the parent chain's finality of the batch that carries the block.",
+  "verification": {
+    "block": 3233210,
+    "checkedAt": "2026-11-09",
+    "contracts": [
+      {
+        "name": "ArbSys",
+        "address": "0x0000000000000000000000000000000000000064",
+        "codehash": "0xbcc90f2d6dada5b18e155c17a1c0a55920aae94f39857d39d0d8ed07ae8f228b"
+      },
+      {
+        "name": "CreateX",
+        "address": "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed",
+        "codehash": "0xbd8a7ea8cfca7b4e5f5041d7d4b17bc317c5ce42cfbc42066a00cf26b43eb53f"
+      },
+      {
+        "name": "Arachnid deterministic deployment proxy",
+        "address": "0x4e59b44847b379578588920cA78FbF26c0B4956C",
+        "codehash": "0x2fa86add0aed31f33a762c9d88e807c475bd51d0f52bd0955754b2608f7e4989"
+      },
+      {
+        "name": "Multicall3",
+        "address": "0xcA11bde05977b3631167028862bE2a173976CA11",
+        "codehash": "0xd5c15df687b16f2ff992fc8d767b4216323184a2bbc6ee2f9c398c318e770891"
+      },
+      {
+        "name": "Permit2",
+        "address": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+        "codehash": "0xecc8810a534829aab9326a3f868a21ed05f1c62b57dcc82429c8a78b3a27cfdc"
+      },
+      {
+        "name": "Safe 1.3.0 Safe singleton",
+        "address": "0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552",
+        "codehash": "0xbba688fbdb21ad2bb58bc320638b43d94e7d100f6f3ebaab0a4e4de6304b1c2e"
+      },
+      {
+        "name": "Safe 1.3.0 SafeL2 singleton",
+        "address": "0x3E5c63644E683549055b9Be8653de26E0B4CD36E",
+        "codehash": "0x21842597390c4c6e3c1239e434a682b054bd9548eee5e9b1d6a4482731023c0f"
+      },
+      {
+        "name": "Safe 1.3.0 SafeProxyFactory",
+        "address": "0xa6B71E26C5e0845f74c812102Ca7114b6a896AB2",
+        "codehash": "0x337d7f54be11b6ed55fef7b667ea5488db53db8320a05d1146aa4bd169a39a9b"
+      },
+      {
+        "name": "PoolManager",
+        "address": "0xE2e105d3F7209A9DA11f83cCf3E7398a753823F1",
+        "codehash": "0xbb5fb2091cfd38e71f56d14a2b6b5e71a22ac2b8e5881faa422ccf92b40df7a1"
+      },
+      {
+        "name": "PositionManager",
+        "address": "0x1d1C51b9d07fD27d36412A2b66CC23D19Eb3E518",
+        "codehash": "0xad189c3ce2621a5f4953f3f3c08bc25f6bfb514b5b8b2ec427d23902342c94e7"
+      },
+      {
+        "name": "StateView",
+        "address": "0x27eD73aE0652fdCf71d6793412A7525f32bE9dfE",
+        "codehash": "0x213962cb8e24945a420ab6e609f9fee79a539472c952f12b8bfcbbbead5e8eba"
+      },
+      {
+        "name": "V4Quoter",
+        "address": "0x379F556c5a748BD7Cc9baF0F7A344094Ac1814f5",
+        "codehash": "0x469aa0c619f9e32d2e75aaf4e6d86c2d3ddeb43349936a912b4e0bd49fef7e9f"
+      },
+      {
+        "name": "UniversalRouter",
+        "address": "0x32ca6537934D333B776283d38834309CAc06b3E7",
+        "codehash": "0x615fcf1faba9a7f5896a54bc1725ad8038f7235042f1a1aeb87d0a07329035a9"
+      },
+      {
+        "name": "WHYPE",
+        "address": "0xbA876237B0F021A6c6D852d6c26E107997cC5E81",
+        "codehash": "0x5706be52f64875fee65a2cec0d80e47a23d8793cbe85d214b48445e2d05f5353"
+      },
+      {
+        "name": "USDC",
+        "address": "0xb47c4C8F73F009CC0C0d3f92B388d13E293F0B65",
+        "codehash": "0x487e3e7ba0f6ef76ccd39c373954f0edcdfe15c8817bdca4ef73f6df3963e694"
+      }
+    ]
+  },
+  "notes": [
+    "Enabled 9 Nov 2026 from scripts/v2/qualify-chain.mjs's run at block 3233210 (deploy verdict waiting only on the Universal Router's version, run verdict PASS).",
+    "Uniswap v4 only: no Uniswap v3 on Elysium. PoolManager is byte-identical to arbitrum, base, robinhood's once its own address (NoDelegateCall) is substituted; PositionManager, StateView, V4Quoter wire to it.",
+    "Universal Router: Domino's CREATE2 copy (Arachnid proxy, salt keccak256('domino.money universal-router 2.1.2 elysium-99901')) of Uniswap's official 2.1.2 creation code, taken from Arbitrum One's deployment (0x2d01411773c8C24805306E89A41F7855C3c4Fe65, tx 0x42ed46c9b29461557ef12d2588165dffe4909f6f248a3564f904fbe1f1dc78a4, Uniswap's deployer 0x2179a60856e37dfeaaca0ab043b931fe224b27b6), with Elysium's router parameters: Permit2, WHYPE, the v4 PoolManager and PositionManager, and zero for Uniswap v2, v3 and the Across spoke pool. Its runtime is Arbitrum's 2.1.2 with every PUSH32 operand masked. The router Ascend's documents list (0x1B341FDD55d56F8E08409A2C25DDFad93Eb03C1a, 23,233 B) is another build and is not used.",
+    "Permit2's runtime embeds its chain id and domain separator; with them substituted it is byte-identical to the Permit2 every enabled profile records.",
+    "HYPE has no Chainlink feed: gasPrice.poolNativeUsd is the hookless native HYPE/USDC v4 pool at 1% (the deepest in-range liquidity at block 3233210, ~74 USDC per HYPE), the owner's choice of 9 Nov 2026, used only while its depth within the band reaches the floor.",
+    "No bridge serves Elysium (Relay lists HyperEVM 999, Across has no 99901): bridge.providers is empty, so S2 stays off here.",
+    "blockTimeSeconds is the average over the last 10000 blocks at block 3233210, not a nominal value; a quiet chain makes fewer blocks.",
+    "ArbOS 61 at block 3233210. Multicall3.getBlockNumber() returns the parent chain's block estimate on Nitro; use ArbSys.arbBlockNumber()."
+  ],
+  "sources": [
+    "scripts/v2/qualify-chain.mjs (domino 3b51c017c70c): eth_getCode and eth_call at block 3233210 (0x43ecf15612dbd441cf3584d3bdc2440207cd17385c92d1a98891dbc412b884ee) on 2026-11-09",
+    "https://elysium.kinetiq.xyz/docs/connecting-to-elysium (chain id 99901, HYPE; last updated 9 Nov 2026)",
+    "https://elysium.kinetiq.xyz/docs/contract-addresses (WHYPE, USDC, Multicall3, CreateX, Permit2, Arachnid, Safe 1.3.0)",
+    "https://ascendlaunch.gitbook.io/docs/developers/mainnet-contracts.md (third party: Uniswap v4 addresses, verified by bytes and wiring above)",
+    "https://arbiscan.io/tx/0x42ed46c9b29461557ef12d2588165dffe4909f6f248a3564f904fbe1f1dc78a4 (Universal Router 2.1.2 creation code on Arbitrum One)",
+    "https://github.com/pcaversaccio/createx (README: runtime keccak 0xbd8a7ea8...)",
+    "https://github.com/safe-global/safe-deployments"
+  ]
+}

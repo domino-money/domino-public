@@ -398,6 +398,8 @@
   .dm-pos-back:hover { background: var(--wash); color: var(--fg); }
   .dm-pos-back > svg { transition: translate var(--dur-fast) var(--ease-std); }
   .dm-pos-back:hover > svg { translate: -2px 0; }
+  /* 2026-11-09 (core flows): the one line over the loading frame of a position just created, while it is being listed. */
+  .dm-pos-adding { margin: 0.75rem 0 0; font-size: 0.875rem; line-height: 1.25rem; color: var(--fg-muted); }
   .dm-pos-title { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 1rem 2rem; margin-top: 1rem; }
   .dm-pos-name { display: flex; align-items: center; gap: 1rem; min-width: 0; }
   .dm-pos-pair { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

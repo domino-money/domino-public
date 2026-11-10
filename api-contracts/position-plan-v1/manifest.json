@@ -52,7 +52,7 @@
     },
     {
       "path": "schema-data.mjs",
-      "sha256": "52ebb5750340e4b17a33fe4f81c9274120a826b6fece55a492fbb19e07735cfb"
+      "sha256": "8a2bbd9054e5369200a91e0f152bdd8f55f9b21cb5b996f89424612377c91a9a"
     },
     {
       "path": "schemas/error.response.schema.json",
@@ -60,15 +60,15 @@
     },
     {
       "path": "schemas/plan.request.schema.json",
-      "sha256": "c3daaaf87df858ed86962f80da5c49149049cbf468cd173993d37dfff509791f"
+      "sha256": "bcf8cd32aabb8dc946e3cb8ef1e9468ab4564a929fbf0f7e2882d545b4ca7835"
     },
     {
       "path": "schemas/plan.response.schema.json",
-      "sha256": "cf60dd3da2348bae38da0ca71f13d58de8099be3e2e920656c9259c60ac48bf4"
+      "sha256": "c06dcbcb87ead16eebf9180dee581efb35b46fbb9f9101dceda598223344a951"
     },
     {
       "path": "types.ts",
-      "sha256": "9d653c095d9a1090681cd94aaec3797c17a184e89196ef3acaebda73f5926b59"
+      "sha256": "345edb75bb9423251d557df42078e949dedaf8c3ccaebdc46cf84a413ee0e868"
     },
     {
       "path": "runtime.mjs",

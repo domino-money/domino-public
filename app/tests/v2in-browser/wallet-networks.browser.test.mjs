@@ -18,6 +18,7 @@ import { launchBrowser } from '../support/s1-browser.mjs';
 import { openPositionPage } from '../support/position-v2-page.mjs';
 import { closeBrowser } from '../support/close-browser.mjs';
 import { ZERO, walletBalancesAnswer } from '../support/wallet-networks.mjs';
+import { ELYSIUM_REPO_LIVE } from '../support/elysium-profile.mjs';
 
 const require = createRequire(import.meta.url);
 const model = require('../../.test-build/app/src/v2in/walletNetworks/model.js');
@@ -43,6 +44,9 @@ function walletAnswer(now, empty = false, usdgRaw = '1000000') {
 /**
  * Positions with the connected wallet, Robinhood Chain's list from the read stub and chain-balances from `balances`
  * (the options of walletBalancesAnswer), each request recorded in `asked`.
+ * Changed on purpose 2026-11-07 (day-9 rehearsal, finding F3): where the repository turns Elysium on, the usual build asks
+ * about Elysium's tokens in a read of their own (src/v2in/walletNetworks/WalletNetworks.tsx); that one is recorded in
+ * `elysium`, so `asked` stays the read about the three and Base's and Arbitrum One's rows are held as before.
  */
 async function openCard({ balances = {}, tokens = [], delayMs = 0, robinhoodEmpty = false, usdgRaw } = {}) {
   const now = Math.floor(Date.now() / 1000);
@@ -51,11 +55,12 @@ async function openCard({ balances = {}, tokens = [], delayMs = 0, robinhoodEmpt
   const read6 = { portfolio, activity: activityOf({ wallet: chain.owner }) };
   const read = createReadStub({ reads: 'wallet-assets', answer: (route) => (route === 'wallet-assets' ? walletAnswer(now, robinhoodEmpty, usdgRaw) : undefined) });
   const asked = [];
+  const elysium = [];
   const s = await openPositionPage(browser, chain, {
     hash: '#/positions', read6, routes: [read.handle], s1: { directCode: { 4663: chain.codeHashes } },
     prepare: async (context) => {
       await context.exposeFunction('__walletNetworksRead', async (request) => {
-        asked.push(request);
+        (request.tokens.length > 0 && request.tokens.every((token) => token.chainId === 99901) ? elysium : asked).push(request);
         if (delayMs > 0) await new Promise((done) => setTimeout(done, delayMs));
         return { status: 200, body: walletBalancesAnswer(request, balances) };
       });
@@ -71,7 +76,13 @@ async function openCard({ balances = {}, tokens = [], delayMs = 0, robinhoodEmpt
       });
     },
   });
-  return { s, chain, asked, portfolio: portfolio.body };
+  return { s, chain, asked, elysium, portfolio: portfolio.body };
+}
+
+/** Elysium's own read: one where the repository turns Elysium on, none before (waited for, since it lands on its own). */
+async function elysiumRead(elysium) {
+  if (ELYSIUM_REPO_LIVE) for (let tries = 0; elysium.length === 0 && tries < 100; tries += 1) await new Promise((done) => setTimeout(done, 100));
+  assert.equal(elysium.length, ELYSIUM_REPO_LIVE ? 1 : 0, ELYSIUM_REPO_LIVE ? 'Elysium’s tokens in a read of their own' : 'no read about Elysium');
 }
 
 /**
@@ -107,7 +118,7 @@ const rowsOf = (page) => page.evaluate(() => [...document.querySelectorAll('[dat
 
 test('Base and Arbitrum One tokens join the Wallet card: one list by value, each row with its network, one total', { timeout: 90_000 }, async () => {
   const tokens = [indexedToken(8453, AERO, 'AERO', 18)];
-  const { s, chain, asked, portfolio } = await openCard({
+  const { s, chain, asked, elysium, portfolio } = await openCard({
     tokens,
     // The read lands after Robinhood Chain's own figure is ready: the card's first figure still waits for it.
     delayMs: 1200,
@@ -123,6 +134,7 @@ test('Base and Arbitrum One tokens join the Wallet card: one list by value, each
     await page.waitForFunction(() => document.querySelector('[data-portfolio-tokens]')?.getAttribute('data-wallet-networks-held') === '3' && document.querySelector('[data-wallet-total]'));
     // One read, asking each network's own currencies and the token of the wallet's position on Base.
     assert.equal(asked.length, 1, 'one chain-balances read');
+    await elysiumRead(elysium);
     assert.deepEqual(asked[0], { wallet: chain.owner.toLowerCase(), tokens: model.balanceRequest(model.walletBalanceTokens(portfolio)) });
     assert.deepEqual(asked[0].tokens.map((token) => `${token.chainId}:${token.address}`).at(-1), `8453:${AERO}`);
     // 0.5 ETH at the fixtures' ETH round (4000.12345678) is $2,000.06, then 25.5 USDC, 3 AERO at $1.25, 1 USDG.
@@ -133,8 +145,8 @@ test('Base and Arbitrum One tokens join the Wallet card: one list by value, each
     const shown = await rowsOf(page);
     assert.deepEqual(shown.map((row) => [row.name, row.network, row.usd]), [['ETH', 'Base', '$2,000.06'], ['USDC', 'Arbitrum One', '$25.50'], ['AERO', 'Base', '$3.75']], 'the largest three first');
     assert.equal(shown[0].href, null, 'native ETH has no token page');
-    assert.equal(shown[2].href, `#/markets/network/8453/${AERO}`, 'a token’s pools on Markets, on its own network');
-    assert.equal(shown[1].href, `#/markets/network/42161/${ARB_USDC}`);
+    assert.equal(shown[2].href, `/markets/network/8453/${AERO}`, 'a token’s pools on Markets, on its own network');
+    assert.equal(shown[1].href, `/markets/network/42161/${ARB_USDC}`);
     assert.equal(shown[0].units, '0.5');
     assert.equal(shown[1].usdTitle, 'USDC counted at $1.');
     assert.equal(shown[2].usdTitle, 'At $1.25 per token, from its Uniswap pool on Base. Indicative, not a quote.');
@@ -143,7 +155,7 @@ test('Base and Arbitrum One tokens join the Wallet card: one list by value, each
     assert.equal(await all.textContent(), 'Show all 4');
     await all.click();
     const every = await rowsOf(page);
-    assert.deepEqual(every.at(-1), { token: USDG, chain: null, name: 'USDG', href: `#/markets/${USDG}`, units: '1', network: 'Robinhood Chain', usd: '$1.00', usdTitle: 'USDG counted at $1.' });
+    assert.deepEqual(every.at(-1), { token: USDG, chain: null, name: 'USDG', href: `/markets/${USDG}`, units: '1', network: 'Robinhood Chain', usd: '$1.00', usdTitle: 'USDG counted at $1.' });
     // Added 2026-11-06 (review of R-07): the network beside the amount, every row clear of its value, down to a 320px phone.
     // Changed on purpose 2026-11-06 (review UI-1): and the amount always whole. These short amounts and their networks share
     // one line on a desktop and a 390px phone; on a 320px phone a network that does not fit goes under its amount.
@@ -199,7 +211,7 @@ test('long amounts stay whole beside their network, from a 320px phone to a wide
 // its own list starts from its memory: back on Positions, its figure is the sum from the first frame, never Robinhood
 // Chain's alone for a moment.
 test('back on Positions, the card’s first figure is the sum it showed, never Robinhood Chain’s alone', { timeout: 90_000 }, async () => {
-  const { s, asked } = await openCard({
+  const { s, asked, elysium } = await openCard({
     balances: { held: { [`8453:${ZERO}`]: 5n * 10n ** 17n, [`42161:${ARB_USDC}`]: 25_500000n } },
   });
   try {
@@ -217,6 +229,7 @@ test('back on Positions, the card’s first figure is the sum it showed, never R
     assert.equal(await card.getAttribute('data-wallet-networks-held'), '2');
     assert.deepEqual((await rowsOf(page)).map((row) => [row.name, row.network]), [['ETH', 'Base'], ['USDC', 'Arbitrum One'], ['USDG', 'Robinhood Chain']]);
     assert.equal(asked.length, 1, 'the page’s read is reused, not asked again');
+    await elysiumRead(elysium);
   } finally { await s.close(); }
 });
 
@@ -253,12 +266,13 @@ test('a slow read of the other networks holds Robinhood Chain’s figure three s
 });
 
 test('nothing held on Base or Arbitrum One: the card is Robinhood Chain’s, with no network named', { timeout: 60_000 }, async () => {
-  const { s, asked } = await openCard({});
+  const { s, asked, elysium } = await openCard({});
   try {
     const { page } = s;
     const card = page.locator('[data-portfolio-tokens]');
     await page.waitForFunction(() => document.querySelector('[data-portfolio-tokens]')?.getAttribute('data-wallet-networks') === 'ready' && document.querySelector('[data-wallet-total]'));
     assert.equal(asked.length, 1);
+    await elysiumRead(elysium);
     assert.equal(asked[0].tokens.length, 6, 'each network’s ETH, WETH and USDC');
     assert.equal(await card.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$1.00');
     assert.equal(await card.locator('[data-wallet-total]').getAttribute('title'), 'The sum of the tokens on this card, at provider-reported prices with USDG at $1. Indicative, not a quote.');

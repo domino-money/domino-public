@@ -359,7 +359,7 @@ test('Auto-exit entry chooses a chain-qualified NFT and opens the existing dialo
   try {
     const entry = page.locator('[data-v2in-protection]');
     await entry.waitFor();
-    assert.equal(await entry.getAttribute('href'), '#/sequence/protection');
+    assert.equal(await entry.getAttribute('href'), '/sequence/protection');
     await entry.click();
     await page.locator('[data-v2in-protection-setup]').waitFor();
     assert.equal(await page.locator('h1').innerText(), 'Set up Auto-exit');
@@ -687,8 +687,15 @@ test('live: Base, a root burned by Change range is not in the wallet\'s list: Po
     // Positions: the vault's hint, and its link to the position's page on Base.
     const link = page.locator('[data-automation-recovery] a', { hasText: `Position #${ROOT}` });
     await link.waitFor({ timeout: 30_000 });
-    assert.equal(await link.getAttribute('href'), `#/positions/base-v4-${ROOT}`);
+    assert.equal(await link.getAttribute('href'), `/positions/base-v4-${ROOT}`);
     await link.click();
+    // Changed on purpose 2026-11-09 (the core-flows fix; the owner: getting your money back must be totally easy): from
+    // Positions, funds left in an automation open Withdraw to wallet on the position's page at once (its handoff); the
+    // automation's own screen stays behind it, as below.
+    const opened = page.locator('[role="dialog"][data-v2in-dialog="vault-withdraw"]');
+    await opened.waitFor({ timeout: 30_000 });
+    await page.keyboard.press('Escape');
+    await opened.waitFor({ state: 'detached' });
     // The page: still not in the wallet's list, now with the vault's own control above that sentence.
     const empty = page.locator('[data-empty="position-v2"][data-position-reason="position_not_listed"]');
     await empty.waitFor({ timeout: 30_000 });
@@ -833,11 +840,19 @@ test('live: a root closed directly on Uniswap, the vault paused: Managed positio
     assert.equal(await row.locator('button').count(), 0, 'overview only navigates');
     assert.equal(await row.locator('[data-vault-idle], [data-return-hint], [data-vault-details]').count(), 0, 'the row carries no detail');
     const link = row;
-    assert.equal(await link.getAttribute('href'), `#/positions/robinhood-v4-${ROOT}`);
+    assert.equal(await link.getAttribute('href'), `/positions/robinhood-v4-${ROOT}`);
     assert.equal(await page.locator('[data-v2in-vaults], [data-automation-recovery]').count(), 0, 'the listed root owns the recovery hint once');
     await row.screenshot({ path: join(shots(), 'v2in-managed-closed-root.png'), animations: 'disabled' });
+    assert.equal(await row.locator('[data-row-withdraw]').innerText(), 'Withdraw to wallet', 'where it said View history (2026-11-09)');
 
     await link.click();
+    // Changed on purpose 2026-11-09 (the core-flows fix; the owner: getting your money back must be totally easy): from
+    // Positions, funds left in an automation open Withdraw to wallet on the position's page at once (its handoff); the
+    // automation's own screen stays behind it, as below.
+    const opened = page.locator('[role="dialog"][data-v2in-dialog="vault-withdraw"]');
+    await opened.waitFor({ timeout: 30_000 });
+    await page.keyboard.press('Escape');
+    await opened.waitFor({ state: 'detached' });
     await expandAutomation(page);
     const card = page.locator(`[data-automation-panel] section[data-vault-card="${vault}"]`);
     await card.waitFor({ timeout: 30_000 });
@@ -1481,7 +1496,7 @@ test('V2 detail: one setup link preselects the NFT, and both compounding reviews
     await setup.waitFor({ timeout: 30_000 });
     assert.equal(await setup.count(), 1);
     assert.equal(await setup.innerText(), 'Set up automation');
-    assert.equal(await setup.getAttribute('href'), `#/sequence/${ID}`);
+    assert.equal(await setup.getAttribute('href'), `/sequence/${ID}`);
     assert.equal(await page.locator('[data-automation-panel]').isVisible(), false);
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 960 });
@@ -2317,7 +2332,7 @@ for (const [mode, title, policyMode, fee] of [['compound', 'Auto-compound', 1, '
       assert.equal(chain.vault(vault).paused, false);
       assert.equal(chain.log.filter(method => method === 'wallet_sendCalls').length, 1, 'approval and setup share one supported wallet confirmation');
       assert.match(await done.innerText(), new RegExp(`${title} is set up`));
-      assert.equal(await done.getByRole('link', { name: 'View position', exact: true }).getAttribute('href'), `#/positions/${ROOT}`);
+      assert.equal(await done.getByRole('link', { name: 'View position', exact: true }).getAttribute('href'), `/positions/${ROOT}`);
       await done.screenshot({ path: join(shots(), `final-${mode}-complete-320.png`), animations: 'disabled' });
     } finally { await s.close(); }
   });
@@ -2335,7 +2350,7 @@ test('final pass: all three automation entries have an honest empty state and co
     const empty = await openPreview(emptyChain, `/sequence/${mode}`, { portfolio: completeEmpty });
     try {
       await empty.page.locator('[data-sequence-positions="empty"]').waitFor();
-      assert.equal(await empty.page.getByRole('link', { name: 'View positions', exact: true }).getAttribute('href'), '#/positions');
+      assert.equal(await empty.page.getByRole('link', { name: 'View positions', exact: true }).getAttribute('href'), '/positions');
       assert.equal(await empty.page.locator('[data-v2in-consent], [data-mandate-send]').count(), 0);
       await empty.page.setViewportSize({ width: 320, height: 800 });
       assert.ok(await empty.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
@@ -2401,7 +2416,7 @@ for (const chainId of [8453, 42161]) for (const dex of [3, 4]) for (const mode o
       if (throughDetail) {
         const setup = page.locator('[data-automation-setup]');
         await setup.waitFor();
-        assert.equal(await setup.getAttribute('href'), '#/sequence/base-v3-' + ROOT, 'the affected Base v3 detail offers all modes for that exact NFT');
+        assert.equal(await setup.getAttribute('href'), '/sequence/base-v3-' + ROOT, 'the affected Base v3 detail offers all modes for that exact NFT');
         await setup.click();
         await page.locator('[data-sequence-mode="compound"]').click();
       }
@@ -2442,7 +2457,7 @@ for (const chainId of [8453, 42161]) for (const dex of [3, 4]) for (const mode o
       assert.equal(chain.sends[0].to.toLowerCase(), profile.uniswap['v' + dex].positionManager);
       assert.equal(chain.sends[1].to.toLowerCase(), chain.contracts.addresses[dex === 3 ? 'vaultFactoryV3' : 'vaultFactoryV4']);
       assert.equal(chain.log.includes('personal_sign'), false);
-      assert.equal(await done.getByRole('link', { name: 'View position', exact: true }).getAttribute('href'), '#/positions/' + slug + '-v' + dex + '-' + ROOT);
+      assert.equal(await done.getByRole('link', { name: 'View position', exact: true }).getAttribute('href'), '/positions/' + slug + '-v' + dex + '-' + ROOT);
       if (dex === 3) assert.ok(chain.paid.some(entry => entry.why === 'v3-owed-at-arming' && entry.to === OWNER));
     } finally { await s.close(); }
   });
@@ -2628,6 +2643,22 @@ test('multichain setup: a receipt-backed Base mint waits past the old retry wind
     // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the loading rows and a hidden marker; it said 'Updating your position…'.
     await page.locator('[data-v2in-setup-updating]').waitFor({ state: 'attached' });
     assert.equal(await page.getByText('Updating your position…', { exact: true }).count(), 0);
+    // Changed on purpose 2026-11-09 (core flows, the owner: no bare grey rows after a new position): one line over the one
+    // row of the position being added, and the portfolio asked again every few seconds (src/v2in/lists/newPositionWait.ts).
+    const adding = page.locator('[data-v2in-setup-adding]');
+    await adding.waitFor();
+    assert.equal(await adding.innerText(), 'Adding your new position…');
+    assert.equal(await page.locator('[data-sequence-positions="loading"] .dm-seq-loading-row').count(), 1, 'the one row of the position being added');
+    {
+      const before = await page.evaluate(() => window.__setupPortfolioReads);
+      await page.clock.fastForward(3_100);
+      await page.waitForFunction(previous => window.__setupPortfolioReads > previous, before);
+    }
+    await page.locator('main').screenshot({ path: join(shots(), 'core-loading-setup-adding-desktop.png'), animations: 'disabled' });
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.locator('main').screenshot({ path: join(shots(), 'core-loading-setup-adding-phone.png'), animations: 'disabled' });
+    await page.setViewportSize({ width: 1280, height: 900 });
     for (let turn = 0; turn < 3; turn++) {
       const before = await page.evaluate(() => window.__setupPortfolioReads);
       await page.clock.fastForward(5_100);
@@ -2641,6 +2672,39 @@ test('multichain setup: a receipt-backed Base mint waits past the old retry wind
     await page.locator('[data-sequence-position-key="8453:4:' + ROOT + '"][aria-checked="true"]').waitFor();
     assert.equal(await page.locator('[data-v2in-consent]').isChecked(), false, 'the real portfolio opens setup without implied consent');
     assert.equal(await page.locator('[data-sequence-action="run"]').isDisabled(), true);
+    assert.deepEqual(chain.sends, []);
+  } finally { await s.close(); }
+});
+
+// Added 2026-11-09 (core flows, the owner: nothing may load forever): a portfolio that has only ever failed kept Set up
+// automation on its loading rows for good (the error line was removed on 2026-10-30 and nothing ended the wait). Past 20 s
+// (src/lib/readWait.ts STUCK_MS) the approved one-line state says what to do; the portfolio is still asked again by itself,
+// and the picker replaces the line.
+test('Set up automation: a portfolio that only fails says what to do after twenty seconds, and the picker replaces it', async () => {
+  const chain = createVaultChain({ chainId: 8453 });
+  const pool = { currency0: ZERO, currency1: chain.profile.chargeCurrencies.find(token => token.decimals === 6).address, fee: 3000, tickSpacing: 60 };
+  const complete = multichainSetupPortfolio(chain, 4, pool);
+  const s = await openLive(chain, { hash: '/sequence/compound', read6: { portfolio: { status: 503, body: { error: 'upstream_unavailable' } } }, v1: rootOnV1({ liquidity: 10n ** 18n }),
+    beforeOpen: async ({ page }) => { await page.clock.install(); } });
+  try {
+    const { page } = s;
+    await page.locator('[data-sequence-positions="failed"]').waitFor();
+    assert.equal(await page.locator('[data-sequence-positions="stuck"]').count(), 0, 'the loading rows while the first re-asks run');
+    await page.clock.fastForward(21_000);
+    const stuck = page.locator('[data-sequence-positions="stuck"]');
+    await stuck.waitFor();
+    assert.equal(await stuck.innerText(), 'Reload the page to see your positions.');
+    assert.equal(await page.locator('[data-sequence-positions="failed"]').count(), 0, 'the loading rows end');
+    assert.doesNotMatch(await page.locator('main').innerText(), /couldn’t|could not|Try again/);
+    await page.locator('main').screenshot({ path: join(shots(), 'core-loading-setup-stuck-desktop.png'), animations: 'disabled' });
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.locator('main').screenshot({ path: join(shots(), 'core-loading-setup-stuck-phone.png'), animations: 'disabled' });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.evaluate(value => { window.__dominoV2Test.read6.portfolio = () => value; }, complete);
+    await page.clock.fastForward(61_000);
+    await page.locator('[data-sequence-position-key="8453:4:' + ROOT + '"]').waitFor();
+    assert.equal(await stuck.count(), 0);
     assert.deepEqual(chain.sends, []);
   } finally { await s.close(); }
 });

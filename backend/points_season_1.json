@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "kind": "domino-points-season",
+  "id": "points-s1",
+  "version": 1,
+  "decided": "the owner, 6-7 Nov 2026 (docs/points/POINTS.md)",
+  "start": "2026-11-09T00:00:00Z",
+  "startUnix": 1794182400,
+  "end": "2027-02-09T00:00:00Z",
+  "endUnix": 1802131200,
+  "pointsPerUsd": "1000",
+  "referralShare": "0.10",
+  "autoExitFloorUsd": "0.10",
+  "excluded": {
+    "deploymentRoles": ["deployer", "feeRecipient", "governance", "guardian", "operator", "publisher"],
+    "governanceSafeOwners": [
+      "0x19ea136f23151d681da6d20a7a39d36e784ea792",
+      "0x5e57fded90c4635648eb7b3ba29705ff0769d103",
+      "0x706627e3e75b0603c4b6f9a1ebbfc635da712747"
+    ],
+    "publicTestAccounts": true,
+    "teamList": "a private file on the host (points_engine.py --team-file); a snapshot records its sha256, never its addresses"
+  },
+  "referral": {
+    "levels": 1,
+    "countsFrom": "the season's start, whenever the link is made",
+    "freshnessSeconds": 600
+  }
+}

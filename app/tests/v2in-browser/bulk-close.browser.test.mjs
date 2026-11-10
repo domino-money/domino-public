@@ -345,7 +345,7 @@ test('Automate leads with New position above three desktop choices, stacks on mo
     const slugs = ['new-position', 'auto-compound', 'domino-compound', 'auto-exit'];
     for (const [index, slug] of slugs.entries()) {
       const link = cards.nth(index).locator('.dm-automation-choice-doc');
-      assert.equal(await link.getAttribute('href'), `#/docs/${slug}`);
+      assert.equal(await link.getAttribute('href'), `/docs/${slug}`);
       await link.click();
       await s.page.locator(`[data-docs-page="${slug}"]`).waitFor();
       await s.page.goBack();
@@ -395,4 +395,72 @@ test('Automate leads with New position above three desktop choices, stacks on mo
     assert.ok(['none', '0px', '0px 0px'].includes(await cards.first().evaluate((node) => getComputedStyle(node).translate)), 'reduced motion keeps the card still on hover');
     assert.equal(s.chain.sends.length, 0);
   } finally { await s.close(); }
+});
+
+// Added 2026-11-09 (the core-flows fix; the owner: closing positions with automation must be totally easy). Close
+// positions no longer holds its button for a tick box ("I understand that closing these positions stops their
+// automation."): an automation's main position closes like any other (its vault never refuses its owner's exit, it turns
+// its automation off), and one plain line says so. The selection's waiting button says what it waits for.
+const { FAKE } = await import('../v2/support/plans.mjs');
+const { decodeFunctionData, encodeFunctionResult } = await import('viem');
+const { vaultOf } = await import('../support/s1-read6.mjs');
+const VAULT = '0x00000000000000000000000000000000000000aa';
+const FACTORY_CODE = { [FAKE.vaultFactoryV3.toLowerCase()]: '0x600560d0d0', [FAKE.vaultFactoryV4.toLowerCase()]: '0x600660d0d0' };
+const VAULT_ABI = require('../../../api-contracts/v2/abi/IDominoVault.json').abi;
+const FACTORY_ABI = require('../../../api-contracts/v2/abi/IDominoVaultFactory.json').abi;
+const closeShots = () => { const dir = resolve(process.env.DOMINO_CLOSE_SHOTS ?? shots); mkdirSync(dir, { recursive: true }); return dir; };
+test('bulk close with an automation\'s main position: one line names it, no tick box, the button is never held, one transaction', async () => {
+  const v4 = [501001n, 501002n].map((tokenId) => ({ tokenId, pool, ...RANGE, liquidity: LIQUIDITY, sqrtPriceX96: SQRT, tick: TICK, growthLast: [0n, 0n], growthNow: [0n, 0n], ...(tokenId === 501001n ? { approved: VAULT, subscriber: VAULT } : {}) }));
+  const chain = createDirectChain({ chainId: 8453, timestamp: Math.floor(Date.now() / 1000), v4 });
+  const manager = chain.at.v4PositionManager;
+  const read6 = { portfolio: portfolioOf({ wallet: chain.owner,
+    positions: v4.map((one) => livePosition({ chainId: 8453, manager, tokenId: one.tokenId, owner: chain.owner, pool, ...RANGE, liquidity: LIQUIDITY, sqrtPriceX96: SQRT, tick: TICK, ...(one.tokenId === 501001n ? { approved: VAULT, subscriber: VAULT, vault: { address: VAULT, role: 'root' } } : {}) })),
+    vaults: [vaultOf({ wallet: chain.owner, chainId: 8453, address: VAULT, rootTokenId: 501001, pool })],
+    tokens: [indexedToken(8453, ZERO, 'ETH', 18), indexedToken(8453, USDC, 'USDC', 6)] }), activity: activityOf({ wallet: chain.owner }) };
+  const asked = [];
+  const intercept = (method, params) => {
+    if (method === 'eth_getCode' && FACTORY_CODE[String(params[0]).toLowerCase()]) return { result: FACTORY_CODE[String(params[0]).toLowerCase()] };
+    if (method !== 'eth_call') return undefined;
+    const to = String(params[0].to).toLowerCase();
+    const data = params[0].data ?? params[0].input;
+    if (FACTORY_CODE[to]) return { result: encodeFunctionResult({ abi: FACTORY_ABI, functionName: 'isVault', result: String(decodeFunctionData({ abi: FACTORY_ABI, data }).args[0]).toLowerCase() === VAULT }) };
+    if (to !== VAULT) return undefined;
+    const { functionName } = decodeFunctionData({ abi: VAULT_ABI, data });
+    asked.push(functionName);
+    if (functionName === 'root') return { result: encodeFunctionResult({ abi: VAULT_ABI, functionName, result: { dex: 4, positionManager: manager, tokenId: 501001n } }) };
+    if (functionName === 'rootArmed') return { result: encodeFunctionResult({ abi: VAULT_ABI, functionName, result: true }) };
+    return undefined;
+  };
+  const page0 = await openPositionPage(browser, chain, { hash: '#/positions', read6, viewport: { width: 1440, height: 900 }, intercept, s1: { directCode: { 8453: chain.codeHashes } } });
+  try {
+    const page = page0.page;
+    await page.locator('[data-bulk-close-open]').click();
+    const dialog = page.locator('[data-bulk-close]');
+    const waiting = dialog.getByRole('button', { name: 'Choose positions', exact: true });
+    assert.equal(await waiting.isDisabled(), true, 'it says what it waits for');
+    await dialog.getByRole('checkbox').first().check();
+    assert.equal(await dialog.getByRole('button', { name: 'Review 1 position', exact: true }).isDisabled(), false, 'one position is enough');
+    await dialog.getByRole('checkbox').nth(1).check();
+    await dialog.getByRole('button', { name: 'Review 2 positions', exact: true }).click();
+    await page.locator('[data-bulk-close="review"]').waitFor({ timeout: 30_000 });
+    assert.ok(asked.includes('rootArmed'), 'the chain was asked whether its automation runs');
+    assert.match((await dialog.locator('[data-bulk-close-line="turns-off"]').innerText()).trim(), /^Closing also turns off (Auto-compound|Domino-compound|their automation) for these positions\.$/);
+    assert.equal(await dialog.getByRole('checkbox').count(), 0, 'no tick box');
+    assert.doesNotMatch(await dialog.innerText(), /I understand/);
+    const send = dialog.getByRole('button', { name: 'Close 2 positions', exact: true });
+    assert.equal(await send.isDisabled(), false, 'never held');
+    for (const [size, viewport] of [['desktop-1440', { width: 1440, height: 900 }], ['phone-390', { width: 390, height: 844 }]]) {
+      await page.setViewportSize(viewport); await page.waitForTimeout(250);
+      await page.screenshot({ path: resolve(closeShots(), `bulk-close-review-${size}.png`) });
+    }
+    await send.click();
+    await page.locator('[data-bulk-close="done"]').waitFor({ timeout: 30_000 });
+    assert.equal(chain.sends.length, 1, 'one transaction, with no acknowledgement first');
+    assert.equal(chain.v4Position(501001n).liquidity, 0n);
+    assert.equal(chain.v4Position(501002n).liquidity, 0n);
+    for (const [size, viewport] of [['desktop-1440', { width: 1440, height: 900 }], ['phone-390', { width: 390, height: 844 }]]) {
+      await page.setViewportSize(viewport); await page.waitForTimeout(250);
+      await page.screenshot({ path: resolve(closeShots(), `bulk-close-done-${size}.png`) });
+    }
+  } finally { await page0.close(); }
 });

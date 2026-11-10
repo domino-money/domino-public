@@ -20,6 +20,7 @@ import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import { ELYSIUM_FIXTURE_PATH, ELYSIUM_FORCED, ELYSIUM_PROFILE, loadWith, runWith, withRecord } from './support/elysium-live.mjs';
 import { v4OnlyManifest } from './support/v4-only.mjs';
+import { CONTRACT_VERSION as READ_V6_VERSION } from '../../../api-contracts/read-v6/runtime.mjs';
 
 const require = createRequire(import.meta.url);
 const BUILD = '../../.test-build/app/src/';
@@ -253,14 +254,17 @@ test('on: S2\'s gate is off on Elysium wherever every other gate is open, and th
   });
 });
 
-test('on: Elysium\'s explorer rows say "none yet", so no link is drawn; the three keep theirs', () => {
+// Changed on purpose 2026-11-09 (Elysium's day 9, checklist step 5): Kinetiq's explorer is published, so Elysium's rows
+// link it, as the three link theirs; until that day they said "none yet" and no link was drawn.
+test('on: Elysium\'s explorer rows link Kinetiq\'s explorer, a transaction and a contract, lower case; the three keep theirs', () => {
   const { explorers } = ON;
-  const hash = `0x${'ab'.repeat(32)}`;
-  assert.equal(explorers.v2TxUrl(ID, hash), null);
-  assert.equal(explorers.v2ContractUrl(ID, `0x${'cd'.repeat(20)}`), null);
+  const hash = `0x${'AB'.repeat(32)}`;
+  assert.equal(explorers.v2TxUrl(ID, hash), `https://elysium.kinetiq.xyz/tx/0x${'ab'.repeat(32)}`);
+  assert.equal(explorers.v2ContractUrl(ID, `0x${'CD'.repeat(20)}`), `https://elysium.kinetiq.xyz/address/0x${'cd'.repeat(20)}`);
+  assert.equal(explorers.v2TxUrl(ID, '0x1234'), null, 'a malformed hash links nothing');
   for (const chainId of THREE) assert.equal(explorers.v2TxUrl(chainId, hash), OFF.explorers.v2TxUrl(chainId, hash));
   const source = readFileSync(new URL('../../src/lib/elysiumIdentity.ts', import.meta.url), 'utf8');
-  assert.match(source, /export const ELYSIUM_EXPLORER: string \| null = null/, 'no explorer host is known on 7 Nov 2026 (a day-9 line)');
+  assert.match(source, /export const ELYSIUM_EXPLORER: string \| null = 'https:\/\/elysium\.kinetiq\.xyz'/, 'its host, no trailing slash (a day-9 line)');
 });
 
 // ---------------------------------------------------------------------------
@@ -277,7 +281,7 @@ test('on: the session is kept on Elysium and the wallet switches to it, from the
   const walletConnect = readFileSync(new URL('../../src/wallet/walletConnectProvider.ts', import.meta.url), 'utf8');
   assert.match(walletConnect, /const CHAINS = ELYSIUM_LIVE \? \[`eip155:\$\{ROBINHOOD\}`, 'eip155:1', 'eip155:8453', 'eip155:42161', `eip155:\$\{ELYSIUM_V2_ID\}`\] : \[`eip155:\$\{ROBINHOOD\}`, 'eip155:1', 'eip155:8453', 'eip155:42161'\]/);
   // `#/positions/elysium-v4-<tokenId>`, both ways; the three keep theirs.
-  assert.equal(ON.route.v2PositionHref({ chainId: ID, dex: 4, tokenId: 5n }), '#/positions/elysium-v4-5');
+  assert.equal(ON.route.v2PositionHref({ chainId: ID, dex: 4, tokenId: 5n }), '/positions/elysium-v4-5');
   assert.deepEqual({ ...ON.route.parseV2PositionParam('elysium-v4-5') }, { chainId: ID, dex: 4, tokenId: 5n });
   for (const param of ['robinhood-v4-7', 'base-v3-1', 'arbitrum-v4-2']) assert.deepEqual(ON.route.parseV2PositionParam(param), OFF.route.parseV2PositionParam(param), param);
 });
@@ -286,7 +290,9 @@ test('on: the session is kept on Elysium and the wallet switches to it, from the
 // The services' own answers (docs/ELYSIUM_DAY9.md, "Order")
 // ---------------------------------------------------------------------------
 
-const V6 = '1.1.0-rc.1';
+// Changed on purpose 2026-11-07 (day-9 rehearsal, finding F8): the package's own version, never a literal, so a day-9
+// version move needs only docs/ELYSIUM_DAY9.md step 3.
+const V6 = READ_V6_VERSION;
 const v6Reply = (chainIds) => ({
   kind: 'reply',
   reply: { status: 200, opaqueRedirect: false, contentType: 'application/json', contractHeader: V6, requestIdHeader: null, retryAfterHeader: null,

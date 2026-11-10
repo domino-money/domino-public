@@ -318,3 +318,44 @@ test('follow-up reads remain valid only for the observed visible owner and curre
   assert.equal(contexts[1].active(), false, 'changing owner cancels follow-up work for the former owner');
   assert.equal(contexts[2].active(), true);
 });
+
+// Added 2026-11-09 (core flows, the owner: nothing slow when it can be fast): `soon` brings a key's next read forward while
+// someone watches it, never drops a read in flight for a new one, never moves a sooner read later, and never asks before
+// a failure's wait (a busy reader's Retry-After) is over.
+test('soon: a sooner next read for a watched key, never a read in flight dropped, never before a failure’s wait', async (t) => {
+  t.mock.method(Math, 'random', () => 0);
+  const clock = fakeTimers();
+  const replies = [{ kind: 'ok', body: 1 }, { kind: 'ok', body: 2 }, { kind: 'unavailable', reason: 'read_capacity_busy', retryAfterSeconds: 30 }, { kind: 'ok', body: 3 }];
+  const pending = [];
+  let asked = 0;
+  const reader = read.createKeyedReader(() => (asked++, new Promise((resolve) => pending.push(() => resolve(replies.shift())))), { next: read.readAgainAfter, failed: (reply) => reply.kind !== 'ok' }, clock.timers);
+  reader.soon('w', 3_000);
+  assert.deepEqual(clock.pending(), [], 'nobody watching: nothing is asked');
+  const stop = reader.subscribe('w', () => {});
+  assert.equal(asked, 1);
+  reader.soon('w', 3_000);
+  assert.equal(asked, 1, 'a read on its way is never dropped for a new one');
+  pending.shift()();
+  await clock.advance(0);
+  assert.deepEqual(clock.pending(), [60_000], 'a good answer is asked again a minute later');
+  reader.soon('w', 3_000);
+  assert.deepEqual(clock.pending(), [3_000], 'soon brings it forward');
+  reader.soon('w', 10_000);
+  assert.deepEqual(clock.pending(), [3_000], 'and a later soon never moves it back');
+  await clock.advance(3_000);
+  assert.equal(asked, 2);
+  pending.shift()();
+  await clock.advance(0);
+  reader.again('w');
+  pending.shift()();
+  await clock.advance(0);
+  assert.equal(reader.get('w').body, 2, 'the busy answer keeps the last good one');
+  reader.soon('w', 3_000);
+  assert.deepEqual(clock.pending(), [30_000], 'never before the Retry-After the busy reader named');
+  await clock.advance(30_000);
+  assert.equal(asked, 4);
+  pending.shift()();
+  await clock.advance(0);
+  assert.equal(reader.get('w').body, 3);
+  stop();
+});

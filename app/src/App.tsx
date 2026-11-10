@@ -16,6 +16,7 @@ import { MARKETS_TOKEN, pendingTitle, ROUTES, type RoutedPage } from './routeTab
 import { ELYSIUM_STATUS } from './config/chainIdentity'
 import { sectionLinked } from './chains/elysium/mode'
 import { parseMarketsNetworkHash, parseNewNetworkHash } from './components/explore/routes'
+import { currentRoute, onRoute, routeOfHref, subscribeRoute } from './lib/route'
 
 // The owner's wallet flows, in builds that carry the wallet session: creating
 // or recovering a position, and setting up a sequence. The
@@ -68,6 +69,10 @@ const Docs = deferred<{ slug: string }>(recovering(() => import('./screens/Docs'
 // so the Robinhood screens carry none of it. Whether it is open where the page is served is its own call
 // (chains/elysium/flag.ts: off on domino.money until the chain's deployment is qualified, on in the preview).
 const Elysium = deferred<object>(recovering(() => import('./chains/elysium/ui/ElysiumEntry'), screenFailed))
+// Added 2026-11-07 (the owner's Points page, Season 1, integ-logs/points/PROPOSAL.md): /points, one chunk of its own with
+// its styles, the points-v1 contract's runtime and its transport, in every build that carries the wallet (each deployed
+// one: it reads the signed-in session and asks the wallet to sign a referral link); elsewhere the route is not found.
+const Points = __DOMINO_WALLET_SESSION__ ? deferred<object>(recovering(() => import('./screens/Points'), screenFailed)) : null
 /**
  * Whether the section's route exists where the page is served (2026-10-01, fix round 1): the menu's own rule
  * (components/HeaderMenu.tsx, chains/elysium/mode.ts sectionLinked). Where it is off (domino.money until the chain's
@@ -129,7 +134,7 @@ function SkipLink() {
  * Asks for the chunk of the screen the page opens on before React draws anything (main.tsx), so the first draw can be
  * the screen itself: its file is already on its way (the boot script asked for it), and only its import is left.
  */
-const SCREENS: Partial<Record<Page, { preload: () => void }>> = { markets: Explore, pool: PoolDetail, positions: Positions, new: NewPosition, automate: Automate, docs: Docs, elysium: Elysium }
+const SCREENS: Partial<Record<Page, { preload: () => void }>> = { markets: Explore, pool: PoolDetail, positions: Positions, new: NewPosition, automate: Automate, docs: Docs, elysium: Elysium, ...(Points ? { points: Points } : {}) }
 export function preloadScreen(page: Page): void {
   SCREENS[page]?.preload()
 }
@@ -175,6 +180,10 @@ export function parseHash(hash: string): HashLocation {
   const cut = raw.indexOf('#')
   const route = (cut === -1 ? raw : raw.slice(0, cut)) || '/'
   const section = cut === -1 ? '' : raw.slice(cut + 1)
+  // Added 2026-11-07 (launch sweep F12, with pages of their own): a path with an empty segment (`//markets`) names no page;
+  // read by its segments it was Home. A link from before with one (mistyped) is not found too, its address left as it is
+  // (lib/route.ts ownPath), where production showed Home.
+  if (route.includes('//')) return { page: 'not-found', param: '', section }
   const [, first = '', second = ''] = route.split('/')
   const page: Page = Object.hasOwn(PAGES, first) ? PAGES[first] : 'not-found'
   if (page === 'elysium' && !ELYSIUM_OPEN) return { page: 'not-found', param: second, section }
@@ -190,20 +199,26 @@ export function parseHash(hash: string): HashLocation {
   return { page: page === 'markets' && second !== '' && !MARKETS_TOKEN.test(second) ? 'not-found' : page, param: second, section }
 }
 
-const subscribeHash = (onChange: () => void) => {
-  window.addEventListener('hashchange', onChange)
-  return () => window.removeEventListener('hashchange', onChange)
-}
+/**
+ * Whether the site has a page at `path` (added 2026-11-07, launch sweep F12; kept with pages of their own, lib/route.ts):
+ * Pages answers every path that names no file with the site's page, so /nope showed Home as if the link had worked. A
+ * page's path is Home's (`/`, or `/index.html`, its file's name) or one parseHash opens a screen at. Anywhere else the
+ * page is not found, whatever its hash (lib/route.ts installRoutes reads a link from before only on a page's path), until
+ * a link is followed.
+ */
+export const isPagePath = (path: string): boolean => /^\/(?:index\.html)?$/.test(path) || parseHash(`#${path}`).page !== 'not-found'
 
 function useHashLocation() {
   // Changed on purpose 2026-10-04 (PR #335's CI, finance-create): read through useSyncExternalStore, which reads the hash
   // again once it listens. As state set from a listener added after the first render, a hash that changed in between (a
   // link followed while the page was still starting) was missed, and the old screen stayed.
-  const hash = useSyncExternalStore(subscribeHash, () => window.location.hash, () => '')
+  // Changed on purpose 2026-11-07 (pages of their own, lib/route.ts): the route is read from the address's path and
+  // section, in the hash router's form, and a move is lib/route.ts's event, where it was the hash and hashchange.
+  const hash = useSyncExternalStore(subscribeRoute, currentRoute, () => '')
   const location = useMemo(() => parseHash(hash), [hash])
   useEffect(() => {
     const onChange = () => {
-      const next = parseHash(window.location.hash)
+      const next = parseHash(currentRoute())
       // Scrolled from the listener rather than from an effect: the new screen
       // has to be committed first, and an effect keyed on the route would be
       // torn down by the re-render that commits it. A timeout rather than a
@@ -217,16 +232,17 @@ function useHashLocation() {
     const onClick = (event: MouseEvent) => {
       if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
       const href = event.target instanceof Element ? event.target.closest('a[href]')?.getAttribute('href') : null
-      if (!href || href !== window.location.hash) return
-      const { section } = parseHash(href)
+      const route = href ? routeOfHref(href) : null
+      if (!route || route !== currentRoute()) return
+      const { section } = parseHash(route)
       if (!section) return
       event.preventDefault()
       scrollToSection(section)
     }
-    window.addEventListener('hashchange', onChange)
+    const stop = onRoute(onChange)
     document.addEventListener('click', onClick)
     return () => {
-      window.removeEventListener('hashchange', onChange)
+      stop()
       document.removeEventListener('click', onClick)
     }
   }, [])
@@ -250,7 +266,7 @@ function Flagged({ screen: Lazy, title }: { screen: React.LazyExoticComponent<()
 
 function Screen({ page, param }: { page: Page; param: string }) {
   // The tab's name until the screen is in (routeTable.ts pendingTitle, final review shell-2: the screens' own names).
-  const title = pendingTitle(page, param, window.location.hash, __DOMINO_V2__)
+  const title = pendingTitle(page, param, currentRoute(), __DOMINO_V2__)
   const pending = <Pending title={title} />
   switch (page) {
     case 'overview':
@@ -273,6 +289,8 @@ function Screen({ page, param }: { page: Page; param: string }) {
       return <Flagged screen={Setup} title={title} />
     case 'elysium':
       return <Elysium fallback={pending} />
+    case 'points':
+      return Points ? <Points fallback={pending} /> : <NotFound />
     default:
       // Only the build that carries a consumer screen names it; elsewhere the whole branch folds away.
       if (__DOMINO_ONBOARDING_PREVIEW__ && page === 'live-preview') return <Flagged screen={LivePreview} title={title} />
@@ -287,6 +305,7 @@ function Screen({ page, param }: { page: Page; param: string }) {
 const FLAGGED: Partial<Record<Page, unknown>> = {
   sequence: Sequence,
   setup: Setup,
+  points: Points,
   ...(__DOMINO_ONBOARDING_PREVIEW__ ? { 'live-preview': LivePreview } : {}),
   ...(__DOMINO_DEPOSIT_LAB__ ? { deposits: Deposits } : {}),
   ...(__DOMINO_TEST_HOOKS__ ? { 'position-lab': PositionLab, 'sequence-lab': Sequence } : {}),
@@ -334,7 +353,7 @@ export default function App() {
   // from the hash rather than from state so this depends on nothing and runs
   // once; later changes are handled by the hash listener.
   useEffect(() => {
-    const initial = parseHash(window.location.hash).section
+    const initial = parseHash(currentRoute()).section
     if (initial) setTimeout(() => scrollToSection(initial), 0)
   }, [])
 

@@ -115,7 +115,7 @@ def main():
             'runner_group_id': 1, 'labels': labels, 'work_folder': '_work'})
         runner_id = response['runner']['id']
         # All interpolated remote values are validated numeric/hex constants.
-        command = ('sudo -n python3 /mnt/narrative-ssd/domino-ci-pilot/source/clawber_pilot.py '
+        command = ('sudo -n python3 /opt/domino-ci/clawber_pilot.py '
                    f'--base-sha256 {args.base_sha256} --timeout-seconds {args.timeout_seconds}')
         result = subprocess.run(['ssh', '-T', '-F', str(args.ssh_config), '-o', 'BatchMode=yes',
                                  '-o', 'StrictHostKeyChecking=yes', args.ssh_host, command],

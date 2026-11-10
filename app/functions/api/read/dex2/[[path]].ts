@@ -1,10 +1,14 @@
 /**
  * GET /api/read/dex2/token-pairs/<token>, /api/read/dex2/tokens/<token>[,<token>…] and
- * /api/read/dex2/token-pairs/<base|arbitrum>/<token>: the asks of /api/read/dex/, answered as a 200 whatever the provider
+ * /api/read/dex2/token-pairs/<base|arbitrum|elysium>/<token>: the asks of /api/read/dex/, answered as a 200 whatever the provider
  * does, saying each token's own state: its pairs with the time this edge retrieved them, none, or missing with the reason
  * and a retry hint (2026-10-14, incident of 2026-10-13, package D1; functions/_lib/dexEdge.ts answerDex2). One slow or
  * refused token no longer costs the others, and a token with no price yet is a state of the answer, not a failed
  * request. Only a visitor past its own allowance hears a 429, with the wait.
+ *
+ * Changed on purpose 2026-11-07 (Base's and Arbitrum One's pools the provider's 30 pairs of a token leave out): also
+ * /api/read/dex2/pairs/<base|arbitrum|elysium>/<pool>[,<pool>…], those pools asked by their own names, each answered as a token
+ * is (functions/_lib/dexEdge.ts). This path only: the old one never had it.
  *
  * A path of its own because the shape is another: a tab opened before the deploy keeps asking /api/read/dex/, which keeps
  * its list and its 502 (functions/api/read/dex/[[path]].ts). Both read the same kept entries, share the reads on their

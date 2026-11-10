@@ -3,6 +3,7 @@ import { ADDRESS_PROBLEM } from '../../lib/read/screens/copy'
 import { parseAddressInput, shortAddress, type AddressKey } from '../../lib/read/screens/identity'
 import { portfolioHash, portfolioRoute } from '../../lib/read/screens/positions'
 import type { WalletIdentityView } from '../../lib/walletIdentity'
+import { currentRoute, navigate, onRoute } from '../../lib/route'
 import { CopyButton } from '../read/screens/CopyButton'
 import { Button, SearchField, Skeleton, cx } from '../ui'
 import { PortfolioTokens } from './PortfolioTokens'
@@ -33,12 +34,12 @@ const trimEnds = (text: string) => text.replace(/^[ \t]+|[ \t]+$/g, '')
 
 /**
  * Goes to another link without leaving the page. A new history entry, so Back
- * returns to the link before, and no hashchange, so the page keeps its scroll
- * position; the card follows its own state, and whoever reads the hash later
+ * returns to the link before, and no move told (lib/route.ts navigate, quiet; it was no hashchange), so the page keeps
+ * its scroll position; the card follows its own state, and whoever reads the route later
  * reads the new one.
  */
-function go(hash: string) {
-  if (window.location.hash !== hash) window.history.pushState(null, '', hash)
+function go(href: string) {
+  navigate(href, { quiet: true })
 }
 
 function AddressForm({ id, onView, className, inert }: { id: string; onView: (wire: string) => void; className?: string; inert?: boolean }) {
@@ -101,7 +102,7 @@ function AddressForm({ id, onView, className, inert }: { id: string; onView: (wi
  * positions beside its tokens.
  */
 export default function PortfolioBody({ identity, onLinked }: { identity: WalletIdentityView; onLinked?: (address: string | null) => void }) {
-  const [route, setRoute] = useState(() => portfolioRoute(window.location.hash))
+  const [route, setRoute] = useState(() => portfolioRoute(currentRoute()))
   // V4 (presentational, the approved positions-address.html .vform): the other-address form folds away over 450ms when
   // it closes, so it stays drawn (inert, `is-closing`) for that long; whether it is open is `showForm`, as before.
   const [form, setForm] = useState<'shut' | 'open' | 'folding'>('shut')
@@ -114,13 +115,8 @@ export default function PortfolioBody({ identity, onLinked }: { identity: Wallet
   }, [form])
 
   useEffect(() => {
-    const onChange = () => setRoute(portfolioRoute(window.location.hash))
-    window.addEventListener('hashchange', onChange)
-    window.addEventListener('popstate', onChange)
-    return () => {
-      window.removeEventListener('hashchange', onChange)
-      window.removeEventListener('popstate', onChange)
-    }
+    // Back, Forward and every link: lib/route.ts tells each move of the route (it was hashchange and popstate).
+    return onRoute(() => setRoute(portfolioRoute(currentRoute())))
   }, [])
 
   const typed = route.onRoute && route.address !== '' ? parseAddressInput(route.address) : null
@@ -146,7 +142,7 @@ export default function PortfolioBody({ identity, onLinked }: { identity: Wallet
   }
   const useWallet = () => {
     setShowForm(false)
-    go('#/positions')
+    go('/positions')
     setRoute({ onRoute: false })
   }
 

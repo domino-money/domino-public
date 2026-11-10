@@ -31,6 +31,10 @@
     "src/lib/nativeWords.ts",
     "src/lib/prefetchRoutes.ts",
     "src/routeTable.ts",
+    "src/lib/route.ts",
+    "src/lib/seo/table.ts",
+    "functions/_lib/pagePaths.ts",
+    "functions/_lib/seo.ts",
     "functions/_lib/boot.ts",
     "../web/lib/compound.ts",
     "../web/lib/position.ts",
@@ -42,6 +46,8 @@
     "functions/_lib/publicEdge.ts",
     "functions/_lib/historyEdge.ts",
     "functions/_lib/overviewEdge.ts",
+    "functions/_lib/searchEdge.ts",
+    "functions/_lib/chainEdge.ts",
     "functions/_lib/dexEdge.ts",
     "functions/_lib/owned.ts",
     "functions/_lib/walletPositions.ts",
@@ -152,6 +158,7 @@
     "src/lib/create/plain.ts",
     "src/lib/read/screens/rowApr.ts",
     "src/lib/docs/registry.ts",
+    "src/lib/elysiumOpening.ts",
     "src/components/positions/walletSteps.ts",
     "src/lib/format/decimal.ts",
     "src/lib/format/amount.ts",
@@ -225,6 +232,14 @@
     "functions/_lib/uniswap-v3/words.ts",
     "functions/_lib/uniswap-v3/abi.ts",
     "functions/_lib/uniswap-v3/reads.ts",
-    "functions/_lib/uniswap-v3/edge.ts"
+    "functions/_lib/uniswap-v3/edge.ts",
+    "src/points/season.ts",
+    "src/points/format.ts",
+    "src/points/capture.ts",
+    "src/points/ref.ts",
+    "src/points/link.ts",
+    "src/points/transport.ts",
+    "src/points/words.ts",
+    "src/lib/docs/pages/points.ts"
   ]
 }

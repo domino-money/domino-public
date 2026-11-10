@@ -18,6 +18,8 @@ import { protectionPositions, protectionSelection, type ProtectionPosition } fro
 import { usePortfolio } from './read6'
 import { setupWaiting, useSetupWaitOver } from './setupPositions'
 import { automationState, sessionMandatesFor, sessionRevoked, subscribeAutomation } from './store'
+import { RELOAD_WORDS, useWaitOver } from '../../lib/readWait'
+import { UNJUDGED_ASK_MS, useQuickPortfolio } from '../lists/newPositionWait'
 
 type OpenGate = Exclude<V2Gate, { mode: 'off' }>
 const joined = (vault: V2Gate | null, exit: V2Gate | null): OpenGate | null =>
@@ -79,7 +81,12 @@ export default function ProtectionSetup({ owner, route }: { owner: string; route
   // Changed on purpose 2026-10-30 (QA round 2, final review shell-1): an NFT of the wallet on an open network that could not be
   // judged yet keeps the loading rows below, never the plate (./setupPositions.ts setupWaiting), for two minutes at most.
   const waiting = body !== null && !waitOver && setupWaiting(body, owner, positions.length, (chainId) => gates[chainId] !== null)
-  const back = <LinkButton href="#/automate" variant="outline">Back</LinkButton>
+  // Added 2026-11-09 (core flows, the owner: nothing may load forever): a portfolio that has only ever failed says what to do
+  // after STUCK_MS (../../lib/readWait.ts); it is still asked again by itself and the picker replaces the line.
+  const stuck = useWaitOver(answer !== null && answer.reply.kind !== 'ok')
+  // Changed on purpose 2026-11-09 (core flows): an NFT waiting to be judged is asked about every UNJUDGED_ASK_MS meanwhile.
+  useQuickPortfolio(answer?.wallet ?? null, waiting, UNJUDGED_ASK_MS)
+  const back = <LinkButton href="/automate" variant="outline">Back</LinkButton>
   const newPosition = (variant: 'primary' | 'outline') => <LinkButton href={newPositionHref()} variant={variant} data-sequence-new-position=""><IconPlus />New position</LinkButton>
   const content = pending || (Object.values(gates).some(Boolean) && answer === null) ? <div className="dm-card dm-acct-block dm-seq-loading" aria-busy="true" data-sequence-positions="loading">
     {[0, 1, 2].map((row) => <Skeleton key={row} className="dm-seq-loading-row" />)}
@@ -90,13 +97,14 @@ export default function ProtectionSetup({ owner, route }: { owner: string; route
        network behind with nothing to offer shows the plate at once (the list replaces it when that network is in). The
        plate is Set up automation's (SetupEntry.tsx, the owner's decision on N13): a position comes first, New position.
        Final review shell-1: not while one of the wallet's own NFTs on an open network waits to be judged (`waiting`). */
+    : !list && stuck ? <div className="dm-acct-block" data-sequence-positions="stuck"><p className="text-body text-fg-muted">{RELOAD_WORDS.positions}</p>{back}</div>
     : !list || waiting ? <div className="dm-card dm-acct-block dm-seq-loading" aria-busy="true" data-sequence-positions="failed">
       {[0, 1, 2].map((row) => <Skeleton key={row} className="dm-seq-loading-row" />)}
     </div> : !positions.length ? <EmptyState plate icon={<NoPositionsArt />} className="dm-acct-block dm-lit" data-sequence-positions="empty"
       title="No positions available for Auto-exit"
       body={missing ? 'This position isn’t available for a new Auto-exit. Check its status in Positions.' : 'Open a new position, then come back to set up Auto-exit.'}
-      action={missing ? <><LinkButton href="#/positions" variant="primary">View positions</LinkButton>{newPosition('outline')}{back}</>
-        : <>{newPosition('primary')}<LinkButton href="#/positions" variant="outline">View positions</LinkButton>{back}</>} /> : <>
+      action={missing ? <><LinkButton href="/positions" variant="primary">View positions</LinkButton>{newPosition('outline')}{back}</>
+        : <>{newPosition('primary')}<LinkButton href="/positions" variant="outline">View positions</LinkButton>{back}</>} /> : <>
       {missing && <p className="dm-acct-note" role="status" data-sequence-position-missing="">This position isn’t available for a new Auto-exit. Choose another position below.</p>}
       <Card className="dm-acct-block dm-acct-panel dm-seq-create" data-v2in-protection-setup="">
         <div className="dm-seq-grid">

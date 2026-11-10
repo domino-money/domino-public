@@ -1,0 +1,43 @@
+{
+  "$id": "https://domino.invalid/contracts/points-v1/link.response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": {
+      "const": "1.0.0-rc.1",
+      "title": "Contractversion",
+      "type": "string"
+    },
+    "referee": {
+      "maxLength": 42,
+      "minLength": 42,
+      "pattern": "^0x[0-9a-f]{40}$",
+      "title": "Referee",
+      "type": "string"
+    },
+    "referrer": {
+      "maxLength": 42,
+      "minLength": 42,
+      "pattern": "^0x[0-9a-f]{40}$",
+      "title": "Referrer",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "recorded",
+        "existing"
+      ],
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contractVersion",
+    "status",
+    "referee",
+    "referrer"
+  ],
+  "title": "LinkResponse",
+  "type": "object",
+  "x-contract-version": "1.0.0-rc.1"
+}

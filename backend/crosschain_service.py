@@ -35,7 +35,7 @@ from discovery import DataError
 import hop_log
 from crosschain_common import APP_FEE_BPS, PROVIDERS, ZERO, fingerprint
 from crosschain_http import ProviderError
-from crosschain_models import (CONTRACT_VERSION, MAX_ORIGIN_CHAINS, MAX_ORIGIN_TOKENS, MAX_RESPONSE,
+from crosschain_models import (CONTRACT_VERSION, DESTINATIONS, MAX_ORIGIN_CHAINS, MAX_ORIGIN_TOKENS, MAX_RESPONSE,
                                PINS, POLL_SECONDS, PREVIOUS_VERSION, QUOTE_LIFETIME_SECONDS, TERMINAL, CrosschainError,
                                advance, advantage, approve_data, ranked, validate_request, validate_response)
 from crosschain_relay import expected_for_minimum
@@ -249,6 +249,10 @@ class CrosschainService:
         fetchers = (('relay', ('relay', 'chains'), self.relay.chains),
                     ('across', ('across', destination, token), lambda: self.across.routes(destination, token)))
         for provider, key, fetch in fetchers:
+            if provider not in DESTINATIONS[destination]['providers']:
+                # Not asked: it does not serve this destination (Across and Elysium).
+                listings.append({'provider': provider, 'status': 'unavailable', 'reason': 'destination_not_served'})
+                continue
             try:
                 rows = self.listings.get(key, fetch)
             except DataError as error:
@@ -260,7 +264,10 @@ class CrosschainService:
             for chain, entries in rows.items():
                 if chain == destination or chain not in PINS['chains'] or provider not in PINS['chains'][chain]:
                     continue
+                pinned = PINS['chains'][chain][provider].get('tokens')
                 for entry in entries:
+                    if pinned is not None and entry['address'] not in pinned:
+                        continue  # the pin lists the tokens this provider bridges there (Elysium: USDC)
                     row = tokens.setdefault(chain, {}).setdefault(entry['address'], {
                         'address': entry['address'], 'symbol': None, 'decimals': None, 'providers': []})
                     if row['symbol'] is None and isinstance(entry['symbol'], str) and SYMBOL.fullmatch(entry['symbol']):
@@ -293,8 +300,15 @@ class CrosschainService:
         candidates = {}
         runnable = {}
         for provider in PROVIDERS:
-            if PINS['chains'].get(call['originChainId'], {}).get(provider) is None:
+            pin = PINS['chains'].get(call['originChainId'], {}).get(provider)
+            if provider not in DESTINATIONS[call['destinationChainId']]['providers']:
+                # Not asked: it does not serve this destination (Across and Elysium).
+                candidates[provider] = unpriced(provider, 'no_route', 'destination_not_served')
+            elif pin is None:
                 candidates[provider] = unpriced(provider, 'origin_not_supported', 'origin_chain_not_pinned')
+            elif pin.get('tokens') is not None and call['originToken'] not in pin['tokens']:
+                # The pin lists the tokens this provider bridges on the origin chain (Elysium: USDC).
+                candidates[provider] = unpriced(provider, 'origin_not_supported', 'origin_token_not_pinned')
             else:
                 runnable[provider] = jobs[provider]
         if runnable:

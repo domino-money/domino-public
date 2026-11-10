@@ -24,6 +24,7 @@ const { quoteFor, recorded } = await import('../support/crosschain-quotes.mjs');
 const readV6Runtime = await import('../../../api-contracts/read-v6/runtime.mjs');
 
 const V2_DIST = WALLET_V2_DIST;
+const shots = () => { const dir = resolve(process.env.DOMINO_POSITION_SHOTS ?? join(APP, '.test-artifacts')); mkdirSync(dir, { recursive: true }); return dir; };
 const USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168';
 const ZERO = '0x0000000000000000000000000000000000000000';
 const READ = resolve(import.meta.dirname, '../../../api-contracts/read-v1/fixtures/gateway');
@@ -119,11 +120,13 @@ async function openNewPosition({ gateOpen = true, ethWei = 0n, balances = {}, br
   };
   // Added 2026-10-06: read-v6's chain-balances served by the site's route (`served`, ../support/chain-reads.mjs), as the read
   // Worker answers it: its capabilities naming that read alone, and each answer with the contract's header.
-  const readV6 = { 'X-Domino-Read-Contract': '1.1.0-rc.1' };
+  // Changed on purpose 2026-11-07 (day-9 rehearsal, finding F8): read-v6's versions are the package's own
+  // (api-contracts/read-v6/runtime.mjs), never literals, so a day-9 version move needs only docs/ELYSIUM_DAY9.md step 3.
+  const readV6 = { 'X-Domino-Read-Contract': readV6Runtime.CONTRACT_VERSION };
   const servedRoute = async (request, url) => {
     if (!served || !url.pathname.startsWith('/api/read/v6/')) return undefined;
     const route = url.pathname.split('/').at(-1);
-    if (route === 'capabilities') return Response.json({ contractVersion: '1.1.0-rc.1', dataMode: 'live_read_only', chainIds: [4663, 8453, 42161], enabledReads: ['chain-balances'], walletAuthentication: false, privateAccounts: false, ownerTransactions: false, automation: false }, { headers: readV6 });
+    if (route === 'capabilities') return Response.json({ contractVersion: readV6Runtime.CONTRACT_VERSION, dataMode: 'live_read_only', chainIds: [4663, 8453, 42161], enabledReads: ['chain-balances'], walletAuthentication: false, privateAccounts: false, ownerTransactions: false, automation: false }, { headers: readV6 });
     const said = await served.answer(route, await request.json());
     return said ? Response.json(said.body, { status: said.status, headers: readV6 }) : Response.json({ error: 'route_not_available' }, { status: 404, headers: readV6 });
   };
@@ -367,9 +370,15 @@ test('unread balances remain unavailable, never zero or an empty-network claim',
     await typeUsdg(s, '50'); await signIn(s);
     await s.page.locator('[data-funds-nothing]').waitFor();
     // Changed on purpose 2026-10-30 (QA round 2, SWEEP: no words saying data is missing): the balances are read again on
-    // their own (every 30 s, and on focus), said as being checked.
-    assert.equal(await s.page.locator('[data-funds-nothing]').innerText(), 'Checking the tokens in your wallet…');
+    // their own (every 30 s, and on focus). Changed on purpose 2026-11-09 (core flows, the owner: nothing may load forever):
+    // "Checking the tokens in your wallet…" while a read runs; once a whole read has ended incomplete, what to do, with no
+    // claim that the networks not read are empty. It said "Checking…" for good.
+    await s.page.waitForFunction(() => document.querySelector('[data-funds-nothing]')?.textContent === 'Add funds on Robinhood Chain or choose a smaller amount.');
+    assert.doesNotMatch(await s.page.locator('[data-funds-offer]').innerText(), /No available funds|unavailable|couldn’t|could not/);
     assert.equal(await s.page.locator('[data-funds-deposit-button]').count(), 0);
+    await s.page.locator('[data-funds-offer]').screenshot({ path: join(shots(), 'core-loading-funds-checked-desktop.png'), animations: 'disabled' });
+    await s.page.setViewportSize({ width: 390, height: 844 });
+    await s.page.locator('[data-funds-offer]').screenshot({ path: join(shots(), 'core-loading-funds-checked-phone.png'), animations: 'disabled' });
   } finally { await s.close(); }
 });
 

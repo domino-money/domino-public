@@ -1,13 +1,19 @@
 # Public sanitized derivative
 
 This repository, `domino-money/domino-public`, is a separate sanitized publication
-derived from the private repository snapshot at
+initially derived from the private repository snapshot at
 `f6aa00bbcaf0e23a5d2c81a86b95420be6edb1ed`. The original repository remains private.
 The initial publication includes the sanitized `main` history and six
 `sanitized/` tags. Other development branches, pull request refs, discussions,
 Actions logs, release attachments and private repository settings were not
 imported. Git history in this repository has no ancestry link to the original
 unsanitized commit objects.
+
+The current source refresh is based on private `main` at
+`adae30373a36d9c3bb1f74a0b6165a311757bdc3` (10 November 2026). It imports
+reviewed file changes as a new commit on the existing public history, without
+importing private ancestry or additional refs. See the
+[refresh record](PUBLIC_REFRESH_2026-11-10.md) for scope, sanitization and validation.
 
 Private network addresses, personal filesystem paths and personal Git author
 email addresses have been replaced with documentation values or stable aliases.

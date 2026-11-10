@@ -327,7 +327,11 @@ test('destinations are only each V2 chain’s charge currencies, the same three 
     [42161, 'Arbitrum One', ['USDC', 'ETH', 'WETH']],
   ]);
   const listed = Object.fromEntries(choices.map((c) => [String(c.chainId), c.tokens.map((t) => t.address).sort()]));
-  assert.deepEqual(listed, Object.fromEntries(Object.entries(CONSTANTS.destinations).map(([id, tokens]) => [id, [...tokens].sort()])));
+  // Changed on purpose 2026-11-09 (rugged97's #488 lists Elysium's USDC): Elysium's row only where the build brings funds
+  // there (src/lib/elysiumIdentity.ts ELYSIUM_FUNDS_TO, held in tests/v2/elysium-screens.test.mjs); every other row is
+  // exactly the package's.
+  const offered = new Set(Object.keys(listed));
+  assert.deepEqual(listed, Object.fromEntries(Object.entries(CONSTANTS.destinations).filter(([id]) => id !== '99901' || offered.has(id)).map(([id, tokens]) => [id, [...tokens].sort()])));
   for (const c of choices) {
     for (const t of c.tokens) assert.ok(runtime.validateRequest('origins', { destinationChainId: c.chainId, destinationToken: t.address }), `${c.chain} ${t.symbol}`);
   }

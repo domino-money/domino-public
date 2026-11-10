@@ -15,6 +15,7 @@ import { Button, LinkButton, PageHeader, Pill, Segmented, Skeleton, StepMarker }
 import { pairedAmount } from '../../../lib/create/pairAmount'
 import { pauseFor } from '../../../lib/chain/client'
 import { browserStore } from '../../../lib/chainStorage'
+import { navigate } from '../../../lib/route'
 import { RANGES, type RangeKey } from '../../../lib/ranges'
 import { presetFor } from '../../../lib/read/screens/poolRange'
 import { priceInvertedOn } from '../../../config/chainKit'
@@ -275,7 +276,7 @@ export function NewPosition({ param }: { param: string }) {
   // own New position link the route's pool came straight back, and the button did nothing).
   const another = () => {
     setChosen(null)
-    if (param) window.location.hash = sectionHref(chain, 'new')
+    if (param) navigate(sectionHref(chain, 'new'))
   }
   return (
     <section data-chain2-screen="new">

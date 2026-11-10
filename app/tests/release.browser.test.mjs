@@ -1029,7 +1029,8 @@ const SERVED = [SELECTED[5], SELECTED[0]];
 const servedList = (patch = {}) => ({ ...JSON.parse(JSON.stringify(LIST)), pools: [listed(SERVED[0], 1, true), listed(SERVED[1], 2, false)], withdrawn: [], ...patch });
 const v5 = (status, body) => json(status, body, { 'X-Domino-Read-Contract': V5 });
 const withList = (answer, options = {}) => bridgeStub({ ...options, reply: (route, body) => (route === FEATURED_PATH ? answer() : options.reply?.(route, body)) });
-const SERVED_LINKS = [`#/pool/${SERVED[0]}/${TOKEN_Z}`, `#/pool/${SERVED[1]}/${TOKEN_Y}`];
+// Changed on purpose 2026-11-07 (pages of their own, src/lib/route.ts): each row links the pool page's own address.
+const SERVED_LINKS = [`/pool/${SERVED[0]}/${TOKEN_Z}`, `/pool/${SERVED[1]}/${TOKEN_Y}`];
 
 test('(r) a list served and current: its pools in its order, read first, under "Top pools · last 24h" with a Pinned chip and no line under the title; links name the pool and a token', async () => {
   const { context, page, errors } = await visit(withList(() => v5(200, servedList())));

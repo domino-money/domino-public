@@ -8,7 +8,7 @@ import { createStatusPoller, type PollState } from '../../v2/crosschain/polling'
 import { destinationChoices, presentStatus, shortAmountText, type Naming } from '../../v2/crosschain/present'
 import type { CrosschainJournalRecord } from '../../v2/crosschain/steps'
 import { v2TxUrl } from '../../v2/explorers'
-import { FUNDS_FINALITY_WATCH_MS, FUNDS_RECEIPT_POLL_MS } from './constants'
+import { FUNDS_BATCH_FOLLOW_MS, FUNDS_FINALITY_WATCH_MS, FUNDS_RECEIPT_POLL_MS, batchPollMs } from './constants'
 import { FUNDS_TEXT, senderCopy } from './copy'
 import { reconcileBalances } from './reconcile'
 import type { FundsServices } from './services'
@@ -82,6 +82,9 @@ export function PendingDeposit({
   onOutcome?: (state: 'not_included' | 'reverted' | 'unknown') => void
 }) {
   const [said, setSaid] = useState<'pending' | 'batch_not_included' | 'batch_reverted' | 'batch_unknown'>('pending')
+  // Added 2026-11-09 (core flows, the owner: nothing may load forever): the wallet took the batch FUNDS_BATCH_FOLLOW_MS ago
+  // (its `at`) and has not sent it: said, with what to do, while it is still asked about, ever less often.
+  const [slow, setSlow] = useState(false)
   const [retry, setRetry] = useState(0)
   const sent = useRef(onSent)
   const outcome = useRef(onOutcome)
@@ -108,7 +111,11 @@ export function PendingDeposit({
         } catch {
           // Asked again: the wallet away for a moment, or a read that failed.
         }
-        await services.wait(FUNDS_RECEIPT_POLL_MS)
+        // Changed on purpose 2026-11-09 (core flows): a pace that slows down (constants.ts batchPollMs), from when the wallet
+        // took the batch; it was every FUNDS_RECEIPT_POLL_MS for good.
+        const followed = Math.max(0, Date.now() - entry.at * 1000)
+        if (followed > FUNDS_BATCH_FOLLOW_MS) setSlow(true)
+        await services.wait(batchPollMs(followed, FUNDS_RECEIPT_POLL_MS))
       }
     })()
     return () => {
@@ -117,10 +124,10 @@ export function PendingDeposit({
   }, [entry, sender, services, retry])
   const origin = name.origin(entry.originChainId) ?? `network ${entry.originChainId}`
   return (
-    <Card level={2} className="p-4" data-funds-pending-batch={entry.originChainId} data-funds-batch-state={said}>
+    <Card level={2} className="p-4" data-funds-pending-batch={entry.originChainId} data-funds-batch-state={said === 'pending' && slow ? 'slow' : said}>
       <span className="dm-subtitle">{FUNDS_TEXT.depositFrom(origin)}</span>
       <p role="status" className={said === 'pending' ? 'mt-2 text-body' : 'dm-error mt-2'} data-error-code={said === 'pending' ? undefined : said} data-funds-state-text="">
-        {said === 'pending' ? FUNDS_TEXT.stepWords.sent : senderCopy(said, { origin, native: '' })}
+        {said === 'pending' ? slow ? senderCopy('batch_slow', { origin, native: '' }) : FUNDS_TEXT.stepWords.sent : senderCopy(said, { origin, native: '' })}
       </p>
       <details className="dm-details mt-3">
         <summary>{FUNDS_TEXT.details}</summary>

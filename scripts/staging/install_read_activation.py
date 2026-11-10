@@ -39,6 +39,17 @@ already serves chain-balances. A fault in that file leaves only those two
 chains `chain_not_configured`. The reader reaches their hosted RPC once the
 egress is collected with `--balance-chains`.
 
+`--position-fees` (with `--chain-reads`) opens read-v6 1.2.0-rc.1's
+position-fees, Fees earned and Your APR on Base and Arbitrum (the owner's
+approval of 7 Nov 2026; docs/v2/V2_FEES.md): the gateway's
+DOMINO_BRIDGE_V6_READS names it after the five routes. The reader is unchanged:
+DOMINO_V2_READ=1 already serves it from the V2 fee followers' tables
+(domino-v2-fees@<chain>), with no call at request time and no egress of its
+own. Without the option the gateway names the five routes and answers
+position-fees `route_not_available`, which the read Worker passes on as it is,
+whatever the tunnel and the Worker name: a drop-in without the option is the
+route's rollback.
+
 The interpreter is the release's own `backend/.venv`, a link to the shared
 environment, and each identity's runtime directory is the one the release links
 to. The scoped egress drop-ins (60) come from the continuous egress policy.
@@ -76,14 +87,17 @@ CHAIN_READS_V6 = 'DOMINO_BRIDGE_V6_READS=portfolio,activity,chain-pools,chain-ba
 CHAIN_RPC_FILE = 'chain-rpc.json'
 # chain-balances' Ethereum and OP Mainnet, opt-in on top of the chain reads.
 BALANCE_CHAIN_RPC_FILE = 'balance-chain-rpc.json'
+# read-v6 1.2.0-rc.1's position-fees, opt-in on top of the chain reads: the gateway's alone.
+POSITION_FEES_V6 = f'{CHAIN_READS_V6},position-fees'
 # Crosschain's pattern: a private directory outside every release, bound where the reader can reach it. A missing
 # directory (`-`) leaves the reader up and its chain reads unavailable.
 CHAIN_RPC_DIRECTORY, CHAIN_RPC_MOUNT = Path('/etc/domino/read'), '/run/domino-read-config'
 
 
-def drop_in(component, commit, runtime, read_v6=False, chain_reads=False, balance_chains=False):
+def drop_in(component, commit, runtime, read_v6=False, chain_reads=False, balance_chains=False, position_fees=False):
     require(read_v6 or not chain_reads, 'chain_reads_need_read_v6')
     require(chain_reads or not balance_chains, 'balance_chains_need_chain_reads')
+    require(chain_reads or not position_fees, 'position_fees_need_chain_reads')
     root = RELEASES / commit / component
     flags, environment = READ_V6[component] if read_v6 else ('', ())
     credentials = ()
@@ -95,7 +109,8 @@ def drop_in(component, commit, runtime, read_v6=False, chain_reads=False, balanc
         credentials = ('ImportCredential=v2-rpc-*', 'DeviceAllow=char-tpm rw',
                        f'BindReadOnlyPaths=-{CHAIN_RPC_DIRECTORY}:{CHAIN_RPC_MOUNT}')
     elif chain_reads:
-        environment = tuple(CHAIN_READS_V6 if value.startswith('DOMINO_BRIDGE_V6_READS=') else value
+        reads = POSITION_FEES_V6 if position_fees else CHAIN_READS_V6
+        environment = tuple(reads if value.startswith('DOMINO_BRIDGE_V6_READS=') else value
                             for value in environment)
     lines = ['# Read path activation (install_read_activation.py): release, runtime and bridge reads.',
              '[Service]', f'WorkingDirectory={root}', 'ExecStart=',
@@ -105,7 +120,7 @@ def drop_in(component, commit, runtime, read_v6=False, chain_reads=False, balanc
     return '\n'.join(lines) + '\n'
 
 
-def plan(commit, read_v6=False, chain_reads=False, balance_chains=False):
+def plan(commit, read_v6=False, chain_reads=False, balance_chains=False, position_fees=False):
     require(re.fullmatch('[0-9a-f]{40}', commit), 'commit must be a full lowercase Git SHA')
     require(not chain_reads or (CHAIN_RPC_DIRECTORY / CHAIN_RPC_FILE).is_file(), 'chain_rpc_file_missing')
     require(not balance_chains or (CHAIN_RPC_DIRECTORY / BALANCE_CHAIN_RPC_FILE).is_file(),
@@ -121,9 +136,9 @@ def plan(commit, read_v6=False, chain_reads=False, balance_chains=False):
         path = install.UNIT_DIR / f'domino-{component}.service.d' / name
         require(not os.path.lexists(path), 'read_activation_exists')
         require((install.UNIT_DIR / f'domino-{component}.service').is_file(), 'base_unit_missing')
-        files[str(path)] = drop_in(component, commit, runtime, read_v6, chain_reads, balance_chains)
+        files[str(path)] = drop_in(component, commit, runtime, read_v6, chain_reads, balance_chains, position_fees)
     return {'mode': 'read-activation', 'commit': commit, 'readV6': read_v6, 'chainReads': chain_reads,
-            'balanceChains': balance_chains, 'dropIns': files,
+            'balanceChains': balance_chains, 'positionFees': position_fees, 'dropIns': files,
             'notPerformed': ['service start, enable or restart', 'egress drop-ins (60)', 'runtime configuration']}
 
 
@@ -154,12 +169,16 @@ def main(argv=None):
     parser.add_argument('--balance-chains', action='store_true',
                         help="with --chain-reads: chain-balances also reads Ethereum and OP Mainnet when asked, after "
                              "balance-chain-rpc.json is in /etc/domino/read")
+    parser.add_argument('--position-fees', action='store_true',
+                        help="with --chain-reads: the gateway also opens read-v6 1.2.0-rc.1's position-fees (Fees "
+                             "earned on Base and Arbitrum), with the V2 fee followers following; the reader's drop-in "
+                             "does not change")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--inspect', action='store_true')
     mode.add_argument('--apply', action='store_true')
     args = parser.parse_args(argv)
     try:
-        planned = plan(args.commit, args.read_v6, args.chain_reads, args.balance_chains)
+        planned = plan(args.commit, args.read_v6, args.chain_reads, args.balance_chains, args.position_fees)
         result = apply(planned) if args.apply else {**planned, 'ok': True, 'applied': False}
         print(json.dumps(result, indent=2))
         return 0

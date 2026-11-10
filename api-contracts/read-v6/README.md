@@ -1,6 +1,6 @@
 # read-v6: Domino V2 wallet reads
 
-Contract `1.1.0-rc.1` for the app (F7) of [#283](https://github.com/domino-money/domino/issues/283): one wallet's Domino V2 state and receipts on Robinhood (4663), Base (8453) and Arbitrum One (42161), read from the V2 index. `chain-balances` also reads Ethereum (1) and OP Mainnet (10), the balance chains, when a request names them ([below](#chain-reads-chain-pools-chain-balances-chain-tokens)). How the index is built, what each table holds and what remains are in [docs/v2/V2_INDEXER_READ_API.md](../../docs/v2/V2_INDEXER_READ_API.md).
+Contract `1.1.0-rc.1` for the app (F7) of [#283](https://github.com/domino-money/domino/issues/283): one wallet's Domino V2 state and receipts on Robinhood (4663), Base (8453), Arbitrum One (42161) and Elysium (99901), read from the V2 index. `chain-balances` also reads Ethereum (1) and OP Mainnet (10), the balance chains, when a request names them ([below](#chain-reads-chain-pools-chain-balances-chain-tokens)). How the index is built, what each table holds and what remains are in [docs/v2/V2_INDEXER_READ_API.md](../../docs/v2/V2_INDEXER_READ_API.md).
 
 Two stored routes of the local reader (`backend/read_api.py`), separate from read-v1 to read-v5, and three live chain reads (below):
 
@@ -10,7 +10,7 @@ Two stored routes of the local reader (`backend/read_api.py`), separate from rea
 | `POST /v6/read/activity` | `{wallet, limit?, cursor?}` | The wallet's receipts, newest first, `limit` (1–50, default 20) at a time; `nextCursor` continues |
 | `POST /v6/read/chain-pools` | `{chainId, token, pairedToken?}` | The token's pools on a chain, read at its head (below) |
 | `POST /v6/read/chain-balances` | `{wallet, tokens?}` | A wallet's balances on each chain asked, every Domino chain's base currencies by default; Ethereum and OP Mainnet only when asked |
-| `POST /v6/read/chain-tokens` | `{chainId, query, limit?}` | The tokens Domino knows on Base or Arbitrum One that match a query |
+| `POST /v6/read/chain-tokens` | `{chainId, query, limit?}` | The tokens Domino knows on Base, Arbitrum One or Elysium that match a query |
 
 Header `X-Domino-Read-Contract: 1.1.0-rc.1`; `1.2.0-rc.1` adds `position-fees` ([below](#120-rc1-position-fees-and-its-window)) and changes nothing else. Through the gateway the paths are `/internal/read/v6/<route>`, with `--enable-v6` and each route named in `DOMINO_BRIDGE_V6_READS`, both off by default. The reader serves the stored routes only with `DOMINO_V2_READ=1` and the chain reads only with `DOMINO_V2_CHAIN_READS=1` (otherwise `upstream_unavailable`). The Worker forwards `/api/read/v6/<route>` for the routes its `ENABLED_V6_READS` names.
 
@@ -43,7 +43,7 @@ Header `X-Domino-Read-Contract: 1.1.0-rc.1`; `1.2.0-rc.1` adds `position-fees` (
 | `chainlink_eth_usd` | ETH (the zero address) and its wrapped token | The profile's Chainlink ETH/USD. It counts while its round is no older than the feed's heartbeat at the block read (24 h on Robinhood, 1,200 s on Base, 1,755 s on Arbitrum, 3,600 s on Ethereum, 1,200 s on OP Mainnet). On Base, Arbitrum and OP Mainnet the sequencer must also have been up for more than an hour; Ethereum has none. The round is `ethUsd`: `{feed, usd, roundId, updatedAt}` |
 | `pool` | Any other token | Its deepest pool against one of those, among the app's candidates (Uniswap's standard hookless v4 keys and the v3 tiers the factory enables), at that pool's price. It counts only when the pool releases at least US$ 10,000 of the partner as the token is sold into it until its price falls 10%. This is the featured pools' reference depth, walked tick by tick and read in the same block as the price. `pool` is that pool, `depthUsd` that depth. A pool against ETH or WETH carries its `ethUsd` |
 
-- **A chain without Chainlink.** No chain this version serves has one. A chain Chainlink does not serve (Elysium's HYPE, once its profile is enabled and a version names it) prices its native currency and wrapped token as `pool`, at the one pool its profile names against its stable (`CONSTANTS.priceProfiles[chainId].nativePool`, with `feed` and `heartbeatSeconds` null), under the same floor, never at another pool; no price there has an `ethUsd`. Without that pool qualifying, the native currency's `priceReason` is the pool's (`no_pool`, `pool_depth_below_floor`, `pool_depth_unmeasurable`, `price_read_failed`), a token only it could value says `no_qualified_price_source`, and a pool against it `no_qualified_reference`, unless the read failed.
+- **A chain without Chainlink.** Elysium (99901) has none. A chain Chainlink does not serve (Elysium's HYPE) prices its native currency and wrapped token as `pool`, at the one pool its profile names against its stable (`CONSTANTS.priceProfiles[chainId].nativePool`, with `feed` and `heartbeatSeconds` null), under the same floor, never at another pool; no price there has an `ethUsd`. Without that pool qualifying, the native currency's `priceReason` is the pool's (`no_pool`, `pool_depth_below_floor`, `pool_depth_unmeasurable`, `price_read_failed`), a token only it could value says `no_qualified_price_source`, and a pool against it `no_qualified_reference`, unless the read failed.
 - **Format.** `usd` has 18 decimal places and amounts in USD have 6, all rounded down. Every non-stable price has the `snapshot` it was read at.
 - **Reasons.** Without a price, `priceReason` says why:
 
@@ -138,7 +138,7 @@ The app spec's §6.2 reads that need the chain itself (0xdecimal's list of 5 Oct
   - Each balance has its token's `price` or `priceReason`, and `valueUsd`: the balance at that price, rounded down to the micro-dollar, when the balance, its decimals and the price are known.
   - A chain's `totalUsd` sums its balances. It exists only when the chain is `current` and every balance above zero has a value (a zero balance needs no price).
   - The answer's `totalUsd` sums the chains, only when every chain has its total (the owner, 2 Oct: no sum across chains without all of them).
-- **`chain-tokens`** (Base and Arbitrum One; Robinhood's search is read-v3's): the tokens Domino knows there. Like read-v3's search it covers known tokens only (`coverage: "known_tokens_only"`). Each token's `sources`, in this order:
+- **`chain-tokens`** (Base, Arbitrum One and Elysium; Robinhood's search is read-v3's): the tokens Domino knows there. Like read-v3's search it covers known tokens only (`coverage: "known_tokens_only"`). Each token's `sources`, in this order:
   - `profile`: the chain's own currencies;
   - `uniswap_default_list`: the Uniswap Labs Default token list, pinned in the release with its version and SHA-256 (`tokenList`), GPL-3.0;
   - `v2_activity`: tokens the V2 index read in full;

@@ -23,7 +23,9 @@ import { basename, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { gzipSync } from 'node:zlib';
 import { createRequire } from 'node:module';
-import { elysiumSwitch } from '../scripts/elysium-switch.mjs';
+import { CONSTANTS as PLAN } from '../../api-contracts/position-plan-v1/schema-data.mjs';
+import { CONSTANTS as READ_V6 } from '../../api-contracts/read-v6/schema-data.mjs';
+import { elysiumSwitch, planNames, readV6Names } from '../scripts/elysium-switch.mjs';
 
 const APP = resolve(import.meta.dirname, '..');
 const DIST = join(APP, 'dist');
@@ -109,8 +111,10 @@ test('the deployed build carries wallet sign-in and the positions collection as 
   // downloads them. What must not appear is a second entry or a second island.
   // Collection styles load with OwnedRows; transfer illustrations with the deferred funding services.
   // Neither stylesheet is linked by the initial document (checked below).
+  // Changed on purpose 2026-11-07 (the owner's Points page, Season 1): the Points page's own styles (styles/v4-points.css)
+  // come with its chunk alone, so the page's look costs no other screen anything.
   const css = assets(DIST).filter((file) => file.endsWith('.css'));
-  assert.deepEqual(css.map((file) => file.split('-')[0]).sort(), ['OwnedRows', 'index', 'screens', 'services'], css.join(', '));
+  assert.deepEqual(css.map((file) => file.split('-')[0]).sort(), ['OwnedRows', 'Points', 'index', 'screens', 'services'], css.join(', '));
   const collection = js.find((file) => file.startsWith('OwnedRows-'));
   assert.ok(collection && !staticClosure(DIST, entry).has(collection), 'the collection stays outside the entry static closure');
   const html = readFileSync(join(DIST, 'index.html'), 'utf8');
@@ -236,6 +240,9 @@ test('no connector SDK or relay, and no public RPC endpoint reached; the chain\u
     // 2026-09-26 (owner): Domino's X account, linked once from the footer (src/components/Footer.tsx X_PROFILE). A
     // navigation target in a new tab, never fetched, so no CSP directive names it (tests/render.test.mjs pins the link).
     'x.com',
+    // 2026-11-08 (owner): Domino's public source (src/lib/sourceRepo.ts), linked from the footer beside X and from the
+    // docs' Contracts page. A navigation target in a new tab, never fetched, so no CSP directive names it either.
+    'github.com',
   ]);
   // 2026-10-01 (audit C4, C1): the wallet dialog's fixed links, navigation targets in a phone's wallet app or a new
   // tab, never fetched (no CSP directive names them): MetaMask's, Coinbase Wallet's and Trust Wallet's documented links
@@ -246,6 +253,10 @@ test('no connector SDK or relay, and no public RPC endpoint reached; the chain\u
   // page's location with to know whether it is open (src/chains/elysium/mode.ts: the site, the preview alias, the local
   // development server); never fetched, and no CSP directive names them.
   for (const host of ['domino.money', 'preview.domino-app-e65.pages.dev', 'localhost']) allowedHosts.add(host);
+  // 2026-11-07 (the owner: Domino in Google, functions/_lib/seo.ts): the page's head names its canonical address and its
+  // shared picture on domino.money (admitted above), Home's structured data its vocabulary (schema.org) and sitemap.xml its
+  // namespace (www.sitemaps.org): identifiers search engines read, never fetched by the page; no CSP directive names them.
+  for (const host of ['schema.org', 'www.sitemaps.org']) allowedHosts.add(host);
   // Changed on purpose 2026-10-04 (the owner: the site runs on Domino V2, so the deployed build carries it): the V2
   // explorers' links (src/v2/explorers.ts), navigation targets in a new tab; the citations of the V2 chain profiles
   // (api-contracts/v2/chains/*.json `sources`: where each address was checked), data never rendered as a link; ox's
@@ -256,6 +267,12 @@ test('no connector SDK or relay, and no public RPC endpoint reached; the chain\u
     'developers.uniswap.org', 'github.com', 'docs.chain.link', 'docs.robinhood.com', 'reference-data-directory.vercel.app', 'developers.circle.com', 'docs.base.org', 'docs.arbitrum.io',
     'oxlib.sh', 'ipfs.io', 'arweave.net',
   ]) allowedHosts.add(host);
+  // Changed on purpose 2026-11-09 (Elysium's day 9): the citations of Elysium's mainnet profile
+  // (api-contracts/v2/chains/elysium-99901.json `sources`: Kinetiq's docs pages and Ascend's), data never rendered as a
+  // link, in whichever chunk parses the profile; never fetched, and no CSP directive names either (checked below). The
+  // first is also Elysium's explorer since checklist step 5 (src/lib/elysiumIdentity.ts ELYSIUM_EXPLORER): a link for a
+  // person's own click, as basescan.org's and arbiscan.io's are, never fetched.
+  for (const host of ['elysium.kinetiq.xyz', 'ascendlaunch.gitbook.io']) allowedHosts.add(host);
   // And the second chain's public RPC and explorer, in the section's own files only (the 'elysium section' family): the
   // RPC is named in the preview's page CSP alone (functions/_middleware.ts APP_CSP_CHAIN2), never in production's, so
   // production's page cannot reach it; the explorer is a link, never fetched. Reads only, through the section's one
@@ -347,24 +364,79 @@ test('the lockfile holds no optional connector SDK but WalletConnect\u2019s own 
  * Whether the repository turns Elysium on for these builds (the release build's own switch; the usual test builds read
  * the repository the same way), and what its rows, profile and pinned record may add then (the 2026-11-07 note below).
  */
-const ELYSIUM_LIVE = elysiumSwitch({ row: { testHooks: false, deployable: true, site: true }, appRoot: APP }).live;
+const ELYSIUM_SWITCH = elysiumSwitch({ row: { testHooks: false, deployable: true, site: true }, appRoot: APP });
+const ELYSIUM_LIVE = ELYSIUM_SWITCH.live;
 const ELYSIUM_ALLOWANCE = Object.freeze({ 'domino v2': 8_500, 'pool history chart': 500 });
+/** The forced live test build (npm run build:wallet-test-v2-elysium), where it was built. */
+const WALLET_V2_ELYSIUM = join(APP, '.wallet-test-v2-dist-elysium');
+/** A dist's first script, the one index.html loads (the initial entry). */
+const entryOf = (dir) => {
+  const match = /<script type="module" crossorigin src="\/assets\/([^"]+\.js)"/.exec(readFileSync(join(dir, 'index.html'), 'utf8'));
+  assert.ok(match, `${basename(dir)}/index.html loads one entry`);
+  return `assets/${match[1]}`;
+};
 
 // Added 2026-11-07 (ely/money: Elysium as a fourth V2 chain, switched on by itself): while the repository leaves Elysium
 // off (today), the release build and the usual test builds hold nothing of chain 99901: no id, no profile, no record, no
 // fixture, no slug, no WalletConnect chain; every Elysium branch folded away by the build's switch. The day it is live,
 // the forced build's own suites hold what it carries (tests/v2/elysium-chain.test.mjs and the browser suites).
-test('Elysium off: the release build and the usual test builds carry no chain 99901 at all', (t) => {
+// Changed on purpose 2026-11-07 (day-9 rehearsal, finding F4): on a partial Monday (rugged97's read-v6 or position-plan
+// naming 99901 while Elysium is still off), the build bundles his package data as it is, and it names the chain: read-v6's
+// chain list, enums and price profile, position-plan-v1's row (named `elysium-99901`). Those traces are then allowed in
+// the chunks that carry that data (its `priceProfiles` or `l1DataFeeSource` constants) and nowhere else; every other trace
+// stays forbidden in every file, so nothing of the app's Elysium is ever there while it is off.
+// Changed on purpose 2026-11-07 (Elysium's pre-launch, the owner's order: Elysium on the site before its network opens):
+// "Elysium before live", by the repository's stage. Before live the builds hold nothing of chain 99901, as before (a
+// partial Monday's package data aside, above); in pre-launch they also draw Home's "Open positions on" row with Elysium's
+// chip and its tag, in the initial entry alone (never a lazy chunk: the row renders in the hero's first moment), and What
+// Domino is's Elysium section, in the docs' chunk alone; off, none of either.
+const PACKAGES_NAME = readV6Names(READ_V6.chainIds) || planNames(PLAN.chains);
+const PACKAGE_TRACES = PACKAGES_NAME ? ['99901', '0x1863d', ...(planNames(PLAN.chains) ? ['elysium-99901'] : [])] : [];
+// Changed on purpose 2026-11-09 (rugged97's bridge PR #488): crosschain-v1's data names 99901 too (Relay's pin and the
+// destination enums); its chunk carries that package's `quoteLifetimeSeconds` constant.
+const PACKAGE_DATA = /priceProfiles|l1DataFeeSource|quoteLifetimeSeconds/;
+test('Elysium before live: the release build and the usual test builds carry no chain 99901 at all, and the pre-launch pieces only where they belong', (t) => {
   if (ELYSIUM_LIVE) return t.skip('the repository turns Elysium on: its id is in these builds');
+  const prelaunch = ELYSIUM_SWITCH.stage === 'prelaunch';
+  t.diagnostic(`the repository's stage: ${ELYSIUM_SWITCH.stage}`);
+  const HOME = ['Open positions on', 'Opens next', 'dm-hero-when'];
+  const DOCS = ['the next network on Domino', 'beforeElysiumOpens'];
   for (const dir of [DIST, WALLET, WALLET_V2]) {
+    const entry = entryOf(dir);
+    const found = new Map([...HOME, ...DOCS, '/chains/elysium.png'].map((trace) => [trace, []]));
     for (const { file, text } of textFiles(dir)) {
-      // Changed on purpose 2026-11-07 (review findings E/P9 and P5): Home's "Open positions on" row and the pool step's
-      // one-version leads too, which only a live build draws.
-      for (const trace of ['99901', '0x1863d', 'WHYPE', 'elysium-99901', 'Elysium explorer', '|elysium)', 'Elysium (synthetic', 'Open positions on', 'Pick two tokens and the fee', 'pick its two tokens and the fee']) {
-        assert.equal(text.includes(trace), false, `${basename(dir)}/${file} carries ${trace}`);
+      // Changed on purpose 2026-11-07 (review findings E/P9 and P5): the pool step's one-version leads too, which only a
+      // live build draws. Home's "Open positions on" row is held below, by the stage: in the entry alone in pre-launch,
+      // nowhere when off.
+      for (const trace of ['99901', '0x1863d', 'WHYPE', 'elysium-99901', 'Elysium explorer', '|elysium)', 'Elysium (synthetic', 'Pick two tokens and the fee', 'pick its two tokens and the fee']) {
+        if (PACKAGE_TRACES.includes(trace) && PACKAGE_DATA.test(text)) continue;
+        assert.equal(text.includes(trace), false, `${basename(dir)}/${file} carries ${trace}${PACKAGE_TRACES.includes(trace) ? ' outside the bundled package data of rugged97' : ''}`);
       }
+      // The stylesheet holds the tag's rule in every build (CSS has no build switch); the scripts are what draw it.
+      if (!file.endsWith('.js')) continue;
+      for (const [trace, files] of found) if (text.includes(trace)) files.push(file.replaceAll('\\', '/'));
+    }
+    const docsChunk = [...found.get('the next network on Domino')];
+    for (const trace of HOME) assert.deepEqual(found.get(trace), prelaunch ? [entry] : [], `${basename(dir)}: ${trace}`);
+    for (const trace of DOCS) assert.deepEqual(found.get(trace), prelaunch ? docsChunk : [], `${basename(dir)}: ${trace}`);
+    if (prelaunch) assert.match(docsChunk.join(), /^assets\/Docs-[\w-]+\.js$/, `${basename(dir)}: the section in the docs' chunk alone`);
+    // Elysium's mark: its path is named once, in the entry, in every build (lib/elysiumIdentity.ts ELYSIUM_MARK).
+    assert.deepEqual(found.get('/chains/elysium.png'), [entry], `${basename(dir)}: the mark's path`);
+  }
+});
+
+// Added 2026-11-07 (Elysium's pre-launch): live always wins. The forced live build (built with the repository's
+// ELYSIUM_OPENS_ON still written) carries none of the pre-launch pieces.
+test('Elysium live wins over pre-launch: the forced live build carries no pre-launch piece', (t) => {
+  if (!existsSync(join(WALLET_V2_ELYSIUM, 'index.html'))) return t.skip('the forced live build is not built here (npm run build:wallet-test-v2-elysium)');
+  for (const { file, text } of textFiles(WALLET_V2_ELYSIUM)) {
+    if (!file.endsWith('.js') && !file.endsWith('.html')) continue;
+    for (const trace of ['Opens next', 'Opens Nov', 'the next network on Domino', 'dm-hero-when', 'beforeElysiumOpens', 'It opens on {day}']) {
+      assert.equal(text.includes(trace), false, `${basename(WALLET_V2_ELYSIUM)}/${file} carries ${trace}`);
     }
   }
+  // Its own row is the live one.
+  assert.ok(textFiles(WALLET_V2_ELYSIUM).some(({ file, text }) => file.endsWith('.js') && text.includes('Open positions on')), 'the live row is there');
 });
 
 test('what every visitor downloads first, the route screens, the session/read closures and the financial screens each keep a measured budget', (t) => {
@@ -1058,8 +1130,13 @@ test('what every visitor downloads first, the route screens, the session/read cl
     assert.equal(legacyRoots.length, dir === WALLET ? 1 : 0, 'only the legacy wallet test carries the V1 sequence setup');
     const legacyCreate = js.filter((file) => /^DepositAmounts-/.test(file));
     assert.equal(legacyCreate.length, dir === WALLET ? 1 : 0, 'only the non-V2 wallet test carries the retired creation control');
-    const financialRoots = js.filter((file) => /^(Setup|Sequence|SequenceLegacy|Execution|Performance|DepositAmounts|PositionActions|HeldDeposits|PositionLab|FeeReserves)-/.test(file));
-    assert.equal(financialRoots.length, 4 + legacyCreate.length + positionRoots.length + reserveRoots.length + legacyRoots.length, 'the financial screens, actions and legacy-only controls are explicit lazy roots');
+    // Changed on purpose 2026-11-07 (the owner's Points page, Season 1): Points is a signed-in wallet screen, as Execution
+    // and Performance are (it reads the session and asks the wallet to sign a referral link: finance/points.ts), so it is
+    // a financial root and its closure the financial screens', where the session's code is counted once; measured as a
+    // route screen it would charge the whole session stack to that family a second time. Its own chunk, its styles and
+    // the points-v1 runtime are all it adds.
+    const financialRoots = js.filter((file) => /^(Setup|Sequence|SequenceLegacy|Execution|Performance|Points|DepositAmounts|PositionActions|HeldDeposits|PositionLab|FeeReserves)-/.test(file));
+    assert.equal(financialRoots.length, 5 + legacyCreate.length + positionRoots.length + reserveRoots.length + legacyRoots.length, 'the financial screens, actions and legacy-only controls are explicit lazy roots');
     assert.equal(readRoots.filter((file) => file.startsWith('index-')).length, 1, 'include the public read screen, even though Vite calls it index');
     const base = new Set([...staticClosure(dir, [...island, ...readRoots])].filter((file) => !initial.has(file)));
     const financial = new Set([...staticClosure(dir, financialRoots)].filter((file) => !initial.has(file)));
@@ -1444,7 +1521,63 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // compresses further). So where the repository's switch is live, and there only, domino v2 may take 8,500 B more
     // (1,745 + 6,221 rounded up to 0.5 kB, plus one more 0.5 kB of headroom) and the pool history chart 500 B more (its
     // own measure at the ceiling, plus 0.5 kB). No dependency, no other ceiling, and nothing while Elysium is off.
-    for (const [family, files, productionBudget] of [['initial entry', first, 243_000], ['route screens', routes, 191_000], ['session/public reads', base, 171_500], ['financial', financial, 347_000], ['pool history chart', poolChart, 13_000], ['all lazy', allLazy, 406_500], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 684_500], ['V2 fixture data', fixtureData, 13_000]]) {
+    // Changed on purpose 2026-11-07 (merge of Elysium's pre-launch with day 9 on ready/final): the pre-launch row and its
+    // opening words live in the initial entry by design (the hero draws them in its first moment). Measured with gzip 9
+    // on Windows on the merge: the initial entry 242,999 B in dist, 1 B under 243,000 B. Raise it to 243,500 B: one more
+    // 0.5 kB of headroom, as this file's rule gives. No dependency, every other ceiling unchanged.
+    // Changed on purpose 2026-11-07 (merge of ready/seo into ready/leva2: pages of their own for Google beside Elysium's
+    // pre-launch and the open-site fixes): the page's own address is read and written by the entry (src/lib/route.ts, the
+    // aliases of functions/_lib/pagePaths.ts, the tab titles of src/lib/seo/heads.ts), and every link's href is a path.
+    // Measured with gzip 9 on Windows, clean production builds: ready/seo alone (a56b97b7, on f6aa00bb) 242,970 B,
+    // ready/leva2 alone (96bcc295) 242,999 B, the merge 243,853 B in dist (.wallet-test-dist 240,540 B,
+    // .wallet-test-v2-dist 241,137 B), 353 B over 243,500 B: each branch's addition was measured on its own base. Raise
+    // only the initial entry to 244,500 B: the overshoot rounded up to 0.5 kB plus one more 0.5 kB of headroom. No
+    // dependency, every other ceiling unchanged (domino v2 684,086 B in dist, inside 684,500 B).
+    // Changed on purpose 2026-11-07 (the owner: Domino in Google, integ-logs/seo/PROPOSAL.md; ready/seo with its review's
+    // fixes). Every visitor's first download now carries the page's own address (src/lib/route.ts: the address read from
+    // the path, a link from before rewritten in place, the site's links moved without a reload, an address naming another
+    // host left alone), Home's tab title and the boot script's path read. Measured with gzip 9 on Windows, clean builds of
+    // all three directories against main f6aa00bb (242,185 B in dist): the initial entry 243,039 B in dist (+854 B;
+    // .wallet-test-v2-dist 240,317 B), 39 B over 243,000 B; and with Elysium on, the forced builds against
+    // .wallet-test-v2-dist, +95 B (.wallet-test-v2-dist-elysium 240,412 B) and +106 B (-funds 240,423 B), so the release
+    // build on day 9 about 243,145 B, 145 B over. Raise only the initial entry to 244,000 B: that overshoot rounded up to
+    // 0.5 kB plus one more 0.5 kB of headroom. No dependency, every other ceiling unchanged.
+    // Merged 2026-11-07 (ready/seo's review fixes into ready/leva2): ready/seo alone raised the entry to 244,000 B on
+    // f6aa00bb; the merge keeps the larger, 244,500 B, which also holds day 9's Elysium-on addition (about 106 B).
+    // Changed on purpose 2026-11-07 (the owner's Points page, Season 1, Stage 1; integ-logs/points/PROPOSAL.md). Every
+    // visitor's first download carries what makes the page reachable and a referral link work on any page: the route row,
+    // the menu's Points with its star, the `?ref=` capture (src/points/capture.ts) and the router's writer that takes `ref`
+    // out of the address (src/lib/route.ts dropSearchParam), and the lazy screen's import with its files' list. The screen,
+    // its styles, its transport and the points-v1 runtime are one chunk of their own, a financial root (above). Measured
+    // with gzip 9 on Windows, clean builds of all three directories against ready/points' base (b671cdcb, built the same
+    // way: dist 243,936 B, .wallet-test-dist 240,621 B, .wallet-test-v2-dist 241,215 B): the initial entry 244,398 B in dist
+    // (+462 B; .wallet-test-dist 241,050 B, .wallet-test-v2-dist 241,659 B), 102 B under 244,500 B, but day 9's Elysium-on
+    // addition (about 106 B) would take the release build about 4 B over. Raise the initial entry to 245,000 B: that overshoot rounded up to 0.5 kB. The all-lazy family takes the
+    // Points chunk (10,220 B gzip in dist, its stylesheet 3,859 B beside it): dist 338,530 B -> 348,864 B, inside 406,500 B,
+    // but the V1 wallet-test build, whose all lazy had 439 B of its test-only allowance left, goes to 419,375 B, 9,875 B over
+    // 409,500 B. Raise all lazy to
+    // 417,000 B: that overshoot rounded up to 0.5 kB plus one more 0.5 kB of headroom. No dependency, every other ceiling
+    // unchanged (financial 272,632 B in dist and 348,561 B in .wallet-test-dist, inside 347,000 B and its 350,000 B).
+    // Changed on purpose 2026-11-08 (the Points page's motion, the owner's animated prototype of 7 Nov: PROPOSAL.md §11,
+    // src/points/motion.ts). The moments are Web Animations in the Points chunk alone (lazy, a financial root), which goes
+    // from 10,230 B to 14,810 B gzip in dist (its stylesheet 3,890 -> 4,020 B); the initial entry does not move (244,407 B
+    // in dist, 593 B under 245,000 B). Measured with gzip 9 on Windows, clean builds of all three directories on
+    // ready/points-main: dist financial 277,222 B and all lazy 353,453 B, far inside; .wallet-test-v2-dist 278,833 B and
+    // 355,272 B; but the V1 wallet-test build, the tightest, goes to financial 353,251 B (3,251 B over its 350,000 B) and
+    // all lazy 424,088 B (4,088 B over 420,000 B). Raise financial to 351,000 B and all lazy to 422,000 B: each overshoot
+    // rounded up to 0.5 kB plus one more 0.5 kB of headroom. No dependency, every other ceiling unchanged.
+    // Changed on purpose 2026-11-09 (core flows, one PR of four areas after the friends' tests on the live site): close a
+    // position whatever its automation (src/v2in/position/CloseSteps.tsx, the healing S1 gate), nothing loads forever
+    // (src/lib/readWait.ts, src/v2in/lists/newPositionWait.ts, the wallet reconnect and fee-state deadlines, the token
+    // page's stalled acquisitions), a sentence for each failure (src/v2/errors.ts walletNetworkFailure and the plan's
+    // tokens) and Your APR's dust floor and batched ledger re-asks (src/lib/positionApr.ts, src/lib/fees/store.ts).
+    // Measured with gzip 9 on Windows, clean builds of the merged branch against main d1538069 built the same way
+    // (dist initial entry 244,923 B, domino v2 684,059 B): dist initial entry 245,196 B (+273 B, 196 B over 245,000 B),
+    // dist domino v2 692,766 B (+8,707 B: close +3,782, errors +2,642, loading +2,098, APR +185; 8,266 B over 684,500 B),
+    // .wallet-test-v2-dist session/public reads 171,842 B (342 B over 171,500 B). Raise the initial entry to 246,000 B,
+    // session/public reads to 172,500 B and domino v2 to 694,000 B: each overshoot rounded up to 0.5 kB plus about one
+    // more 0.5 kB of headroom. No dependency, every other ceiling unchanged.
+    for (const [family, files, productionBudget] of [['initial entry', first, 246_000], ['route screens', routes, 191_000], ['session/public reads', base, 172_500], ['financial', financial, 351_000], ['pool history chart', poolChart, 13_000], ['all lazy', allLazy, 422_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 7_000], ['domino v2', v2, 694_000], ['V2 fixture data', fixtureData, 13_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       const testOnly = dir !== DIST && (family === 'financial' || family === 'all lazy');
       const budget = productionBudget + (testOnly ? 3_000 : 0) + (ELYSIUM_LIVE ? ELYSIUM_ALLOWANCE[family] ?? 0 : 0);

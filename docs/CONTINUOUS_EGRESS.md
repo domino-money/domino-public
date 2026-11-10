@@ -13,7 +13,7 @@ only to the gateway — so a listener behind `vm-session` or `vm-onboarding` is
 unreachable from the connector today, whatever the Cloudflare route says.
 
 `scripts/staging/continuous_egress_policy.py` renders the whole policy for all
-seventeen production identities, from operator pins on stdin, together with the
+eighteen production identities, from operator pins on stdin, together with the
 per-unit drop-in, hosts file and target that activate a unit behind it. A
 family gets its external destinations, and the tunnel a way to reach its
 listener, only when the family is named in `enabled`. The three layers cannot
@@ -45,6 +45,7 @@ rendered only for an enabled role and only for the hostnames actually pinned.
 | `v2-automation` | — | rpc; chains with `v2Chains`; the node's proxy with `nodeLoopbackReads` | the V2 automation (`install_v2_automation.py`), one instance of `domino-v2-automation@.service` per chain, which binds `v2-automation.hosts` itself. Optional: a host without the identity renders no chain for it |
 | `crosschain` | 8910 | rpc, jwks, bridges; chains with `v2Chains` | the S2 crosschain listener (`install_crosschain.py`): `EoaChecker` and the Across fee proof on Robinhood (and on Base and Arbitrum through `chains`); assertion verification; Relay and Across quotes and status. Optional: a host without the identity renders no chain for it |
 | `monitor` | — | rpc, telegram; chains with `v2Chains`; the node's proxy with `nodeLoopbackReads` | the production monitor (`install_monitor.py`, [OPS_MONITOR.md](OPS_MONITOR.md)): balances, the node's head and the registry's logs; its alerts. Its own unit binds `monitor.hosts` and is wanted at boot by itself, outside the target. Optional: a host without the identity renders no chain for it |
+| `points` | 8912 | rpc, jwks | season 1's points listener (`install_points_api.py`, [points/POINTS.md](points/POINTS.md) part 3): `EoaChecker`; assertion verification. Its points and links are the database's. Optional: a host without the identity renders no chain for it |
 
 Classes: `rpc` is `robinhood-mainnet.g.alchemy.com` or the private
 `rpc.domino.money` route (Robinhood's public RPC is not admitted);
@@ -140,9 +141,9 @@ collecting) grants `balance_chains` to the reader alone and requires it in
 `enabled` (`balance_chains_require_the_reader`); it changes the reader's set,
 hosts file and drop-in, and the pin digest, nothing else.
 
-`identities` names all seventeen roles exactly. `admin` may be `null`, and so
-may `position-plan`, `v2-automation`, `crosschain` and `monitor` until their
-installers create the accounts; an
+`identities` names all eighteen roles exactly. `admin` may be `null`, and so
+may `position-plan`, `v2-automation`, `crosschain`, `monitor` and `points` until
+their installers create the accounts; an
 enabled role with a `null` identity is refused (`enabled_role_without_identity`).
 Roles with a service unit must name `domino-<role>.service` and its system-slice
 cgroup; `write`, `operator`, `admin`, `v2-automation` and `monitor` must name none. `hosts` are the

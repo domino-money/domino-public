@@ -240,7 +240,7 @@ async function search(page, address) {
   await combobox.fill(address);
   assert.equal(await combobox.inputValue(), address);
   await page.locator(`[data-token-option="${address.toLowerCase()}"]`).click();
-  await page.waitForFunction((wire) => location.hash === `#/markets/${wire}`, address);
+  await page.waitForFunction((wire) => location.pathname + location.hash === `/markets/${wire}`, address);
 }
 
 test('the landing and popup reuse one listed pool, never placeholder ids or unrelated activity', async () => {
@@ -292,7 +292,7 @@ test('Markets reads the searched token, then its pools and the catalogue only on
     await page.locator(`[data-token-option="${TOKEN}"]`).click();
     const card = page.locator('[data-token-lookup="ok"]');
     await card.waitFor({ timeout: 30_000 });
-    assert.equal(await page.evaluate(() => location.hash), `#/markets/${TOKEN}`, 'the searched token is the link');
+    assert.equal(await page.evaluate(() => location.pathname + location.hash), `/markets/${TOKEN}`, 'the searched token is the link');
     // Where and when the token was read is the row's title and the card's data, never a caption on the card.
     assert.doesNotMatch(await card.innerText(), /Read at block|Robinhood Chain/);
     assert.equal(await card.getAttribute('data-token-block'), '700');
@@ -332,7 +332,7 @@ test('Markets reads the searched token, then its pools and the catalogue only on
 
     // The pool row opens its page, which starts from a verified read of that one id, then the page's lean market read.
     await pool.locator('[data-open-pool]').click();
-    await page.waitForFunction((hash) => location.hash === hash, `#/pool/${POOL}/${TOKEN}`);
+    await page.waitForFunction((hash) => location.pathname + location.hash === hash, `/pool/${POOL}/${TOKEN}`);
     const workspace = page.locator(`[data-pool-workspace="${POOL}"]`);
     await workspace.waitFor({ timeout: 30_000 });
     // Changed on purpose (2026-09-27, round 6, the pool page for beginners): the verification is a row of Details, the
@@ -352,7 +352,7 @@ test('Markets reads the searched token, then its pools and the catalogue only on
     // Changed on purpose (round 6, 2026-09-27): New position's link names the token this page verified the pool with, so
     // New position verifies it the same way (a pool of neither list may not hold USDG). Its name is the pool page's own,
     // Create a position (r6/poolpage and r6/newposition merged, 2026-09-28).
-    assert.equal(await page.locator('main').getByRole('link', { name: 'Create a position' }).getAttribute('href'), `#/new/${POOL}/${TOKEN}`);
+    assert.equal(await page.locator('main').getByRole('link', { name: 'Create a position' }).getAttribute('href'), `/new/${POOL}/${TOKEN}`);
     // Every optional route this Worker lists is read by the page itself, one after another: its history, its activity, its positions.
     await page.locator('[data-pool-positions]:not([data-pool-positions="loading"])').waitFor({ timeout: 30_000 });
     const forbidden = /sign|approve|connect|deposit|swap|quote|mint|confirm|execute|buy|sell/i;
@@ -388,7 +388,7 @@ test('Markets reads the searched token, then its pools and the catalogue only on
 
     // Back on Markets with no token in the link, nothing of the search remains; a new search starts from its own token reads.
     await page.locator('nav[aria-label="Breadcrumb"]').getByRole('link', { name: 'Markets' }).click();
-    await page.waitForFunction(() => location.hash === '#/markets');
+    await page.waitForFunction(() => location.pathname + location.hash === '/markets');
     await page.getByRole('heading', { name: 'Markets', exact: true }).waitFor();
     assert.equal(await page.locator('[data-token-lookup], [data-pool-option], [data-catalogue-item]').count(), 0, 'leaving the search discards its findings');
     const before = posts().length;
@@ -1573,3 +1573,37 @@ test('a later visit replaces the remembered total only after new holdings receiv
 // handle the stub sent, and that the bridge hands the gateway those same bytes.
 // The portfolio sends a different request shape (it carries `tokens`), so the
 // rewrite is not a selector swap and was not folded into this change.
+
+// Added 2026-11-09 (core flows, the owner: nothing may load forever). A Wallet card whose list failed with nothing remembered
+// said nothing at all, for good (no rows, no total, no line). After 20 s (src/lib/readWait.ts STUCK_MS) it says what to do,
+// where "No tokens listed." stands; the list is still read again by itself.
+test('a Wallet card whose list fails with nothing remembered says what to do after twenty seconds', async () => {
+  overrideReply = async (route) => (route === 'wallet-assets' ? { status: 502, text: '{"error":"upstream_invalid_response"}' } : null);
+  try {
+    const { context, page, errors } = await visit(`/portfolio/${OWNER}`, async (ctx) => {
+      await provider([], twoPagePrices)(ctx);
+      await ctx.clock.install();
+    });
+    try {
+      const empty = page.locator('[data-portfolio-tokens] [data-wallet-empty="failed"]');
+      await empty.waitFor({ state: 'attached', timeout: 30_000 });
+      assert.equal(await empty.textContent(), '', 'nothing said while it is first asked again');
+      await page.clock.fastForward(21_000);
+      await page.waitForFunction(() => document.querySelector('[data-wallet-empty="failed"]')?.textContent === 'Reload the page to see your tokens.');
+      assert.doesNotMatch(await page.locator('[data-portfolio-tokens]').innerText(), /couldn’t|could not|unavailable|Try again/i);
+      const dir = process.env.DOMINO_POSITION_SHOTS;
+      if (dir) {
+        const { mkdirSync } = await import('node:fs');
+        mkdirSync(dir, { recursive: true });
+        await page.screenshot({ path: join(dir, 'core-loading-wallet-stuck-desktop.png'), animations: 'disabled' });
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.screenshot({ path: join(dir, 'core-loading-wallet-stuck-phone.png'), fullPage: true, animations: 'disabled' });
+      }
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  } finally {
+    overrideReply = null;
+  }
+});

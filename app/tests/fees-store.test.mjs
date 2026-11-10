@@ -19,7 +19,8 @@ import { txOf } from './support/fees/ledger-chain.mjs';
 import { feesDefault } from './support/fees/stub.mjs';
 
 const require = createRequire(import.meta.url);
-const { AFTER_ACTION_MS, LEDGER_WAIT_MS, MAX_READING, RELEASE_MS, RETRY_MS, createFeesStore } = require('../.test-build/app/src/lib/fees/store.js');
+const { AFTER_ACTION_MS, LEDGER_WAIT_MS, LIST_LOADING_MS, MAX_READING, RELEASE_MS, RETRY_MS, createFeesStore } = require('../.test-build/app/src/lib/fees/store.js');
+const { rowAprs } = require('../.test-build/app/src/components/positions/listApr.js');
 const { LEDGER_READING_MS, STATE_REFRESH_MS, LIST_STATE_REFRESH_MS } = require('../.test-build/app/src/lib/fees/constants.js');
 const { createHistoryCache } = require('../.test-build/app/src/lib/fees/historyCache.js');
 const { createReadings } = require('../.test-build/app/src/lib/fees/readings.js');
@@ -332,6 +333,65 @@ test('a ledger too large for one answer: Fees ready to collect only, for the vis
   await until(() => other.store.view('42').phase === 'unavailable', 'unavailable');
   assert.equal(other.store.view('42').reason, 'not_found');
   gone();
+});
+
+// Added on purpose 2026-11-09 (core flows, the owner: nothing may be slow): the ids still `reading` were each asked again
+// alone, each on its own timer, after the first batch answered.
+test('the ids still `reading` are asked again together: one timer, one request for them all', async () => {
+  const OTHER = '3325114';
+  const both = (one) => [one, { ...one, tokenId: OTHER }];
+  const svc = service({ state: { ...ANSWERS.state, positions: both(ANSWERS.state.positions[0]) }, ledger: { ...ANSWERS.ledger, positions: both(ANSWERS.ledger.positions[0]) } });
+  const { store, time } = storeWith({ svc });
+  svc.scripted.push({ ok: true, value: { ...READING, positions: both(READING.positions[0]) }, bytes: 10 });
+  const list = store.subscribeHistory([ID, OTHER], 'list', () => {});
+  const due = () => time.pending.filter((entry) => !entry.cancelled && entry.kind === 'later' && entry.ms === LEDGER_READING_MS);
+  await until(() => svc.ledgers.length === 1 && due().length > 0, 'the reading retry');
+  assert.deepEqual([...svc.ledgers[0].ids].sort(), [ID, OTHER].sort());
+  assert.equal(due().length, 1, 'one timer for both');
+  assert.equal(time.fire('later', LEDGER_READING_MS), 1);
+  await until(() => store.view(ID).phase === 'verified' && store.view(OTHER).phase === 'verified', 'both verified');
+  assert.equal(svc.ledgers.length, 2);
+  assert.deepEqual([...svc.ledgers[1].ids].sort(), [ID, OTHER].sort(), 'both in one request');
+  list();
+});
+
+test('a screen that leaves takes its ids out of the shared wait; the ids another screen still shows are asked again', async () => {
+  const OTHER = '3325114';
+  const both = (one) => [one, { ...one, tokenId: OTHER }];
+  const svc = service({ state: { ...ANSWERS.state, positions: both(ANSWERS.state.positions[0]) }, ledger: { ...ANSWERS.ledger, positions: both(ANSWERS.ledger.positions[0]) } });
+  const { store, time } = storeWith({ svc });
+  svc.scripted.push({ ok: true, value: { ...READING, positions: both(READING.positions[0]) }, bytes: 10 });
+  const page = store.subscribeHistory([ID], 'page', () => {});
+  const list = store.subscribeHistory([OTHER], 'list', () => {});
+  await until(() => svc.ledgers.length === 1 && time.pending.some((entry) => !entry.cancelled && entry.kind === 'later' && entry.ms === LEDGER_READING_MS), 'the reading retry');
+  list();
+  time.fire('timer', RELEASE_MS);
+  assert.equal(time.fire('later', LEDGER_READING_MS), 1);
+  await until(() => store.view(ID).phase === 'verified', 'the page’s verified');
+  assert.deepEqual(svc.ledgers[1].ids, [ID], 'only the id still shown');
+  page();
+});
+
+// Added on purpose 2026-11-09 (core flows, the owner: nothing may load forever): a list row's APR was a skeleton for as long
+// as its ledger was read (up to MAX_READING answers).
+test('a list row’s APR is a skeleton for LIST_LOADING_MS, then a dash while its ledger is read on; the rate takes its place once read', async () => {
+  const { store, svc, time } = storeWith();
+  svc.scripted.push({ ok: true, value: READING, bytes: 10 });
+  const list = store.subscribeHistory([ID], 'list', () => {});
+  await until(() => svc.ledgers.length === 1 && time.pending.some((entry) => !entry.cancelled && entry.kind === 'later' && entry.ms === LEDGER_READING_MS), 'the reading retry');
+  const cell = () => rowAprs([ID], store.views([ID])).get(ID);
+  assert.equal(store.view(ID).phase, 'loading');
+  assert.equal(cell().kind, 'loading', 'a skeleton at first');
+  assert.equal(LIST_LOADING_MS, 5_000);
+  assert.equal(time.fire('timer', LIST_LOADING_MS), 1, 'one wait, however many loading views it went through');
+  assert.deepEqual([store.view(ID).phase, store.view(ID).waited], ['loading', true]);
+  assert.deepEqual(cell(), { kind: 'missing', words: 'Not measured yet', short: 'reading' }, 'a dash, no notice');
+  // The read goes on, silently: the next answer draws the rate in the dash's place.
+  assert.equal(time.fire('later', LEDGER_READING_MS), 1);
+  await until(() => store.view(ID).phase === 'verified', 'verified');
+  assert.equal(cell().kind, 'rate');
+  assert.equal(time.pending.filter((entry) => !entry.cancelled && entry.kind === 'timer' && entry.ms === LIST_LOADING_MS).length, 0, 'no wait left');
+  list();
 });
 
 test('a ledger still being read: the card loads, the ledger is asked again in a moment, and verifies once read through', async () => {

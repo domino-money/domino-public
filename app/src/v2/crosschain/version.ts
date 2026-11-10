@@ -46,7 +46,11 @@ export const CROSSCHAIN_V1_PIN = Object.freeze({
   // Changed on purpose (data) 2026-11-05: crosschain_common.py, crosschain_config.py, crosschain_across.py and
   // crosschain_fees.py: a chain profile naming no bridge provider is no destination (S2 off there), and the fee
   // proof's chains follow the destinations (still 4663, 8453, 42161); no route, schema, reason code or version moved.
-  manifestSha256: 'a31cda1129cd4aca8166ca209fdb25858c6e908a79d719ac2a1422151c5f4104',
+  // Changed on purpose (data) 2026-11-09 (0xdecimal's item 11, the owner's parity): Elysium (99901) is a destination
+  // Relay alone serves, of its USDC alone (CONSTANTS.destinations, the destination chain enums), and an origin pinned
+  // for Relay (CONSTANTS.chains); Across' candidate there is `no_route` / `destination_not_served` and its listing
+  // `unavailable` with that reason. Same version; no other route, schema or reason code moved.
+  manifestSha256: '98173920f836b97dc7f7866de27281d393ca1fe934e7708c186ee9a84ff630bb',
   /** The manifest's own `status`: the service is built but off until the owner's keys and the Worker route exist. */
   status: 'candidate_disabled_pending_keys_and_worker',
 } as const)

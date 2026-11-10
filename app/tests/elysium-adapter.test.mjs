@@ -282,6 +282,7 @@ test('a pool or position the deployment does not have is gone for good; each scr
   assert.ok(src('ElysiumSection.tsx').indexOf('useRouteTitle(') < src('ElysiumSection.tsx').indexOf("if (mode === 'off' || !source) return"));
   assert.match(src('PoolPage.tsx'), /if \(!reference \|\| read\.phase === 'gone'\) \{/);
   assert.match(src('PositionPage.tsx'), /if \(!reference \|\| read\.phase === 'gone'\) \{/);
-  assert.match(src('NewPosition.tsx'), /setChosen\(null\)\s+if \(param\) window\.location\.hash = sectionHref\(chain, 'new'\)/);
+  // Changed on purpose 2026-11-07 (pages of their own, src/lib/route.ts): the route is moved through the route module.
+  assert.match(src('NewPosition.tsx'), /setChosen\(null\)\s+if \(param\) navigate\(sectionHref\(chain, 'new'\)\)/);
   assert.match(src('useRead.ts'), /if \(goneError\(error\)\) \{\s+setState\(\{ key, read: \{ phase: 'gone', value: null, problem: problemOf\(error\) \} \}\)\s+return\s/, 'no retry is scheduled');
 });

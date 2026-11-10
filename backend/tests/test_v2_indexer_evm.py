@@ -49,6 +49,7 @@ from v2_index_fixtures import local_endpoints  # noqa: E402
 from v2_index_store import V2Store  # noqa: E402
 from v2_indexer import V2Indexer  # noqa: E402
 from v2_manifest import checked_deployment  # noqa: E402
+from v2_read_contract import CHAIN_IDS  # noqa: E402
 from v2_read_service import V2ReadService  # noqa: E402
 from v2_local_chain import LocalChain, calldata, deploy_v2  # noqa: E402
 
@@ -465,7 +466,7 @@ class IndexedJourneyTests(unittest.TestCase):
                          {'status': 'read', 'block': head, 'subjects': 2})
         body = V2ReadService(self.store, clock=self.j.now).portfolio(self.j.owner)
         reports = {c['chainId']: c['waitingReasons']['status'] for c in body['chains']}
-        self.assertEqual(reports, {4663: 'not_configured', 8453: 'reporting', 42161: 'not_configured'})
+        self.assertEqual(reports, {chain: 'reporting' if chain == 8453 else 'not_configured' for chain in CHAIN_IDS})
         vault, = body['vaults']
         self.assertEqual((vault['waiting']['reason'], vault['waiting']['error'], vault['waiting']['since'],
                           vault['waiting']['sinceBlock'], vault['waiting']['checkedBlock']),

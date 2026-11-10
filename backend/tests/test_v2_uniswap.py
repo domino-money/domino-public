@@ -165,7 +165,7 @@ class RefTests(unittest.TestCase):
         registry = load_registry()
         for chain in registry.chains:
             pools = [r for r in chain.verification.contracts if r.name.startswith('v3 pool ')]
-            self.assertTrue(pools or chain.chainId == 42161)
+            self.assertTrue(pools or chain.chainId == 42161 or chain.uniswap.v3 is None)  # Elysium: no v3
             for record in pools:
                 fee = int(record.name.split('fee ')[1].split(' ')[0])
                 weth, stable = chain.wrappedNative.address, chain.chargeCurrencies[0].address

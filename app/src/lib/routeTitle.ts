@@ -1,11 +1,13 @@
 import { useEffect } from 'react'
+import { currentRoute } from './route'
 
 /**
  * Each screen names its tab, and a screen reader hears where it arrived (audit E11, 2026-10-01). Every route was titled
  * "Domino" (only the docs named theirs), so tabs, history and bookmarks all read the same; and a hash route changes no
  * document, so a screen reader was told nothing when the page changed under it.
  *
- * The tab: "Markets · Domino", "ETH / USDG · Domino", "Position #4101 · Domino"; Home is "Domino". The name goes back
+ * The tab: "Markets · Domino", "ETH / USDG · Domino", "Position #4101 · Domino"; Home is "Domino · Earn fees. Keep
+ * control." since 2026-11-07 (the owner: Domino in Google, lib/seo/heads.ts HOME_TITLE). The name goes back
  * when the screen goes. The announcement: once the first screen is on show, every later move to another route says the
  * new tab's name in a polite live region kept outside the app's root, made once. A screen that renames itself on the
  * same route (a pool's pair arriving) renames the tab and says nothing.
@@ -52,7 +54,7 @@ export function useTabTitle(full: string) {
     if (typeof document === 'undefined') return
     const before = document.title
     document.title = full
-    const route = routeOf(window.location.hash)
+    const route = routeOf(currentRoute())
     // The first screen of a visit is the page itself: the browser reads its title already.
     if (announcedRoute !== null && announcedRoute !== route) announce(full)
     announcedRoute = route

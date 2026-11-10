@@ -76,15 +76,20 @@ test('group rejects duplicate, too many, closed, hooked, foreign and vault-custo
   await assert.rejects(custody.prepareCloseMany(4, [101n, 102n], 50, GAS), /position_vault_successor/);
 });
 
-test('armed root warning must be acknowledged, custody and liquidity are rechecked before wallet confirmation', async () => {
+// Changed on purpose 2026-11-09 (the core-flows fix; the owner: closing positions with automation must be easy): the armed
+// root is still named (the dialog's one line) and no acknowledgement is asked; custody and liquidity are still read again.
+test('armed root is named, no acknowledgement is asked, custody and liquidity are rechecked before wallet confirmation', async () => {
   const { chain, client } = setup({ v4: [{ ...v4(101), approved: VAULT }, v4(102)] }, async (_, address) => address === VAULT, async () => ({ armed: true }));
   const prepared = await client.prepareCloseMany(4, [101n, 102n], 50, GAS);
   assert.deepEqual(prepared.pausesAutomation, [VAULT]);
-  await assert.rejects(client.sendCloseMany(prepared, true), /automation_pause_unacknowledged/);
   chain.v4Position(102).liquidity += 1n;
-  await assert.rejects(client.sendCloseMany(prepared, true, true), /wallet_review_required/);
+  await assert.rejects(client.sendCloseMany(prepared, true), /wallet_review_required/);
   assert.equal(chain.sends.length, 0);
   assert.equal(client.inFlight(4, 101n), null);
+  // Read again, as it stands: sent with no acknowledgement.
+  const fresh = await client.prepareCloseMany(4, [101n, 102n], 50, GAS);
+  await client.sendCloseMany(fresh, true);
+  assert.equal(chain.sends.length, 1);
 });
 
 test('confirmed refusal releases every NFT; an unknown wallet outcome holds every NFT and cannot be sent again', async () => {

@@ -5,7 +5,7 @@
 > measurements are preserved; this address is not a live endpoint.
 > Matching JSONL rows carry `endpointRedacted: true`.
 
-After the #315 deploy, the node proxy on `domino-prod-02` (`127.0.0.1:18547`,
+After the #315 deploy, the node proxy on `production-services-host` (`127.0.0.1:18547`,
 HAProxy) added about 45 ms to most calls, so the reader went back to
 rpc.domino.money first. This is the read-only investigation of that stall and its
 fix. The fix was applied on 4 Oct 2026 with the owner's go (see Outcome); the

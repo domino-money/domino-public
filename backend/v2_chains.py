@@ -19,7 +19,8 @@ The native currency's USD (`gasPrice`) is one of two sources, never both:
   CREATE2 address or a hookless v4 pool by its id, qualified as any pool price
   is (v2_chain_reads: its depth within the band reaches the floor).
 A profile with no bridge provider is a chain S2 does not serve
-(crosschain_common); one that names any names both.
+(crosschain_common); one that names any names only providers pinned on that
+chain (crosschain_pins.json): Relay and Across, or Relay alone on Elysium.
 
 A chain may have one Uniswap version only (Elysium's mainnet shows v4 alone,
 6 Nov 2026): the other is `null` in its profile, `dexes` names the versions it
@@ -243,7 +244,7 @@ def _v4_pool_id(currency0, currency1, fee, spacing):
 
 
 class Bridge(Frozen):
-    # No provider: S2 does not serve the chain. One that names any names both (crosschain_common).
+    # No provider: S2 does not serve the chain. Each named provider must be pinned on it (crosschain_common).
     providers: Annotated[tuple[Literal['relay', 'across'], ...], Field(min_length=0, max_length=2)]
     appFeeBps: Annotated[StrictInt, Field(ge=0, le=10000)]
 

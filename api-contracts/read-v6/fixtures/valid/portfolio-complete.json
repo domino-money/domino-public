@@ -92,6 +92,37 @@
         "status": "not_configured",
         "timestamp": null
       }
+    },
+    {
+      "automationHalted": false,
+      "chainId": 99901,
+      "deployment": {
+        "manifestSha256": "000000000000000000000000000000000000000000000000000000000001863d",
+        "startBlock": 100
+      },
+      "finalizedThrough": null,
+      "head": {
+        "number": 100006,
+        "observedAt": 1790431232,
+        "timestamp": 1790431233
+      },
+      "indexedThrough": {
+        "hash": "0x7a771af530ed01124b6d2395ad69df3bd6317e9d75eabd9e2412128f983f9446",
+        "number": 100001,
+        "timestamp": 1790431229
+      },
+      "lagBlocks": 5,
+      "lagSeconds": 4,
+      "lastError": null,
+      "operatorsAdmitted": 1,
+      "reason": null,
+      "status": "current",
+      "waitingReasons": {
+        "ageSeconds": null,
+        "block": null,
+        "status": "not_configured",
+        "timestamp": null
+      }
     }
   ],
   "contractVersion": "1.1.0-rc.1",

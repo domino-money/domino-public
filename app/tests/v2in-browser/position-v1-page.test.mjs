@@ -220,7 +220,7 @@ test('(h) V1\'s own page in preview: V1\'s actions row keeps its own actions and
     await control.waitFor({ timeout: 30_000 });
     assert.equal(await control.count(), 1);
     assert.equal(await control.innerText(), 'Set up automation');
-    assert.equal(await control.getAttribute('href'), '#/sequence/3135288');
+    assert.equal(await control.getAttribute('href'), '/sequence/3135288');
     await actions.locator('[data-position-action="close"]').waitFor({ timeout: 15_000 });
     const more = actions.locator('[data-position-v2-actions="preview"] [data-position-v2-more]');
     await more.waitFor({ timeout: 30_000 });
@@ -352,8 +352,10 @@ test('(h) V1\'s own page in preview: V1\'s actions row keeps its own actions and
     await exit.locator('[data-position-continue="exit"]').click();
     await exit.locator('[data-position-direct="ready"]').waitFor({ timeout: 30_000 });
     assert.match(await text(exit.locator('[data-position-receive="close"]')), /^You receive 0\.99\d* USDG 325\.70\d* UFG At least 0\.99\d* USDG 32\d\.\d+ UFG Domino fee No Domino fee Network fee Up to [\d.]+ ETH$/, 'principal and fees as the chain has them now');
-    assert.equal(await text(exit.locator('[data-position-locked]')), LOCKED);
-    assert.equal(await exit.locator('[data-position-send], [data-position-request]').count(), 0, 'no wallet button in the preview; the chain\'s figures, not the request');
+    // Changed on purpose 2026-11-09 (the core-flows fix, item b): a direct exit needs no plan, so the planner's preview no
+    // longer locks it: its own wallet button over the chain's figures (nothing is pressed here, so nothing is sent).
+    assert.equal(await exit.locator('[data-position-locked], [data-position-request]').count(), 0, 'never the planner\'s sentence on a direct exit');
+    assert.equal(await exit.locator('[data-position-send="close"]').count(), 1);
     await inspectDialog(exit, 'withdraw-both-review');
     await page.screenshot({ path: join(shots(), 'position-v2-v1-page-withdraw.png') });
     await page.keyboard.press('Escape');

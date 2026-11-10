@@ -108,7 +108,7 @@ To give the preview the private families (after the launch, by the owner):
 3. **In `app/wrangler.toml` under `[env.preview]`:** one `[[env.preview.services]]`
    table per family, binding its production binding name (`SESSION_BRIDGE`,
    `ONBOARDING_BRIDGE`, `DEPOSIT_BRIDGE`, `PERFORMANCE_BRIDGE`,
-   `EXECUTION_BRIDGE`, `POSITION_PLAN_BRIDGE`, `CROSSCHAIN_BRIDGE`) to the
+   `EXECUTION_BRIDGE`, `POSITION_PLAN_BRIDGE`, `CROSSCHAIN_BRIDGE`, `POINTS_BRIDGE`) to the
    Worker of step 2, and the family's name added to `PREVIEW_FAMILIES` (for
    example `"setup,session,position-plan,crosschain"`).
    `tests/forwarder.test.mjs` pins this file, so the change is reviewed with it.

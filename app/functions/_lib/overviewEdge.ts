@@ -109,14 +109,32 @@ export const OVERVIEW_ERROR_WAIT_MS = 5_000
 
 interface Asked { token?: string | null; poolIds?: string[]; afterPoolId?: string | null; revision?: number | null; limit?: number }
 
-/** The question, in one spelling: the token, the pools in their order, the page and the limit, lowercase where they are hex. */
+/** read-v3's overview `limit` when a request names none (its request schema's default). */
+export const OVERVIEW_DEFAULT_LIMIT = 24
+
+/**
+ * The question, in one spelling: the token, the pools in their order, the page and the limit, lowercase where they are hex.
+ *
+ * Changed on purpose 2026-11-07 (edge hardening): spellings the producer answers alike are one question, so a visitor
+ * cannot make each spelling of the app's own question one more read of the VM:
+ *   - pools asked by id: the limit is no part of it. The producer lists exactly the pools asked, in their order, whatever
+ *     the limit (backend/public_observations.py overview: it bounds a token's page only; the request's own rule already
+ *     holds the list within it), and no screen sends one (lib/read/marketsProvider.ts,
+ *     components/read/screens/PoolWorkspace.tsx and screens/PoolDetail.tsx ask `{ poolIds }` alone). Every answer served
+ *     from the key is still checked against the very request (read-v3's matchesRequest, publicEdge.ts);
+ *   - a token's pages: a limit left out is the schema's default, 24, the one limit the app sends
+ *     (components/read/screens/StoredTokenExplorer.tsx).
+ * Nothing else is joined. The revision stays part of it, so a request naming one the catalogue is not at (a refusal) never
+ * leads a miss real visitors' requests would wait on.
+ */
 export function overviewQuestion(asked: Asked): string {
+  const token = asked.token?.toLowerCase() ?? null
   return JSON.stringify([
-    asked.token?.toLowerCase() ?? null,
+    token,
     (asked.poolIds ?? []).map((poolId) => poolId.toLowerCase()),
     asked.afterPoolId?.toLowerCase() ?? null,
     asked.revision ?? null,
-    asked.limit ?? null,
+    token === null ? null : asked.limit ?? OVERVIEW_DEFAULT_LIMIT,
   ])
 }
 

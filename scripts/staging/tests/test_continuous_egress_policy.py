@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import continuous_egress_policy as policy
 import egress_policy as shared
 import install_crosschain as crosschain
+import install_points_api as points_listener
 import install_position_plan as position_plan
 import upgrade_financial as financial
 
@@ -21,7 +22,9 @@ BASELINE = (Path(__file__).resolve().parent / 'fixtures' / 'continuous_policy_ba
 IP = re.compile(r'(?<![\d.])(?!127\.)(?:\d{1,3}\.){3}\d{1,3}(?![\d.])')
 LIVE_ENABLED = ('read', 'gateway', 'tunnel', 'write')
 ISSUER = 'team-example.cloudflareaccess.com'
-# One synthetic address per pin the live host holds, so element counts match.
+# Synthetic globally routable addresses exercise the egress policy without DNS or network access.
+# Documentation ranges are intentionally rejected by that policy; these are not production endpoints.
+# One synthetic address per pin keeps the expected element counts.
 PINS = {'api.geckoterminal.com': ['11.0.0.1', '11.0.0.2'],
         'robinhood-mainnet.g.alchemy.com': ['12.0.0.1', '12.0.0.2', '12.0.0.3'],
         'api.dexscreener.com': ['13.0.0.1', '13.0.0.2'],
@@ -33,10 +36,10 @@ TELEGRAM = {'api.telegram.org': ['20.0.0.1']}
 NEW_CHAINS = ('performance', 'performance_collector', 'execution_status', 'execution_signer')
 
 
-def identities(plan_listener=False, automation=False, bridge=False, monitor=False):
+def identities(plan_listener=False, automation=False, bridge=False, monitor=False, points=False):
     """The live host's identities. The S1 plan listener's exists only once install_position_plan.py ran, the V2
     automation's once install_v2_automation.py did, the S2 crosschain listener's once install_crosschain.py did,
-    the monitor's once install_monitor.py did."""
+    the monitor's once install_monitor.py did, season 1's points listener's once install_points_api.py did."""
     result = {}
     for index, role in enumerate(policy.ROLES):
         unit = policy.unit_of(role)
@@ -51,6 +54,8 @@ def identities(plan_listener=False, automation=False, bridge=False, monitor=Fals
         result['crosschain'] = None
     if not monitor:
         result['monitor'] = None
+    if not points:
+        result['points'] = None
     return result
 
 
@@ -240,14 +245,15 @@ class ContinuousEgressTests(unittest.TestCase):
     def test_every_member_restarts_for_as_long_as_it_fails(self):
         every = LIVE_ENABLED + ('auth', 'onboarding', 'deposit', 'performance',
                                 'performance-collector', 'execution-status', 'execution-signer', 'position-plan',
-                                'v2-automation', 'crosschain', 'monitor')
+                                'v2-automation', 'crosschain', 'monitor', 'points')
         data = {**snapshot(every, {**PINS, **UNISWAP, **BRIDGES, **TELEGRAM}),
-                'identities': identities(plan_listener=True, automation=True, bridge=True, monitor=True)}
+                'identities': identities(plan_listener=True, automation=True, bridge=True, monitor=True,
+                                               points=True)}
         result = policy.render(data)
         dropins = {path: text for path, text in result['artifacts'].items() if path.endswith('/' + policy.DROPIN)}
         self.assertTrue({f'/etc/systemd/system/domino-{role}.service.d/{policy.DROPIN}'
                          for role in ('read', 'gateway', 'tunnel', 'auth', 'execution-status', 'position-plan',
-                                      'crosschain')} <= set(dropins))
+                                      'crosschain', 'points')} <= set(dropins))
         for path, text in dropins.items():
             with self.subTest(path=path):
                 unit_section = text.split('[Service]')[0]
@@ -256,9 +262,10 @@ class ContinuousEgressTests(unittest.TestCase):
     def test_a_refused_connection_attempt_is_reset_and_any_other_packet_still_dropped(self):
         every = LIVE_ENABLED + ('auth', 'onboarding', 'deposit', 'performance',
                                 'performance-collector', 'execution-status', 'execution-signer', 'position-plan',
-                                'v2-automation', 'crosschain', 'monitor')
+                                'v2-automation', 'crosschain', 'monitor', 'points')
         data = {**snapshot(every, {**PINS, **UNISWAP, **BRIDGES, **TELEGRAM}),
-                'identities': identities(plan_listener=True, automation=True, bridge=True, monitor=True)}
+                'identities': identities(plan_listener=True, automation=True, bridge=True, monitor=True,
+                                               points=True)}
         chains, _ = parse(nft(policy.render(data)))
         for role in policy.ROLES:
             chain = policy.nft_name(role)
@@ -439,10 +446,10 @@ class ContinuousEgressTests(unittest.TestCase):
     def test_every_family_enabled_renders_only_hyphen_free_nft_identifiers(self):
         every = LIVE_ENABLED + ('auth', 'onboarding', 'deposit', 'performance',
                                 'performance-collector', 'execution-status', 'execution-signer', 'position-plan',
-                                'v2-automation', 'crosschain', 'monitor')
+                                'v2-automation', 'crosschain', 'monitor', 'points')
         text = nft(policy.render({**snapshot(every, {**PINS, **UNISWAP, **BRIDGES, **TELEGRAM}),
                                   'identities': identities(plan_listener=True, automation=True, bridge=True,
-                                                           monitor=True)}))
+                                                           monitor=True, points=True)}))
         names = re.findall(r'add (?:chain|counter|set) inet \w+ (\S+)', text) + re.findall(r'jump (\S+)', text)
         self.assertTrue(names)
         for name in names:
@@ -642,7 +649,8 @@ class ContinuousEgressTests(unittest.TestCase):
         # the clients would fail over past it.
         self.assertEqual(policy.CHAIN_HOSTS, frozenset((
             'base-mainnet.core.chainstack.com', 'base-mainnet.g.alchemy.com', 'mainnet.base.org',
-            'arbitrum-mainnet.core.chainstack.com', 'arb-mainnet.g.alchemy.com', 'arb1.arbitrum.io')))
+            'arbitrum-mainnet.core.chainstack.com', 'arb-mainnet.g.alchemy.com', 'arb1.arbitrum.io',
+        'elysium-mainnet.core.chainstack.com', 'elysium-mainnet.g.alchemy.com')))
 
     def test_the_v2_chains_grant_needs_a_boolean_and_a_role_that_reads_them(self):
         self.reject({**snapshot(), 'v2Chains': 'true'}, 'invalid_v2_chains')
@@ -791,6 +799,49 @@ class ContinuousEgressTests(unittest.TestCase):
         self.reject({**snapshot(LIVE_ENABLED, {**PINS, **BRIDGES}), 'identities': identities(bridge=True)},
                     'unapproved_hostname')
 
+    def test_the_points_listener_is_optional_until_installed_and_needs_its_identity_when_enabled(self):
+        self.assertEqual(policy.render(snapshot()), policy.render({**snapshot(), 'identities': identities()}))
+        self.reject(snapshot((*LIVE_ENABLED, 'points')), 'enabled_role_without_identity')
+        installed = {**snapshot(), 'identities': identities(points=True)}
+        chains, _ = parse(mask(nft(policy.render(installed))))
+        # Installed but not enabled: its own chain refuses everything but the replies of its listener.
+        self.assertEqual([rule for rule in chains['points'] if 'accept' in rule],
+                         ['oifname "lo" ip saddr 127.0.0.1 ip daddr 127.0.0.1 tcp sport 8912 ct direction reply '
+                          'ct state established counter accept comment "exact listener reply"'])
+        self.assertFalse(any('8912' in rule for rule in chains['tunnel']))
+        self.assertEqual(policy.LISTENERS['points'], points_listener.PORT)
+
+    def test_the_points_listener_enabled_reaches_rpc_and_access_alone_and_the_tunnel_reaches_it(self):
+        enabled = (*LIVE_ENABLED, 'points')
+        data = {**snapshot(enabled, {**PINS, 'rpc.domino.money': ['16.0.0.1']}), 'identities': identities(points=True)}
+        rendered = policy.render(data)
+        chains, sets = parse(mask(nft(rendered)))
+        self.assertIn('oifname "lo" ip saddr 127.0.0.1 ip daddr 127.0.0.1 tcp dport 8912 ct direction original '
+                      'counter accept comment "exact points origin"', chains['tunnel'])
+        self.assertEqual(sets['points_ipv4'], len(PINS['robinhood-mainnet.g.alchemy.com']) + 1 + len(PINS[ISSUER]))
+        self.assertEqual(sorted(rendered['roleHosts']['points']),
+                         sorted(['rpc.domino.money', 'robinhood-mainnet.g.alchemy.com', ISSUER]))
+        dropin = rendered['artifacts'][policy.UNIT_DIR + 'domino-points.service.d/' + policy.DROPIN]
+        self.assertIn('ExecStart=\n' + policy.enable_command('points') + '\n', dropin)
+        self.assertTrue(policy.enable_command('points').endswith(
+            'points_api.py --port 8912 --enable --rpc-config /run/domino-financial-points-config/rpc.json'))
+        self.assertIn('BindReadOnlyPaths=/etc/domino/continuous-reads/points.hosts:/etc/hosts\n', dropin)
+        hosts = rendered['artifacts'][policy.ROOT + '/points.hosts']
+        for host in ('rpc.domino.money', 'robinhood-mainnet.g.alchemy.com', ISSUER):
+            self.assertIn(' ' + host + '\n', hosts)
+        target = rendered['artifacts'][policy.UNIT_DIR + policy.TARGET]
+        self.assertIn('domino-points.service', target.split('Wants=', 2)[1].split('\n')[0])
+        self.assertNotIn('domino-points.service', target.split('Requires=')[1].split('\n')[0])
+        # Beside every other family and every grant, it still reaches no trade API, bridge, chain or Telegram host.
+        chain_pins = {host: [f'17.0.0.{index}'] for index, host in enumerate(sorted(policy.CHAIN_HOSTS), 1)}
+        every = (*LIVE_ENABLED, 'auth', 'position-plan', 'v2-automation', 'monitor', 'crosschain', 'points')
+        everyone = identities(plan_listener=True, automation=True, bridge=True, monitor=True, points=True)
+        wide = policy.render({**snapshot(every, {**PINS, **UNISWAP, **BRIDGES, **TELEGRAM, **chain_pins}),
+                              'identities': everyone, 'v2Chains': True})
+        self.assertEqual(sorted(wide['roleHosts']['points']),
+                         sorted(['robinhood-mainnet.g.alchemy.com', ISSUER]))
+        self.assertNotIn('points', policy.CHAIN_ROLES)
+
     def test_the_monitor_reaches_telegram_the_node_and_its_rpc_through_a_hosts_file_of_its_own(self):
         # Optional until install_monitor.py creates the account; enabled, it needs that identity and Telegram.
         self.assertEqual(policy.render(snapshot()), policy.render({**snapshot(), 'identities': identities()}))
@@ -837,7 +888,7 @@ class ContinuousEgressTests(unittest.TestCase):
     def test_enable_commands_are_derived_from_the_installer_not_copied(self):
         for role in policy.ENABLE_ARGUMENTS:
             with self.subTest(role=role):
-                installers = {'position-plan': position_plan, 'crosschain': crosschain}
+                installers = {'position-plan': position_plan, 'crosschain': crosschain, 'points': points_listener}
                 text = (installers[role].unit_text('0' * 40) if role in installers
                         else financial.unit_text(role, '0' * 40))
                 installed = next(line for line in text.splitlines() if line.startswith('ExecStart='))

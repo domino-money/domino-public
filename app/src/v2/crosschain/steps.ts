@@ -25,6 +25,7 @@
  * After the deadline nothing is sendable: get a new quote and read the allowance again.
  */
 import { quoteDeadlineMono, type Timing } from './client'
+import { isS2Destination } from '../types'
 import type { CrosschainTransport } from './transport'
 import type { CrosschainRequests, CrosschainValidators, DepositState, DestinationChainId, Provider, QuotePlan } from './types'
 import { DEPOSIT_STATES } from './types'
@@ -255,7 +256,9 @@ export function isJournalRecord(value: unknown): value is CrosschainJournalRecor
   const { provider, originChainId, destinationChainId, depositTxHash, requestId, lastState } = record
   if (provider !== 'relay' && provider !== 'across') return false
   if (typeof originChainId !== 'number' || !Number.isSafeInteger(originChainId) || originChainId < 1) return false
-  if (destinationChainId !== 4663 && destinationChainId !== 8453 && destinationChainId !== 42161) return false
+  // Changed on purpose 2026-11-09 (Elysium's day 9, the owner: funds brought to Elysium from other networks as on Base):
+  // the deposit's destinations (v2/types.ts S2_DESTINATION_CHAIN_IDS), Elysium's too where funds can be brought to it.
+  if (!isS2Destination(destinationChainId)) return false
   if (originChainId === destinationChainId) return false
   if (typeof depositTxHash !== 'string' || !HASH.test(depositTxHash)) return false
   if (provider === 'relay' ? typeof requestId !== 'string' || !HASH.test(requestId) : requestId !== null) return false

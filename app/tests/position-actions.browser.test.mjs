@@ -586,10 +586,11 @@ test('only the owner sees the actions; hooked pools are refused, an empty positi
     await s.page.locator('[data-position-actions=""]').waitFor();
     assert.equal(await s.page.locator('[data-position-action="close"]').count(), 0, 'no Close position at zero liquidity');
     assert.equal(await s.page.locator('[data-position-action="collect"]').isDisabled(), true, 'no fees to collect');
-    // Fees the read service did not report count as none, as the shared contract says; the reason is one hover away.
+    // Changed on purpose 2026-11-09 (the core-flows fix, item d): fees the read service did not report no longer turn
+    // Collect fees off with a reason only a mouse could see: it opens, and its dialog reads the fees on chain itself.
     await open({ position: actionsFor({ unsettledFeesRaw: null }) });
-    await s.page.locator('[data-position-action="collect"][title="The fees could not be read just now."]').waitFor();
-    assert.deepEqual([await s.page.locator('[data-position-action="collect"]').isDisabled(), await s.page.locator('[data-position-action="close"]').isDisabled()], [true, false]);
+    await s.page.locator('[data-position-action="collect"]').waitFor();
+    assert.deepEqual([await s.page.locator('[data-position-action="collect"]').isDisabled(), await s.page.locator('[data-position-action="collect"]').getAttribute('title'), await s.page.locator('[data-position-action="close"]').isDisabled()], [false, null, false]);
     await open({ position: actionsFor() });
     await s.page.locator('[data-position-action="close"]').waitFor();
     await s.page.locator('[data-position-action="close"]').click();

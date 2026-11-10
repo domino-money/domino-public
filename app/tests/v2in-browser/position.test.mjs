@@ -62,6 +62,21 @@ const LIQUIDITY = 10n ** 15n;
 const PRINCIPAL = runtime.amountsForLiquidity(SQRT, runtime.sqrtAtTick(RANGE.tickLower), runtime.sqrtAtTick(RANGE.tickUpper), LIQUIDITY, false);
 const now = () => Math.floor(Date.now() / 1000);
 const text = async (locator) => (await locator.innerText()).replace(/\s+/g, ' ').trim();
+/**
+ * Added 2026-11-09 (the core-flows fix): the close flow's screens at desktop (1440x900) and phone (390x844) widths, into
+ * DOMINO_CLOSE_SHOTS (the integration log's folder) or .test-artifacts; the page goes back to its own size after.
+ */
+async function closeShot(page, name) {
+  const dir = resolve(process.env.DOMINO_CLOSE_SHOTS ?? shots());
+  mkdirSync(dir, { recursive: true });
+  const before = page.viewportSize();
+  for (const [size, viewport] of [['desktop-1440', { width: 1440, height: 900 }], ['phone-390', { width: 390, height: 844 }]]) {
+    await page.setViewportSize(viewport);
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: join(dir, `${name}-${size}.png`) });
+  }
+  if (before) await page.setViewportSize(before);
+}
 const LOCKED_BASE = 'This opens as soon as Domino\'s service is live on Base.';
 
 /** The "···" menu of the position's row: opened, its entries as `[key, label, disabled]`; left open. */
@@ -192,8 +207,18 @@ test('multichain sync: a restored creation is visible before indexing and reconc
     await page.locator('[data-position-reason="awaiting_index"]').waitFor();
     // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the page's title alone, no "Updating position details…".
     assert.doesNotMatch(await text(page.locator('[data-position-reason="awaiting_index"]')), /Updating position details/);
+    // Changed on purpose 2026-11-09 (core flows, the owner: nothing may load forever): its loading frame with one line while
+    // read-v6 lists it, the list asked again every few seconds meanwhile (src/v2in/lists/newPositionWait.ts); it was the title
+    // alone, for good.
+    assert.equal(await text(page.locator('[data-position-reason="awaiting_index"] [data-position-adding]')), 'Adding your new position…');
+    assert.equal(await page.locator('[data-empty="position-v2"]').count(), 0);
+    await page.screenshot({ path: join(shots(), 'core-loading-position-adding-desktop.png'), animations: 'disabled' });
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.screenshot({ path: join(shots(), 'core-loading-position-adding-phone.png'), animations: 'disabled' });
+    await page.setViewportSize({ width: 1180, height: 960 });
     await page.evaluate(() => { location.hash = '#/positions'; });
-    const link = page.locator('a[href="#/positions/base-v4-5100001"]');
+    const link = page.locator('a[href="/positions/base-v4-5100001"]');
     await link.waitFor();
     assert.match(await text(link), /ETH.*USDC/);
     // Changed on purpose 2026-10-15 (pack 7, owner: no status notices): the count only; the one still being checked is data-owned-pending.
@@ -207,6 +232,35 @@ test('multichain sync: a restored creation is visible before indexing and reconc
     assert.deepEqual(await page.evaluate(wallet => JSON.parse(sessionStorage.getItem(`domino:created-positions:v1:${wallet}`)), OWNER), []);
     await link.click();
     await page.locator('[data-position-detail][data-snapshot="73399500"]').waitFor();
+    assert.equal(s.planned.length, 0);
+  } finally { await s.close(); }
+});
+
+// Added 2026-11-09 (core flows, the owner: nothing may load forever). A Base or Arbitrum One position's page whose list only
+// fails drew its title alone, for good. It keeps its loading frame while the list is asked again by itself, and after 20 s
+// (src/lib/readWait.ts STUCK_MS) its plate says what to do; the page replaces it once the list answers.
+test('a position page whose list only fails says what to do after twenty seconds, and the position replaces it', async () => {
+  const s = await openPositionPage(browser, chainOf(), { hash: '#/positions/base-v4-5100001', read6: { portfolio: { status: 503, body: { error: 'upstream_unavailable' } }, activity: activityOf({ wallet: OWNER }) },
+    prepare: async (context) => { await context.clock.install(); } });
+  try {
+    const page = s.page;
+    await page.locator('[data-position-loading][data-position-reason]').waitFor();
+    assert.equal(await page.locator('[data-empty="position-v2"]').count(), 0, 'the loading frame while the first re-asks run');
+    await page.clock.fastForward(21_000);
+    const plate = page.locator('[data-empty="position-v2"]');
+    await plate.waitFor();
+    assert.match(await text(plate), /^Position #5100001 Reload the page to see this position\.$/);
+    assert.doesNotMatch(await text(page.locator('main')), /couldn’t|could not|can’t be|unavailable|Try again/i);
+    await page.screenshot({ path: join(shots(), 'core-loading-position-stuck-desktop.png'), animations: 'disabled' });
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.screenshot({ path: join(shots(), 'core-loading-position-stuck-phone.png'), animations: 'disabled' });
+    await page.setViewportSize({ width: 1180, height: 960 });
+    const indexed = portfolioOf({ wallet: OWNER, tokens: TOKENS, positions: [live(5100001)] });
+    await page.evaluate(answer => { window.__dominoV2Test.read6.portfolio = () => answer; }, indexed);
+    await page.clock.fastForward(61_000);
+    await page.locator('[data-position-detail][data-position-id="5100001"]').waitFor();
+    assert.equal(await plate.count(), 0);
     assert.equal(s.planned.length, 0);
   } finally { await s.close(); }
 });
@@ -308,12 +362,12 @@ test('(b) live on Base: the same page from read-v6, no USD and no APR; Domino\'s
     // Changed on purpose 2026-11-06 (review F1, UI-2): once Base's pools read for USDC lists this ETH/USDC pool.
     await detail.locator('[data-position-pool-link]').waitFor({ timeout: 30_000 });
     assert.ok(asked.some((request) => request.chainId === 8453 && request.token === USDC && request.pairedToken === undefined), 'USDC\'s pools read, the one the pool page reads');
-    assert.match(await detail.locator('[data-position-new-in-pool]').getAttribute('href'), /^#\/new\/network\/8453\/0x833589fcd6edb6e08f4c7c32d4f71b54bda02913\/0x[0-9a-f]{64}$/);
+    assert.match(await detail.locator('[data-position-new-in-pool]').getAttribute('href'), /^\/new\/network\/8453\/0x833589fcd6edb6e08f4c7c32d4f71b54bda02913\/0x[0-9a-f]{64}$/);
     assert.equal(await text(detail.locator('[data-position-new-in-pool]')), 'New position in this pool');
     // Changed on purpose 2026-11-06 (INT-1): the Pool button, as Robinhood Chain's Details, opens Base's own pool page:
     // the same pool and token as New position's link, the Pool button first.
-    const newIn = /^#\/new\/network\/8453\/(0x[0-9a-f]{40})\/(0x[0-9a-f]{64})$/.exec(await detail.locator('[data-position-new-in-pool]').getAttribute('href'));
-    assert.equal(await detail.locator('[data-position-pool-link]').getAttribute('href'), `#/pool/network/8453/${newIn[2]}/${newIn[1]}`);
+    const newIn = /^\/new\/network\/8453\/(0x[0-9a-f]{40})\/(0x[0-9a-f]{64})$/.exec(await detail.locator('[data-position-new-in-pool]').getAttribute('href'));
+    assert.equal(await detail.locator('[data-position-pool-link]').getAttribute('href'), `/pool/network/8453/${newIn[2]}/${newIn[1]}`);
     assert.equal(await text(detail.locator('[data-position-pool-link]')), 'Pool');
     assert.deepEqual(await detail.locator('.dm-pos-links > a').evaluateAll((links) => links.map((link) => link.hasAttribute('data-position-pool-link') ? 'pool' : 'new')), ['pool', 'new']);
     assert.equal(await text(detail.locator('[data-position-dex]')), 'v4');
@@ -833,7 +887,10 @@ test('(c8) Withdraw in one token: the wallet moved to another network while the 
   } finally { await s.close(); }
 });
 
-test('(e) under automation: the armed root blocks Change range (the menu says why) and its exit names the reserves that stay, waiting for the pause warning; a successor is the vault\'s; a hooked pool is not supported', async () => {
+// Changed on purpose 2026-11-09 (the core-flows fix; the owner: closing a position with automation must be totally easy): a
+// withdrawal of an armed root asks for no tick box (the note at the top says it pauses automation), and a position
+// Domino-compound holds has Close position, which withdraws it from the automation first, then closes it.
+test('(e) under automation: the armed root blocks Change range (the menu says why) and its exit names the reserves that stay, with no tick box; a successor has Close position in two steps; a hooked pool is not supported', async () => {
   const chain = chainOf();
   const s = await openPositionPage(browser, chain, { hash: '#/positions/base-v4-5100002', read6: READ6, planner: plannerFor() });
   try {
@@ -876,25 +933,34 @@ test('(e) under automation: the armed root blocks Change range (the menu says wh
     await dialog.locator('[data-position-review="exit"]').waitFor({ timeout: 30_000 });
     // Changed on purpose 2026-10-04 (the owner: no "vault" in the UI; "your automation").
     assert.equal(await text(dialog.locator('[data-position-reserves-stay]')), 'Fees waiting to be reinvested stay in your automation: 0.001 ETH + 2.5 USDC. After this, you go straight to withdrawing them to your wallet.');
-    assert.equal(await dialog.locator('[data-position-confirm]').isDisabled(), true, 'nothing is prepared before the warning is ticked');
-    assert.equal(await text(dialog.locator('[data-position-tick-first]')), 'Tick the box above first.');
-    // Changed on purpose 2026-10-06 (the review of point 4, ux #1, a second look): with nothing checked yet, no fee is
-    // known: the network fee line says so in words, never a bare dash a touch screen cannot explain.
-    const unknown = dialog.locator('[data-position-network-fee="unknown"]');
-    assert.equal(await text(unknown), 'Network fee Your wallet shows it before you confirm');
-    assert.equal(await unknown.locator('[data-figure="none"]').count(), 0, 'no bare dash in view');
-    await dialog.locator('[data-position-pause-confirm]').check();
+    // No tick box and no "Tick the box above first.": the step is prepared at once; the note at the top says it pauses.
     await dialog.locator('[data-position-confirm="approve-nft"]:not([disabled])').waitFor({ timeout: 30_000 });
+    assert.equal(await dialog.locator('[data-position-pause-confirm], [data-position-tick-first]').count(), 0);
+    assert.equal(await dialog.locator('[data-position-pause-line]').count(), 0, 'the top note already says it: never twice');
     await page.keyboard.press('Escape');
     assert.equal(chain.sends.length, 0, 'nothing sent here');
     // A successor and a hooked position, on their own pages.
     await page.evaluate(() => { location.hash = '#/positions/base-v4-5100003'; });
     const successor = page.locator('[data-position-detail][data-position-id="5100003"]');
     await successor.waitFor({ timeout: 30_000 });
-    // Review #6, #13: one sentence in the row, no button and no menu.
-    // Changed on purpose 2026-10-04 (the owner: no "vault" in the UI; "your automation").
-    assert.equal(await text(successor.locator('[data-position-actions] [data-position-v2-blocked="successor"]')), "Your automation holds this position. Withdraw it from your automation on your main position's page first.");
-    assert.equal(await successor.locator('[data-position-v2-action], [data-position-v2-more], [data-position-action="close"]').count(), 0);
+    // Changed on purpose 2026-11-09: Close position alone in the row (no Collect fees, no menu), never the sentence that
+    // sent the person to another page; its dialog says in one line what happens, and lists its two steps.
+    assert.equal(await successor.locator('[data-position-v2-blocked]').count(), 0);
+    assert.equal(await successor.locator('[data-position-v2-action], [data-position-v2-more]').count(), 0);
+    const closeHeld = successor.locator('[data-position-actions] > [data-position-action="close"]');
+    assert.equal(await text(closeHeld), 'Close position');
+    await closeHeld.click();
+    const held = page.locator('[role="dialog"][data-position-dialog="v2-close"]');
+    await held.locator('[data-close-steps]').waitFor({ timeout: 30_000 });
+    assert.equal(await text(held.locator('[data-position-close-line="held"]')), 'Domino-compound holds this position. It comes back to your wallet first, then closes.');
+    assert.deepEqual(await held.locator('[data-close-step]').evaluateAll((rows) => rows.map((row) => [row.getAttribute('data-close-step'), row.querySelector('.dm-flow-wstep-title').textContent])), [['withdraw-child', 'Withdraw from your automation'], ['close', 'Close position']]);
+    assert.equal(await held.locator('[data-position-receive]').count(), 0, 'nothing is read at Uniswap before it is back in the wallet');
+    assert.equal(await text(held.locator('[data-close-flow="withdraw-child"]')), 'Close in wallet');
+    assert.equal(await held.locator('[data-close-flow="withdraw-child"]').isDisabled(), false, 'one press, never a tick box');
+    assert.doesNotMatch(await text(held), /vault|NFT|successor/i);
+    await closeShot(page, 'successor-close-review');
+    await page.keyboard.press('Escape');
+    await held.waitFor({ state: 'detached' });
     await page.evaluate(() => { location.hash = '#/positions/base-v4-5100004'; });
     const hooked = page.locator('[data-position-detail][data-position-id="5100004"]');
     await hooked.waitFor({ timeout: 30_000 });
@@ -1013,9 +1079,11 @@ test('(f0b) Close position whose read fails: "Try again", as on V1, reads again,
   } finally { await s.close(); }
 });
 
-test('(g) preview (the gate open, no live set): the same page from read-v6, every action to its review with what was chosen and the gate\'s sentence; a wallet on another chain is never asked to switch, and no plan is asked', async () => {
-  // The wallet on Robinhood Chain, the position on Base (read-v6's): the direct actions (Collect fees, Withdraw in both
-  // tokens) show the request instead of reading the chain through the wallet, which is never asked to switch (review #3).
+// Changed on purpose 2026-11-09 (the core-flows fix, item b): the direct actions (Collect fees, Withdraw in both tokens,
+// Close position) need no plan, so the planner's preview no longer locks them on a chain that is live: they read and send
+// as under `live`. The zap's actions (Add liquidity here) still stop at the gate's sentence, and no plan is asked.
+test('(g) preview (the gate open, no live set): the same page from read-v6; the zap\'s actions stop at their review with the gate\'s sentence, the direct ones are never locked by it, and no plan is asked', async () => {
+  // The wallet on Robinhood Chain, the position on Base (read-v6's).
   const chain = createV2Chain({ chainId: 4663, timestamp: now() });
   const s = await openPositionPage(browser, chain, { hash: '#/positions/base-v4-5100005', read6: READ6, live: false, script: true });
   try {
@@ -1025,15 +1093,13 @@ test('(g) preview (the gate open, no live set): the same page from read-v6, ever
     assert.doesNotMatch(await text(detail), /test data|example/i, 'real data only: nothing is marked as test data');
     assert.equal(await detail.locator('[data-position-actions] [data-position-v2-actions="preview"] [data-position-v2-more]').count(), 1);
     await page.screenshot({ path: join(shots(), 'position-v2-preview.png'), fullPage: true });
-    // Collect fees opens straight on its review: off the position's chain, what was chosen and the gate's sentence.
+    // Collect fees opens straight on its review: a direct exit, read through the wallet and offered as under `live`.
     await detail.locator('[data-position-v2-action="collect"]').click();
     const collect = page.locator('[role="dialog"][data-position-dialog="v2-collect"]');
     assert.equal(await collect.getAttribute('data-position-gate'), 'preview');
-    await collect.locator('[data-position-request="collect"]').waitFor({ timeout: 30_000 });
-    // Changed on purpose 2026-10-03 (the owner, point 9): the card names the position (its pair), under the dialog's title.
-    assert.equal(await text(collect.locator('[data-position-request="collect"]')), 'Position ETH / USDC');
-    assert.equal(await text(collect.locator('[data-position-locked]')), LOCKED_BASE);
-    assert.equal(await collect.locator('[data-position-send], [data-position-direct], [data-position-preview-note], [data-position-notice]').count(), 0, 'no wallet button, no chain read, no second note, no failure');
+    await collect.locator('[data-position-direct]').waitFor({ timeout: 30_000 });
+    assert.equal(await collect.locator('[data-position-locked], [data-position-request]').count(), 0, 'never the planner\'s sentence on a direct exit');
+    assert.equal(await collect.locator('[data-position-send="collect"]').count(), 1, 'its own wallet button');
     await page.keyboard.press('Escape');
     await collect.waitFor({ state: 'detached' });
     // Add liquidity: what was chosen, then the gate's sentence, once; no plan is asked.
@@ -1049,21 +1115,18 @@ test('(g) preview (the gate open, no live set): the same page from read-v6, ever
     assert.equal(await add.locator('[data-position-confirm], [data-position-preview-note]').count(), 0, 'no wallet step and no second note in the preview');
     await page.keyboard.press('Escape');
     await add.waitFor({ state: 'detached' });
-    // Withdraw in both tokens: a direct action too; off the position's chain, the request (nothing read, no switch asked).
+    // Withdraw in both tokens: a direct action too: never locked by the planner's word.
     await pick(detail, 'exit');
     const exit = page.locator('[role="dialog"][data-position-dialog="v2-exit"]');
     assert.equal(await text(exit.locator('[data-position-way-note]')), 'No Domino fee.');
     await exit.locator('[data-position-continue="exit"]').click();
-    await exit.locator('[data-position-request="exit"]').waitFor({ timeout: 30_000 });
-    assert.equal(await text(exit.locator('[data-position-request="exit"]')), 'How much All Receive ETH / USDC Slippage 0.5%');
-    assert.equal(await text(exit.locator('[data-position-locked]')), LOCKED_BASE);
-    assert.equal(await exit.locator('[data-position-send], [data-position-direct]').count(), 0);
+    await exit.locator('[data-position-direct]').waitFor({ timeout: 30_000 });
+    assert.equal(await exit.locator('[data-position-locked]').count(), 0);
+    assert.equal(await exit.locator('[data-position-send="close"]').count(), 1);
     await page.keyboard.press('Escape');
     await exit.waitFor({ state: 'detached' });
-    assert.equal(chain.sends.length, 0);
+    assert.equal(chain.sends.length, 0, 'nothing sent without a press');
     assert.deepEqual(s.planned, [], 'the preview asks no plan service');
-    assert.ok(!chain.log.includes('wallet_switchEthereumChain'), 'the wallet was never asked to switch chain');
-    assert.equal(chain.log.filter((method) => method === 'eth_call').length, 0, 'nothing was read through a wallet on another chain');
     // A position read-v6 does not list.
     await page.evaluate(() => { location.hash = '#/positions/base-v4-424242'; });
     await page.locator('[data-empty="position-v2"][data-position-reason="position_not_listed"]').waitFor({ timeout: 30_000 });
@@ -1093,7 +1156,7 @@ test('V2 Auto-exit on Base, preview: current custody opens the range\'s exact ed
       await detail.locator('[data-automation-setup]').click();
       const setup = page.locator('[data-v2in-setup="preview"][data-sequence-create]');
       await setup.waitFor();
-      assert.match(page.url(), /#\/sequence\/base-v4-5100005$/);
+      assert.match(page.url(), /\/sequence\/base-v4-5100005$/);
       await setup.locator('[data-sequence-mode="protection"]').click();
       await setup.locator('[data-sequence-action="protection"]:not([disabled])').click();
       const dialog = page.locator('[data-v2in-dialog="mandate"]');
@@ -1170,7 +1233,7 @@ test('(b4) live on Base with read-v6\'s stored fee history: Fees earned and Your
   const pools = read('valid/chain-pools.json');
   const priced = (token, symbol) => ({ ...token, price: pools.tokens.find((one) => one.symbol === symbol).price, priceReason: null });
   const portfolio = portfolioOf({ wallet: OWNER, tokens: [priced(TOKENS[0], 'ETH'), priced(TOKENS[1], 'USDC')], positions: [live(5_100_001, { approved: ZAP_V4 })] });
-  const stored = read('1.2.0-rc.1/valid/position-fees.json');
+  const stored = read(`${readV6.NEXT_VERSION}/valid/position-fees.json`);
   // The fixture's pool price is a raw 2,500; here the page's own pool, at the page's own price.
   const body = { ...stored, positions: [{ ...stored.positions[0], tokenId: '5100001', now: { ...stored.positions[0].now, pool: POOL, sqrtPriceX96: SQRT.toString(), tick: TICK, ...RANGE, inRange: true } }] };
   assert.equal(readV6.validateExchange('position-fees', { chainId: 8453, positions: [{ dex: 4, tokenId: '5100001' }] }, body), true);
@@ -1215,7 +1278,7 @@ test('(b5) live on Base with a stored history under Domino-compound: the automat
     positions: [live(5_100_001, { approved: VAULT, subscriber: VAULT, vault: { address: VAULT, role: 'root' } })],
     vaults: [vaultOf({ wallet: OWNER, chainId: 8453, address: VAULT, rootTokenId: 5_100_001, pool: POOL })],
   });
-  const stored = read('1.2.0-rc.1/valid/position-fees.json');
+  const stored = read(`${readV6.NEXT_VERSION}/valid/position-fees.json`);
   const body = { ...stored, positions: [{ ...stored.positions[0], tokenId: '5100001', now: { ...stored.positions[0].now, pool: POOL, sqrtPriceX96: SQRT.toString(), tick: TICK, ...RANGE, inRange: true } }] };
   assert.equal(readV6.validateExchange('position-fees', { chainId: 8453, positions: [{ dex: 4, tokenId: '5100001' }] }, body), true);
   const auto = body.positions[0].events.find((event) => event.auto);
@@ -1284,8 +1347,8 @@ test('(b11) a Base WETH/AERO v3 position: Pool and New position name AERO once i
       if (listed) {
         const link = detail.locator('[data-position-pool-link]');
         await link.waitFor({ timeout: 30_000 });
-        assert.equal(await link.getAttribute('href'), `#/pool/network/8453/${word}/${AERO}`, 'the pool page by AERO, whose read lists the pool');
-        assert.equal(await detail.locator('[data-position-new-in-pool]').getAttribute('href'), `#/new/network/8453/${AERO}/${word}`);
+        assert.equal(await link.getAttribute('href'), `/pool/network/8453/${word}/${AERO}`, 'the pool page by AERO, whose read lists the pool');
+        assert.equal(await detail.locator('[data-position-new-in-pool]').getAttribute('href'), `/new/network/8453/${AERO}/${word}`);
       } else {
         await s.page.waitForTimeout(1500);
         assert.equal(await detail.locator('[data-position-pool-link], [data-position-new-in-pool]').count(), 0, 'no way to a pool the read does not list');
@@ -1296,7 +1359,7 @@ test('(b11) a Base WETH/AERO v3 position: Pool and New position name AERO once i
 
 // Added 2026-11-06 (O-14): an NFT the stored history says is burned, not in the wallet's list: Robinhood Chain's own page.
 test('(b6) an NFT read-v6\'s stored history says is burned: "This position NFT no longer exists", as on Robinhood Chain', async () => {
-  const burned = JSON.parse(readFileSync(new URL('../../../api-contracts/read-v6/fixtures/1.2.0-rc.1/valid/position-fees-burned.json', import.meta.url), 'utf8'));
+  const burned = JSON.parse(readFileSync(new URL(`../../../api-contracts/read-v6/fixtures/${readV6.NEXT_VERSION}/valid/position-fees-burned.json`, import.meta.url), 'utf8'));
   const body = { ...burned, positions: [{ ...burned.positions[0], tokenId: '5100009' }] };
   assert.equal(readV6.validateExchange('position-fees', { chainId: 8453, positions: [{ dex: 4, tokenId: '5100009' }] }, body), true);
   const s = await openPositionPage(browser, chainOf(), { hash: '#/positions/base-v4-5100009', read6: { ...READ6, 'position-fees': { status: 200, body } } });
@@ -1305,7 +1368,7 @@ test('(b6) an NFT read-v6\'s stored history says is burned: "This position NFT n
     await gone.waitFor({ timeout: 30_000 });
     assert.equal(await text(gone.locator('h2, h1, [data-empty-title], .dm-empty-title').first()), 'This position NFT no longer exists');
     assert.match(await text(gone), new RegExp(`NFT #5100009 was not found at block ${burned.positions[0].through.number}\\.`));
-    assert.equal(await gone.locator('a[href="#/positions"]').count(), 1, 'the way back to Positions');
+    assert.equal(await gone.locator('a[href="/positions"]').count(), 1, 'the way back to Positions');
     assert.doesNotMatch(await text(s.page.locator('main')), /isn’t in your wallet’s list/);
   } finally { await s.close(); }
   // Without the route (today), the same link says what it says today.
@@ -1378,7 +1441,7 @@ test('(b8) Collect fees on Base: "You receive" in USD at qualified prices, and n
 test('(b9) a position opened from View address, with no wallet: the page as the owner sees it, with no action', async () => {
   const s = await openPositionPage(browser, chainOf(), { hash: `#/portfolio/${OWNER}`, read6: READ6, connect: false, intercept: (method) => (method === 'eth_accounts' ? { result: [] } : undefined) });
   try {
-    const link = s.page.locator('a[href="#/positions/base-v4-5100001"]').first();
+    const link = s.page.locator('a[href="/positions/base-v4-5100001"]').first();
     await link.waitFor({ timeout: 30_000 });
     await link.click();
     const detail = s.page.locator('[data-position-detail][data-position-v2="base-v4"][data-position-id="5100001"]');
@@ -1390,7 +1453,7 @@ test('(b9) a position opened from View address, with no wallet: the page as the 
     await detail.locator('[data-position-activity-item]').first().waitFor({ timeout: 30_000 });
     assert.equal(await s.page.locator('[data-empty="position-v2"]').count(), 0, 'never "Connect wallet" in place of the page');
     assert.equal(await text(s.page.locator('a.dm-pos-back')), 'Positions');
-    assert.equal(await s.page.locator('a.dm-pos-back').getAttribute('href'), `#/portfolio/${OWNER}`, 'back to the list it was opened from');
+    assert.equal(await s.page.locator('a.dm-pos-back').getAttribute('href'), `/portfolio/${OWNER}`, 'back to the list it was opened from');
   } finally { await s.close(); }
 });
 
@@ -1409,7 +1472,7 @@ test('(b10) a position opened from View address, with another wallet connected: 
   const intercept = (method) => (method === 'eth_accounts' || method === 'eth_requestAccounts' ? { result: [OTHER] } : undefined);
   const s = await openPositionPage(browser, chainOf(), { hash: `#/portfolio/${OWNER}`, read6: READ6, prepare, intercept });
   try {
-    const link = s.page.locator('a[href="#/positions/base-v4-5100002"]').first();
+    const link = s.page.locator('a[href="/positions/base-v4-5100002"]').first();
     await link.waitFor({ timeout: 30_000 });
     await link.click();
     const detail = s.page.locator('[data-position-detail][data-position-v2="base-v4"][data-position-id="5100002"]');
@@ -1601,6 +1664,48 @@ const vaultOnChain = (vault, tokenId, asked = []) => (method, params) => {
   if (functionName === 'rootArmed') return { result: encodeFunctionResult({ abi: VAULT_ABI, functionName, result: true }) };
   return undefined;
 };
+
+// Added 2026-11-09 (the core-flows fix; the owner: "if you have a position with Auto-compound or any active automation you
+// must turn it off first, then you can close the position, and this must be totally easy for the user"): an automation's
+// main position closes in one guided flow: one line says closing turns its automation off (the vault never refuses its
+// owner's exit, so no step of its own and no tick box), its step list shows the close and, while the automation holds its
+// fees, Withdraw to wallet after it; one press, one transaction to Uniswap. On this fake chain the automation cannot be
+// read after the close, so its last step is left to the automation's card (the hand-over of before), and the dialog ends.
+test('(f0c) Close position of an automation\'s main position: one line, no tick box, its steps listed, one transaction to Uniswap', async () => {
+  const sqrt = position.sqrtPriceAtTick(-199500);
+  const V4 = { tokenId: 5_100_002n, pool: { currency0: ZERO, currency1: USDC, fee: 500, tickSpacing: 10 }, ...RANGE, liquidity: BigInt(LIQUIDITY),
+    sqrtPriceX96: sqrt, tick: -199500, growthLast: [5n << 128n, 7n << 128n], growthNow: [5n << 128n, 7n << 128n], approved: VAULT, subscriber: VAULT };
+  const chain = createDirectChain({ chainId: 8453, v4: [V4], timestamp: now() });
+  const read6 = { portfolio: portfolioOf({ wallet: OWNER, tokens: TOKENS,
+    positions: [live(5_100_002, { sqrtPriceX96: sqrt, tick: -199500, approved: VAULT, subscriber: VAULT, vault: { address: VAULT, role: 'root' } })],
+    vaults: [vaultOf({ wallet: OWNER, chainId: 8453, address: VAULT, rootTokenId: 5_100_002, pool: POOL, reserves: ['1000000000000000', '2500000'] })] }) };
+  const asked = [];
+  const s = await openPositionPage(browser, chain, { hash: '#/positions/base-v4-5100002', read6, s1: { directCode: { 8453: chain.codeHashes } }, intercept: vaultOnChain(VAULT, 5_100_002n, asked) });
+  try {
+    const page = s.page;
+    const detail = page.locator('[data-position-detail][data-position-id="5100002"]');
+    await detail.waitFor({ timeout: 30_000 });
+    await detail.locator('[data-position-actions] > [data-position-action="close"]').click();
+    const dialog = page.locator('[role="dialog"][data-position-dialog="v2-close"]');
+    await dialog.locator('[data-position-direct="ready"]').waitFor({ timeout: 30_000 });
+    assert.match(await text(dialog.locator('[data-position-close-line="turns-off"]')), /^Closing also turns off (Auto-compound|Domino-compound) for this position\.$/);
+    assert.deepEqual(await dialog.locator('[data-close-step]').evaluateAll((rows) => rows.map((row) => [row.getAttribute('data-close-step'), row.querySelector('.dm-flow-wstep-title').textContent])), [['close', 'Close position'], ['return-reserves', 'Withdraw to wallet']]);
+    assert.equal(await dialog.locator('[data-position-pause-confirm], [data-position-root-note], [data-position-reserves-stay], [data-position-warning]').count(), 0, 'one line: no tick box, no second note');
+    assert.ok(asked.includes('rootArmed'), 'the chain was asked whether its automation runs');
+    const send = dialog.locator('[data-position-send="close"]');
+    assert.equal(await text(send), 'Close in wallet');
+    assert.equal(await send.isDisabled(), false, 'never held for a tick box');
+    assert.doesNotMatch(await text(dialog), /vault|NFT|successor/i);
+    await closeShot(page, 'root-close-review');
+    await send.click();
+    await dialog.locator('[data-position-direct="done"]').waitFor({ timeout: 30_000 });
+    assert.equal(chain.sends.length, 1, 'one transaction, sent with no acknowledgement first');
+    assert.equal(chain.sends[0].tx.to, V4_PM);
+    assert.equal(chain.v4Position(5_100_002n).liquidity, 0n);
+    await dialog.locator('[data-position-back]').waitFor({ timeout: 30_000 });
+    await closeShot(page, 'root-close-done');
+  } finally { await s.close(); }
+});
 
 test('(e2) Auto-exit on: Add liquidity on v4 moves the approval its exit needs, so its review asks for a tick in Auto-exit\'s words; never the automation\'s pause note', async () => {
   const chain = chainOf();

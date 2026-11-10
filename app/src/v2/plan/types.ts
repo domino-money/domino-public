@@ -201,7 +201,11 @@ export type S1PlanResult =
   | { kind: 'expired' }
   | { kind: 'unavailable'; reason: string; retryAfterSeconds?: number }
   | { kind: 'invalid'; detail: string }
-  | { kind: 'reverted'; selector: Hex | null; name: string | null }
+  /**
+   * `tokens` (added 2026-11-09, core flows, errors): every token the plan moves (the pool's two, then any other it pays
+   * with), so a token's transfer refused by selector alone can name them (src/v2in/journey/errors.ts).
+   */
+  | { kind: 'reverted'; selector: Hex | null; name: string | null; tokens?: readonly Address[] }
   | { kind: 'unsimulated'; reason: string }
 
 /**

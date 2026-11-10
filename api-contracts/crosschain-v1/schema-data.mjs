@@ -10,7 +10,8 @@ export const SCHEMAS = {
           "enum": [
             4663,
             8453,
-            42161
+            42161,
+            99901
           ],
           "title": "Destinationchainid",
           "type": "integer"
@@ -140,7 +141,8 @@ export const SCHEMAS = {
               "enum": [
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Destinationchainid",
               "type": "integer"
@@ -274,7 +276,8 @@ export const SCHEMAS = {
           "enum": [
             4663,
             8453,
-            42161
+            42161,
+            99901
           ],
           "title": "Destinationchainid",
           "type": "integer"
@@ -701,7 +704,8 @@ export const SCHEMAS = {
               "enum": [
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Destinationchainid",
               "type": "integer"
@@ -1082,7 +1086,8 @@ export const SCHEMAS = {
           "enum": [
             4663,
             8453,
-            42161
+            42161,
+            99901
           ],
           "title": "Destinationchainid",
           "type": "integer"
@@ -1292,7 +1297,8 @@ export const SCHEMAS = {
               "enum": [
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Destinationchainid",
               "type": "integer"
@@ -1956,6 +1962,12 @@ export const CONSTANTS = {
       "relay": {
         "depository": "0x4cd00e387622c35bddb9b4c962c136462338bc31"
       }
+    },
+    "99901": {
+      "name": "Elysium",
+      "relay": {
+        "depository": "0x4cd00e387622c35bddb9b4c962c136462338bc31"
+      }
     }
   },
   "destinations": {
@@ -1973,6 +1985,9 @@ export const CONSTANTS = {
       "0x0000000000000000000000000000000000000000",
       "0x4200000000000000000000000000000000000006",
       "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
+    ],
+    "99901": [
+      "0xb47c4c8f73f009cc0c0d3f92b388d13e293f0b65"
     ]
   },
   "pollSeconds": {

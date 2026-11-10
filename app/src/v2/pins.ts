@@ -49,7 +49,12 @@ export const READ_V6_PIN = {
   // Changed on purpose (data) 2026-11-06: a chain with one Uniswap version (Elysium: v4 only, not yet in read-v6): the
   // producer's v2_chain_reads.py and v2_read_service.py read only the versions a chain has, and position-fees answers
   // invalid_request for a position of a version it lacks; no route, schema, reason code or version moved.
-  manifestSha256: '059d880b38f5a0d36a255a353dba5873332df6ca6f137ec83727c72635a006b6',
+  // Changed on purpose (data) 2026-11-09 (Elysium's services, rugged97's day-9 read-v6): CONSTANTS.chainIds, the chain
+  // enums and priceProfiles name Elysium (99901), priced at its native HYPE/USDC pool; same versions (1.1.0-rc.1,
+  // 1.2.0-rc.1), the chain list one longer.
+  // Changed on purpose (data) 2026-11-09 (0xdecimal's item 6, the owner's parity): chain-tokens also searches Elysium
+  // (99901), with Base's sources (the pinned Uniswap list has none of its tokens yet); its chainId enum is one longer.
+  manifestSha256: 'bf7e7d2c1affd005321139e47fdfeb0769c62cb701fd933dc0963088de3d5dbe',
 } as const
 
 export const POSITION_PLAN_V1_PIN = {
@@ -76,5 +81,8 @@ export const POSITION_PLAN_V1_PIN = {
   // Changed on purpose (data) 2026-11-06: v2_position_plan.py, v2_position_plan_service.py and v2_quotes.py serve a
   // chain with one Uniswap version (Elysium: v4 only) and refuse a plan of a version the chain lacks as
   // invalid_request; no route, schema, reason code or version moved.
-  manifestSha256: '28449bbdfcd51d42dff8006c4865944c4f93514b3fec042e8e9509f0d33d866c',
+  // Changed on purpose (data) 2026-11-09 (Elysium's mainnet, rugged97's profile pull request): Elysium's enabled profile
+  // (api-contracts/v2/chains/elysium-99901.json) adds 99901 to the package's chain enums and CONSTANTS.chains; version
+  // unchanged. The app's switch still waits for the deployment record, its pin and read-v6.
+  manifestSha256: 'a0d5671a01a30d77645b59bbb6ec3460018e7fd3b8bde553611a62d3635ff058',
 } as const

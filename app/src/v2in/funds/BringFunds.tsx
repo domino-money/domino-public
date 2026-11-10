@@ -136,6 +136,9 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
   const [progress, setProgress] = useState<Record<string, TransferProgress>>({})
   const [revision, setRevision] = useState(0)
   const [readSnapshot, setReadSnapshot] = useState<{ data: ChainBalancesResponse | null; complete: boolean } | null>(null)
+  // Added 2026-11-09 (core flows, the owner: nothing may load forever): whether a whole read of the balances has ended
+  // (each request with its own retries), so a read that came back incomplete stops saying it is still checking.
+  const [readEnded, setReadEnded] = useState(false)
   const readDone = readSnapshot !== null
   const balances = readSnapshot?.data ?? null
   const lastGroups = useRef<(ChainBalancesResponse | null)[]>([null, null])
@@ -318,7 +321,9 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
     const refresh = async () => {
       if (!active || document.hidden || busy || Date.now() - lastRead < 10_000) return
       lastRead = Date.now(); busy = true
-      const succeeded = [false, false]
+      // Changed on purpose 2026-11-09 (core flows): a request with no token to ask (none for this destination) is whole by
+      // itself; it was never answered, so the read could never be complete and its line said "Checking…" for good.
+      const succeeded = [balancesRequest(chainId).length === 0, balanceChainsRequest(chainId).length === 0]
       try {
         await read((index, answer) => {
           if (!active) return
@@ -329,7 +334,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
       } catch { /* Keep the last observed balances; a failed read is not a zero balance. */ }
       finally {
         busy = false
-        if (active) setReadSnapshot((previous) => previous ?? { data: null, complete: false })
+        if (active) { setReadSnapshot((previous) => previous ?? { data: null, complete: false }); setReadEnded(true) }
       }
     }
     void refresh()
@@ -337,7 +342,7 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
     const wake = () => void refresh()
     window.addEventListener('focus', wake); document.addEventListener('visibilitychange', wake)
     return () => { active = false; clearInterval(timer); window.removeEventListener('focus', wake); document.removeEventListener('visibilitychange', wake) }
-  }, [live, read, revision])
+  }, [live, read, revision, chainId])
   useEffect(() => storage.subscribe(() => {
     if (running.current) return
     generation.current++
@@ -734,7 +739,9 @@ function FundingOffer({ gate, services, chainId, wallet, access, walletChainId, 
       {notice && <p role="status" className="dm-funding-notice" data-funds-run-notice="" data-error-code={notice.code}>{notice.copy}</p>}
       {gasReview && !previousUnsent && !notice && !proposal?.recoveryFrom && screen !== 'quoting' && <p className="dm-funding-notice" data-funds-gas-recovery="">{GAS_RECOVERY_COPY}</p>}
       {proposal?.recoveryFrom && <p className="dm-hint" data-funds-gas-recovery="">{proposal.intent.legs.some((leg) => leg.reserveRaw) ? 'Keep 0.006 ETH on Ethereum for network fees. ' : 'Use another available network. '}Your position amount stays the same. Confirm the amounts below before continuing.</p>}
-      {live && readDone && !proposal && !intent && !tracking && !foreignPending && screen !== 'quoting' && !notice && <p className="dm-hint" data-funds-nothing="">{holdings.length === 0 ? !readSnapshot?.complete ? 'Checking the tokens in your wallet…' : observedNetworks.length ? 'These networks need ETH for the transfer fee. Add a little ETH there to use these tokens.' : 'No available funds found on the supported networks. Add funds or choose a smaller amount.' : need === null ? 'Enter an amount. Domino will check how to bring your funds here.' : !ready ? 'Sign in to prepare your transfer. This does not move funds.' : 'Checking a transfer for this amount.'}</p>}
+      {live && readDone && !proposal && !intent && !tracking && !foreignPending && screen !== 'quoting' && !notice && <p className="dm-hint" data-funds-nothing="">{/* Changed on purpose 2026-11-09 (core flows, the owner: nothing may load forever): once a whole read has ended
+          incomplete, what to do, with no claim that the networks not read are empty; it said "Checking…" for good. */}
+        {holdings.length === 0 ? !readSnapshot?.complete && !readEnded ? 'Checking the tokens in your wallet…' : observedNetworks.length ? 'These networks need ETH for the transfer fee. Add a little ETH there to use these tokens.' : readSnapshot?.complete ? 'No available funds found on the supported networks. Add funds or choose a smaller amount.' : `Add funds on ${destination.name} or choose a smaller amount.` : need === null ? 'Enter an amount. Domino will check how to bring your funds here.' : !ready ? 'Sign in to prepare your transfer. This does not move funds.' : 'Checking a transfer for this amount.'}</p>}
       {proposed && selected.some((leg) => !leg.depositTxHash) && <div className="dm-funding-summary" data-funds-quote="" data-funding-sources={selected.length}>
         {selected.filter((leg) => !leg.depositTxHash).map((leg) => <div className="dm-funding-leg" key={leg.id} data-funds-network={leg.originChainId} data-funding-leg-state={leg.state}>
           <span>{originName(leg.originChainId)}</span><strong>{shortAmountText(leg.maxInputRaw, leg.originToken, leg, 'up')}</strong>

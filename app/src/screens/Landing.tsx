@@ -12,10 +12,13 @@ import { homeStory, locOf, useHomeStory, useHomeStoryState } from '../components
 import { ChapterTitle, Stop } from '../components/home/HomeType'
 import { GlyphKey, GlyphLoop, GlyphRange, GlyphValue } from '../components/home/LimitGlyphs'
 import { useInView } from '../components/home/Vignettes'
+import { docsHref } from '../components/explore/routes'
 import { IconChevronRight } from '../components/icons'
 import { Display, LinkButton, PageShell, cx } from '../components/ui'
-import { ELYSIUM_LIVE } from '../lib/elysiumIdentity'
-import { useRouteTitle } from '../lib/routeTitle'
+import { ELYSIUM_LIVE, ELYSIUM_NAME, ELYSIUM_OPENING, ELYSIUM_PRELAUNCH } from '../lib/elysiumIdentity'
+import { useBeforeElysiumOpens } from '../lib/elysiumOpening'
+import { useTabTitle } from '../lib/routeTitle'
+import { HOME_TITLE } from '../lib/seo/heads'
 
 /*
  * Home introduces wallet funding, pools and their range in the order a new visitor needs them.
@@ -70,6 +73,19 @@ function HeroLines({ still = false }: { still?: boolean }) {
 }
 
 /**
+ * Elysium before Domino opens there (added 2026-11-07, Elysium's pre-launch): its mark and name, then when it opens, as
+ * V4's pool tag; leads to the docs' Elysium section, never to New position, which cannot offer it yet. The date is the
+ * visitor's own: from the start of the opening day in their time zone the tag says "Opens next" (lib/elysiumOpening.ts).
+ * The mark stays as drawn, never dimmed: the tag alone says it is not open yet. Its name for assistive technology is the
+ * two read as one, "Elysium, Opens Nov 9" (a visually hidden comma between them read "Elysium , Opens Nov 9" in Chrome).
+ */
+function ElysiumNext() {
+  const dated = useBeforeElysiumOpens()
+  const when = dated && ELYSIUM_OPENING ? `Opens ${ELYSIUM_OPENING.short}` : 'Opens next'
+  return <a href={docsHref('what-is-domino', 'elysium')} aria-label={`${ELYSIUM_NAME}, ${when}`}><NetworkMark network={ELYSIUM_NAME} variant="v4" /><span>{ELYSIUM_NAME}</span><span className="dm-hero-when" data-elysium-when={dated ? 'dated' : 'next'}>{when}</span></a>
+}
+
+/**
  * A short headline beside the tile standing in the light.
  * The tile drifts while at least 30% of the hero is in view.
  */
@@ -89,10 +105,10 @@ function Hero() {
             under the headline, outside the head so the light's copy never covers it. */}
         <p className="dm-hero-lede dm-k-up1">Put two tokens in a pool and earn its trading fees.</p>
         <div className="dm-hero-actions dm-k-up1">
-          <LinkButton href="#/markets" size="xl">
+          <LinkButton href="/markets" size="xl">
             Explore markets
           </LinkButton>
-          <LinkButton href="#/new" variant="ghost" size="xl">
+          <LinkButton href="/new" variant="ghost" size="xl">
             {PLUS}New position
           </LinkButton>
         </div>
@@ -100,15 +116,18 @@ function Hero() {
             Home's own section on bringing funds (same look), and the group's name is announced. */}
         <div className="dm-hero-funding dm-k-up2" role="group" aria-label="Networks to bring funds from">
           <span>Bring funds from</span>
-          <ul>{FUNDING_ROW.map(network => <li key={network}><a href="#/#funding"><NetworkMark network={network} variant="v4" /><span>{network}</span></a></li>)}</ul>
+          <ul>{FUNDING_ROW.map(network => <li key={network}><a href="/#funding"><NetworkMark network={network} variant="v4" /><span>{network}</span></a></li>)}</ul>
         </div>
         {/* Added 2026-11-07 (the owner's order of 6 Nov: Elysium's mark on Home): where positions open, with Elysium last, in
             the funding row's own chips; each leads to New position. Only where the build serves Elysium (POSITION_ROW).
             Changed on purpose 2026-11-07 (review finding E/P9): behind the build's own fact too, so a build where Elysium is
-            off carries none of the row (its length alone does not fold). */}
-        {ELYSIUM_LIVE && POSITION_ROW.length > 0 && <div className="dm-hero-funding dm-hero-networks dm-k-up2" role="group" aria-label="Networks to open positions on">
+            off carries none of the row (its length alone does not fold).
+            Changed on purpose 2026-11-07 (Elysium's pre-launch): drawn in pre-launch too, where Elysium's chip is ElysiumNext
+            (when it opens, leading to the docs); live, every chip leads to New position, as before. Pre-launch is named first, so
+            a build where Elysium is off folds the test to the live fact alone, as before. */}
+        {(ELYSIUM_PRELAUNCH || ELYSIUM_LIVE) && POSITION_ROW.length > 0 && <div className="dm-hero-funding dm-hero-networks dm-k-up2" role="group" aria-label="Networks to open positions on">
           <span>Open positions on</span>
-          <ul>{POSITION_ROW.map(network => <li key={network}><a href="#/new"><NetworkMark network={network} variant="v4" /><span>{network}</span></a></li>)}</ul>
+          <ul>{POSITION_ROW.map(network => <li key={network}>{ELYSIUM_PRELAUNCH && network === ELYSIUM_NAME ? <ElysiumNext /> : <a href="/new"><NetworkMark network={network} variant="v4" /><span>{network}</span></a>}</li>)}</ul>
         </div>}
       </div>
       <div className="dm-hero-band">
@@ -134,7 +153,7 @@ function HowItWorks() {
         <ChapterTitle id="dm-automation-title" first="Choose what" second={<>happens next<Stop /></>} />
         <div className="dm-home-chapter-aside">
           <p>Three ways to manage your position, on your terms.</p>
-          <LinkButton href="#/automate" variant="ghost" className="dm-home-more">Explore automation <IconChevronRight size={16} /></LinkButton>
+          <LinkButton href="/automate" variant="ghost" className="dm-home-more">Explore automation <IconChevronRight size={16} /></LinkButton>
         </div>
       </div>
       <FeatureCards />
@@ -208,7 +227,9 @@ function Limits() {
 
 export function Landing() {
   // Home's tab is the site's own name, given back on the way home from another screen (lib/routeTitle.ts, audit E11).
-  useRouteTitle(null)
+  // Changed on purpose 2026-11-07 (the owner: Domino in Google, decision 1): "Domino · Earn fees. Keep control.", Home's
+  // search title too (lib/seo/heads.ts); it was "Domino".
+  useTabTitle(HOME_TITLE)
   useHomeLight()
   useHomeStory()
   return (

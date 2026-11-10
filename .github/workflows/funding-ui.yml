@@ -19,11 +19,13 @@ permissions:
 concurrency:
   group: funding-${{ github.event_name }}-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+# Repository override for recovery: github-hosted selects Ubuntu 24.04.
+# An unset or different value keeps each job's exact Clawber routing.
 jobs:
   funding:
     if: github.repository == 'domino-money/domino' && github.event.repository.private == true
     name: Funding, automation and history in browser
-    runs-on: [self-hosted, Linux, X64, domino-ci, "domino-ci-${{ github.run_id }}-${{ github.run_attempt }}", domino-ci-normal, "domino-job-funding"]
+    runs-on: ${{ vars.DOMINO_CI_RUNNER_POOL == 'github-hosted' && 'ubuntu-24.04' || fromJSON(format('["self-hosted","Linux","X64","domino-ci","domino-ci-{0}-{1}","domino-ci-normal","domino-job-funding"]', github.run_id, github.run_attempt)) }}
     # 40 since 2026-10-16 (V4): the suite already used 23.5-24 of its 25 minutes on main; V4's blurs and gradients cost
     # more to paint without a GPU (the same 210 tests: 1182 s on main a78996d5, 1438 s on V4), so 25 cancelled it mid-run.
     timeout-minutes: 40

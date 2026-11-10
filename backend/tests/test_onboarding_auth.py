@@ -443,8 +443,9 @@ class OnboardingAuthPostgresTests(unittest.TestCase):
         self.assertEqual(self.bucket('onboarding-ip', credentials['client'])['count'], PREVIEW_ACCOUNT_LIMIT)
 
     def test_capacity_saturation_never_reaches_checker_and_charges_nothing(self):
-        # Room for one new key refuses before the credentials (the site's and the IP's are both new);
-        # room for two refuses when the account's would be the third: neither keeps the IP's charge.
+        # The signed-in charge needs three new keys (the site's, the IP's and the account's), so room for one or two
+        # refuses it after the credentials (7 Nov 2026: the read before them never refuses for room) and before the
+        # checker: neither keeps the IP's charge.
         for room in (1, 2):
             with self.subTest(room=room):
                 self.setUp()
@@ -457,6 +458,39 @@ class OnboardingAuthPostgresTests(unittest.TestCase):
                 for kind, value in (('onboarding-ip', credentials['client']), ('onboarding-account', owner),
                                     ('onboarding-global', 'all')):
                     self.assertIsNone(self.bucket(kind, value), kind)
+
+    def rows(self):
+        return self.admin.execute('SELECT count(*) AS n FROM domino_sessions.rate_limits').fetchone()['n']
+
+    def test_guesses_take_only_their_share_of_the_table_and_past_it_are_refused_uncounted(self):
+        # 7 Nov 2026: nothing global bounds how many clients guess, so their new rows stop at GUESS_ROWS. Past that a
+        # guess is refused as before but writes nothing; a client's existing window is still charged, and the rows
+        # the global windows bound (sign-in's, a signed-in owner's) still find room.
+        credentials, owner = self.login()
+        share = self.rows() + 2
+        with patch('session_store.GUESS_ROWS', share):
+            for number in (1, 2):
+                self.error('session_required', lambda: self.auth.begin(f'198.51.100.{number}', 'x' * 43, CSRF))
+            self.assertEqual(self.rows(), share)
+            self.error('session_required', lambda: self.auth.begin('198.51.100.3', 'x' * 43, CSRF))
+            self.assertIsNone(self.bucket('onboarding-ip', '198.51.100.3'))
+            self.assertEqual(self.rows(), share)
+            self.error('session_required', lambda: self.auth.begin('198.51.100.1', 'x' * 43, CSRF))
+            self.assertEqual(self.bucket('onboarding-ip', '198.51.100.1')['count'], 2)
+            self.assertEqual(self.auth.begin(**credentials)['owner'], owner)
+            self.assertEqual(self.bucket('onboarding-account', owner)['count'], 1)
+            self.assertEqual(self.rows(), share + 3)
+
+    def test_no_guess_is_refused_for_room_though_a_signed_in_request_still_is(self):
+        # Room is the charge's question (7 Nov 2026): the read before the credentials never refuses for it, so on a
+        # full table a guess from a new client keeps its own answer and writes nothing.
+        credentials, owner = self.login()
+        before, checks = self.rows(), len(self.checker.calls)
+        with patch.dict(CAPACITIES, {'rate_limits': before}), patch('session_store.GUESS_ROWS', before):
+            self.error('session_required', lambda: self.auth.begin('198.51.100.9', 'x' * 43, CSRF))
+            self.error('session_capacity_busy', lambda: self.auth.begin(**credentials))
+        self.assertEqual(self.rows(), before)
+        self.assertEqual(len(self.checker.calls), checks)
 
     def test_fresh_expiry_guard_rolls_back_touch_and_keeps_prior_quota(self):
         credentials, owner = self.login()

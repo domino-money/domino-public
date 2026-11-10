@@ -28,6 +28,7 @@ import { knownTokens } from '../lib/read/screens/tokenSearch'
 import { handoffFor, selectable, type TokenCandidate } from '../lib/read/screens/tokens'
 import type { NetworkToken, OtherChains } from '../lib/create/otherChains'
 import { recovering } from '../lib/staleRelease'
+import { navigate } from '../lib/route'
 
 type NetworksProps = { children: (others: OtherChains | null, checking: boolean) => ReactNode }
 const MarketsNetworks = __DOMINO_V2__ ? lazy(recovering(() => import('../v2in/journey/MarketsNetworks'), () => ({ default: ({ children }: NetworksProps) => children(null, false) }))) : null
@@ -238,7 +239,7 @@ function ExploreBody({ others = null, checkingNetworks = false }: { others?: Oth
 
   // An older link with a pool id in its section part goes straight to that pool's page.
   useEffect(() => {
-    if (location.linkedPool) window.location.replace(poolHref(location.linkedPool))
+    if (location.linkedPool) navigate(poolHref(location.linkedPool), { replace: true })
   }, [location.linkedPool])
 
   useEffect(() => {
@@ -267,17 +268,17 @@ function ExploreBody({ others = null, checkingNetworks = false }: { others?: Oth
     // (useSyncExternalStore), which would otherwise mount the token view before a
     // default-priority update lands, and the view would read the token again.
     flushSync(() => setHandoff(handoffFor(chosen, chosen.wire)))
-    window.location.hash = exploreHref(chosen.wire)
+    navigate(exploreHref(chosen.wire))
   }
 
   const onNetwork = async (row: NetworkToken): Promise<{ ok: true }> => {
     flushSync(() => setNetworkHandoff(row))
-    window.location.hash = marketsNetworkHref(row.chainId, row.token.address)
+    navigate(marketsNetworkHref(row.chainId, row.token.address))
     return { ok: true }
   }
 
   const open = (poolId: string, token: string) => {
-    window.location.hash = poolHref(poolId, token)
+    navigate(poolHref(poolId, token))
   }
 
   const showPools = candidate !== null && finding === candidate.key && selectable(candidate)

@@ -24,8 +24,10 @@ export const ELYSIUM = Object.freeze({
   wrappedSymbol: 'WHYPE' as const,
   /**
    * "Finalized" usually comes about this many minutes after "Included" (spec §1.3; never a deadline): the testnet
-   * rehearsal of 5 Nov 2026 measured its `finalized` block 712 s behind its head (docs/v2/QUALIFY_CHAIN.md). Checked
-   * again against the mainnet profile's `finality` on the day.
+   * rehearsal of 5 Nov 2026 measured its `finalized` block 712 s behind its head (docs/v2/QUALIFY_CHAIN.md). Checked on
+   * 2026-11-09 (Elysium's day 9, checklist step 4): on mainnet `finalized` trails the head by 6 to 25 minutes, moving in
+   * batch steps (350 s at the profile's block 3233210, 10 to 25 minutes during the deployment, rugged97's measurements),
+   * so 12 stays: the middle of that.
    */
   finalityMinutes: 12,
   /**

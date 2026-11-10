@@ -287,7 +287,10 @@ test('F8: a direct exit reads its budget at its own review; on Base its cost car
   assert.ok(chain.log.includes('eth_gasPrice') && chain.log.includes('eth_maxPriorityFeePerGas'), 'read through the client\'s own calls');
 });
 
-test('rev2 §2.13: a direct exit of a vault’s armed root waits for the pause warning; a successor held by a vault is refused', async () => {
+// Changed on purpose 2026-11-09 (the core-flows fix; the owner: closing a position with automation must be easy): an armed
+// root's direct exit is sent without any acknowledgement (the vault never refuses its owner's exit; it turns its
+// automation off), still named in `pausesAutomation` for the dialog's one line; a successor is still refused here.
+test('rev2 §2.13: a direct exit of a vault’s armed root names its vault and is sent without a tick; a successor held by a vault is refused', async () => {
   const VAULT = '0x00000000000000000000000000000000000000aa';
   const probe = async (_rpc, address) => address.toLowerCase() === VAULT;
   // v4: the vault is the position's subscriber (an armed root).
@@ -295,11 +298,8 @@ test('rev2 §2.13: a direct exit of a vault’s armed root waits for the pause w
   const client = direct.createDirectClient(walletOf(chain), chains.v2Chain(chain.chainId), () => NOW, chain.codeHashes, probe);
   const exit = await client.prepareClose(4, V4.tokenId, 50, GAS);
   assert.equal(exit.pausesAutomation, VAULT);
-  await assert.rejects(client.send(exit, true), /automation_pause_unacknowledged/);
-  assert.equal(chain.sends.length, 0, 'nothing reached the wallet');
-  client.acknowledgePause(exit);
   await client.send(exit, true);
-  assert.equal(chain.sends.length, 1);
+  assert.equal(chain.sends.length, 1, 'sent at once: no tick is asked');
   // v3 on Arbitrum: the vault holds the individual approval (an armed root).
   const arbitrum = createDirectChain({ chainId: 42161, v3: [{ ...V3, approved: VAULT }], timestamp: NOW });
   const arbClient = direct.createDirectClient(walletOf(arbitrum), chains.v2Chain(42161), () => NOW, arbitrum.codeHashes, probe);
@@ -315,7 +315,7 @@ test('rev2 §2.13: a direct exit of a vault’s armed root waits for the pause w
 });
 
 // Added 2026-10-02 (Domino V2 rev2 review, L2): only a root its vault reads ARMED pauses automation.
-test('L2: a direct exit of a root its vault reads disarmed pauses nothing, and still names the vault for its reserves; an armed root still waits', async () => {
+test('L2: a direct exit of a root its vault reads disarmed pauses nothing, and still names the vault for its reserves; an armed root is named and sent', async () => {
   const VAULT = '0x00000000000000000000000000000000000000aa';
   const probe = async (_rpc, address) => address.toLowerCase() === VAULT;
   const asked = [];
@@ -336,7 +336,8 @@ test('L2: a direct exit of a root its vault reads disarmed pauses nothing, and s
   const armed = direct.createDirectClient(walletOf(armedChain), chains.v2Chain(armedChain.chainId), () => NOW, armedChain.codeHashes, probe, rootProbe(true));
   const armedExit = await armed.prepareClose(4, V4.tokenId, 50, GAS);
   assert.deepEqual([armedExit.pausesAutomation, armedExit.vaultRoot], [VAULT, VAULT]);
-  await assert.rejects(armed.send(armedExit, true), /automation_pause_unacknowledged/);
+  await armed.send(armedExit, true);
+  assert.equal(armedChain.sends.length, 1, 'changed on purpose 2026-11-09: no acknowledgement first');
   // A vault whose root is another position: no root here, no warning, no reserves.
   const otherChain = createDirectChain({ v4: [{ ...V4, subscriber: VAULT }], timestamp: NOW });
   const other = direct.createDirectClient(walletOf(otherChain), chains.v2Chain(otherChain.chainId), () => NOW, otherChain.codeHashes, probe, rootProbe(true, 1n));

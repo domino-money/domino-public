@@ -243,6 +243,44 @@ to 1 s for its answer and then ask the Worker themselves. A kept answer carries
 budget. No KV: `caches.default` only, per colo, so no binding and no dashboard
 step.
 
+Added 2026-11-07 (edge hardening, after rugged97's attack test of the open
+site; no change on the VM or the read Worker). Three more public reads that
+reached the VM on every request, and two keys that took spellings the producer
+answers alike as different questions:
+
+| Route (Pages Function) | Key | Fresh | Served while it refreshes behind | Stands in for a VM failure |
+| --- | --- | --- | --- | --- |
+| read-v3 `search` (`api/read/v3/search.ts`) | the query without the spaces Python's `strip()` cuts around it, ASCII letters in lower case (the producer's `strip()` and ILIKE), and the limit (default 20) | 20 s | to 60 s | to 15 min, or past 1 s |
+| read-v6 `chain-pools` (`api/read/v6/chain-pools.ts`) | the version asked, the chain, the token, the paired token | 5 s | never | never (the page reads the pool through the wallet when the VM fails); a read on its way is waited for whole by those that join it |
+| read-v6 `chain-tokens` (`api/read/v6/chain-tokens.ts`) | the version asked, the chain, the query as for search (the producer's `strip().casefold()`), the limit (default 20) | 10 s | to 30 s | to 15 min, or past 1 s |
+
+A 429 from the gateway (`read_capacity_busy`, mostly that visitor's own
+budget) lets a kept answer stand in for that visitor alone; since the review of
+2026-11-07 it no longer holds the key for anyone else, on every route kept at
+the edge (the overview's, the history's and the featured list's too), so one
+address past its budget cannot keep other visitors on old figures. A 408, a 5xx
+or a 200 that is no answer still guards the key REFRESH_GUARD_MS, as before.
+
+The edge's copy adds to the producer's own: a chain-pools snapshot served from
+the edge is at most 5 s older than the VM's own 15 s copy (about 20 s in all,
+the page's own reuse of a chain-pools answer), its age always the snapshot's; a
+token the VM has just looked up shows in a chain-tokens name search at most
+30 s later; a newly verified token may be missing from a search for up to 60 s
+plus the page's own 60 s.
+
+An answer echoes its query as asked, so one kept for another spelling is served
+with the asker's own query in it; a read-v6 answer is served with `servedAt` as
+of the moment it leaves the edge and chain-pools' age from its snapshot's block,
+exactly as the producer stamps the copies it keeps itself. Every answer served from the edge is checked with
+the route's runtime against the very request. The overview's key leaves out the
+limit of a list of pools asked by id (the producer lists exactly the pools
+asked), and takes a token page's missing limit as the default, 24; the
+history's takes a missing window or resolution as the defaults, 86400 and 3600.
+Every question a screen sends keeps the key it had. The wallet's reads
+(`portfolio`, `activity`, `chain-balances`, `position-fees`), `pool-market`, NFT
+and session reads are still never kept. The read capabilities are the Worker's
+own answer and never reach the VM, so they are not kept either.
+
 One more route at the edge that is not a read of ours (audit I3, privacy):
 `api/read/dex/[[path]].ts` asks DEX Screener's public API for the page, one token
 per upstream request, and keeps each token's answer 30 s fresh and up to 5 min
@@ -268,6 +306,16 @@ doubling to 5 min; an upstream 429 stops every read from that isolate for its
 addresses. `Server-Timing` names, per token, why there is no fresh read
 (`miss;desc="status_429 0x…"`, `timeout`, `late`, `joined` with its age, …).
 This route never calls Domino's node.
+
+Since 2026-11-07 the new path alone also answers
+`api/read/dex2/pairs/<base|arbitrum>/<pool>[,<pool>…]`: Base's and Arbitrum
+One's pools by their own names (a v3 pool's address, a v4 pool's 32-byte id; at
+most ten), each read from the provider's pairs endpoint
+(`/latest/dex/pairs/<chain>/<pool>`), one pool per upstream request, and kept,
+refused, remembered and limited exactly as a token is, under a key of its own.
+The provider lists 30 pairs a token, not ranked by liquidity, so a busy token's
+own pools can be missing from its list (Base USDC's WETH/USDC pools, on
+2026-11-07); the page asks for those rows by name, never the provider directly.
 
 Keep PR #10's
 bounded market-observation cache: fresh for 60 seconds, stale fallback up to

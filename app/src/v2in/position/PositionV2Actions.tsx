@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { KeyValue } from '../../components/ui'
+import { IconClose } from '../../components/icons'
+import { Button, KeyValue } from '../../components/ui'
 import { useWalletIdentity } from '../../lib/walletIdentity'
 import type { WalletPosition } from '../../lib/walletPositions'
-import { v2Gate, type V2Gate } from '../../v2/gate'
-import { v2PageProbe } from '../transports'
+import type { V2Gate } from '../../v2/gate'
+import { useHealingGate } from '../automate/gate'
 import { ApprovalFact, useZapApproval } from './Approval'
-import { SUCCESSOR_BLOCKED_COPY } from './constants'
+import { HOOKED_COPY } from './constants'
 import { COPY } from './copy'
+import { hookedPool } from './model'
 import { autoExitRootOf, findPosition, fromWalletPosition, heldInPoolOrder, positionVault, tokensOfWalletPosition, vaultReservesOf, type ActionPosition, type VaultReserves } from './model'
 import { MoreActions, positionMenuItems, type MoreAction } from './MoreActions'
 import { PositionDialog, type PositionMode } from './PositionDialog'
@@ -28,20 +30,26 @@ export interface PositionV2ActionsProps {
    * exitVaultOf), for V1's Collect fees and Close position: false until known, and for any other position.
    */
   onAutoExitRoot?: (root: boolean) => void
+  /**
+   * Added 2026-11-09 (the core-flows fix): the connected wallet (lowercase), when it is not the NFT's holder: the page
+   * then offers Close position only for a position Domino-compound holds for this wallet (its successor, held by the
+   * wallet's own automation), withdrawn from the automation first; nothing else. Absent: the holder is the wallet.
+   */
+  wallet?: string
+  /**
+   * Added 2026-11-09 (the core-flows fix): V1's Close position hands its press here while the position is an automation's
+   * main position (read-v6), so that close runs as the one guided flow (./CloseSteps.tsx: it turns the automation off,
+   * then returns the fees it still holds); null otherwise, V1's own dialog then.
+   */
+  onCloseFlow?: (open: (() => void) | null) => void
 }
 
-/** The gate for S1 on Robinhood Chain, asked once per page (null while it is asked). */
-function useS1Gate(chainId: number): V2Gate | null {
-  const [gate, setGate] = useState<V2Gate | null>(null)
-  useEffect(() => {
-    let alive = true
-    void v2Gate('s1', chainId, undefined, v2PageProbe).then((answer) => { if (alive) setGate(answer) }, () => { if (alive) setGate({ mode: 'off' }) })
-    return () => {
-      alive = false
-    }
-  }, [chainId])
-  return gate
-}
+/**
+ * The gate for S1 on Robinhood Chain (null while it is asked). Changed on purpose 2026-11-09 (the core-flows fix, item a):
+ * asked again by itself while it is not live (../automate/gate.tsx useHealingGate); it was asked once per page, and a
+ * passing failure of its probe locked every action here until a reload.
+ */
+const useS1Gate = (chainId: number): V2Gate | null => useHealingGate('s1', chainId)
 
 /**
  * Domino V2 on V1's position page (the owner, 2026-10-02: V2 is an integration into the screens that exist; 2026-10-03:
@@ -56,17 +64,20 @@ function useS1Gate(chainId: number): V2Gate | null {
  * an armed root, the other actions ask for the pause warning; the reserves an exit leaves behind are named); the money
  * clients read the chain again before any send in any case.
  */
-export default function PositionV2Actions({ position, owner, onChanged, onAutoExitRoot }: PositionV2ActionsProps) {
+export default function PositionV2Actions({ position, owner, onChanged, onAutoExitRoot, wallet, onCloseFlow }: PositionV2ActionsProps) {
   const gate = useS1Gate(4663)
   const open: OpenGate | null = gate && gate.mode !== 'off' ? gate : null
   const identity = useWalletIdentity()
   const walletOnChain = identity.kind === 'connected' && identity.chainId === 4663
   const base = useMemo(() => fromWalletPosition(position, owner), [position, owner])
+  // (2026-11-09) Whose portfolio says what automation holds this position: the connected wallet's.
+  const viewer = (wallet ?? owner).toLowerCase()
+  const held = viewer !== owner.toLowerCase()
   const book = useMemo(() => tokenBook(4663, tokensOfWalletPosition(position)), [position])
   const [vaultInfo, setVaultInfo] = useState<{ vault: ActionPosition['vault']; reserves: VaultReserves | null; exitRoot: boolean } | null>(null)
   const [mode, setMode] = useState<PositionMode | null>(null)
   const action: ActionPosition | null = base ? { ...base, vault: vaultInfo?.vault ?? null } : null
-  const approval = useZapApproval(open, action, walletOnChain)
+  const approval = useZapApproval(open, held ? null : action, walletOnChain)
 
   // Under live only: whether a Domino vault administers this position, from read-v6 (before the deploy no vault exists).
   const tokenId = base?.tokenId ?? null
@@ -74,7 +85,7 @@ export default function PositionV2Actions({ position, owner, onChanged, onAutoEx
   useEffect(() => {
     if (!open || open.mode !== 'live' || tokenId === null) return
     let alive = true
-    void portfolioFor(open, owner).then((read) => {
+    void portfolioFor(open, viewer).then((read) => {
       if (!alive || read.reply.kind !== 'ok') return
       const found = findPosition(read.reply.body, 4663, 4, tokenId)
       const vault = found?.vault ?? null
@@ -87,12 +98,20 @@ export default function PositionV2Actions({ position, owner, onChanged, onAutoEx
     return () => {
       alive = false
     }
-  }, [open, owner, tokenId])
+  }, [open, viewer, tokenId])
 
   const exitRoot = vaultInfo?.exitRoot ?? false
   useEffect(() => {
     onAutoExitRoot?.(exitRoot)
   }, [exitRoot, onAutoExitRoot])
+  // (2026-11-09) An automation's main position in the wallet: V1's Close position opens this page's guided close instead.
+  const automationRoot = !held && open !== null && vaultInfo?.vault?.role === 'root'
+  useEffect(() => {
+    onCloseFlow?.(automationRoot ? () => setMode('close') : null)
+    return () => onCloseFlow?.(null)
+  }, [automationRoot, onCloseFlow])
+  // (2026-11-09) A position Domino-compound holds for this wallet: the vault holding the NFT is the wallet's own.
+  const successorOfMine = held && vaultInfo?.vault?.role === 'successor' && vaultInfo.vault.address === owner.toLowerCase()
 
   // The "···" button goes to the end of V1's own actions row, and the approval fact into the page's own Details list (one
   // mount point on the page: this component's), both found from this component's place once it is drawn.
@@ -105,6 +124,24 @@ export default function PositionV2Actions({ position, owner, onChanged, onAutoEx
   }, [])
 
   if (!open || !action) return null
+  if (held) {
+    // Added 2026-11-09 (the core-flows fix): no row of V1's is drawn for a position the wallet does not hold; Close position
+    // stands where that row would, alone, for a position the wallet's Domino-compound holds. It had no Close at all.
+    if (!successorOfMine || action.liquidity === 0n) return null
+    const hooked = hookedPool(action.pool)
+    return (
+      <>
+        <div className="dm-pos-actions" data-position-actions="" data-position-v2-held="successor">
+          <Button type="button" variant="danger" disabled={hooked} title={hooked ? HOOKED_COPY : undefined} aria-haspopup="dialog" aria-expanded={mode === 'close'} data-position-action="close" onClick={() => setMode('close')}>
+            <IconClose size={18} /><span>{COPY.title.close}</span>
+          </Button>
+        </div>
+        {mode === 'close' && (
+          <PositionDialog gate={open} position={action} mode="close" book={book} reserves={vaultInfo?.reserves ?? null} onClose={() => setMode(null)} onDone={(block) => onChanged(block)} />
+        )}
+      </>
+    )
+  }
   // The entries (./MoreActions.tsx); a vault's successor has none: its sentence, and no button. Auto-exit opens the
   // automation panel's own dialog; the others, this page's action dialog.
   const items = positionMenuItems(action, false)
@@ -114,12 +151,7 @@ export default function PositionV2Actions({ position, owner, onChanged, onAutoEx
     <>
       {/* Where this component sits (after V1's row): unseen; the button itself goes into V1's row. */}
       <span ref={anchor} hidden data-position-v2-mount={open.mode} />
-      {row && createPortal(
-        items.length === 0
-          ? <span className="text-caption text-fg-muted" data-position-v2-actions={open.mode} data-position-v2-blocked="successor">{SUCCESSOR_BLOCKED_COPY}</span>
-          : <MoreActions id={`position-v2-more-${action.tokenId}`} items={items} onPick={pick} data-position-v2-actions={open.mode} />,
-        row,
-      )}
+      {row && items.length > 0 && createPortal(<MoreActions id={`position-v2-more-${action.tokenId}`} items={items} onPick={pick} data-position-v2-actions={open.mode} />, row)}
       {mode && (
         <PositionDialog
           gate={open}

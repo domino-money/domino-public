@@ -172,6 +172,12 @@ export interface Budget {
   bytes: number
   started: number
   retryAfterMs: number
+  /**
+   * Added on purpose 2026-11-09 (core flows, the owner: "nothing may be slow"): a lower cap than MAX_RPC_CALLS for the
+   * part of an answer that runs now (feesLedger.ts: a ledger's later passes leave the opening prices their calls).
+   * Absent: MAX_RPC_CALLS. Never higher.
+   */
+  cap?: number
 }
 
 export const newBudget = (rt: FeesRuntime): Budget => ({ calls: 0, bytes: 0, started: rt.deps.now(), retryAfterMs: 0 })
@@ -322,7 +328,7 @@ function retryAfterMs(response: Response): number {
 /** One POST to the RPC (one call or a batch), within the answer's caps; its body parsed as JSON. */
 export async function post(rt: FeesRuntime, budget: Budget, payload: unknown, logs: boolean, byteLimit = MAX_BYTES): Promise<unknown> {
   if (rt.deps.cancelled?.()) throw new RelayError('fatal', 'cancelled')
-  if (budget.calls >= MAX_RPC_CALLS) throw new RelayError('calls', 'rpc_call_cap')
+  if (budget.calls >= Math.min(budget.cap ?? MAX_RPC_CALLS, MAX_RPC_CALLS)) throw new RelayError('calls', 'rpc_call_cap')
   if (rt.deps.now() - budget.started > DEADLINE_MS) throw new RelayError('deadline', 'deadline')
   budget.calls += 1
   // A call that took too long fails. Changed on purpose 2026-10-02 (rugged97's rule 7): a log range that took too long was

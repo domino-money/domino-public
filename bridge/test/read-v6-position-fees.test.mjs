@@ -36,12 +36,14 @@ const env = {
 };
 const on = { ...env, ENABLED_V6_READS: WITH_FEES };
 
-const FEES_REQUEST = text('1.2.0-rc.1/requests/position-fees.json');
-const FEES = text('1.2.0-rc.1/valid/position-fees.json');
-const FEES_VALID = list('1.2.0-rc.1/valid').filter(([name]) => name.startsWith('position-fees'));
-const FEES_INVALID = list('1.2.0-rc.1/invalid').filter(([name]) => name.startsWith('position-fees'));
+// Changed on purpose 2026-11-07 (day-9 rehearsal, finding F8): the next version's fixtures from the package's own folder,
+// so a package that moves NEXT_VERSION loads here and fails the window test below by name, instead of at import.
+const FEES_REQUEST = text(`${NEXT_VERSION}/requests/position-fees.json`);
+const FEES = text(`${NEXT_VERSION}/valid/position-fees.json`);
+const FEES_VALID = list(`${NEXT_VERSION}/valid`).filter(([name]) => name.startsWith('position-fees'));
+const FEES_INVALID = list(`${NEXT_VERSION}/invalid`).filter(([name]) => name.startsWith('position-fees'));
 const PORTFOLIO = text('valid/portfolio.json');
-const PORTFOLIO_12 = text('1.2.0-rc.1/valid/portfolio.json');
+const PORTFOLIO_12 = text(`${NEXT_VERSION}/valid/portfolio.json`);
 const WALLET = JSON.parse(text('requests/portfolio.json')).wallet;
 // The request each stored answer answers: its chain and its positions, in its order.
 const feesRequestFor = (body) => {

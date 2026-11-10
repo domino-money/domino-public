@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import type { TocEntry } from '../../lib/docs/types'
 import { scrollToSection } from '../../lib/sectionScroll'
 import { rootScale } from '../../lib/rootScale'
+import { currentRoute, routeOfHref } from '../../lib/route'
 import { docsHref } from '../explore/routes'
 
 /**
@@ -100,7 +101,7 @@ export function DocsToc({ slug, entries }: { slug: string; entries: readonly Toc
   const choose = (event: MouseEvent<HTMLAnchorElement>, id: string) => {
     if (!plainClick(event)) return
     closeDisclosureOf(event.currentTarget)
-    if (window.location.hash !== event.currentTarget.getAttribute('href')) return
+    if (currentRoute() !== routeOfHref(event.currentTarget.getAttribute('href') ?? '')) return
     event.preventDefault()
     scrollToSection(id)
   }

@@ -214,6 +214,8 @@ export const SENDER_COPY: Readonly<Record<string, string>> = Object.freeze({
   batch_not_included: "Your wallet didn't send it. Nothing was bridged.",
   batch_reverted: 'The approval and the deposit failed on {origin}. Nothing was bridged.',
   batch_unknown: "We couldn't follow this deposit. Check your wallet's activity on {origin}.",
+  // Added 2026-11-09 (core flows): a batch the wallet took and has not sent after a few minutes (constants.ts FUNDS_BATCH_FOLLOW_MS).
+  batch_slow: "Your wallet hasn't sent this deposit yet. Check its activity on {origin}.",
 })
 export const SENDER_GENERIC = "Something went wrong with your wallet's answer. Check your wallet's activity on {origin}."
 

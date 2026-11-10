@@ -5,7 +5,7 @@ import { ChapterTitle, Stop } from './HomeType'
 import { useInView } from './Vignettes'
 import { useSvgId } from '../charts/series'
 import { homeStory, locOf, useHomeStoryState } from './homeStory'
-import { ELYSIUM_FUNDS_FROM, ELYSIUM_LIVE, ELYSIUM_MARK, ELYSIUM_NAME } from '../../lib/elysiumIdentity'
+import { ELYSIUM_FUNDS_FROM, ELYSIUM_LIVE, ELYSIUM_MARK, ELYSIUM_NAME, ELYSIUM_PRELAUNCH } from '../../lib/elysiumIdentity'
 
 export const FUNDING_NETWORKS = ['Ethereum', 'Base', 'Arbitrum One', 'OP Mainnet', 'Robinhood Chain'] as const
 
@@ -26,8 +26,11 @@ export const MARKED_NETWORKS: readonly MarkedNetwork[] = Object.freeze([...FUNDI
  * Home's "Open positions on" row (added 2026-11-07, the owner's order of 6 Nov: Elysium's mark on Home): the networks
  * Domino opens positions on, in the V2 chains' order (config/chainIdentity.ts V2_CHAIN_IDS), with Elysium last; drawn only
  * where the build serves Elysium (lib/elysiumIdentity.ts ELYSIUM_LIVE). Empty elsewhere, so Home is what it was: no row.
+ * Changed on purpose 2026-11-07 (Elysium's pre-launch, the owner's order: Elysium's logo on the first screen before its
+ * network opens): drawn in pre-launch too (ELYSIUM_PRELAUNCH), where Elysium's chip says when it opens and leads to the
+ * docs, never to New position (screens/Landing.tsx). Empty only where Elysium is off.
  */
-export const POSITION_ROW: readonly MarkedNetwork[] = Object.freeze(ELYSIUM_LIVE ? ['Robinhood Chain', 'Base', 'Arbitrum One', ELYSIUM_NAME] : [])
+export const POSITION_ROW: readonly MarkedNetwork[] = Object.freeze(ELYSIUM_LIVE || ELYSIUM_PRELAUNCH ? ['Robinhood Chain', 'Base', 'Arbitrum One', ELYSIUM_NAME] : [])
 
 export const FUNDING_ROW: readonly MarkedNetwork[] = Object.freeze(ELYSIUM_FUNDS_FROM ? [...FUNDING_NETWORKS, ELYSIUM_NAME] : [...FUNDING_NETWORKS])
 
@@ -142,7 +145,7 @@ export function HomeCapabilities() {
     <div className="dm-funding-grid">
       <div className="dm-funding-copy">
         <p>Use tokens in your wallet, even on another network. Domino finds a route into your chosen pair.</p>
-        <LinkButton href="#/positions" variant="ghost" className="dm-home-more">Find your funds <IconChevronRight size={16} /></LinkButton>
+        <LinkButton href="/positions" variant="ghost" className="dm-home-more">Find your funds <IconChevronRight size={16} /></LinkButton>
         <details className="dm-funding-details"><summary>Networks and transfers</summary><p>{ELYSIUM_FUNDS_FROM ? 'Domino checks Ethereum, Base, Arbitrum One, OP Mainnet, Robinhood Chain and Elysium.' : 'Domino checks Ethereum, Base, Arbitrum One, OP Mainnet and Robinhood Chain.'} Available transfers depend on the token and destination. Review swaps, transfer costs and network fees before you approve in your wallet.</p></details>
       </div>
       {/* The card's lit rim sits on this frame, outside the demonstration whose own motion is its story alone. */}

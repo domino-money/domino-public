@@ -508,6 +508,17 @@
         "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
         "slug": "hyperevm"
       }
+    },
+    "99901": {
+      "name": "Elysium",
+      "nativeSymbol": "HYPE",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "elysium",
+        "tokens": [
+          "0xb47c4C8F73F009CC0C0d3f92B388d13E293F0B65"
+        ]
+      }
     }
   },
   "destinations": {
@@ -543,7 +554,8 @@
   "notes": [
     "Robinhood (4663): the Swap API routes app-fee fills through MulticallHandler 0xa8aD2e87... (not in deployed-addresses.json; 2,905 bytes exposing exactly MulticallHandler's four functions, checked through the local node on 1 Oct 2026). The canonical handler 0x0F7Ae28d... is also deployed there with the same code as on Base.",
     "Relay uses the same Depository 0x4cD00E38... on most EVM chains; Cronos, Metis, Mantle and Linea use 0x59916dA8.... Its runtime code differs per chain (immutables), so only the address is pinned for origins.",
-    "Move per-chain data onto the V2 chain registry (F6) once it exists; until then this file is the only source of provider targets."
+    "Move per-chain data onto the V2 chain registry (F6) once it exists; until then this file is the only source of provider targets.",
+    "Elysium (99901): Relay alone, and only USDC (0xb47c4C8F...0B65, the Orbit bridge's USDC from HyperEVM): relay.tokens lists what a deposit may start from there and deliver there. Its Depository is at the address it has elsewhere, with its own runtime (8,628 bytes; codehash read on Elysium at block 3,591,618 through Domino's provider, 9 Nov 2026)."
   ],
   "purpose": "Contracts a cross-chain deposit transaction may target, per provider and chain. A quote whose wallet transaction targets anything else is refused (backend/crosschain_relay.py, backend/crosschain_across.py).",
   "schemaVersion": 1,
@@ -551,7 +563,8 @@
     "Relay: GET https://api.relay.link/chains on 1 Oct 2026 (EVM chains with depositEnabled, not disabled, protocol.v2.depository).",
     "Across: github.com/across-protocol/contracts broadcast/deployed-addresses.json at a634bea (SpokePool, SpokePoolPeriphery), limited to the EVM chains listed by GET https://app.across.to/api/swap/chains on 1 Oct 2026.",
     "Across wrapped native per origin: GET https://app.across.to/api/available-routes on 1 Oct 2026 (isNative ETH routes).",
-    "Across MulticallHandler and AcrossEventEmitter on the destinations: decoded from live /swap/approval quotes with appFee on 1 Oct 2026 and verified on-chain (verification below)."
+    "Across MulticallHandler and AcrossEventEmitter on the destinations: decoded from live /swap/approval quotes with appFee on 1 Oct 2026 and verified on-chain (verification below).",
+    "Relay, Elysium (99901): GET https://api.relay.link/chains on 9 Nov 2026 (depositEnabled, protocol.v2 {chainId: elysium, depository}, solverCurrencies USDC only; the native HYPE has supportsBridging false). Across lists no route to or from 99901."
   ],
   "verification": {
     "42161": {
@@ -645,6 +658,16 @@
         {
           "address": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
           "codehash": "0x77df38a47ee0c4453bc1bdc5f322712f0104ba1d97c4798dd49f16d4ed2e6256",
+          "name": "Relay Depository"
+        }
+      ]
+    },
+    "99901": {
+      "block": 3591618,
+      "contracts": [
+        {
+          "address": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+          "codehash": "0x55cb0d107426ad25378b07e24b7af7a03a6e10faca8e9eef07369d94a53019e3",
           "name": "Relay Depository"
         }
       ]

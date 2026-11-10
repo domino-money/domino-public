@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from fractions import Fraction
 
-from discovery import Block, DataError, DiscoveryReader
+from discovery import Block, CHAIN_ID, DataError, DiscoveryReader
 from featured_contract import prune_withdrawn
 import featured_evidence as evidence
 import featured_pools as rules
@@ -205,10 +205,12 @@ class Live:
             kept = 0
             for ids, until, refresh in ((pool_ids, WARM_SECONDS, WARM_REFRESH_SECONDS),
                                         (candidates, CANDIDATE_WARM_SECONDS, CANDIDATE_WARM_SECONDS // 2)):
+                # The collector's rows for this chain, by primary key (chain_id,kind,entity_id): 48 buffers for
+                # 12 pools, where kind and entity_id alone walked every pool entry of public_entities_due (6,792).
                 kept += conn.execute('''UPDATE domino_public.entities SET keep_warm_until=to_timestamp(%s)
-                  WHERE kind='pool' AND entity_id=ANY(%s)
+                  WHERE chain_id=%s AND kind='pool' AND entity_id=ANY(%s)
                     AND (keep_warm_until IS NULL OR keep_warm_until<to_timestamp(%s))''',
-                  (now + until, sorted(ids), now + refresh)).rowcount
+                  (now + until, CHAIN_ID, sorted(ids), now + refresh)).rowcount
             return kept
 
     def _warm_up(self, draft, served, now):

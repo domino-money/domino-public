@@ -12,7 +12,7 @@ import threading
 import time
 
 from catalogue import configured_writer_catalogue
-from discovery import Block, DataError
+from discovery import Block, CHAIN_ID, DataError
 from local_config import load_config
 from pool_requests import PgRequests, WRITER_ROLE
 from public_observations import PgPublicData
@@ -195,15 +195,19 @@ def accounting_tick(repository,service):
     from fee_store import FeeIndexer
     from position_store import PositionIndexer
     from capital_store import CapitalIndexer
+    # The ledgers index this chain's pools only (CHAIN_ID). Both UPDATEs name the row by its primary key
+    # (chain_id,kind,entity_id), one entry read; kind and entity_id alone walked every pool entry of
+    # public_entities_due, 566 buffers each (8 Nov 2026).
     with repository.connection(write=True) as conn:
         row = conn.execute("""SELECT e.entity_id,e.ledger_stage FROM domino_public.entities e
-          WHERE e.kind='pool' AND e.payload IS NOT NULL AND e.ledger_due<=clock_timestamp()
+          WHERE e.chain_id=%s AND e.kind='pool' AND e.payload IS NOT NULL AND e.ledger_due<=clock_timestamp()
             AND EXISTS(SELECT 1 FROM domino_activity.chunks c WHERE c.pool_id=e.entity_id)
-          ORDER BY e.ledger_due,e.entity_id FOR UPDATE SKIP LOCKED LIMIT 1""").fetchone()
+          ORDER BY e.ledger_due,e.entity_id FOR UPDATE SKIP LOCKED LIMIT 1""",(CHAIN_ID,)).fetchone()
         if row is None:
             return {'status':'idle'}
         conn.execute("""UPDATE domino_public.entities SET ledger_due=clock_timestamp()+interval '30 seconds',
-          ledger_stage=(ledger_stage+1)%%3 WHERE kind='pool' AND entity_id=%s""",(row['entity_id'],))
+          ledger_stage=(ledger_stage+1)%%3 WHERE chain_id=%s AND kind='pool' AND entity_id=%s""",
+          (CHAIN_ID,row['entity_id']))
     stage = row['ledger_stage']
     try:
         with read_deadline(20):
@@ -216,8 +220,8 @@ def accounting_tick(repository,service):
         error = str(exception)
         result = {'status':'pending','reason':error}
     with repository.connection(write=True) as conn:
-        conn.execute("UPDATE domino_public.entities SET ledger_error=%s WHERE kind='pool' AND entity_id=%s",
-                     (error,row['entity_id']))
+        conn.execute("UPDATE domino_public.entities SET ledger_error=%s WHERE chain_id=%s AND kind='pool' AND entity_id=%s",
+                     (error,CHAIN_ID,row['entity_id']))
     return {'poolId':row['entity_id'],'stage':('fee','position','capital')[stage],**result}
 
 

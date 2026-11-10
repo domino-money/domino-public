@@ -38,7 +38,7 @@ function dataOf(view: AutomationView) {
 const offered = (view: AutomationView) => view.phase === 'unknown' || (view.phase === 'ready' && view.state.automation === 'plain')
 
 /** Where the docs say how a sequence is switched on: the automation page's own link once a sequence is set up (SequenceCreate.tsx). */
-const SWITCH_ON: Readonly<Record<AutomationMode, string>> = { compound: '#/docs/auto-compound#where-it-starts', domino: '#/docs/domino-compound#start-and-stop' }
+const SWITCH_ON: Readonly<Record<AutomationMode, string>> = { compound: '/docs/auto-compound#where-it-starts', domino: '/docs/domino-compound#start-and-stop' }
 
 /** For a sequence that does not run, paused or its permission over the NFT lost, the next step: the docs on switching it on (review of 2026-09-24). */
 function switchOn(view: AutomationView): string | null {

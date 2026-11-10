@@ -194,6 +194,21 @@ PACKAGED_ONLY_MIGRATIONS = (
     # The session's origin (launch round P3, review M1). Like 041, applied separately to an
     # installed foundation, by apply_migrations.py as postgres.
     'backend/migrations/057_session_origin.sql',
+    # The points ledger (season 1): apply_migrations.py applies it as postgres, as 052, never
+    # this tool.
+    'backend/migrations/058_points_ledger.sql',
+    # The points engine (season 1): apply_migrations.py applies it as postgres, after 058, never
+    # this tool.
+    'backend/migrations/059_points_engine.sql',
+    # The chunks' (pool_id, end_block) index: apply_migrations.py applies it as the catalogue
+    # owner, as 053, never this tool.
+    'backend/migrations/060_chunk_end_index.sql',
+    # The entities' keep-warm index: apply_migrations.py applies it as postgres, as 044, never
+    # this tool.
+    'backend/migrations/061_public_entities_keep_warm.sql',
+    # The collector's scheduled cadence: apply_migrations.py applies it as postgres, as 044, never
+    # this tool.
+    'backend/migrations/062_public_claim_cadence.sql',
 )
 MAPPINGS = (
     ('domino', 'domino-admin', ADMIN),

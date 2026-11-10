@@ -212,7 +212,8 @@ export const SCHEMAS = {
           "enum": [
             4663,
             8453,
-            42161
+            42161,
+            99901
           ],
           "title": "Chainid",
           "type": "integer"
@@ -828,7 +829,8 @@ export const SCHEMAS = {
               "enum": [
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Chainid",
               "type": "integer"
@@ -1863,7 +1865,8 @@ export const SCHEMAS = {
               "enum": [
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Chainid",
               "type": "integer"
@@ -2077,7 +2080,8 @@ export const SCHEMAS = {
               "enum": [
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Chainid",
               "type": "integer"
@@ -3041,7 +3045,8 @@ export const SCHEMAS = {
               "enum": [
                 4663,
                 8453,
-                42161
+                42161,
+                99901
               ],
               "title": "Chainid",
               "type": "integer"
@@ -3697,6 +3702,28 @@ export const CONSTANTS = {
       "stack": "op-stack",
       "universalRouter": "0xd6145b2d3f379919e8cdeda7b97e37c4b2ca9c40",
       "wrappedNative": "0x4200000000000000000000000000000000000006"
+    },
+    "99901": {
+      "chargeCurrencies": [
+        {
+          "rank": 1,
+          "token": "0xb47c4c8f73f009cc0c0d3f92b388d13e293f0b65"
+        },
+        {
+          "rank": 2,
+          "token": "0x0000000000000000000000000000000000000000"
+        },
+        {
+          "rank": 2,
+          "token": "0xba876237b0f021a6c6d852d6c26e107997cc5e81"
+        }
+      ],
+      "l1DataFeeSource": "nitro_node_interface",
+      "name": "elysium-99901",
+      "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+      "stack": "arbitrum-nitro",
+      "universalRouter": "0x32ca6537934d333b776283d38834309cac06b3e7",
+      "wrappedNative": "0xba876237b0f021a6c6d852d6c26e107997cc5e81"
     }
   },
   "contractVersion": "1.0.0-rc.2",

@@ -31,6 +31,17 @@ export const ROOT_CHANGE_RANGE_COPY = 'Change range isn’t available while your
 export const SUCCESSOR_BLOCKED_COPY = "Your automation holds this position. Withdraw it from your automation on your main position's page first."
 export const REARM_COPY = 'Turn automation back on'
 /**
+ * Added 2026-11-09 (the core-flows fix; the owner: closing a position with automation must be totally easy): what Close
+ * position says, in one plain line, of the automation on it. Closing an automation's main position turns that automation
+ * off by itself (its vault never refuses the owner's exit), so no tick box: this line. A position Domino-compound holds
+ * comes back to the wallet first, then closes (./CloseSteps.tsx). Named as the screens name it; "your automation" when
+ * its name is not read.
+ */
+export const closeTurnsOffCopy = (name: string | null): string => `Closing also turns off ${name ?? 'your automation'} for this position.`
+export const closeHeldCopy = (name: string | null): string => `${name ?? 'Your automation'} holds this position. It comes back to your wallet first, then closes.`
+/** The close's steps (./CloseSteps.tsx), in the words the automation's own buttons use (../automate/VaultCard.tsx). */
+export const CLOSE_STEP = { withdrawChild: 'Withdraw from your automation', close: 'Close position', withdrawReserves: 'Withdraw to wallet' } as const
+/**
  * Added 2026-10-06 (the integration review, rugged-literal #1): the root of Auto-exit's own automation, its Auto-exit on
  * or paused, in Auto-exit's words. Its exit needs the position's approval alone, so only a step that moves that approval
  * (the zap's, on Add liquidity on v4 or Withdraw in one token) pauses it, and approving the position again ends the pause.

@@ -10,6 +10,7 @@
  */
 
 import type { V2ChainIdOf } from '../config/chainIdentity'
+import { ELYSIUM_DESTINATION_TOKENS, ELYSIUM_FUNDS_TO, ELYSIUM_V2_ID } from '../lib/elysiumIdentity'
 
 export type Address = `0x${string}`
 export type Hex = `0x${string}`
@@ -31,8 +32,21 @@ export type V2ChainId = V2ChainIdOf
  * (./crosschain/present.ts). It joins once its profile's bridge.providers is not empty, crosschain-v1 pins it as a
  * destination and those two records take it (docs/ELYSIUM_DAY9.md).
  */
+//
+// Changed on purpose 2026-11-09 (Elysium's day 9, the owner: funds brought to Elysium from other networks as on Base):
+// Elysium joins by itself where the build says funds can be brought to it (lib/elysiumIdentity.ts ELYSIUM_FUNDS_TO: its
+// profile names a bridge, crosschain-v1 pins one for 99901 and lists its destination tokens). The type stays the
+// package's destinations of today (crosschain-v1 types: 4663 | 8453 | 42161), which no table here is keyed by; a build
+// where ELYSIUM_FUNDS_TO is true bundles a package that names 99901 there too.
 export type S2DestinationChainId = 4663 | 8453 | 42161
-export const S2_DESTINATION_CHAIN_IDS: readonly S2DestinationChainId[] = Object.freeze([4663, 8453, 42161])
+export const S2_DESTINATION_CHAIN_IDS: readonly S2DestinationChainId[] = Object.freeze(ELYSIUM_FUNDS_TO ? [4663, 8453, 42161, ELYSIUM_V2_ID as number as S2DestinationChainId] : [4663, 8453, 42161])
+/**
+ * The tokens a deposit may deliver on a destination chain when that chain's own charge currencies are not all of them
+ * (added 2026-11-09, Elysium's day 9): Elysium's, crosschain-v1's destinations there (lib/elysiumIdentity.ts
+ * ELYSIUM_DESTINATION_TOKENS: its USDC, as Relay bridges it, never its native HYPE); null for every other chain, whose
+ * charge currencies are the package's list (tests/v2/crosschain-copy.test.mjs).
+ */
+export const s2DestinationTokens = (chainId: number): readonly string[] | null => (ELYSIUM_FUNDS_TO && chainId === ELYSIUM_V2_ID ? ELYSIUM_DESTINATION_TOKENS : null)
 export const isS2Destination = (value: unknown): value is S2DestinationChainId => (S2_DESTINATION_CHAIN_IDS as readonly unknown[]).includes(value)
 /** A V2 chain's native currency and its wrapped token: Ether on Robinhood Chain, Base and Arbitrum One; HYPE on Elysium. */
 export type NativeSymbol = 'ETH' | 'HYPE'

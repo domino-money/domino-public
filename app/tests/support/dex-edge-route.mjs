@@ -42,8 +42,10 @@ const sleep = (ms, signal) => new Promise((done, fail) => {
 /**
  * `pairsOf(token)`: the provider's pairs for a token (lowercase), [] for none. `refuse` (status, retryAfter) answers
  * every call with that status while set; `delayMs` holds every answer that long (honouring the edge's own abort).
+ * `byUrl(url)` (2026-11-07): the provider's body for any other URL our edge asks (Base's and Arbitrum One's token-pairs,
+ * the pairs endpoint by a pool's name), or undefined for the rule above.
  */
-export function createDexUpstream({ pairsOf, refuse = null, delayMs = 0 } = {}) {
+export function createDexUpstream({ pairsOf = () => [], refuse = null, delayMs = 0, byUrl = () => undefined } = {}) {
   const calls = [];
   const state = { refuse, delayMs };
   const upstream = {
@@ -61,7 +63,8 @@ export function createDexUpstream({ pairsOf, refuse = null, delayMs = 0 } = {}) 
       if (state.refuse) {
         return new Response('{"error":"refused"}', { status: state.refuse.status, headers: { 'Content-Type': 'application/json', ...(state.refuse.retryAfter ? { 'Retry-After': String(state.refuse.retryAfter) } : {}) } });
       }
-      const pairs = token ? (pairsOf(token) ?? []) : [];
+      const said = byUrl(input);
+      const pairs = said !== undefined ? said : token ? (pairsOf(token) ?? []) : [];
       return new Response(JSON.stringify(pairs), { status: 200, headers: { 'Content-Type': 'application/json' } });
     },
   };

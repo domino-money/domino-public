@@ -7,6 +7,7 @@ import { sequenceIntent } from '../lib/create/sequenceDefaults'
 import { useWalletIdentity } from '../lib/walletIdentity'
 import type { SequenceIntent } from './SequenceCreate'
 import { Frame, Loading, WalletPrompt } from './SequenceShell'
+import { currentRoute, subscribeRoute } from '../lib/route'
 
 // The inactive legacy catalogue and clients never enter a deployed V2 build. Changed on purpose 2026-10-30 (QA round 2,
 // review): kept as the app's stand-in for code that did not arrive (not a read: nothing to ask again, and a release that
@@ -18,14 +19,9 @@ const V2Setup = __DOMINO_V2__ ? lazy<ComponentType<SetupEntryProps>>(recovering(
 const Protection = __DOMINO_V2__ ? lazy(recovering(() => import('../v2in/automate/ProtectionSetup'), unavailable)) : null
 const Legacy = !__DOMINO_V2__ ? lazy(recovering(() => import('./SequenceLegacy'), unavailable)) : null
 
-const subscribeRoute = (changed: () => void) => {
-  window.addEventListener('hashchange', changed)
-  return () => window.removeEventListener('hashchange', changed)
-}
-
 function V2Sequence() {
   const identity = useWalletIdentity()
-  const hash = useSyncExternalStore(subscribeRoute, () => window.location.hash, () => '')
+  const hash = useSyncExternalStore(subscribeRoute, currentRoute, () => '')
   const protection = /^#\/sequence\/protection(?:\/|$)/.test(hash)
   // Selecting a position is a public read. Only its existing dialog requests the correct network before signing.
   const owner = identity.kind === 'connected' ? identity.address.toLowerCase() : null

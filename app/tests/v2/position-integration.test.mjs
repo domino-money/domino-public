@@ -59,16 +59,18 @@ test('the actions\' one shape from read-v6: live positions only, the vault\'s ro
   assert.equal(model.findPosition(portfolio, 8453, 4, 7n), null, 'identity is chain + DEX + id');
   assert.equal(model.findPosition(portfolio, 4663, 3, 7n), null);
   const rootAction = model.fromV6(root, portfolio);
-  assert.deepEqual(rootAction.vault, { address: '0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2', role: 'root', armed: true, exitLive: false });
+  // Changed on purpose 2026-11-09 (the core-flows fix): with the automation's name, for Close position's one line.
+  assert.deepEqual(rootAction.vault, { address: '0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2', role: 'root', armed: true, exitLive: false, name: 'Domino-compound' });
   assert.equal(rootAction.source, 'read6', 'read-v6 is the one source besides V1\'s own chain read: no test data');
   assert.equal(model.fromV6(successor, portfolio).vault.role, 'successor');
+  assert.equal(model.fromV6(successor, portfolio).vault.name, 'Domino-compound', 'only Domino-compound holds a position for its owner');
   assert.equal(model.fromV6(plain, portfolio).vault, null);
   // An unread position is never acted on.
   assert.equal(model.fromV6(model.findPosition(portfolio, 4663, 4, 12n), portfolio), null);
   assert.equal(model.fromV6(model.findPosition(portfolio, 4663, 4, 13n), portfolio), null);
   assert.deepEqual(model.vaultReservesOf(portfolio, 4663, '0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2').reserves, [{ token: USDG, amount: 1202n }, { token: MANY, amount: 990n }]);
   assert.equal(model.vaultReservesOf(portfolio, 4663, '0xa5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5').reserves, null, 'not read: never a made-up zero');
-  assert.deepEqual(model.positionVault(portfolio, 4663, { address: '0xa6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6', role: 'root' }), { address: '0xa6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6', role: 'root', armed: null, exitLive: false }, 'custody unread: null, never guessed');
+  assert.deepEqual(model.positionVault(portfolio, 4663, { address: '0xa6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6', role: 'root' }), { address: '0xa6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6', role: 'root', armed: null, exitLive: false, name: null }, 'custody unread: null, never guessed (and no name: 2026-11-09)');
   // Added 2026-10-06 (the integration review, rugged-literal #1): whether Auto-exit is on or paused on a root, its own
   // automation's (paused, an active order listed on the root): there only a moved approval pauses anything.
   const ROOT_VAULT = '0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2';
@@ -311,4 +313,17 @@ test('the Base and Arbitrum page waits while the wallet is being found, and only
   const order = ["if (gate === null) return <Waiting id={ref.tokenId.toString()} />", "if (gate.mode === 'off') return <>{list}</>", "if (identity.kind === 'unknown') return <Waiting id={ref.tokenId.toString()} />", 'return <Opened '].map((line) => body.indexOf(line));
   assert.ok(order.every((at) => at > 0), String(order));
   assert.deepEqual([...order].sort((a, b) => a - b), order, 'the gate first (an `off` gate is the list, which waits on its own), then the wallet, then the page');
+});
+
+// Added 2026-11-09 (the core-flows fix): Close position's one line about the automation on it, and its steps' words.
+test('Close position names what it does to the automation in one plain line; its steps reuse the automation\'s words', () => {
+  const constants = require('../../.test-build/app/src/v2in/position/constants.js');
+  assert.equal(constants.closeTurnsOffCopy('Auto-compound'), 'Closing also turns off Auto-compound for this position.');
+  assert.equal(constants.closeTurnsOffCopy('Auto-exit'), 'Closing also turns off Auto-exit for this position.');
+  assert.equal(constants.closeTurnsOffCopy(null), 'Closing also turns off your automation for this position.');
+  assert.equal(constants.closeHeldCopy('Domino-compound'), 'Domino-compound holds this position. It comes back to your wallet first, then closes.');
+  assert.deepEqual(constants.CLOSE_STEP, { withdrawChild: 'Withdraw from your automation', close: 'Close position', withdrawReserves: 'Withdraw to wallet' });
+  for (const words of [constants.closeTurnsOffCopy('Auto-compound'), constants.closeHeldCopy('Domino-compound'), ...Object.values(constants.CLOSE_STEP)]) {
+    assert.doesNotMatch(words, /vault|NFT|successor/i, 'no jargon on the screen');
+  }
 });

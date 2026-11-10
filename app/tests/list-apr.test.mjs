@@ -64,6 +64,33 @@ test('each row shows its ledger’s rate, a skeleton while it is read, “not me
   assert.deepEqual([...aprs.keys()], ['1', '3', '4', '5', '6', '7'], 'in the list’s order');
 });
 
+// Added on purpose 2026-11-09 (core flows: "1.7,957…e+26%" on a position whose pool collapsed): the list's rate is worked
+// out again from every history it draws, a copy this browser saved included (lib/fees/historyCache.ts keeps the history,
+// never a rate), so no saved copy brings an absurd figure back.
+test('a pool whose price collapsed: no rate on its row, from a fresh history or a saved one', () => {
+  for (const phase of ['verified', 'cached']) {
+    const view = { ...drawn(phase), ...(phase === 'cached' ? { savedAt: (T0 + 49 * HOUR) * 1000, source: 'public-chain-ledger' } : {}) };
+    view.state = { ...view.state, sqrtPriceX96: 1n };
+    const apr = aprOfView(view);
+    assert.equal(apr.kind, 'missing', phase);
+    assert.match(apr.words, /Nothing in the position/, phase);
+    assert.equal(rowAprs(['1'], new Map([['1', view]])).get('1').kind, 'missing');
+  }
+});
+
+// Added on purpose 2026-11-09 (core flows, the owner: nothing may load forever): a history still read after the store's
+// LIST_LOADING_MS (lib/fees/store.ts `waited`) is a plain dash, no word, while it is read on.
+test('a row whose history has been read for a while is a plain dash while it is read on, never a skeleton for the visit', () => {
+  const aprs = rowAprs(['1', '2', '3'], new Map([
+    ['1', { phase: 'loading', state: null }],
+    ['2', { phase: 'loading', state: null, waited: true }],
+    ['3', drawn('verified')],
+  ]));
+  assert.deepEqual(aprs.get('1'), { kind: 'loading' });
+  assert.deepEqual(aprs.get('2'), { kind: 'missing', words: 'Not measured yet', short: 'reading' }, 'a dash (PositionRow and the V2 row draw only the dash)');
+  assert.equal(aprs.get('3').kind, 'rate');
+});
+
 test('the wallet’s own open rows ask their ledgers in one subscription of the list; another address’s list asks nothing, and rows only watch', async () => {
   const { readFileSync } = await import('node:fs');
   assert.deepEqual(Object.keys(listApr).sort(), ['aprOfView', 'rowAprs']);

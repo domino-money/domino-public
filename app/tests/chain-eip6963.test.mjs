@@ -105,14 +105,14 @@ function loadMemory() {
  * A page load: `remembered` the wallet connected last on this browser (null: none), `wallets` [rdns, ms after load it
  * announces itself], every one authorizing the site, and `legacy`: window.ethereum holds a provider (authorized too).
  */
-async function reload({ remembered = null, wallets = [], legacy = false, settle = 1200 } = {}) {
+async function reload({ remembered = null, wallets = [], legacy = false, settle = 1200, silent = [], stuckReconnect = false } = {}) {
   const store = new Map();
   if (remembered) store.set('domino.wallet.v1', JSON.stringify({ recent: remembered, disconnected: [] }));
   const memory = loadMemory().walletMemory(() => ({ getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v), removeItem: (k) => store.delete(k) }));
   const reconnected = [], prompts = [], authorizedAsked = [];
   let uid = 0;
   const connector = (id, name, type = 'injected') => ({ uid: `uid-${++uid}`, id, name, type,
-    isAuthorized: async () => { authorizedAsked.push(id); return true; },
+    isAuthorized: async () => { authorizedAsked.push(id); if (silent.includes(id)) await new Promise(() => {}); return true; },
     connect: async () => { prompts.push(id); throw new Error('a prompt opened'); },
     getProvider: async () => ({ request: async ({ method }) => { if (method === 'eth_requestAccounts') prompts.push(id); return null; } }) });
   const listeners = new Set(), watchers = new Set();
@@ -138,6 +138,7 @@ async function reload({ remembered = null, wallets = [], legacy = false, settle 
     watchConnection: (_config, { onChange }) => { watchers.add(onChange); return () => watchers.delete(onChange); },
     reconnect: async (_config, { connectors }) => {
       reconnected.push(connectors.map((one) => one.id));
+      if (stuckReconnect) return new Promise(() => {});
       config.setState((state) => ({ ...state, status: 'connected', current: connectors[0].uid, connections: new Map([[connectors[0].uid, { connector: connectors[0] }]]) }));
       return [];
     },
@@ -230,4 +231,22 @@ test('a remembered "Browser wallet" entry with an announced wallet now reconnect
   const two = await reload({ remembered: LEGACY, legacy: true, wallets: [['io.rabby', 0], ['io.metamask', 0]], settle: 400 });
   assert.deepEqual(two.reconnected, [['io.rabby']], 'the first that authorizes the site, in the list\'s order, as main');
   assert.deepEqual(two.prompts, []);
+});
+
+// Added 2026-11-09 (core flows, the owner: nothing may load forever): a wallet that never says whether it still authorizes
+// the site, or a reconnect that never answers, held the page's identity on "unknown" for good (every page that waits for it
+// on its loading frame). Past AUTHORIZED_WAIT_MS the next wallet is asked; past RECONNECT_WAIT_MS the page says none.
+test('a wallet that never answers a reload does not hold the page: the next one is asked, or none is connected', async () => {
+  const first = await reload({ wallets: [['io.metamask', 0], ['io.rabby', 0]], silent: ['io.metamask'], settle: 5_600 });
+  assert.equal(first.port.AUTHORIZED_WAIT_MS, 5_000);
+  assert.deepEqual(first.authorizedAsked, ['io.metamask', 'io.rabby'], 'the silent wallet, then the next one');
+  assert.deepEqual(first.reconnected, [['io.rabby']]);
+  assert.equal(first.identities.at(-1), 'connected:Rabby');
+  assert.deepEqual(first.prompts, []);
+  const stuck = await reload({ remembered: 'io.rabby', wallets: [['io.rabby', 0]], stuckReconnect: true, settle: 10_600 });
+  assert.equal(stuck.port.RECONNECT_WAIT_MS, 10_000);
+  assert.deepEqual(stuck.reconnected, [['io.rabby']]);
+  assert.equal(stuck.identities[0], 'unknown', 'connecting from the start');
+  assert.equal(stuck.identities.at(-1), 'disconnected', 'a reconnect that never answered is said as none connected');
+  assert.deepEqual(stuck.prompts, []);
 });

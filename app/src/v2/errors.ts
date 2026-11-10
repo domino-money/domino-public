@@ -579,6 +579,162 @@ export function decodeV2Error(error: unknown, context: ErrorContext, labels: Err
   return data === null ? generic(context, 'empty', null, 'empty') : decodeAt(data, context, labels, 0)
 }
 
+// ---------------------------------------------------------------------------
+// What the screens say when the decoder has no sentence of its own
+// ---------------------------------------------------------------------------
+
+/**
+ * Added 2026-11-09 (core flows, errors: "The transaction would fail. Review again." was the answer to everything): the
+ * failures of the wallet's own connection to its network, which `decodeV2Error` leaves to the caller (null). Each is a
+ * closed code for a `data-error-code` attribute; the screens say one sentence for all but `wallet_rpc_limited`.
+ *   wallet_rpc_limited      a rate limit: 429 or -32005 anywhere in the chain, or the node's words for one;
+ *   wallet_rpc_no_header    a node behind or pruned: "header not found", "unknown block", "missing trie node";
+ *   wallet_rpc_timeout      the wallet's provider gave up waiting;
+ *   wallet_rpc_empty        an answer with no data where a contract's result was due (viem's zero-data decode error);
+ *   wallet_rpc_unreachable  the provider could not reach its node (a dropped connection, a 5xx, EIP-1193's 4900/4901);
+ *   wallet_rpc_internal     JSON-RPC's -32603 "Internal JSON-RPC error" with nothing more to say.
+ * Never one when the chain of causes says the call itself was refused (a revert, insufficient funds, a nonce, gas): those
+ * are not the network's.
+ */
+export type WalletNetworkCode = 'wallet_rpc_limited' | 'wallet_rpc_no_header' | 'wallet_rpc_timeout' | 'wallet_rpc_empty' | 'wallet_rpc_unreachable' | 'wallet_rpc_internal'
+
+const LIMITED_CODES: ReadonlySet<number> = new Set([429, -32005])
+const UNREACHABLE_CODES: ReadonlySet<number> = new Set([4900, 4901])
+/** A revert (3), an unknown chain (4902), an account or method the wallet refuses (4100, 4200), a call it cannot take (-32601, -32602). */
+const NOT_THE_NETWORK_CODES: ReadonlySet<number> = new Set([3, 4902, 4100, 4200, -32601, -32602])
+const NOT_THE_NETWORK = /revert|insufficient funds|nonce too (?:low|high)|replacement transaction|gas required exceeds|intrinsic gas|out of gas|gas limit|gas too low|fee cap|max fee per gas|invalid (?:argument|params)|method not found|does not exist\/is not available|not supported|user (?:rejected|denied)/i
+const LIMITED_WORDS = /rate.?limit|too many requests|request limit|limit exceeded|exceeded .{0,40}limit|daily request|throttl|capacity exceeded/i
+const NO_HEADER_WORDS = /header not found|unknown block|block not found|missing trie node|state (?:is )?not available|historical state/i
+const TIMEOUT_WORDS = /timed? ?out|timeout|deadline exceeded/i
+const EMPTY_WORDS = /cannot decode zero data|returned no data|zero data \("0x"\)/i
+const UNREACHABLE_WORDS = /failed to fetch|fetch failed|network ?error|network request failed|load failed|econnreset|econnrefused|enotfound|socket hang up|bad gateway|service unavailable|gateway time-?out|http request failed|status code 5\d\d|could not connect|connection (?:closed|refused|reset)|disconnected/i
+const INTERNAL_WORDS = /internal json-rpc error|internal error/i
+const NETWORK_NAMES: Readonly<Record<string, WalletNetworkCode>> = Object.freeze({
+  TimeoutError: 'wallet_rpc_timeout',
+  AbiDecodingZeroDataError: 'wallet_rpc_empty',
+  ContractFunctionZeroDataError: 'wallet_rpc_empty',
+  HttpRequestError: 'wallet_rpc_unreachable',
+  WebSocketRequestError: 'wallet_rpc_unreachable',
+  LimitExceededRpcError: 'wallet_rpc_limited',
+  InternalRpcError: 'wallet_rpc_internal',
+})
+
+/**
+ * Added 2026-11-09 (core flows, errors): the sentences New position and the position's dialogs say for what this decoder
+ * leaves to them: the wallet's network failing (busy for a rate limit), a money client's window run out with the wallet
+ * unchanged (finance/v2/transact.ts `wallet_action_expired`, as finance/words.ts says it), and a failure nothing names.
+ */
+export const WALLET_NETWORK_COPY = 'Your wallet’s network didn’t answer. Try again.'
+export const WALLET_NETWORK_BUSY_COPY = 'Your wallet’s network is busy. Try again in a moment.'
+export const SLOW_WALLET_COPY = 'Your wallet took too long to answer. Try again.'
+export const UNKNOWN_FAILURE_COPY = 'This didn’t go through. Try again.'
+export const walletNetworkCopy = (code: WalletNetworkCode): string => (code === 'wallet_rpc_limited' ? WALLET_NETWORK_BUSY_COPY : WALLET_NETWORK_COPY)
+/**
+ * finance/words.ts's own sentences for a reply the wallet gave that could not be read (`invalid_wallet_reply`, with "Try
+ * again.") and for an account that refuses plain ETH (`native_eth_refused`, an EIP-7702 delegate; the chain's native
+ * currency where it is not ETH). Written here, not imported: that module is V1's chunk, and the V2 screens' measured
+ * budget would carry all of it (tests/v2/review-errors.test.mjs keeps them equal).
+ */
+export const UNREADABLE_REPLY_COPY = 'Your wallet returned an answer that could not be read. Try again.'
+export const nativeRefusedCopy = (symbol: string): string =>
+  `Your wallet can't receive ${symbol} right now: its smart-account delegation (EIP-7702) refuses plain ${symbol}, so this ${symbol} payment would fail. Change or turn off that delegation in your wallet, then try again. Nothing was sent.`
+
+/** The failure of the wallet's connection to its network, by its closed code; null for anything else (see WalletNetworkCode). */
+export function walletNetworkFailure(error: unknown): WalletNetworkCode | null {
+  // The clients' own closed codes (a snake_case message, finance/v2/*.ts: `wallet_timeout`, a ZapRefusal…) say what
+  // happened themselves, with their own sentences.
+  if (error instanceof Error && /^[a-z][a-z0-9_]{0,63}$/.test(error.message) && typeof (error as { code?: unknown }).code !== 'number') return null
+  const codes: number[] = []
+  const words: string[] = []
+  const names: string[] = []
+  let revertData = false
+  const seen = new Set<object>()
+  const walk = (value: unknown, depth: number) => {
+    if (typeof value === 'string') {
+      if (/^0x(?:[0-9a-fA-F]{2})+$/.test(value)) revertData = true
+      else words.push(value)
+      return
+    }
+    if (!value || typeof value !== 'object' || depth > 6 || seen.has(value)) return
+    seen.add(value)
+    const node = value as { code?: unknown; status?: unknown; message?: unknown; shortMessage?: unknown; details?: unknown; name?: unknown; data?: unknown; raw?: unknown; originalError?: unknown; error?: unknown; cause?: unknown }
+    for (const code of [node.code, node.status]) if (typeof code === 'number') codes.push(code)
+    for (const text of [node.message, node.shortMessage, node.details]) if (typeof text === 'string') words.push(text)
+    if (typeof node.name === 'string') names.push(node.name)
+    if (typeof node.raw === 'string' && /^0x(?:[0-9a-fA-F]{2})+$/.test(node.raw)) revertData = true
+    for (const next of [node.data, node.originalError, node.error, node.cause]) walk(next, depth + 1)
+  }
+  walk(error, 0)
+  if (codes.length === 0 && words.length === 0 && names.length === 0) return null
+  // A rate limit is the network's whatever else the chain says (decodeV2Error leaves a 429 carrying revert data too).
+  if (codes.some((code) => LIMITED_CODES.has(code))) return 'wallet_rpc_limited'
+  const text = words.join('\n')
+  // The call itself refused (a revert, a refusal in the wallet, an unknown chain, funds, nonce or gas) is not the network.
+  if (revertData || NOT_THE_NETWORK.test(text) || PERSON_REFUSAL_WORDS.test(text)) return null
+  if (codes.some((code) => NOT_THE_NETWORK_CODES.has(code) || PERSON_REFUSAL_CODES.has(code))) return null
+  if (LIMITED_WORDS.test(text) && !/\bgas\b/i.test(text)) return 'wallet_rpc_limited'
+  if (NO_HEADER_WORDS.test(text)) return 'wallet_rpc_no_header'
+  const named = names.map((name) => NETWORK_NAMES[name]).find((code) => code !== undefined)
+  if (named) return named
+  if (TIMEOUT_WORDS.test(text)) return 'wallet_rpc_timeout'
+  if (EMPTY_WORDS.test(text)) return 'wallet_rpc_empty'
+  if (codes.some((code) => UNREACHABLE_CODES.has(code)) || UNREACHABLE_WORDS.test(text)) return 'wallet_rpc_unreachable'
+  if (codes.includes(-32603) || INTERNAL_WORDS.test(text)) return 'wallet_rpc_internal'
+  return null
+}
+
+/**
+ * Added 2026-11-09 (core flows, errors): a read through the wallet worth asking once more before anything is said, as these
+ * are often over a second later: the network's failures above, and a reply the wallet gave that could not be read
+ * (finance/v2/transact.ts `invalid_wallet_reply`). Never a refusal, a revert or a closed code of the clients.
+ */
+export function transientWalletRead(error: unknown): boolean {
+  if (error instanceof Error && error.message === 'invalid_wallet_reply') return true
+  return walletNetworkFailure(error) !== null
+}
+
+/**
+ * Added 2026-11-09 (core flows, errors): the zap's errors about a token's transfer (§2.12). Each carries its token, but the
+ * plan service's simulation reports a selector alone, so the sentence cannot name it: the screens name the tokens the
+ * action moves instead (`tokenChoice`), without guessing which one refused.
+ */
+export const TOKEN_TRANSFER_ERRORS: ReadonlySet<string> = new Set([
+  'TokenCallFailed(address)', 'TransferFailed(address)', 'SettlementMismatch(address,uint256,uint256)', 'ApprovalFailed(address)',
+  'FeeNotBacked(address)', 'FeeTransferMismatch(address)',
+])
+
+/**
+ * Added 2026-11-09 (core flows, errors): the tokens an action moves, said as a choice ("USDC or WETH", "A, B or C"), each
+ * through the labeler as `{token}` is (safe text, or the short address; the chain's native currency by its symbol). Null
+ * with no token to name.
+ */
+export function tokenChoice(tokens: readonly Address[] | undefined, labels: ErrorLabels): string | null {
+  const named: string[] = []
+  const met = new Set<string>()
+  for (const token of tokens ?? []) {
+    if (typeof token !== 'string' || met.has(token.toLowerCase())) continue
+    met.add(token.toLowerCase())
+    const label = tokenLabel(token, labels)
+    if (label !== null && !named.includes(label)) named.push(label)
+  }
+  if (named.length === 0) return null
+  return named.length === 1 ? named[0] : `${named.slice(0, -1).join(', ')} or ${named[named.length - 1]}`
+}
+
+/**
+ * Added 2026-11-09 (core flows, errors): the whole failure on the browser's console, at debug level, beside the code the
+ * sentence carries in `data-error-code`, so a screenshot of the console says the cause. Browsers only (never in the
+ * tests' Node output); it never throws.
+ */
+export function debugFailure(where: string, code: string, error: unknown): void {
+  if (typeof window === 'undefined') return
+  try {
+    console.debug(`[domino] ${where}: ${code}`, error)
+  } catch {
+    /* A console that refuses changes nothing. */
+  }
+}
+
 /**
  * §2.12's "an ERC-20 without enough allowance to Permit2": a token's or Permit2's free-text revert names no token, so
  * the decoder cannot say it. The app reads the allowance before it asks for the signature; when it falls short, this

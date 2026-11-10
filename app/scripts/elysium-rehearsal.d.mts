@@ -6,4 +6,5 @@ export interface SchemaData {
 }
 export declare function rehearseReadV6(data: SchemaData, profile: Record<string, unknown>): SchemaData
 export declare function rehearsePlan(data: SchemaData, profile: Record<string, unknown>): SchemaData
+export declare function rehearseCrosschain(data: SchemaData, profile: Record<string, unknown>): SchemaData
 export declare function moduleSource(data: SchemaData): string

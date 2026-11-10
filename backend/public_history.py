@@ -151,8 +151,9 @@ class PublicHistory:
         if row is None:raise DataError('pool_not_in_catalogue')
         key=checked_key(row['pool_key'],pool_id)
         currencies=(key.currency0,key.currency1)
-        tokens=conn.execute("SELECT entity_id,payload FROM domino_public.entities WHERE kind='token' AND entity_id=ANY(%s)",
-                            (list(currencies),)).fetchall()
+        # This chain's tokens only, by primary key (chain_id,kind,entity_id), as the claim's probes are.
+        tokens=conn.execute("SELECT entity_id,payload FROM domino_public.entities WHERE chain_id=%s AND kind='token' AND entity_id=ANY(%s)",
+                            (CHAIN_ID,list(currencies))).fetchall()
         metadata={row['entity_id']:row['payload'] for row in tokens}
         decimals=[]
         for currency in currencies:
@@ -215,6 +216,10 @@ class PublicHistory:
             conn.execute('SELECT pg_advisory_xact_lock(46630251)')
             background=conn.execute('''SELECT mod(COALESCE(sum(generation),0),4)=3 AS turn
               FROM domino_public.history_jobs''').fetchone()['turn']
+            # The two entities probes run once per due job, so they name chain_id: the primary key is
+            # (chain_id,kind,entity_id) and every row is chain 4663 (its CHECK), so the answer is the same and
+            # each probe reads one key. Without it they walked every pool entry of public_entities_due: 1.1 s a
+            # claim at 757 jobs and 22,962 pools, past the 5 s statement timeout when cold (2-7 Nov 2026).
             return conn.execute('''UPDATE domino_public.history_jobs j SET lease_token=%s,
               lease_until=clock_timestamp()+(%s*interval '1 second'),generation=j.generation+1,attempts=j.attempts+1
               WHERE (j.pool_id,j.window_seconds)=(SELECT pool_id,window_seconds FROM domino_public.history_jobs q
@@ -224,13 +229,13 @@ class PublicHistory:
                 -- The demand horizon (044): a pool nobody asked for in a week runs no history job,
                 -- unless the featured-pools selection keeps it warm.
                 AND (q.last_requested_at>=clock_timestamp()-interval '7 days' OR EXISTS(SELECT 1
-                  FROM domino_public.entities warm WHERE warm.kind='pool' AND warm.entity_id=q.pool_id
-                  AND warm.keep_warm_until>clock_timestamp()))
+                  FROM domino_public.entities warm WHERE warm.chain_id=%s AND warm.kind='pool'
+                  AND warm.entity_id=q.pool_id AND warm.keep_warm_until>clock_timestamp()))
                 ORDER BY CASE WHEN EXISTS(SELECT 1 FROM domino_public.entities e
-                  WHERE e.kind='pool' AND e.entity_id=q.pool_id
+                  WHERE e.chain_id=%s AND e.kind='pool' AND e.entity_id=q.pool_id
                     AND e.last_requested_at>=clock_timestamp()-interval '60 seconds')=%s THEN 1 ELSE 0 END,
                   window_seconds,next_due,pool_id FOR UPDATE SKIP LOCKED LIMIT 1)
-              RETURNING *''',(secrets.token_hex(16),lease_seconds,background)).fetchone()
+              RETURNING *''',(secrets.token_hex(16),lease_seconds,CHAIN_ID,CHAIN_ID,background)).fetchone()
 
     @staticmethod
     def guard(conn,claim):

@@ -1,13 +1,10 @@
 import { useSyncExternalStore } from 'react'
-
-const subscribe = (onChange: () => void) => {
-  window.addEventListener('hashchange', onChange)
-  return () => window.removeEventListener('hashchange', onChange)
-}
+import { currentRoute, subscribeRoute } from '../../lib/route'
 
 /**
- * The address bar's hash, as it changes. App.tsx re-renders a screen on
+ * The route, as it changes, in the hash router's form (`#/markets/<token>`). App.tsx re-renders a screen on
  * every change but keeps the same instance, so a screen that reads more of
- * the hash than App hands it watches the hash itself.
+ * the route than App hands it watches the route itself. Changed on purpose 2026-11-07 (pages of their own,
+ * lib/route.ts): read from the address's path and section, where it was the hash.
  */
-export const useHash = () => useSyncExternalStore(subscribe, () => window.location.hash, () => '')
+export const useHash = () => useSyncExternalStore(subscribeRoute, currentRoute, () => '')

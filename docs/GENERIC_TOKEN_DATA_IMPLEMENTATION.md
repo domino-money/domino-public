@@ -69,9 +69,9 @@ lookup starts its catalogue/provider pool discovery; discovering a pool may
 request its two currencies' metadata without traversing those currencies' entire
 pool graphs. A page returned by overview refreshes interest only in its returned
 pools, bounded to 24. Current observation claims and the existing deep queue
-serve three recently requested pools for each background pool, with persistent
-claim generations preserving that cadence across restarts. Token metadata has a
-separate alternating quota. Metadata keeps its own TTL/backoff, and browser
+serve three recently requested pools for each background pool. A persisted count
+of the scheduled claims, per kind (`062_public_claim_cadence.sql`), preserves
+that cadence across restarts. Token metadata has a separate alternating quota. Metadata keeps its own TTL/backoff, and browser
 interest does not make old observations fresh.
 
 Migration 026 repairs interest recorded by the initial recursive implementation

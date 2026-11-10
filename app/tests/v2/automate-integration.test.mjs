@@ -200,8 +200,11 @@ test('the §2.13 hand-over is taken once, only for its chain and vault; anything
   assert.equal(handoff.takeVault(4663, VAULT), null, 'taken once');
   handoff.offerVault({ chainId: 1, vault: VAULT, focus: 'rearm' });
   handoff.offerVault({ chainId: 4663, vault: '0x12', focus: 'rearm' });
-  handoff.offerVault({ chainId: 4663, vault: VAULT, focus: 'withdraw' });
+  handoff.offerVault({ chainId: 4663, vault: VAULT, focus: 'unknown' });
   assert.equal(handoff.waitingVault(), null);
+  // Added 2026-11-09 (the core-flows fix): the Positions list's Withdraw to wallet hands its vault over at that dialog.
+  handoff.offerVault({ chainId: 4663, vault: VAULT, focus: 'withdraw' });
+  assert.deepEqual(handoff.takeVault(4663, VAULT), { chainId: 4663, vault: VAULT, focus: 'withdraw' });
   const heard = [];
   const off = handoff.onVaultOffered((offer) => heard.push(offer.focus));
   handoff.offerVault({ chainId: 4663, vault: VAULT, focus: 'leave' });

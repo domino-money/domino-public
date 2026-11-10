@@ -15,6 +15,7 @@ import { poolPricesFor } from './poolPrices'
 import { otherChainsFor } from './otherChains'
 import { useOtherChainsDiscovery } from './useOtherChainsDiscovery'
 import { ZapJourney } from './ZapJourney'
+import { navigate } from '../../lib/route'
 
 /**
  * New position in a build that carries Domino V2 (the integrated journey, 2026-10-02): the one screen New position opens
@@ -115,7 +116,7 @@ export default function NewPositionV2({ flow, poolId, linkToken, networkToken = 
   // A pool the finder read that today's journey opens (a v4 pool with a price, on Robinhood Chain): today's own link, #/new/<id>.
   const onListed = (id: string) => {
     setFinder(null)
-    window.location.hash = `#/new/${id}`
+    navigate(`/new/${id}`)
   }
   // Added 2026-11-02 (review M1): a linked token that passes for one of its network's own currencies (./model/chainReads.ts
   // usableNetworkToken) never opens New position chosen: its warning is said, in the words the search and the token pages
@@ -128,7 +129,7 @@ export default function NewPositionV2({ flow, poolId, linkToken, networkToken = 
         {/* With no other network's gate open, the gate's own status (the review of QA round 2: searching again cannot open it). */}
         {linkedResult?.ok === false ? linkedResult.reason : gates && !linkedReader ? JOURNEY.pool.networkClosed('this network') : 'Finding pools on this network…'}
       </p>
-      {(linkedResult?.ok === false || (gates && !linkedReader)) && <a href="#/new">Search again</a>}
+      {(linkedResult?.ok === false || (gates && !linkedReader)) && <a href="/new">Search again</a>}
     </PageShell>
   ) : zap ? (
     <ZapJourney key={`${flow}:${zapChain}:${finding ? 'finder' : 'zap'}`} chainId={zapChain} gate={zap} finderOnly={finding !== null} onListed={onListed} poolId={poolId} linkToken={linkToken} />

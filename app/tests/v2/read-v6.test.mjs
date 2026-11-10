@@ -133,9 +133,10 @@ test('a busy reader\'s 429 keeps the Retry-After it named (1 to 60 s); a missing
 
 // Added 2026-11-07 (review finding P3): read-v6 holds a portfolio's or activity's chains to its own list exactly (the
 // schema's one-per-chain count and api-contracts/read-v6/runtime.mjs envelope), so a package whose list moves without a new
-// contract version refuses the answers of a read gateway, or read Worker, still on the old list, and the reverse: on day 9
-// the app, the read Worker and rugged97's gateway move together, or through a new version served beside the old one
-// (docs/ELYSIUM_DAY9.md, "Order").
+// contract version refuses the answers of a read gateway, or read Worker, still on the old list, and the reverse. Changed on
+// purpose 2026-11-07 (the read-v6 version skew): the package's rule stands as it is (below); the app and the read Worker
+// read an answer with one chain more again without it (./read-v6-skew.test.mjs), so on day 9 rugged97's gateway goes
+// first, then the read Worker, then the app (docs/ELYSIUM_DAY9.md, "Order").
 test('read-v6 takes a portfolio or activity answer only when its chains are exactly the package\'s: one more or one fewer is refused', () => {
   for (const route of ['portfolio', 'activity']) {
     const body = fixture(`valid/${route}.json`);

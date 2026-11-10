@@ -16,11 +16,13 @@
  * Values are in USDG for a pair with USDG, else in the side `into`; the rate has no unit.
  * A historical figure, never a forecast. Available after the first measured positive interval, without a six-hour wait.
  * No elapsed time, usable price or capital exposure gives a reason instead of a rate; measured zero fees give zero APR.
+ * Since 2026-11-09 a capital under DUST_CAPITAL is no exposure either (`empty`): a collapsed pool's price made it ~1e-19.
  * Short intervals can move sharply and are explained by the tile's existing information tooltip. Pure and Node-safe.
  */
 import type { FeeHistory, PositionState } from './fees/types'
 import { PERIODS, periodStart } from './fees/periods'
 import { aprDigitsOf } from './format/apr'
+import { ROBINHOOD_USDG } from '../config/chainIdentity'
 
 /** The Fees earned card's two windows: the last 24 hours, and since the position was opened. */
 export type AprWindow = '24h' | 'all'
@@ -37,6 +39,18 @@ export const APR_MIN_SECONDS = 1
 /** The last 24 hours start at a measured point this old, at the least and at the most: the card's 24H window. */
 export const DAY_POINT_SECONDS = PERIODS['24h'].window
 const Q96 = 2 ** 96
+/**
+ * Added on purpose 2026-11-09 (core flows: a position in a collapsed pool read "1.7,957…e+26%"): the least money a rate is
+ * worked out on, the position's time-weighted capital (Σ value × time ÷ the window's time), in whole tokens of `into`.
+ * Every amount is valued at today's price, and a pool whose price collapsed values the money that was in it at about
+ * nothing (1e-19 USDG), so any fee earned before over it is an absurd rate. One cent when `into` is USDG, the cent the
+ * position screens floor a dollar figure at ("<$0.01", lib/format/usd.ts formatUsdFloor); a millionth of a token
+ * otherwise, the amount they floor a token at ("<0.000001", lib/read/screens/figures.ts DUST, audit E7), as no dollar
+ * price is known here. Below it: `empty`, the dash with "Nothing in the position". A floor on the capital, never on the
+ * time: the owner's D9 (a rate from the first reading, APR_MIN_SECONDS) is unchanged, and a new position with money in it
+ * shows its early rate.
+ */
+export const DUST_CAPITAL = { usdg: 0.01, token: 0.000_001 } as const
 
 /**
  * The position's APR over `window`, at the pool's price now (`state.sqrtPriceX96`). `into`: the side values are in (USDG's
@@ -95,6 +109,9 @@ export function positionApr(
   const earned = value(Number(amounts[0]) / 10 ** d0, Number(amounts[1]) / 10 ** d1)
   if (amounts.some((amount) => amount < 0n) || !Number.isFinite(weighted) || !Number.isFinite(earned)) return { ok: false, reason: 'unavailable', seconds }
   if (!(weighted > 0)) return { ok: false, reason: 'empty', seconds }
+  // (2026-11-09) Dust: as nothing in the position, never a rate on it (DUST_CAPITAL). `seconds` is at least APR_MIN_SECONDS.
+  const dust = state.currencies[into].address?.toLowerCase() === ROBINHOOD_USDG ? DUST_CAPITAL.usdg : DUST_CAPITAL.token
+  if (weighted / seconds < dust) return { ok: false, reason: 'empty', seconds }
   const rate = (earned * YEAR) / weighted
   // Never turn an overflow, underflow or unusable denominator into a zero or an infinite advertised return.
   if (!Number.isFinite(rate * 100) || (rate === 0 && amounts.some((amount) => amount > 0n))) return { ok: false, reason: 'unavailable', seconds }

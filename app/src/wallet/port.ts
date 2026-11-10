@@ -229,6 +229,24 @@ function listed(id: string): Promise<void> {
   })
 }
 
+/**
+ * Added 2026-11-09 (core flows, the owner: nothing may load forever): how long a reload waits for a wallet to say whether it
+ * still authorizes the site, and for wagmi's reconnect of the one that does. A wallet that never answered (a locked
+ * extension, a provider stuck on an earlier request) held the page's identity on "unknown" for good, and every page that
+ * waits for it (Positions, a position's page) on its loading frame. Past these the wallet counts as not authorizing, or as
+ * not reconnected: the page says no wallet is connected, and Connect wallet works as ever.
+ */
+export const AUTHORIZED_WAIT_MS = 5_000
+export const RECONNECT_WAIT_MS = 10_000
+
+/** `work`'s answer, or `fallback` once `ms` have passed or it failed; the work itself is left to finish on its own. */
+function within<T>(work: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((done) => {
+    const timer = setTimeout(() => done(fallback), ms)
+    work.then((value) => { clearTimeout(timer); done(value) }, () => { clearTimeout(timer); done(fallback) })
+  })
+}
+
 let reconnecting: Promise<void> = Promise.resolve()
 /**
  * Reconnects one wallet at most, the first that still authorizes this site, after the page loads and again whenever a
@@ -251,13 +269,19 @@ function reconnectOne(list: readonly Connector[], startup = false): Promise<void
     if (last !== null) await listed(last)
     let found: Connector | null = null
     for (const connector of candidates(last !== null ? walletConfig.connectors : list)) {
-      if (await connector.isAuthorized().catch(() => false)) {
+      // Changed on purpose 2026-11-09 (core flows): within AUTHORIZED_WAIT_MS, and the reconnect within RECONNECT_WAIT_MS.
+      if (await within(Promise.resolve().then(() => connector.isAuthorized()), AUTHORIZED_WAIT_MS, false)) {
         found = connector
         break
       }
     }
-    if (found && !attempt && statusNow() !== 'connected') await reconnect(walletConfig, { connectors: [found] }).catch(() => [])
-    if (startup && !attempt && statusNow() === 'connecting') {
+    const chosen = found
+    let late = false
+    if (chosen && !attempt && statusNow() !== 'connected') {
+      late = await within(Promise.resolve().then(() => reconnect(walletConfig, { connectors: [chosen] })).then(() => false, () => false), RECONNECT_WAIT_MS, true)
+    }
+    // A reconnect that has not answered by then (startup or not) leaves wagmi saying "connecting": said as none connected.
+    if (!attempt && (startup || late) && (statusNow() === 'connecting' || (late && statusNow() === 'reconnecting'))) {
       walletConfig.setState((state) => ({ ...state, connections: new Map(), current: null, status: 'disconnected' }))
     }
   }

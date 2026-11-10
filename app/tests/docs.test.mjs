@@ -22,6 +22,7 @@ const { ROADMAP, ROADMAP_PILL } = require('../.test-build/app/src/lib/capabiliti
 const { SHOTS } = require('../.test-build/app/src/lib/docs/shots.js');
 const { shotSrc } = require('../.test-build/app/src/lib/docs/blocks.js');
 const { CREATE } = require('../.test-build/app/src/lib/create/copy.js');
+const { SOURCE_REPO } = require('../.test-build/app/src/lib/sourceRepo.js');
 
 const APP = resolve(import.meta.dirname, '..');
 const REPO = resolve(APP, '..');
@@ -37,7 +38,16 @@ const { DOC_GROUPS, DOC_PAGES } = docs;
 const ELYSIUM_PROFILE = JSON.parse(readText(join(APP, 'tests/fixtures/v2-chains/elysium-99901.json')));
 const ELYSIUM_UNISWAP = { positionManager: ELYSIUM_PROFILE.uniswap.v4.positionManager.toLowerCase(), permit2: ELYSIUM_PROFILE.permit2.toLowerCase() };
 function docsWithElysium({ funds = false } = {}) {
-  const flags = { __DOMINO_ELYSIUM_LIVE__: true, __DOMINO_ELYSIUM_FUNDS_FROM__: funds, __DOMINO_ELYSIUM_UNISWAP__: ELYSIUM_UNISWAP };
+  return docsWith({ __DOMINO_ELYSIUM_LIVE__: true, __DOMINO_ELYSIUM_FUNDS_FROM__: funds, __DOMINO_ELYSIUM_UNISWAP__: ELYSIUM_UNISWAP });
+}
+/**
+ * Added 2026-11-07 (Elysium's pre-launch): the docs as a pre-launch build has them (scripts/elysium-switch.mjs
+ * ELYSIUM_OPENS_ON, lib/elysiumIdentity.ts ELYSIUM_PRELAUNCH), and the same defines beside live ones, where live wins.
+ */
+const OPENING = Object.freeze({ at: [2026, 11, 9], short: 'Nov 9', long: 'November 9' });
+const PRELAUNCH_FLAGS = Object.freeze({ __DOMINO_ELYSIUM_PRELAUNCH__: true, __DOMINO_ELYSIUM_OPENING__: OPENING });
+/** The compiled docs loaded afresh with `flags` as the build's defines on globalThis, then the cache restored. */
+function docsWith(flags) {
   const ours = (key) => key.includes('.test-build');
   const saved = Object.entries(require.cache).filter(([key]) => ours(key));
   for (const [key] of saved) delete require.cache[key];
@@ -52,6 +62,11 @@ function docsWithElysium({ funds = false } = {}) {
 }
 const ELYSIUM_DOCS = docsWithElysium();
 const ELYSIUM_FUNDS_DOCS = docsWithElysium({ funds: true });
+// Added 2026-11-09 (Elysium's day 9): live, and funds can be brought to it (lib/elysiumIdentity.ts ELYSIUM_FUNDS_TO).
+const ELYSIUM_TO_DOCS = docsWith({ __DOMINO_ELYSIUM_LIVE__: true, __DOMINO_ELYSIUM_FUNDS_FROM__: false, __DOMINO_ELYSIUM_FUNDS_TO__: true, __DOMINO_ELYSIUM_UNISWAP__: ELYSIUM_UNISWAP });
+const PRELAUNCH_DOCS = docsWith(PRELAUNCH_FLAGS);
+/** Live always wins: the pre-launch defines beside live ones. */
+const LIVE_WITH_PRELAUNCH_DOCS = docsWith({ __DOMINO_ELYSIUM_LIVE__: true, __DOMINO_ELYSIUM_FUNDS_FROM__: false, __DOMINO_ELYSIUM_UNISWAP__: ELYSIUM_UNISWAP, ...PRELAUNCH_FLAGS });
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const KINDS = new Set(['p', 'list', 'steps', 'note', 'facts', 'addresses', 'split', 'terms', 'shot', 'diagram']);
 
@@ -85,8 +100,12 @@ function inlinesOf(block) {
 
 const linksOf = (page) => blocksOf(page).flatMap(inlinesOf).filter((part) => typeof part === 'object' && 'to' in part);
 
-/** Inline parts as the page reads them: words, bold words, code and link text, run together. */
-const inlineText = (parts) => parts.map((part) => (typeof part === 'string' ? part : (part.b ?? part.mono ?? part.text))).join('');
+/**
+ * Inline parts as the page reads them: words, bold words, code and link text, run together. Changed on purpose 2026-11-07
+ * (Elysium's pre-launch): and the words dated before Elysium's opening day, as a reader sees them before it, so every word
+ * rule runs on them.
+ */
+const inlineText = (parts) => parts.map((part) => (typeof part === 'string' ? part : 'beforeElysiumOpens' in part ? part.beforeElysiumOpens.replace('{day}', 'November 9') : (part.b ?? part.mono ?? part.text))).join('');
 
 function blockText(block) {
   switch (block.kind) {
@@ -183,7 +202,8 @@ test('section, subsection and term ids are unique on their page, kebab-case, and
   const files = ['src/components/Header.tsx', 'src/components/HeaderMenu.tsx', 'src/components/Footer.tsx', 'src/components/ui.tsx', ...readdirSync(join(APP, 'src/components/wallet')).map((file) => `src/components/wallet/${file}`)];
   for (const file of files) for (const match of readText(join(APP, file)).matchAll(/\bid="([^"]+)"/g)) shell.add(match[1]);
   assert.ok(shell.has('site-menu'), 'the menu id is among the shell ids');
-  for (const entry of DOC_PAGES) {
+  // Changed on purpose 2026-11-07 (Elysium's pre-launch): the pre-launch pages too (What Domino is's Elysium section).
+  for (const entry of [...DOC_PAGES, ...PRELAUNCH_DOCS.DOC_PAGES]) {
     const ids = idsOf(entry);
     assert.equal(new Set(ids).size, ids.length, `${entry.slug} repeats an id: ${ids.join(', ')}`);
     for (const id of ids) {
@@ -212,14 +232,17 @@ test('section, subsection and term ids are unique on their page, kebab-case, and
 test('every link stays inside this app, and names a docs page and a section of it that exist', () => {
   // The routes and Home sections a docs page may send a reader to (tests/render.test.mjs keeps the same list for the footer).
   // Changed on purpose (2026-09-27, the owner's round 6, point 6): Settings is gone, and an old link to it opens the docs.
-  const screens = new Set(['#/', '#/markets', '#/positions', '#/automate', '#/new', '#/#learn', '#/#ranges', '#/#limits']);
+  // Changed on purpose 2026-11-07 (pages of their own, src/lib/route.ts): every link is the page's own address, `/docs/…`.
+  // Changed on purpose 2026-11-07 (the owner's Points page, Season 1): the docs' Points page sends a reader to it.
+  const screens = new Set(['/', '/markets', '/positions', '/automate', '/new', '/points', '/#learn', '/#ranges', '/#limits']);
   let count = 0;
-  for (const entry of DOC_PAGES) {
+  // Changed on purpose 2026-11-07 (Elysium's pre-launch): the pre-launch pages' links too.
+  for (const entry of [...DOC_PAGES, ...PRELAUNCH_DOCS.DOC_PAGES]) {
     for (const link of linksOf(entry)) {
       count += 1;
       assert.ok(link.text.trim().length > 0, `${entry.slug}: a link without words`);
       if (screens.has(link.to)) continue;
-      const match = /^#\/docs\/([a-z0-9-]+)(?:#([a-z0-9-]+))?$/.exec(link.to);
+      const match = /^\/docs\/([a-z0-9-]+)(?:#([a-z0-9-]+))?$/.exec(link.to);
       assert.ok(match, `${entry.slug}: ${link.to} is not a docs link or a screen of this app`);
       const target = docs.findDocPage(match[1]);
       assert.ok(target, `${entry.slug}: ${link.to} names no page`);
@@ -230,9 +253,25 @@ test('every link stays inside this app, and names a docs page and a section of i
   assert.ok(count >= 20, `${count} links`);
 });
 
+test('Contracts says where Domino’s public source is, and that link alone leaves the app from a sentence (2026-11-08)', () => {
+  const contracts = page('contracts');
+  const section = contracts.sections.find((entry) => entry.id === 'source-code');
+  assert.ok(section, 'Contracts has a Source code section');
+  assert.equal(section.title, 'Source code');
+  assert.equal(contracts.sections.indexOf(section), 1, 'right after Domino’s contracts');
+  const parts = section.blocks.flatMap(inlinesOf);
+  assert.deepEqual(parts.filter((part) => typeof part === 'object' && 'out' in part), [{ out: SOURCE_REPO, text: 'domino-money/domino-public' }]);
+  // Source-available under its LICENSE.md: public, never "open source".
+  assert.doesNotMatch(inlineText(parts), /open[- ]source/i);
+  // Every build's pages (the pre-launch build repeats most of them, so each page and link is counted once).
+  const outs = [...new Set([...DOC_PAGES, ...PRELAUNCH_DOCS.DOC_PAGES].flatMap((entry) => blocksOf(entry).flatMap(inlinesOf).filter((part) => typeof part === 'object' && 'out' in part).map((part) => `${entry.slug} ${part.out}`)))];
+  assert.deepEqual(outs, [`contracts ${SOURCE_REPO}`]);
+});
+
 test('the words: no build marker, no URL, no self-description, no dollar figure, no wallet method or API path, no promise, no provider, no token', () => {
   // Changed on purpose 2026-11-06 (the Elysium surface): Elysium's words too, as a build where it is live has them.
-  const all = strings([DOC_GROUPS, docs.DOCS_HOME, SHOTS, ELYSIUM_DOCS.DOC_GROUPS, ELYSIUM_FUNDS_DOCS.DOC_GROUPS]);
+  // Changed on purpose 2026-11-07 (Elysium's pre-launch): and the pre-launch words.
+  const all = strings([DOC_GROUPS, docs.DOCS_HOME, SHOTS, ELYSIUM_DOCS.DOC_GROUPS, ELYSIUM_FUNDS_DOCS.DOC_GROUPS, PRELAUNCH_DOCS.DOC_GROUPS]);
   assert.ok(all.length > 300, `${all.length} strings`);
   // Changed on purpose 2026-10-01 (audit C1, the owner's OK): the one place a URL is written out, as text and never as a
   // link: Robinhood Chain's details for adding it to a wallet by hand, in Wallet and sign-in. The chain's RPC and the
@@ -241,9 +280,11 @@ test('the words: no build marker, no URL, no self-description, no dollar figure,
   const network = new Set(['https://rpc.mainnet.chain.robinhood.com', 'https://robinhoodchain.blockscout.com']);
   const networkRows = page('wallet').sections.find((section) => section.id === 'robinhood-chain').blocks.find((block) => block.kind === 'facts').rows;
   assert.deepEqual(new Set(strings(networkRows).filter((text) => /:\/\//.test(text))), network);
+  // Changed on purpose 2026-11-08 (the owner: Domino's repository is public): Domino's public source, the one link that
+  // leaves the app from a sentence (an `out` part, src/lib/sourceRepo.ts); never written out as words.
   for (const text of all) {
     assert.deepEqual(findForbidden(text), [], text);
-    if (!network.has(text)) assert.doesNotMatch(text, /(https?|wss?):\/\//, text);
+    if (!network.has(text) && text !== SOURCE_REPO) assert.doesNotMatch(text, /(https?|wss?):\/\//, text);
     // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): Domino's new contracts open positions in Uniswap
     // v3 and v4 pools, so a pool's kind is a fact the docs state, named as "Uniswap v4" (or "v3 and v4"). The rule of
     // 2026-09-13 stays: nothing describes Domino itself as a version, an alpha or a preview.
@@ -324,7 +365,7 @@ test('the custody page opens with the approved sentence, word for word, then say
   const text = textOf(custody);
   assert.match(text, /that NFT stays in your wallet/);
   assert.match(sectionText(custody, 'your-wallet'), /Each action on it is a single transaction, and Domino’s contract keeps nothing afterwards\./);
-  assert.ok(linksOf(custody).some((link) => link.to === '#/docs/manage-position#permission'), 'Domino’s permission is explained where it is given');
+  assert.ok(linksOf(custody).some((link) => link.to === '/docs/manage-position#permission'), 'Domino’s permission is explained where it is given');
   // Changed on purpose (2026-09-28, the owner's round 6, point 1): one plain phrase for what automation puts back, "added back".
   assert.match(text, /earned fees not yet added back, are held by your automation until you withdraw them/);
   assert.match(text, /Only your wallet controls its withdrawals, limits and pause, and every withdrawal goes to your wallet\./);
@@ -339,7 +380,7 @@ test('the custody page opens with the approved sentence, word for word, then say
   for (const label of ['Turn back on', 'Withdraw to wallet', 'Withdraw a next position', 'Leave automation', 'Turn off Auto-exit']) assert.equal(control(label).value, 'You', label);
   assert.match(sectionText(custody, 'pause-revoke-withdraw'), /Each is a transaction your wallet signs, with no Domino fee, and none waits on Domino’s service\./);
   assert.match(sectionText(page('wallet'), 'sign-in'), /This request does not authorize transactions or automation\./);
-  assert.ok(linksOf(custody).some((link) => link.to === '#/docs/wallet#sign-in'), 'signing in grants none of them');
+  assert.ok(linksOf(custody).some((link) => link.to === '/docs/wallet#sign-in'), 'signing in grants none of them');
   // The owner kept the lead; the operator section opens by squaring it with an operator that can act and pause.
   const operator = custody.sections.find((section) => section.id === 'operator');
   assert.deepEqual(operator.blocks[0], { kind: 'p', text: ['Your wallet stays the only owner. Domino’s automation service, the operator, can only run fee-only steps within your limits, pause, and carry out an Auto-exit you turned on.'] });
@@ -414,8 +455,8 @@ test('Auto-compound sets up on a position from Automate or its page: limits, con
   // New position offers no automation choice any more, so the page no longer says choosing it there records anything.
   assert.doesNotMatch(textOf(auto), /New position|records the choice/);
   const links = linksOf(auto).map((link) => link.to);
-  for (const to of ['#/docs/your-automation', '#/docs/risks#automation-stops', '#/docs/auto-exit', '#/docs/positions#managed-positions']) assert.ok(links.includes(to), to);
-  assert.ok(links.every((to) => to.startsWith('#/docs/')), links.join(', '));
+  for (const to of ['/docs/your-automation', '/docs/risks#automation-stops', '/docs/auto-exit', '/docs/positions#managed-positions']) assert.ok(links.includes(to), to);
+  assert.ok(links.every((to) => to.startsWith('/docs/')), links.join(', '));
   // The limits of spec F7 §5.2 as the setup says them (src/v2in/automate/constants.ts, LimitsFields.tsx, form.ts): slippage
   // and the band 1% at first and at most 5%, the band's warning above 2%, the reference age and the run interval fixed.
   const choices = sectionText(auto, 'choices');
@@ -443,7 +484,7 @@ test('Domino-compound names its setup, its limits and what they start at, and Ri
   assert.match(start, /On Automate, Set up Domino-compound: pick the position, check its limits, and tick that fees it has already earned and not collected are reinvested too\./);
   assert.match(start, /Automation starts at once\. The position’s page has Pause, Resume and Leave automation\./);
   assert.match(start, /Collect fees, Close position and changes made outside Domino stop it too, until you turn it back on: see Risks\./);
-  assert.ok(linksOf(compounder).some((link) => link.to === '#/docs/risks#automation-stops'));
+  assert.ok(linksOf(compounder).some((link) => link.to === '/docs/risks#automation-stops'));
   assert.match(sectionText(compounder, 'sequence-vault'), /Each next position can be withdrawn to your wallet any time, as a plain position\./);
   assert.match(readText(join(APP, 'src/v2in/automate/constants.ts')), /VAULT_DEFAULT_DOMINO = Object\.freeze\(\{ triggerDistanceBps: 500, maxOverlapBps: 2000, maxPositions: 3, upsideBps: 5000 \}/, 'the limits start where the page says');
   // Spec F7 §1.5, §2.13, §5.3: a change outside the automation stops it until the owner turns it back on, consenting again.
@@ -625,7 +666,7 @@ test('the docs use the product’s words for a position’s figures, say what au
   // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): what the new automation did is in Receipts and on
   // its card, read from Domino's record of its contracts with no sign-in (src/v2in/lists/Receipts.tsx, VaultCard.tsx).
   assert.match(sectionText(page('auto-compound'), 'what-it-did'), /Receipts, on Positions, lists each automated run with the fees it used and its service fee\. The position’s page shows its automation: its state, what it waits for, and the fees it collected and hasn’t reinvested yet\. No sign-in is needed\./);
-  assert.ok(linksOf(page('auto-compound')).some((link) => link.to === '#/docs/positions#managed-positions'));
+  assert.ok(linksOf(page('auto-compound')).some((link) => link.to === '/docs/positions#managed-positions'));
   const managed = sectionText(positions, 'managed-positions');
   assert.match(managed, /Automation is shown with its position\. Open the position to set up, pause or stop it, or recover tokens it holds\./);
   // Changed on purpose 2026-10-30 (QA round 2, N107): those two show once the wallet is connected (screens/Positions.tsx).
@@ -829,7 +870,9 @@ test('the Uniswap addresses are the ones the backend is configured with and the 
   const contracts = page('contracts');
   // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): Domino's new contracts first, then V1, then the
   // Uniswap contracts on Robinhood Chain, each network's position NFTs, and the three networks.
-  assert.deepEqual(sectionIds(contracts), ['new-contracts', 'domino-contracts', 'uniswap-contracts', 'position-nfts', 'network']);
+  // Changed on purpose 2026-11-08 (the owner: Domino's repository is public): where Domino's source is, right after its
+  // contracts.
+  assert.deepEqual(sectionIds(contracts), ['new-contracts', 'source-code', 'domino-contracts', 'uniswap-contracts', 'position-nfts', 'network']);
   const rows = (id) => contracts.sections.find((section) => section.id === id).blocks.filter((block) => block.kind === 'addresses').flatMap((block) => block.rows.map((row) => [row.label, row.address]));
   assert.deepEqual(rows('uniswap-contracts'), expected);
   const roles = Object.fromEntries(contracts.sections.find((section) => section.id === 'uniswap-contracts').blocks.filter((block) => block.kind === 'addresses').flatMap((block) => block.rows.map((row) => [row.label, row.role])));
@@ -915,7 +958,9 @@ test('Domino V1 is deployed; the docs describe the new automation, which starts 
   // Changed on purpose 2026-10-30 (QA round 2, N26): in plain words; the version's name is for Contracts.
   assert.match(sectionText(page('your-automation'), 'domino-v1'), /Automation from Domino’s first contracts ends when the new one starts, with no migration: withdraw what it holds with Withdraw to wallet, then set up the new automation\./);
   assert.match(sectionText(page('what-is-domino'), 'built-on-uniswap'), /Domino’s own contracts run beside them on each of its three networks: one acts on your positions, one runs your automation, one carries out Auto-exit\./);
-  for (const entry of DOC_PAGES) {
+  // Changed on purpose 2026-11-07 (Elysium's pre-launch): the pre-launch pages too. Their one date, Elysium's opening day,
+  // is drawn only before that day in the reader's own time (lib/elysiumOpening.ts), and promises nothing of Domino's.
+  for (const entry of [...DOC_PAGES, ...PRELAUNCH_DOCS.DOC_PAGES]) {
     const text = textOf(entry);
     assert.doesNotMatch(text, /offers? activation|review activation|may activate|remain available through your wallet|Activation|readiness/i, entry.slug);
     assert.doesNotMatch(text, /No Domino screen makes them today|Each step shows its amounts/, entry.slug);
@@ -951,7 +996,7 @@ test('round 6: "added back" everywhere, no Settings, and the docs describe the r
   assert.match(sectionText(ranges, 'try-a-range'), /range simulator on Home lets you move the price and see, in plain words, whether a position earns fees and what it holds\./);
   // Changed on purpose 2026-10-31 (QA round 2 follow-ups, R48): the card's name on the pool's page.
   assert.match(sectionText(ranges, 'try-a-range'), /On a pool’s page, Choosing a price range draws the band New position starts on against that pool’s price\. Nothing is saved or sent\./);
-  assert.ok(linksOf(ranges).some((link) => link.to === '#/#ranges'), 'the simulator is linked where it lives');
+  assert.ok(linksOf(ranges).some((link) => link.to === '/#ranges'), 'the simulator is linked where it lives');
   for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /Plan a range/, entry.slug);
   // Points 8 and 9: one New position wherever it starts, its steps in plain words, and slippage under Advanced.
   const create = page('new-position');
@@ -1000,7 +1045,7 @@ test('previous and next walk the pages in sidebar order: nothing before the firs
 // without funds from it.
 test('titles are short, a summary is one line ending in a period, and every page stays short', (t) => {
   assert.ok(docs.DOCS_HOME.summary.length <= 140 && docs.DOCS_HOME.summary.endsWith('.'));
-  for (const entry of [...DOC_PAGES, ...ELYSIUM_DOCS.DOC_PAGES, ...ELYSIUM_FUNDS_DOCS.DOC_PAGES]) {
+  for (const entry of [...DOC_PAGES, ...ELYSIUM_DOCS.DOC_PAGES, ...ELYSIUM_FUNDS_DOCS.DOC_PAGES, ...PRELAUNCH_DOCS.DOC_PAGES]) {
     assert.ok(entry.title.length <= 40, `${entry.slug}: title`);
     assert.ok(entry.summary.length <= 140, `${entry.slug}: summary is ${entry.summary.length} characters`);
     assert.ok(entry.summary.endsWith('.'), `${entry.slug}: summary`);
@@ -1052,7 +1097,18 @@ test('titles are short, a summary is one line ending in a period, and every page
     // Changed on purpose 2026-11-07 (review finding P8): 490 for New position where Elysium is live, whose amount step no
     // longer promises bringing funds to a position on Elysium ("except on Elysium"); measured at 488 (484 with Elysium off,
     // inside the budget it had).
-    const budget = entry.slug === 'what-is-domino' ? 460 : entry.slug === 'positions' ? 515 : entry.slug === 'wallet' || entry.slug === 'fees' ? 455 : entry.slug === 'figures' ? 475 : entry.slug === 'glossary' ? 725 : entry.slug === 'non-custodial' ? 580 : entry.slug === 'manage-position' ? 470 : entry.slug === 'your-automation' ? 490 : entry.slug === 'new-position' ? 490 : entry.slug === 'positions' ? 505 : entry.slug === 'domino-compound' ? 480 : 450;
+    // Changed on purpose 2026-11-07 (Elysium's pre-launch, the owner's order: Elysium on the site before its network
+    // opens): 525 for What is Domino in a pre-launch build only, for its last section, "Elysium" (what it is, when it
+    // opens, what Domino will offer there and that funds are not brought to it), where Home's Elysium chip leads; measured
+    // at 521 with the dated sentence (447 off, 458 live: inside the budgets they had). Gone on the live day.
+    // Added 2026-11-07 (the owner: a Docs page that explains Season 1 of points in depth): 490 for Points, the season's
+    // window, how a wallet earns points with the four fees' rates and an example, referrals, the hourly count and its hash,
+    // who is not counted, and what points are not; measured at 487 after it was cut from 634.
+    // Changed on purpose 2026-11-08 (the owner: Domino's repository is public, in the words he approved): 465 for
+    // Contracts, for its Source code section (where the code is, what it holds, and that it is published for reading and
+    // review under its LICENSE.md); measured at 462.
+    const prelaunchIntro = entry.slug === 'what-is-domino' && PRELAUNCH_DOCS.DOC_PAGES.includes(entry);
+    const budget = entry.slug === 'contracts' ? 465 : entry.slug === 'points' ? 490 : prelaunchIntro ? 525 : entry.slug === 'what-is-domino' ? 460 : entry.slug === 'positions' ? 515 : entry.slug === 'wallet' || entry.slug === 'fees' ? 455 : entry.slug === 'figures' ? 475 : entry.slug === 'glossary' ? 725 : entry.slug === 'non-custodial' ? 580 : entry.slug === 'manage-position' ? 470 : entry.slug === 'your-automation' ? 490 : entry.slug === 'new-position' ? 490 : entry.slug === 'positions' ? 505 : entry.slug === 'domino-compound' ? 480 : 450;
     assert.ok(words <= budget, `${entry.slug} has ${words} words`);
   }
 });
@@ -1086,7 +1142,7 @@ test('the docs source stays inside its budget in the entry bundle', (t) => {
   // Changed on purpose 2026-10-31 (QA round 2 follow-ups: N26, N49, R48, and New position's amount step with both
   // amounts typed and Fill in for me, free-amounts and R9): 32,300 -> 32,500 for the corrected sentences and the comments
   // that date them; measured at 32,464 bytes.
-  t.diagnostic(`src/lib/docs: ${files.length} files, ${Buffer.byteLength(text)} bytes, ${size} bytes gzip (budget 34450)`);
+  t.diagnostic(`src/lib/docs: ${files.length} files, ${Buffer.byteLength(text)} bytes, ${size} bytes gzip (budget 37500)`);
   // Changed on purpose 2026-11-02: 32,600 with Turn back on after Leave automation; measured at 32,533.
   // Changed on purpose 2026-11-06 (O-19, R-07): 33,100 for the sentences on Base's and Arbitrum One's dollars, Fees earned
   // and APR, the Wallet card there and who reads its balances; measured at 32,939.
@@ -1099,7 +1155,16 @@ test('the docs source stays inside its budget in the entry bundle', (t) => {
   // Changed on purpose 2026-11-07 (review findings P7 and P8, Elysium's screens): 34,450 for the sentences that no longer
   // promise bringing funds to a position on Elysium (New position, What is Domino, Bring funds) and Wallet requests' fee in
   // HYPE there; measured at 34,404.
-  assert.ok(size <= 34_450, `the docs source is ${size} bytes gzip, over the 34,450 byte budget`);
+  // Changed on purpose 2026-11-07 (Elysium's pre-launch, the owner's order: Elysium on the site before its network opens):
+  // 35,000 for What is Domino's last section, "Elysium", its dated sentence's kind (types.ts) and the comments that date
+  // them, drawn only in a pre-launch build; measured at 34,973.
+  // Changed on purpose 2026-11-07 (the owner: a Docs page that explains Season 1 of points): 37,000 for the Points page
+  // (lib/docs/pages/points.ts) and its row in the registry; measured with gzip 9 on Windows at 36,423 (34,985 at
+  // ready/points' base, +1,438): the overshoot rounded up to 0.5 kB plus one more 0.5 kB of headroom.
+  // Changed on purpose 2026-11-09 (Elysium's day 9, the owner: funds brought to Elysium from other networks as on Base):
+  // 37,500 for the words that follow whether funds can be brought to Elysium (lib/docs/elysium.ts NOT_BROUGHT_TO_ELYSIUM,
+  // Relay alone there) and the comments that date them; measured with gzip 9 on Windows at 37,032 (36,857 at its base).
+  assert.ok(size <= 37_500, `the docs source is ${size} bytes gzip, over the 37,500 byte budget`);
 });
 
 // ---------------------------------------------------------------------------
@@ -1378,6 +1443,53 @@ test('Elysium off (today): no page names it', () => {
   for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /Elysium|HYPE|99901/, entry.slug);
 });
 
+// Added 2026-11-07 (Elysium's pre-launch, the owner's order: Elysium on the site before its network opens): before it is
+// live, What Domino is ends with a section of its own, "Elysium", where Home's Elysium chip leads, and every other page
+// says today's words. Live always wins: with live defines beside the pre-launch ones, the docs are the live docs.
+test('Elysium in pre-launch: What Domino is ends with its section, word for word, its one date only before the opening day; every other page as today', () => {
+  const intro = PRELAUNCH_DOCS.findDocPage('what-is-domino');
+  const off = docs.findDocPage('what-is-domino');
+  assert.deepEqual(intro.sections.slice(0, -1), off.sections, 'the sections before it as they are');
+  assert.deepEqual([intro.title, intro.summary, intro.lead], [off.title, off.summary, off.lead]);
+  const section = intro.sections.at(-1);
+  assert.deepEqual([section.id, section.title, section.subsections], ['elysium', 'Elysium', undefined]);
+  assert.deepEqual(PRELAUNCH_DOCS.tocOf(intro).at(-1), { id: 'elysium', title: 'Elysium', depth: 2 }, 'On this page ends with Elysium');
+  assert.deepEqual(section.blocks.map((block) => block.kind), ['p', 'p', 'p']);
+  assert.deepEqual(section.blocks.map((block) => inlineText(block.text)), [
+    'Elysium, Kinetiq’s network built on Hyperliquid, is the next network on Domino. It opens on November 9.',
+    'Once Domino opens there, Elysium works like Robinhood Chain: its pools in Markets, New position, Positions and Automate. Its pools are Uniswap v4 only, and its network fee, called gas, is paid in HYPE.',
+    'Domino does not bring funds from another network to Elysium: a position there uses the tokens already in your wallet on Elysium.',
+  ]);
+  // The dated sentence is a part of its own, dropped whole from the opening day on (components/docs/DocsContent.tsx).
+  assert.deepEqual(section.blocks[0].text, ['Elysium, Kinetiq’s network built on Hyperliquid, is the next network on Domino.', { beforeElysiumOpens: ' It opens on {day}.' }]);
+  const dated = PRELAUNCH_DOCS.DOC_PAGES.flatMap((entry) => blocksOf(entry).flatMap(inlinesOf).filter((part) => typeof part === 'object' && 'beforeElysiumOpens' in part).map(() => entry.slug));
+  assert.deepEqual(dated, ['what-is-domino'], 'one dated sentence, on this page alone');
+  assert.deepEqual(linksOf({ sections: [section] }).map((link) => link.to), ['/docs/markets', '/docs/new-position', '/docs/positions', '/docs/bring-funds']);
+  // Every other page as today's, deep-equal.
+  assert.deepEqual(PRELAUNCH_DOCS.DOC_PAGES.map((entry) => entry.slug), DOC_PAGES.map((entry) => entry.slug));
+  for (const entry of PRELAUNCH_DOCS.DOC_PAGES) if (entry.slug !== 'what-is-domino') assert.deepEqual(entry, docs.findDocPage(entry.slug), entry.slug);
+  // Nothing of the chain: no id, no address, no link out but the two Robinhood Chain rows of today, no "coming soon", no
+  // bare v4; Elysium, HYPE, Kinetiq and Hyperliquid are named in this section alone.
+  const text = PRELAUNCH_DOCS.DOC_PAGES.map(textOf).join('\n');
+  assert.doesNotMatch(text, /99901|0x1863d|coming soon|(?<!Uniswap |v3 and )\bv4\b/i);
+  assert.doesNotMatch(sectionText(intro, 'elysium'), /0x|https?:|\d{4}|\$/);
+  for (const entry of PRELAUNCH_DOCS.DOC_PAGES) {
+    const rest = entry.slug === 'what-is-domino' ? entry.sections.slice(0, -1).map((part) => sectionText(entry, part.id)).join('\n') : textOf(entry);
+    assert.doesNotMatch(rest, /Elysium|HYPE|Kinetiq|Hyperliquid/, entry.slug);
+  }
+});
+
+test('Elysium live wins over pre-launch: with both builds\' defines, the docs are the live docs, with no Elysium section and no dated words', () => {
+  assert.deepEqual(LIVE_WITH_PRELAUNCH_DOCS.DOC_GROUPS, ELYSIUM_DOCS.DOC_GROUPS);
+  for (const entry of LIVE_WITH_PRELAUNCH_DOCS.DOC_PAGES) {
+    assert.ok(!entry.sections.some((section) => section.id === 'elysium'), entry.slug);
+    assert.ok(!blocksOf(entry).flatMap(inlinesOf).some((part) => typeof part === 'object' && 'beforeElysiumOpens' in part), entry.slug);
+    assert.doesNotMatch(textOf(entry), /the next network on Domino|It opens on/, entry.slug);
+  }
+  // And off, today's compile: no section either.
+  for (const entry of DOC_PAGES) assert.ok(!entry.sections.some((section) => section.id === 'elysium'), entry.slug);
+});
+
 test('Elysium live: every page that names the networks names it last, with its chain id, its HYPE gas, its Uniswap v4 alone and its PositionManager from its profile', () => {
   const on = (slug) => ELYSIUM_DOCS.findDocPage(slug);
   const text = (slug) => textOf(on(slug));
@@ -1406,7 +1518,8 @@ test('Elysium live: every page that names the networks names it last, with its c
   assert.equal(contracts.summary, 'Domino’s contracts on its four networks, Domino V1 on Robinhood Chain, and the Uniswap contracts behind every position.');
   assert.match(sectionText(contracts, 'new-contracts'), /Domino’s contracts run on Robinhood Chain, Base, Arbitrum One and Elysium, each at one address on every network, so check the network as well as the address\. Elysium has Uniswap v4 only, so the Uniswap v3 ones are not on it\./);
   const nfts = contracts.sections.find((section) => section.id === 'position-nfts').blocks.filter((block) => block.kind === 'addresses').flatMap((block) => block.rows);
-  assert.deepEqual(nfts.at(-1), { label: 'PositionManager', role: 'Elysium, Uniswap v4', address: ELYSIUM_UNISWAP.positionManager });
+  // Changed on purpose 2026-11-09 (Elysium's day 9, checklist step 5): its row links Elysium's explorer, now published.
+  assert.deepEqual(nfts.at(-1), { label: 'PositionManager', role: 'Elysium, Uniswap v4', address: ELYSIUM_UNISWAP.positionManager, chains: [99901] });
   assert.equal(nfts.length, 6);
   assert.match(sectionText(contracts, 'position-nfts'), /Permit2 has the same address on all four networks\./);
   assert.deepEqual(Object.fromEntries(rowsOf(contracts, 'facts').map((row) => [row.label, row.value])), { 'Robinhood Chain': 'Chain ID 4663', Base: 'Chain ID 8453', 'Arbitrum One': 'Chain ID 42161', Elysium: 'Chain ID 99901', 'Gas token': 'ETH, and HYPE on Elysium' });
@@ -1414,15 +1527,27 @@ test('Elysium live: every page that names the networks names it last, with its c
   // card's tokens and who reads its balances, true with a v4-only network beside the others; today's words where it is off.
   assert.match(sectionText(on('pools'), 'versions'), /Domino works with two kinds of Uniswap pools, v3 and v4; Elysium has Uniswap v4 only. For you they work the same/);
   assert.match(sectionText(on('what-is-domino'), 'built-on-uniswap'), /Domino works with Uniswap v3 and v4 pools; Elysium has Uniswap v4 only./);
-  assert.match(text('positions'), /On Base and Arbitrum One it lists ETH, WETH, USDC and its positions’ tokens, and on Elysium HYPE, WHYPE, Elysium’s dollar token and its positions’ tokens, naming each token’s network./);
+  assert.match(text('positions'), /On Base and Arbitrum One it lists ETH, WETH, USDC and its positions’ tokens, and on Elysium HYPE, WHYPE, USDC and its positions’ tokens, naming each token’s network./);
   assert.match(text('privacy'), /On Base, Arbitrum One and Elysium, that service reads them through a network provider outside Domino, which is given the address./);
   assert.match(sectionText(docs.findDocPage('pools'), 'versions'), /Domino works with two kinds of Uniswap pools, v3 and v4. For you they work the same/);
   assert.match(sectionText(docs.findDocPage('what-is-domino'), 'built-on-uniswap'), /Domino works with Uniswap v3 and v4 pools.$/m);
   assert.match(textOf(docs.findDocPage('positions')), /On Base and Arbitrum One it lists ETH, WETH, USDC and its positions’ tokens, naming each token’s network./);
   assert.match(textOf(docs.findDocPage('privacy')), /On Base and Arbitrum One, that service reads them through a network provider outside Domino, which is given the address./);
-  // No explorer is known for Elysium yet (lib/elysiumIdentity.ts ELYSIUM_EXPLORER): no address row names it as a network to
-  // link, so no link is drawn to it, and never another network's in its place.
-  for (const entry of ELYSIUM_DOCS.DOC_PAGES) for (const row of rowsOf(entry, 'addresses')) assert.ok(!(row.chains ?? []).includes(99901), `${entry.slug}: ${row.label}`);
+  // Changed on purpose 2026-11-09 (Elysium's day 9, checklist step 5; until then no row named it, no explorer being known):
+  // Kinetiq's explorer is Elysium's (lib/elysiumIdentity.ts ELYSIUM_EXPLORER), so the rows of Domino's nine contracts there
+  // (Uniswap v4's and the shared ones, each at its one address on every network) and its PositionManager link it; a Uniswap
+  // v3 contract, a Domino V1 one or another network's Uniswap contract never names it.
+  const linked = rowsOf(contracts, 'addresses').filter((row) => (row.chains ?? []).includes(99901));
+  assert.deepEqual(linked.filter((row) => row.domino).map((row) => row.label), ['DominoZapV4', 'DominoZapV4Steps', 'DominoV2VaultFactory', 'DominoV2VaultV4', 'DominoV2VaultExecutorV4', 'DominoV2VaultSwapModule', 'DominoAutoExit', 'DominoRegistry', 'DominoPriceAnchor']);
+  for (const row of linked.filter((row) => row.domino)) assert.deepEqual(row.chains, [4663, 8453, 42161, 99901], row.label);
+  assert.deepEqual(linked.filter((row) => !row.domino).map((row) => [row.label, row.role]), [['PositionManager', 'Elysium, Uniswap v4']]);
+  for (const entry of ELYSIUM_DOCS.DOC_PAGES) {
+    for (const row of rowsOf(entry, 'addresses')) {
+      if (!(row.chains ?? []).includes(99901)) continue;
+      assert.doesNotMatch(`${row.label} ${row.role}`, /V3|v3|V1\b/, `${entry.slug}: ${row.label}`);
+      assert.ok(row.domino || row.role === 'Elysium, Uniswap v4', `${entry.slug}: ${row.label}`);
+    }
+  }
   // Every page that names Arbitrum One names Elysium beside it, but Bring funds (below: Elysium there only once funds can come
   // from it).
   for (const entry of ELYSIUM_DOCS.DOC_PAGES) {
@@ -1451,7 +1576,58 @@ test('Elysium listed: New position and What is Domino never promise bringing fun
   const where = (registry) => sectionText(registry.findDocPage('what-is-domino'), 'markets-positions-automate');
   assert.match(where(docs), /Tokens on another network can be brought over first\./);
   assert.match(where(ELYSIUM_DOCS), /Tokens on another network can be brought over first, except to Elysium\./);
+  // Added 2026-11-09 (Elysium's day 9, the owner: funds brought to Elysium from other networks as on Base): once a bridge
+  // brings funds there, the pages say what they say of Base: no "except", no "uses the tokens already in your wallet".
+  assert.match(where(ELYSIUM_TO_DOCS), /Tokens on another network can be brought over first\./);
+  assert.match(amount(ELYSIUM_TO_DOCS), /A wallet that can’t fund the position is offered to bring funds from another network\./);
+  assert.doesNotMatch(sectionText(ELYSIUM_TO_DOCS.findDocPage('bring-funds'), 'where'), /tokens already in your wallet on Elysium/);
+  for (const entry of ELYSIUM_TO_DOCS.DOC_PAGES) assert.doesNotMatch(textOf(entry), /except (?:on|to) Elysium/, entry.slug);
+  // Relay alone brings funds to Elysium (its profile names Relay alone; Across does not serve 99901); today's words elsewhere.
+  assert.match(textOf(ELYSIUM_TO_DOCS.findDocPage('bring-funds')), /Domino compares quotes from Relay and Across; to Elysium, Relay alone brings funds\./);
+  for (const registry of [docs, ELYSIUM_DOCS, ELYSIUM_FUNDS_DOCS]) assert.match(textOf(registry.findDocPage('bring-funds')), /Domino compares quotes from Relay and Across\. The quote shows/);
   const sign = (registry) => sectionText(registry.findDocPage('wallet-requests'), 'before-you-sign');
   assert.match(sign(docs), /its network fee, paid in ETH\. Nothing is sent/);
   assert.match(sign(ELYSIUM_DOCS), /its network fee, paid in ETH, or in HYPE on Elysium\. Nothing is sent/);
+});
+
+// Added 2026-11-07 (the owner: a Docs page that explains Season 1 of points in depth, beside the Points page): the season
+// as its own file has it (backend/points_season_1.json), the four fees' rates as Fees and the contracts state them, the
+// referral rules as the backend applies them, and no promise: points are a count of use, not money and not a token.
+test('Points: Season 1’s window, rates and referral rules as the season’s file has them, and no promise of value', () => {
+  const season = JSON.parse(readText(join(REPO, 'backend/points_season_1.json')));
+  const points = page('points');
+  assert.equal(points.title, 'Points');
+  assert.ok(docs.docGroupOf('points').key === 'using', 'under Using Domino');
+  assert.deepEqual(points.sections.map((section) => section.id), ['what-points-are', 'season-1', 'earning', 'referrals', 'counted', 'not-counted', 'not-money']);
+  const window = sectionText(points, 'season-1');
+  assert.equal(season.start, '2026-11-09T00:00:00Z');
+  assert.equal(season.end, '2027-02-09T00:00:00Z');
+  assert.match(window, /9 Nov 2026, 00:00 UTC/);
+  assert.match(window, /9 Feb 2027, 00:00 UTC/);
+  const earning = sectionText(points, 'earning');
+  assert.equal(season.pointsPerUsd, '1000');
+  assert.match(earning, /1,000 points for each US dollar Domino receives from the wallet in fees/);
+  assert.match(earning, /less the network cost Domino paid to carry it out/, 'net of the network cost');
+  for (const rate of ['0.65% of the amount swapped', 'Auto-compound 2%, Domino-compound 4%', '0.2% of the position’s value', '0.35% of the amount deposited']) assert.ok(earning.includes(rate), rate);
+  assert.equal(season.autoExitFloorUsd, '0.10');
+  assert.match(earning, /at least ten US cents/);
+  assert.match(earning, /3\.25 USDG: 3,250 points/, 'the example is the Fees page’s 0.65% of 500 USDG, times 1,000');
+  const referrals = sectionText(points, 'referrals');
+  assert.equal(season.referralShare, '0.10');
+  assert.equal(season.referral.levels, 1);
+  assert.match(referrals, /domino\.money\/points\?ref=/);
+  assert.match(referrals, /adds 10% of its points from using Domino to yours, and keeps all of its own/);
+  assert.match(referrals, /One level/);
+  assert.match(referrals, /first link holds for the whole season/);
+  assert.match(referrals, /signs one free message that approves no transaction/);
+  assert.match(referrals, /counts from the season’s start, whenever the link is made/, season.referral.countsFrom);
+  assert.match(sectionText(points, 'counted'), /counted every hour/);
+  assert.match(sectionText(points, 'not-counted'), /public test accounts earn no points, refer no one and cannot be referred/);
+  const not = sectionText(points, 'not-money');
+  assert.match(not, /not money and not a token/);
+  assert.match(not, /Domino makes no promise about what points may lead to/);
+  // No promise anywhere on it: no value, no reward, no airdrop, no conversion, no date beyond the season's.
+  assert.doesNotMatch(textOf(points), /\bwill\b|airdrop|reward|redeem|convert|claim|eligib|worth (?:it|more)|\bvalue of points\b|guarantee|\$|https?:/i);
+  // The Points screen links here, and its rail stays short.
+  assert.match(readText(join(APP, 'src/screens/Points.tsx')), /<LinkButton href="\/docs\/points" variant="ghost" size="sm" className="pt-docs" data-points-docs="">/);
 });

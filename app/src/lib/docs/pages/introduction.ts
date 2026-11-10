@@ -2,7 +2,7 @@ import { CAPABILITIES } from '../../capabilities'
 import { WALLETCONNECT_PROJECT_ID } from '../../../config/walletConnect'
 import { b, diagram, doc, list, p } from '../blocks'
 // 2026-11-06: Elysium's words where it is live (../elysium.ts).
-import { ELYSIUM_LIVE, ELYSIUM_V2_ID, GAS_IN, NETWORKS, NETWORKS_OR, OTHERS } from '../elysium'
+import { ELYSIUM_LIVE, ELYSIUM_PRELAUNCH, ELYSIUM_V2_ID, GAS_IN, NETWORKS, NETWORKS_OR, NOT_BROUGHT_TO_ELYSIUM, OTHERS } from '../elysium'
 import type { Block, DocPage } from '../types'
 
 /**
@@ -48,8 +48,8 @@ export const WHAT_IS_DOMINO: DocPage = {
       blocks: [
         list(
           [doc('Markets', 'markets'), `: today’s Robinhood Chain pools, a search that also finds ${OTHERS} tokens, and a page for each pool.`],
-          // 2026-11-07 (review P8): no funds are brought to Elysium.
-          [doc('New position', 'new-position'), `: four steps on ${NETWORKS_OR}, then your wallet creates the position. Tokens on another network can be `, doc('brought over first', 'bring-funds'), ELYSIUM_LIVE ? ', except to Elysium.' : '.'],
+          // 2026-11-07 (review P8): no funds are brought to Elysium; 2026-11-09: until they can be.
+          [doc('New position', 'new-position'), `: four steps on ${NETWORKS_OR}, then your wallet creates the position. Tokens on another network can be `, doc('brought over first', 'bring-funds'), NOT_BROUGHT_TO_ELYSIUM ? ', except to Elysium.' : '.'],
           [doc('Positions', 'positions'), `: your positions on ${NETWORKS}, each with a page where you `, doc('manage it', 'manage-position'), '.'],
           [b('Automate'), ': the three ways side by side, each with its set-up button.'],
         ),
@@ -74,6 +74,17 @@ export const WHAT_IS_DOMINO: DocPage = {
         p(`Domino’s own contracts run beside them on each of its ${ELYSIUM_LIVE ? 'four' : 'three'} networks: one acts on your positions, one runs your automation, one carries out Auto-exit. See `, doc('Contracts', 'contracts'), '.'),
       ],
     },
+    // Added 2026-11-07 (Elysium's pre-launch): where Home's Elysium chip leads; gone where Elysium is live, whose words are
+    // across the docs (../elysium.ts). The opening day is the visitor's own (src/lib/elysiumOpening.ts).
+    ...(ELYSIUM_PRELAUNCH ? [{
+      id: 'elysium',
+      title: 'Elysium',
+      blocks: [
+        p('Elysium, Kinetiq’s network built on Hyperliquid, is the next network on Domino.', { beforeElysiumOpens: ' It opens on {day}.' }),
+        p('Once Domino opens there, Elysium works like Robinhood Chain: its pools in ', doc('Markets', 'markets'), ', ', doc('New position', 'new-position'), ', ', doc('Positions', 'positions'), ' and ', b('Automate'), '. Its pools are Uniswap v4 only, and its network fee, called gas, is paid in HYPE.'),
+        p('Domino does not ', doc('bring funds from another network', 'bring-funds'), ' to Elysium: a position there uses the tokens already in your wallet on Elysium.'),
+      ],
+    }] : []),
   ],
 }
 

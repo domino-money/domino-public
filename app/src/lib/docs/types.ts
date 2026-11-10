@@ -3,13 +3,28 @@
  * the sidebar, "On this page", the breadcrumb, the previous and next links and
  * every anchor come from one registry, so they cannot drift apart.
  *
- * Pure data: no React, no build flags, no markup. Links stay inside this app, but for an address row's explorer (N24).
+ * Pure data: no React, no build flags, no markup. Links stay inside this app, but for an address row's explorer (N24)
+ * and Domino's public source (2026-11-08).
  */
 
+import type { SOURCE_REPO } from '../sourceRepo'
 import type { ShotId } from './shots'
 
-/** Inline text. A link's `to` is a route of this app and starts with `#/`. */
-export type Inline = string | { b: string } | { mono: string } | { to: string; text: string }
+/**
+ * Inline text. A link's `to` is a page of this app and starts with `/` (its own address since 2026-11-07, lib/route.ts).
+ * `beforeElysiumOpens` (added 2026-11-07, Elysium's pre-launch): words shown only while the visitor's own date is before
+ * Elysium's opening day, `{day}` written as that day (November 9), and nothing from that day on
+ * (components/docs/DocsContent.tsx, lib/elysiumOpening.ts).
+ * `out` (added 2026-11-08, the owner): the one destination outside this app a sentence may link to, Domino's public
+ * source on GitHub (lib/sourceRepo.ts); its type admits that address only, and it opens in a new tab.
+ */
+export type Inline =
+  | string
+  | { b: string }
+  | { mono: string }
+  | { to: string; text: string }
+  | { out: typeof SOURCE_REPO; text: string }
+  | { beforeElysiumOpens: string }
 
 export type Block =
   | { kind: 'p'; text: readonly Inline[] }

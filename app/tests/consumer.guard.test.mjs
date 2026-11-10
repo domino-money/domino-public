@@ -150,7 +150,9 @@ test('GUARD-5: the consumer is reached only through the two flag-gated lab scree
   // The one new production consumer is the lazy finance facade for Create position's authenticated route decision.
   // Changed on purpose (data) 2026-10-02 (S2 wired): the page's V2 route module (finance/v2/http.ts) reports a crosschain
   // route's denial of the session through the live port, as the onboarding and deposit clients do; V2 builds only.
-  assert.deepEqual(importersOf('session/livePort'), ['components/positions/SequenceSwitch.tsx', 'finance/routedQuote.ts', 'finance/v2/http.ts', 'finance/wallet.ts', 'screens/AdvancedSetup.tsx', 'screens/Execution.tsx', 'screens/LivePreview.tsx', 'screens/Performance.tsx', 'screens/Setup.tsx']);
+  // Changed on purpose 2026-11-07 (the owner's Points page, Season 1): the Points page's points-v1 module (finance/points.ts)
+  // reports the points routes' denial of the session the same way; it asks no preview.
+  assert.deepEqual(importersOf('session/livePort'), ['components/positions/SequenceSwitch.tsx', 'finance/points.ts', 'finance/routedQuote.ts', 'finance/v2/http.ts', 'finance/wallet.ts', 'screens/AdvancedSetup.tsx', 'screens/Execution.tsx', 'screens/LivePreview.tsx', 'screens/Performance.tsx', 'screens/Setup.tsx']);
   // Create position's chunk and what it is made of ask no preview and read no session: it signs through the wallet alone.
   for (const path of ['components/create/DepositAmounts.tsx', 'components/create/CreatePosition.tsx', 'components/create/StageReview.tsx', 'lib/create/depositPlan.ts', 'lib/create/createProgress.ts']) {
     const targets = specifiers(byPath(path).code).filter((spec) => spec.startsWith('.')).map((spec) => target(path, spec));

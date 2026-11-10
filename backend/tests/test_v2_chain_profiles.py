@@ -16,7 +16,10 @@ CHAINS = ROOT / 'api-contracts/v2/chains'
 ZERO = '0x0000000000000000000000000000000000000000'
 CREATEX = '0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed'
 PERMIT2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
-ENABLED = {4663: 'robinhood', 8453: 'base', 42161: 'arbitrum'}
+ENABLED = {4663: 'robinhood', 8453: 'base', 42161: 'arbitrum', 99901: 'elysium'}
+# Elysium (Kinetiq), enabled 9 Nov 2026 for its deployment: Uniswap v4 only, HYPE as gas, Relay its only bridge.
+V4_ONLY = {99901}
+RELAY_ALONE = {99901: ['relay']}
 
 
 def load():
@@ -40,13 +43,14 @@ class V2ChainProfileTests(unittest.TestCase):
     def setUpClass(cls):
         cls.profiles = load()
 
-    def test_the_owner_chains_are_enabled_and_elysium_waits(self):
+    def test_the_owner_chains_are_enabled_and_elysium_replaced_its_placeholder(self):
         enabled = {p['chainId']: p['slug'] for p in self.profiles.values() if p['enabled']}
         self.assertEqual(enabled, ENABLED)
-        elysium = self.profiles['elysium.json']
-        self.assertFalse(elysium['enabled'])
-        self.assertIsNone(elysium['chainId'])
-        self.assertTrue(elysium['enableWhen'])
+        # Changed on purpose 2026-11-09 (Elysium's mainnet): the enabled profile replaced the disabled placeholder.
+        self.assertNotIn('elysium.json', self.profiles)
+        self.assertTrue(all(p['enabled'] for p in self.profiles.values()))
+        elysium = self.profiles['elysium-99901.json']
+        self.assertEqual((elysium['nativeSymbol'], elysium['uniswap']['v3']), ('HYPE', None))
 
     def test_file_names_follow_slug_and_chain_id(self):
         for name, profile in self.profiles.items():
@@ -65,31 +69,38 @@ class V2ChainProfileTests(unittest.TestCase):
         for profile in (p for p in self.profiles.values() if p['enabled']):
             with self.subTest(chain=profile['slug']):
                 uniswap = profile['uniswap']
+                # A chain with one Uniswap version names the other null (Elysium: v4 only).
+                self.assertEqual(uniswap['v3'] is None, profile['chainId'] in V4_ONLY)
                 for key in ('factory', 'positionManager', 'quoterV2', 'swapRouter02', 'poolInitCodeHash'):
-                    self.assertTrue(uniswap['v3'][key])
+                    self.assertTrue(uniswap['v3'] is None or uniswap['v3'][key])
                 for key in ('poolManager', 'positionManager', 'stateView', 'quoter'):
                     self.assertTrue(uniswap['v4'][key])
                 self.assertEqual(uniswap['universalRouter']['version'], '2.1.2')
                 self.assertEqual(profile['permit2'], PERMIT2)
                 self.assertEqual(profile['deployer'], {'kind': 'createx', 'address': CREATEX,
                                                        'codehash': profile['deployer']['codehash']})
-                self.assertEqual(uniswap['v3']['tickSpacingByFee'], {'100': 1, '500': 10, '3000': 60, '10000': 200})
+                if uniswap['v3'] is not None:
+                    self.assertEqual(uniswap['v3']['tickSpacingByFee'], {'100': 1, '500': 10, '3000': 60, '10000': 200})
 
     def test_charge_currencies_follow_the_fee_rule(self):
         for profile in (p for p in self.profiles.values() if p['enabled']):
             with self.subTest(chain=profile['slug']):
                 ranks = [(c['rank'], c['symbol']) for c in profile['chargeCurrencies']]
                 expected_stable = 'USDG' if profile['chainId'] == 4663 else 'USDC'
-                self.assertEqual(ranks, [(1, expected_stable), (2, 'ETH'), (2, 'WETH')])
+                native_symbol, wrapped_symbol = profile['nativeSymbol'], profile['wrappedNative']['symbol']
+                self.assertEqual((native_symbol, wrapped_symbol), ('HYPE', 'WHYPE') if profile['chainId'] == 99901 else ('ETH', 'WETH'))
+                self.assertEqual(ranks, [(1, expected_stable), (2, native_symbol), (2, wrapped_symbol)])
                 native = [c for c in profile['chargeCurrencies'] if c.get('native')]
                 self.assertEqual([c['address'] for c in native], [ZERO])
-                weth = [c for c in profile['chargeCurrencies'] if c['symbol'] == 'WETH'][0]
+                weth = [c for c in profile['chargeCurrencies'] if c['symbol'] == wrapped_symbol][0]
                 self.assertEqual(weth['address'], profile['wrappedNative']['address'])
                 self.assertEqual(len({c['address'] for c in profile['chargeCurrencies']}), 3)
 
     def test_bridge_fee_is_the_owner_decision(self):
         for profile in (p for p in self.profiles.values() if p['enabled']):
-            self.assertEqual(profile['bridge'], {'providers': ['relay', 'across'], 'appFeeBps': 35})
+            # Relay alone serves Elysium: GET /chains lists 99901 with its USDC (9 Nov 2026), Across has no route there.
+            providers = RELAY_ALONE.get(profile['chainId'], ['relay', 'across'])
+            self.assertEqual(profile['bridge'], {'providers': providers, 'appFeeBps': 35})
 
     def test_every_enabled_profile_records_its_on_chain_verification(self):
         for profile in (p for p in self.profiles.values() if p['enabled']):
@@ -99,7 +110,8 @@ class V2ChainProfileTests(unittest.TestCase):
                 verified = {c['address'] for c in verification['contracts']}
                 for key in ('poolManager', 'positionManager', 'stateView'):
                     self.assertIn(profile['uniswap']['v4'][key], verified)
-                self.assertIn(profile['uniswap']['v3']['positionManager'], verified)
+                if profile['uniswap']['v3'] is not None:
+                    self.assertIn(profile['uniswap']['v3']['positionManager'], verified)
                 self.assertIn(profile['uniswap']['universalRouter']['address'], verified)
                 for contract in verification['contracts']:
                     if contract.get('absent'):

@@ -114,12 +114,57 @@ About 16,000 units a day for both chains is about 0.5 M a month: 2–3% of 20 M.
 4. **Start Base:** `systemctl enable --now domino-v2-fees@base-8453.service`, with `domino-v2-indexer@base-8453` following. Its journal has one JSON line per pass. The history takes minutes: wait for `caughtUp: true` and no `readBack`.
 5. **Then Arbitrum One** the same way.
 6. **The read release** with read-v6 `1.2.0-rc.1`: the reader and the gateway serve both versions, and `position-fees` stays closed (`DOMINO_BRIDGE_V6_READS` does not name it). Check locally with `-H 'X-Domino-Read-Contract: 1.2.0-rc.1'` on `POST 127.0.0.1:8876/v6/read/position-fees`.
-7. **The app and the Worker** (below), then open the route:
-   - add `position-fees` to the gateway's `DOMINO_BRIDGE_V6_READS`;
-   - add it to the tunnel's fixed route list (*Publish read path* `tunnels-v6`);
-   - add it to the Worker's `ENABLED_V6_READS`.
+7. **The app and the Worker** (below), then open the route. The owner approved it on 7 Nov 2026. Open it in this order, each step only once the one before it answers:
+   1. **The gateway,** on the read release of step 6. Move the two 70 drop-ins aside, keeping them for the rollback. Run the activation with production's flags plus `--position-fees`, first with `--inspect`, then with `--apply`, and restart `domino-continuous-reads.target`:
 
-**Rollback:** `systemctl disable --now domino-v2-fees@<chain>` stops it; nothing else reads its tables. Closing the route at the gateway takes `position-fees` off the read path. The tables can stay; dropping them is `DROP TABLE domino_v2.fee_now, domino_v2.fee_points, domino_v2.fee_events, domino_v2.fee_positions, domino_v2.fee_cursor` as postgres.
+      ```sh
+      python3 -B install_read_activation.py --commit <sha> --read-v6 --chain-reads --balance-chains --position-fees --inspect
+      python3 -B install_read_activation.py --commit <sha> --read-v6 --chain-reads --balance-chains --position-fees --apply
+      ```
+
+      - The receipt says `"positionFees": true`.
+      - The gateway's `DOMINO_BRIDGE_V6_READS` becomes `portfolio,activity,chain-pools,chain-balances,chain-tokens,position-fees`. Nothing else in its drop-in changes.
+      - The reader's drop-in does not change: `DOMINO_V2_READ=1` already serves the route.
+      - Without `--chain-reads` the activation refuses (`position_fees_need_chain_reads`).
+   2. **Check through the gateway** before anything else opens. The VM has no Access assertion, so the gateway stops at Access, after it has matched the route and its version:
+
+      ```sh
+      curl -sS -i -X POST http://127.0.0.1:8878/internal/read/v6/position-fees -H 'Content-Type: application/json' \
+        -H 'X-Domino-Read-Contract: 1.2.0-rc.1' --data '{"chainId": 8453, "positions": [{"dex": 4, "tokenId": "41"}]}'
+      ```
+
+      - Open: `403` `{"error":"upstream_unavailable"}`, with `X-Domino-Read-Contract: 1.2.0-rc.1`.
+      - Still closed: `404` `{"error":"route_not_available"}`, with `1.1.0-rc.1`, the answer before the flag.
+      - The same POST naming `1.1.0-rc.1` stays `404` `route_not_available`: the route exists in `1.2.0-rc.1` alone.
+      - The gateway's journal has the hop: `"route":"position-fees","contractVersion":"1.2.0-rc.1"`, `"status":403`, `"reason":"upstream_unavailable"`.
+      - The reader answers in full, as in step 6: `200` in `1.2.0-rc.1`, each chain's `follower` `current`.
+   3. **The tunnel:** *Publish read path* `tunnels-v6`, dispatched on a `main` commit whose scripts name the six routes (`<commit>`, `main`'s head when dispatched):
+
+      ```sh
+      gh workflow run read-path-release.yml -f operation=tunnels-v6 -f source_sha=<commit>
+      ```
+
+      - Its line says `"v6WalletReadsEnabled": true`.
+      - `inspect` shows the production path ending in `v6/(portfolio|activity|chain-pools|chain-balances|chain-tokens|position-fees))$`, every other setting kept.
+      - The path published since 5 Oct, with the five routes, is a known state that the publication widens.
+   4. **The Worker:** *Publish read path* `worker-v6`, dispatched the same way. It deploys the Worker with that commit's read-v6 package, so the commit's contract must be the one the reader serves:
+
+      ```sh
+      gh workflow run read-path-release.yml -f operation=worker-v6 -f source_sha=<commit>
+      ```
+
+      - `ENABLED_V6_READS` becomes the six routes, and every other flag is kept; `inspect` shows them. The five routes it holds since 6 Oct are a known state that `worker-v6` alone widens.
+      - The app's Base and Arbitrum positions then read the route: the gateway's journal has `position-fees` hops answered `200` in `1.2.0-rc.1`.
+
+   The Worker goes last. Before the tunnel names the route, the Worker's reads of it would meet the tunnel's catch-all rule instead of the gateway, and fail as `upstream_unavailable`.
+
+**Rollback:**
+- **The route:** put the gateway's two saved 70 drop-ins back, or run the activation again without `--position-fees` (`--read-v6 --chain-reads --balance-chains`, the five routes). Then restart `domino-continuous-reads.target`.
+  - The gateway then answers `position-fees` `404` `route_not_available`, before it reads the version. The Worker passes that on as it is: the answer the app had before the route opened. Only the Worker's `1.2.0-rc.1` capabilities still name the route.
+  - The tunnel and the Worker may keep the six routes. No operation narrows them to five, and none needs to. `disable-v6` still closes the whole of read-v6, the Worker first.
+  - A tunnel or a Worker still on the five routes, after an opening that stopped before it, is a known state: every publication keeps it, and `tunnels-v6` and `worker-v6` widen it.
+  - The scripts from before position-fees refuse a tunnel or a Worker with six routes (`read_tunnel_configuration_mismatch`, `Unexpected existing V6 wallet read routes`). Once either holds six, publish from a commit that names them.
+- **The follower:** `systemctl disable --now domino-v2-fees@<chain>` stops it; nothing else reads its tables. The tables can stay; dropping them is `DROP TABLE domino_v2.fee_now, domino_v2.fee_points, domino_v2.fee_events, domino_v2.fee_positions, domino_v2.fee_cursor` as postgres.
 
 ## What the app and the read Worker need (0xdecimal)
 
@@ -154,3 +199,4 @@ About 16,000 units a day for both chains is about 0.5 M a month: 2–3% of 20 M.
 | `test_v2_fees.py` (PostgreSQL) | Over a chain that settles v3 and v4 as Uniswap does and enforces the log window, Multicall3's reads and the topic filters:<br>- every settlement's fees are what Uniswap paid, and Fees earned at every point and now are settled plus accrued;<br>- a position minted before the floor;<br>- one learned late, read back then following;<br>- a collect and a compound in one block;<br>- same-block and missed-event histories marked inexact;<br>- a v3 position closed and burned in one block;<br>- crowded ranges halved, and many positions over several Multicall3 calls;<br>- the follower held to the index's checkpoints; reorganizations before and during a pass;<br>- hourly then daily points, thinned;<br>- code proofs, a moved base, errors recorded and cleared;<br>- the read API answering what was stored;<br>- the calls a caught-up pass makes (five), an hour's point included |
 | `test_read_v6_contract.py` | The package is what the producer exports, and the Python and JS validators agree on every fixture, both versions' included. The reader and the gateway answer each version asked and refuse a version or a route the window does not have. The gateway relays the version and refuses a reader answering another. `position-fees` stays closed until named. The largest answer fits the Worker's 1 MiB |
 | `test_install_public_data.py`, `test_financial_release_systemd.py` | The unit is installed per chain, never enabled, with the indexer's user, sandbox and credentials |
+| `test_fresh_host.py` (`ReadActivationTests`), `read-tunnel-config.test.mjs`, `publish-read-path.test.mjs` | Opening the route (step 7). `--position-fees` adds it, last, to the gateway's list alone, only with `--chain-reads`, and the receipt says so; the reader's drop-in stays byte for byte. The tunnel and the Worker write the six routes, keep the five and the two first as known states that `tunnels-v6` and `worker-v6` widen, and refuse any other list |

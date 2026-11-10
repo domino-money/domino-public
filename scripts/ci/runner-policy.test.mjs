@@ -19,6 +19,7 @@ const RUN_LABEL = 'domino-ci-${{ github.run_id }}-${{ github.run_attempt }}';
 const PILOT = '.github/workflows/clawber-ci-pilot.yml';
 const PUBLIC = '.github/workflows/public-ci.yml';
 const PRIVATE_GUARD = "github.repository == 'domino-money/domino' && github.event.repository.private == true";
+const HOSTED_RECOVERY_WORKFLOWS = new Set(['.github/workflows/ci.yml', '.github/workflows/funding-ui.yml']);
 const RESOURCE_JOBS = {
   light: ['ci-hygiene', 'ci-changes', 'ci-read-worker', 'automation-off', 'execution-inspect', 'pilot-preflight', 'pilot-read-worker'],
   standard: ['ci-frontend', 'ci-preview', 'read-path-release'],
@@ -58,9 +59,22 @@ function expandedJobs(file, text) {
         timeout: workload.startsWith('contracts-') ? 75 : workload === 'backend' ? 40 : workload.startsWith('browser-') ? 25 : 5,
       }));
     }
-    assert.match(route ?? '', /^\[self-hosted, /, `${file}/${id} cannot silently return to a hosted default`);
-    const labels = route.slice(1, -1).split(',').map(s => s.trim().replace(/^"|"$/g, ''));
     const matrix = /^        (suite|part): \[([^\]]+)\]$/m.exec(body);
+    let labels;
+    if (HOSTED_RECOVERY_WORKFLOWS.has(file)) {
+      // Only this explicit repository switch may select hosted compute. The
+      // full default Clawber branch is still checked against the broker policy.
+      const selector = /^\$\{\{ vars\.DOMINO_CI_RUNNER_POOL == 'github-hosted' && 'ubuntu-24\.04' \|\| fromJSON\(format\('(\[[^']+\])', github\.run_id, github\.run_attempt(?:, matrix\.(suite|part))?\)\) \}\}$/.exec(route ?? '');
+      assert.ok(selector, `${file}/${id} requires the explicit hosted recovery selector, never a hosted default or arbitrary override`);
+      assert.equal(selector[2], matrix?.[1], `${file}/${id} pins its actual matrix axis`);
+      labels = JSON.parse(selector[1]).map(label => label
+        .replaceAll('{0}', '${{ github.run_id }}')
+        .replaceAll('{1}', '${{ github.run_attempt }}')
+        .replaceAll('{2}', matrix ? '${{ matrix.' + matrix[1] + ' }}' : '{2}'));
+    } else {
+      assert.match(route ?? '', /^\[self-hosted, /, `${file}/${id} cannot silently return to a hosted default`);
+      labels = route.slice(1, -1).split(',').map(s => s.trim().replace(/^"|"$/g, ''));
+    }
     const values = matrix ? matrix[2].split(',').map(s => s.trim()) : [null];
     return values.map(value => {
       const expand = text => matrix ? text.replaceAll('${{ matrix.' + matrix[1] + ' }}', value) : text;
@@ -143,6 +157,22 @@ test('legacy jobs refuse another repository or public visibility before runner a
     assert.throws(() => check(policy, { ...workflows, [ci]: workflows[ci].replace(PRIVATE_GUARD, replacement) }), /requires the original private repository/);
   }
   assert.throws(() => check(policy, { ...workflows, [ci]: workflows[ci].replace(PRIVATE_GUARD, 'true || false && ' + PRIVATE_GUARD) }), /cannot bypass/);
+});
+
+test('hosted recovery is explicit, limited to CI and Position journeys, and retains exact Clawber labels', () => {
+  check();
+  const condition = "vars.DOMINO_CI_RUNNER_POOL == 'github-hosted'";
+  for (const file of HOSTED_RECOVERY_WORKFLOWS) {
+    for (const replacement of ["vars.DOMINO_CI_RUNNER_POOL != 'clawber'", "inputs.runner == 'github-hosted'", "vars.DOMINO_CI_RUNNER_POOL == 'ubuntu-24.04'"]) {
+      assert.throws(() => check(policy, { ...workflows, [file]: workflows[file].replace(condition, replacement) }), /explicit hosted recovery selector/);
+    }
+    assert.throws(() => check(policy, { ...workflows, [file]: workflows[file].replace("&& 'ubuntu-24.04'", "&& 'ubuntu-latest'") }), /explicit hosted recovery selector/);
+    assert.throws(() => check(policy, { ...workflows, [file]: workflows[file].replace('"domino-ci-{0}-{1}"', '"domino-ci-{0}"') }), /exact routing/);
+  }
+  const route = field(blocks(workflows['.github/workflows/ci.yml'])[0].body, 'runs-on');
+  assert.throws(() => check(policy, { ...workflows, [PILOT]: workflows[PILOT].replace(/^    runs-on: .+$/m, () => `    runs-on: ${route}`) }), /hosted default/);
+  const ci = '.github/workflows/ci.yml';
+  assert.throws(() => check(policy, { ...workflows, [ci]: workflows[ci].replace('github.run_attempt, matrix.suite', 'github.run_attempt, matrix.part') }), /actual matrix axis/);
 });
 
 test('resource profiles cover every workload independently of privileges and reject missing or changed capacity classes', () => {

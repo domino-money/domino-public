@@ -42,6 +42,7 @@ import {
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { FAKE } from '../v2/support/plans.mjs';
+import { ELYSIUM_SUITE_PROFILE } from './elysium-profile.mjs';
 
 const require = createRequire(import.meta.url);
 const abiOf = (name) => require(`../../../api-contracts/v2/abi/${name}.json`).abi;
@@ -52,7 +53,9 @@ const PROFILES = {
   42161: require('../../../api-contracts/v2/chains/arbitrum-42161.json'),
   // Added 2026-11-07 (Elysium's screens): Elysium, as the builds that force it on serve it (the synthetic day-9 profile,
   // Uniswap v4 alone, HYPE native). Its v3 contracts are none: nothing here answers at a v3 address on it.
-  99901: require('../fixtures/v2-chains/elysium-99901.json'),
+  // Changed on purpose 2026-11-07 (day-9 rehearsal, finding F5): the repository's own profile once it turns Elysium on
+  // (./elysium-profile.mjs), which the usual test build then draws.
+  99901: ELYSIUM_SUITE_PROFILE,
 };
 
 /** Anvil's public dev account #1 (0x7099…79c8), the owner the V2 test plans name. Its key is public; it signs nothing real. */

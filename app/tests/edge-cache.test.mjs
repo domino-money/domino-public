@@ -245,8 +245,14 @@ test('a settled overview is kept for the identical question: fresh 10 s, served 
   assert.equal(hit.headers.get('X-Domino-Edge-Age'), String(OVERVIEW_SECONDS * 1000 - 1));
   assert.deepEqual(await hit.json(), OVERVIEW_BODY);
   assert.equal(worker.calls.length, 1);
+  // Changed on purpose 2026-11-07 (edge hardening): the same pools asked with a limit are the same question (the producer
+  // lists exactly the pools asked whatever the limit), answered from it, checked against the request as asked.
+  const limited = await answerOverview(askOverview({ poolIds: [POOL], limit: 12 }), worker.env, rt());
+  assert.equal(limited.headers.get('X-Domino-Edge-Cache'), 'hit');
+  assert.deepEqual(await limited.json(), OVERVIEW_BODY);
+  assert.equal(worker.calls.length, 1);
   // Another question is never answered from it.
-  await answerOverview(askOverview({ poolIds: [POOL], limit: 12 }), worker.env, rt());
+  await answerOverview(askOverview({ poolIds: [POOL, `0x${'ab'.repeat(32)}`] }), worker.env, rt());
   assert.equal(worker.calls.length, 2);
   // Stale and younger than 30 s: served at once, its refresh behind.
   time.at.now += 1;
@@ -511,7 +517,9 @@ test('stale-if-error: requests that join a failing or slow miss get the kept ove
   const inflight = new Map();
   let release;
   const gate = new Promise((resolve) => { release = resolve; });
-  const worker = bridge(async () => { await gate; return overviewSaid({ error: 'read_capacity_busy' }, { status: 429 }); });
+  // (2026-11-07) A 503: a 429 is now that one visitor's refusal, and its followers ask for themselves
+  // (tests/edge-hardening.test.mjs, "a 429 is the asker's own").
+  const worker = bridge(async () => { await gate; return overviewSaid({ error: 'upstream_unavailable' }, { status: 503 }); });
   let armed = 0;
   const rt = () => ({ contract: OVERVIEW, cache, now: time.now, inflight, refreshing: new Map(), timer: () => { armed += 1; return () => undefined; } });
   const leader = answerOverview(askOverview(), worker.env, rt());
@@ -553,8 +561,10 @@ test('stale-if-error: requests that join a failing or slow miss get the kept ove
 test('a failing VM is asked about a question once per REFRESH_GUARD_MS in an isolate, served stale or past two minutes; meanwhile the kept overview is served as a hit', async () => {
   assert.equal(REFRESH_GUARD_MS, 10_000);
   const none = { ...OVERVIEW_BODY, pools: [], tokens: [] };
+  // (2026-11-07) No 429 here any more: the gateway's refusal of one visitor (mostly its own budget) guards nothing for the
+  // others (tests/edge-hardening.test.mjs, "a 429 is the asker's own"). A 408 joins in its place.
   const answers = [
-    ['429', () => overviewSaid({ error: 'read_capacity_busy' }, { status: 429 })],
+    ['408', () => overviewSaid({ error: 'request_timeout' }, { status: 408 })],
     ['503', () => overviewSaid({ error: 'upstream_unavailable' }, { status: 503 })],
     ['nothing to show', () => overviewSaid(none)],
   ];
@@ -784,7 +794,9 @@ test('I3 (2026-10-06): token-pairs/<base|arbitrum>/<token> asks the provider abo
   assert.deepEqual(dexAsk(getAsk(`token-pairs/base/${TOKEN}`)), { kind: 'token-pairs', chain: 'base', tokens: [TOKEN], origin: ORIGIN });
   assert.equal(dexAsk(getAsk(`token-pairs/arbitrum/${TOKEN.toUpperCase().replace('0X', '0x')}`))?.chain, 'arbitrum');
   assert.equal(dexAsk(getAsk(`token-pairs/${TOKEN}`))?.chain, 'robinhood', 'Robinhood Chain keeps its path');
-  for (const bad of [`token-pairs/robinhood/${TOKEN}`, `token-pairs/ethereum/${TOKEN}`, `tokens/base/${TOKEN}`, `token-pairs/base/${TOKEN},${OTHER}`, `token-pairs/base/0x123`, `token-pairs/base/${TOKEN}/x`, 'token-pairs/base/']) {
+  // Added 2026-11-09 (Elysium's day 9, checklist step 6): Elysium's, by the provider's own name, as Base's.
+  assert.deepEqual(dexAsk(getAsk(`token-pairs/elysium/${TOKEN}`)), { kind: 'token-pairs', chain: 'elysium', tokens: [TOKEN], origin: ORIGIN });
+  for (const bad of [`token-pairs/robinhood/${TOKEN}`, `tokens/elysium/${TOKEN}`, `token-pairs/ethereum/${TOKEN}`, `tokens/base/${TOKEN}`, `token-pairs/base/${TOKEN},${OTHER}`, `token-pairs/base/0x123`, `token-pairs/base/${TOKEN}/x`, 'token-pairs/base/']) {
     assert.equal(dexAsk(getAsk(bad)), null, bad);
   }
   const V4_ID = `0x${'af'.repeat(32)}`;
@@ -1271,4 +1283,142 @@ test('D1: the page and the edge agree: the Wallet card’s prices over the new p
   assert.equal(later.failed, false);
   assert.equal(later.quotes.size, 11);
   for (const token of tokens.filter((one) => one !== bad)) assert.deepEqual([later.quotes.get(token).usd, later.at.get(token)], ['0.002', t0 + 7_000], 'half an hour old, and dated so');
+});
+
+// ---------------------------------------------------------------------------
+// 2026-11-07: Base's and Arbitrum One's pools by their own names. The provider lists 30 pairs a token, not ranked by
+// liquidity: on 7 Nov Base USDC's 30 were its USDC/USDbC pools and a few others, Arbitrum One WETH's its bridged-USDC
+// ones, so the WETH/USDC pools their pages list had no figures. Those pools are asked on the new path by name.
+// ---------------------------------------------------------------------------
+
+const BASE_WETH = '0x4200000000000000000000000000000000000006';
+const BASE_USDC = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
+const NO_ADDRESS = '0x0000000000000000000000000000000000000000';
+/** Base's WETH/USDC 0.30% v3 pool, as the provider writes its address, and its ETH/USDC v4 pool by id (live, 7 Nov). */
+const V3_POOL_LIVE = '0x6c561B446416E1A00E8E93E221854d6eA4171372';
+const V3_NAME = V3_POOL_LIVE.toLowerCase();
+const V4_NAME = '0xe070797535b13431808f8fc81fdbe7b41362960ed0b55bc2b6117c49c51b7eb9';
+const UNKNOWN_NAME = `0x${'ab'.repeat(32)}`;
+/** The provider's pairs endpoint as it answered on 7 Nov: `{schemaVersion, pairs, pair}`, `pairs: null` for a pool it does not know. */
+const pairsEndpoint = (url) => {
+  const name = tokenOf(url).toLowerCase();
+  const pairs = name === V3_NAME ? [pair(V3_POOL_LIVE, BASE_WETH, BASE_USDC, 146056184.05, { chainId: 'base', labels: ['v3'] })]
+    : name === V4_NAME ? [pair(V4_NAME, NO_ADDRESS, BASE_USDC, 4381526.99, { chainId: 'base' }), pair(`0x${'cd'.repeat(32)}`, NO_ADDRESS, BASE_USDC, 1, { chainId: 'base' })]
+      : null;
+  return json({ schemaVersion: '1.0.0', pairs, pair: null });
+};
+
+test('2026-11-07: pairs/<base|arbitrum>/<pools> is the new path’s alone: v3 addresses and v4 ids, at most ten, never Robinhood Chain', () => {
+  assert.deepEqual(dex2Ask(getAsk2(`pairs/base/${V3_POOL_LIVE},${V4_NAME},${V3_NAME}`)), { kind: 'pairs', chain: 'base', tokens: [V3_NAME, V4_NAME], origin: ORIGIN });
+  assert.equal(dex2Ask(getAsk2(`pairs/arbitrum/${V3_NAME}`))?.chain, 'arbitrum');
+  // Added 2026-11-09 (Elysium's day 9, checklist step 6): Elysium's v4 pools by their ids, as Base's.
+  assert.deepEqual(dex2Ask(getAsk2(`pairs/elysium/${V4_NAME}`)), { kind: 'pairs', chain: 'elysium', tokens: [V4_NAME], origin: ORIGIN });
+  assert.equal(dex2Ask(getAsk2(`pairs/base/${Array.from({ length: MAX_TOKENS }, (_, i) => nth(i)).join(',')}`))?.tokens.length, MAX_TOKENS);
+  for (const bad of [
+    `pairs/${V3_NAME}`, `pairs/robinhood/${V3_NAME}`, `pairs/ethereum/${V3_NAME}`, `pairs/base/0x123`, `pairs/base/0x${'1'.repeat(50)}`, 'pairs/base/', `pairs/base/${V3_NAME}/x`,
+    `pairs/base/${Array.from({ length: MAX_TOKENS + 1 }, (_, i) => nth(i)).join(',')}`, `tokens/base/${V3_NAME}`, `token-pairs/base/${V4_NAME}`, `tokens/${V4_NAME}`,
+  ]) assert.equal(dex2Ask(getAsk2(bad)), null, bad);
+  assert.equal(dexAsk(getAsk(`pairs/base/${V3_NAME}`)), null, 'the old path never had it');
+  assert.equal(dexAsk(getAsk(`pairs/${V3_NAME}`)), null);
+});
+
+test('2026-11-07: each pool read from the provider’s pairs endpoint by its own name, one a request, kept under a key of its own; none for a pool it does not know; never a pair of another name', async () => {
+  const dex = upstream(pairsEndpoint);
+  const { rt, cache, time } = edge(dex);
+  const response = await answerDex2(getAsk2(`pairs/base/${V3_NAME},${V4_NAME},${UNKNOWN_NAME}`), rt);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('Cache-Control'), 'no-store');
+  assert.deepEqual(dex.calls.map((call) => call.url), [V3_NAME, V4_NAME, UNKNOWN_NAME].map((name) => `https://api.dexscreener.com/latest/dex/pairs/base/${name}`), 'one pool per upstream request, on the provider’s pairs endpoint');
+  const body = await response.json();
+  assert.deepEqual([body.v, body.now, Object.keys(body.tokens)], [2, time.at.now, [V3_NAME, V4_NAME, UNKNOWN_NAME]]);
+  assert.deepEqual(body.tokens[V3_NAME].pairs.map((p) => [p.chainId, p.dexId, p.labels, p.pairAddress, p.baseToken.address, p.quoteToken.address, p.liquidity.usd, p.volume.h24]),
+    [['base', 'uniswap', ['v3'], V3_POOL_LIVE, BASE_WETH, BASE_USDC, 146056184.05, 7500]], 'the fields the page reads, as the provider wrote them');
+  assert.equal(body.tokens[V3_NAME].at, time.at.now);
+  assert.deepEqual(body.tokens[V4_NAME].pairs.map((p) => p.pairAddress), [V4_NAME], 'a pair of another name in the body is never passed on');
+  assert.deepEqual(body.tokens[UNKNOWN_NAME], { at: time.at.now, none: true }, 'a pool the provider does not know: none');
+  assert.deepEqual(cache.puts, [V3_NAME, V4_NAME, UNKNOWN_NAME].map((name) => `${ORIGIN}/api/read/dex/cache/v2/base/pair/${name}`), 'each under a key of its own');
+  // Kept as a token's answer is: nothing upstream within 30 s, a none for ten minutes.
+  const again = await answerDex2(getAsk2(`pairs/base/${V3_NAME},${UNKNOWN_NAME}`), rt);
+  assert.equal(again.headers.get('Server-Timing'), 'edge;desc="hit"');
+  time.at.now += DEX_FRESH_SECONDS * 1000;
+  await answerDex2(getAsk2(`pairs/base/${UNKNOWN_NAME}`), rt);
+  assert.equal(dex.calls.length, 3, 'none read again for ten minutes');
+  // The same 20 bytes as a token on Base is another entry, read from token-pairs, never this pool's answer.
+  const asToken = await answerDex2(getAsk2(`token-pairs/base/${V3_NAME}`), rt);
+  assert.equal(dex.calls[3].url, `https://api.dexscreener.com/token-pairs/v1/base/${V3_NAME}`);
+  assert.deepEqual((await asToken.json()).tokens[V3_NAME], { missing: 'not_json', retryAfterS: DEX_MISS_SECONDS }, 'the pairs endpoint’s shape is not a token-pairs body');
+  assert.equal(cache.puts.length, 3);
+  // Arbitrum One's pool of the same name is Arbitrum One's own read.
+  await answerDex2(getAsk2(`pairs/arbitrum/${V3_NAME}`), rt);
+  assert.equal(dex.calls[4].url, `https://api.dexscreener.com/latest/dex/pairs/arbitrum/${V3_NAME}`);
+  assert.equal(cache.puts[3], `${ORIGIN}/api/read/dex/cache/v2/arbitrum/pair/${V3_NAME}`);
+});
+
+test('2026-11-07: a pool by name is refused, remembered and limited exactly as a token: the reason in its state, no other shape kept', async () => {
+  const cases = [
+    ['not_json', () => json([pair(V3_POOL_LIVE, BASE_WETH, BASE_USDC, 1, { chainId: 'base' })])],
+    ['not_json', () => json({ pairs: {} })],
+    ['not_json', () => json({})],
+    ['status_5xx', () => json({}, 502)],
+    ['status_403', () => json({}, 403)],
+  ];
+  for (const [reason, answer] of cases) {
+    const dex = upstream(answer);
+    const { rt, cache } = edge(dex);
+    const said = await answerDex2(getAsk2(`pairs/base/${V3_NAME}`), rt);
+    assert.deepEqual([said.status, (await said.json()).tokens[V3_NAME]], [200, { missing: reason, retryAfterS: DEX_MISS_SECONDS }], reason);
+    assert.equal(said.headers.get('Server-Timing'), `edge;desc="miss", miss;desc="${reason} ${V3_NAME}"`);
+    assert.equal(cache.puts.length, 0, reason);
+    await answerDex2(getAsk2(`pairs/base/${V3_NAME}`), rt);
+    assert.equal(dex.calls.length, 1, `${reason}: not read again for 30 s`);
+  }
+  // Another chain's pair in the body: none.
+  const elsewhere = upstream(() => json({ pairs: [pair(V3_POOL_LIVE, BASE_WETH, BASE_USDC, 1)] }));
+  assert.deepEqual((await (await answerDex2(getAsk2(`pairs/base/${V3_NAME}`), edge(elsewhere).rt)).json()).tokens[V3_NAME].none, true);
+  // The provider's 429 stops this isolate's reads of pools and tokens alike.
+  let refusing = true;
+  const dex = upstream((url) => (refusing ? new Response('{}', { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': '20' } }) : pairsEndpoint(url)));
+  const { rt } = edge(dex);
+  assert.equal((await (await answerDex2(getAsk2(`pairs/base/${V3_NAME}`), rt)).json()).tokens[V3_NAME].missing, 'status_429');
+  refusing = false;
+  assert.equal((await (await answerDex2(getAsk2(`token-pairs/base/${TOKEN}`), rt)).json()).tokens[TOKEN].missing, 'status_429');
+  assert.equal(dex.calls.length, 1);
+  // A visitor's unseen addresses count a pool's name too: each is one upstream read.
+  const mine = { 'CF-Connecting-IP': '2001:db8:7:7::1' };
+  const many = upstream(() => json({ pairs: null }));
+  const capped = edge(many);
+  for (let i = 0; i < DEX_VISITOR_NEW.burst; i += MAX_TOKENS) await answerDex2(getAsk2(`pairs/base/${Array.from({ length: MAX_TOKENS }, (_, j) => nth(i + j)).join(',')}`, mine), capped.rt);
+  const over = await answerDex2(getAsk2(`pairs/base/${nth(9_000)},${nth(0)}`, mine), capped.rt);
+  assert.deepEqual((await over.json()).tokens, { [nth(9_000)]: { missing: 'capped', retryAfterS: 1 }, [nth(0)]: { at: capped.time.at.now, none: true } });
+  assert.equal(many.calls.length, DEX_VISITOR_NEW.burst);
+});
+
+test('2026-11-07: the page and the edge agree: the pools a token’s pairs leave out, asked of our edge by name, give the store DEX Screener’s own figures, by that name, no token made of them', async () => {
+  const { createTokenArtworkResolver, DEX_EDGE } = require('../.test-build/app/src/lib/tokenArtwork.js');
+  const { createDexStore } = require('../.test-build/app/src/lib/read/dexFigures.js');
+  const dex = upstream(pairsEndpoint);
+  const { rt, time } = edge(dex);
+  const page = () => time.at.now + 7_000;
+  const asked = [];
+  const resolver = createTokenArtworkResolver({ edge: DEX_EDGE, now: time.now, wall: page, fetch: async (url) => {
+    asked.push(url);
+    // Our own edge only: the provider is never asked from the visitor's address for these.
+    assert.ok(url.startsWith('/api/read/dex2/pairs/'), url);
+    return answerDex2(getAsk2(url.slice('/api/read/dex2/'.length)), rt);
+  } });
+  const store = createDexStore(async () => null, page, resolver.edgePairs);
+  await store.askPairs(8453, [V3_POOL_LIVE, V4_NAME, UNKNOWN_NAME]);
+  assert.deepEqual(asked, [`/api/read/dex2/pairs/base/${V3_NAME},${V4_NAME},${UNKNOWN_NAME}`]);
+  const at = Math.floor(page() / 1000);
+  assert.deepEqual(store.chainPoolSeen(8453, V3_NAME), { poolId: V3_NAME, base: BASE_WETH, quote: BASE_USDC, liquidityUsd: '146056184.05', volume24hUsd: '7500.00', retrievedAt: at });
+  assert.deepEqual([store.chainPoolSeen(8453, V4_NAME).base, store.chainPoolSeen(8453, V4_NAME).liquidityUsd], [NO_ADDRESS, '4381526.99'], 'the v4 pool by its id, native ETH by the zero address');
+  assert.equal(store.chainPoolSeen(8453, `0x${'cd'.repeat(32)}`), null, 'nothing under another name');
+  assert.equal(store.chainPoolSeen(8453, UNKNOWN_NAME), null);
+  assert.equal(store.chainToken(8453, V3_NAME), null, 'a pool’s name never makes a token');
+  assert.equal(store.chainPoolSeen(42161, V3_NAME), null, 'Base’s pool is not Arbitrum One’s');
+  // Twelve names: two GETs of ten and two; Robinhood Chain never asks.
+  await store.askPairs(42161, Array.from({ length: 12 }, (_, i) => nth(i)));
+  assert.deepEqual(asked.slice(1).map((url) => url.split('/').at(-1).split(',').length), [10, 2]);
+  await store.askPairs(4663, [`0x${'12'.repeat(32)}`]);
+  assert.equal(asked.length, 3);
 });

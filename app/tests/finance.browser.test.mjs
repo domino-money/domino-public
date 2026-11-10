@@ -255,7 +255,7 @@ test('setup reads its release on mount, points to New position for a new positio
     const line = s.page.locator('[data-setup-new-position]');
     await line.waitFor();
     assert.equal(await line.innerText(), 'Opening a position? Start with New position.');
-    assert.equal(await line.getByRole('link', { name: 'New position', exact: true }).getAttribute('href'), '#/new');
+    assert.equal(await line.getByRole('link', { name: 'New position', exact: true }).getAttribute('href'), '/new');
     assert.equal(await s.page.locator('[data-setup-wallet], [data-wallet-deposit]').count(), 0, 'no deposit through the wallet here');
     // Changed on purpose (qa:visual, dead ends): with no release and no saved profile an Owner recovery card promised a recovery with no way
     // into it. Nothing is shown in its place; where the release stands is a hidden marker's data and title.
@@ -1286,10 +1286,10 @@ async function openCreated(page, id, timeout = 60_000, shot = null) {
   assert.equal(await page.locator('[data-create-position]').innerText(), 'Position created');
   const v2 = WALLET_DIST === WALLET_V2_DIST;
   assert.deepEqual(await next.locator('a').evaluateAll((links) => links.map((a) => [a.getAttribute('data-created-next'), a.getAttribute('href')])), [
-    ['plain', `#/positions/${id}`],
-    ['compound', `#/sequence/compound/${id}`],
-    ['domino', `#/sequence/domino/${id}`],
-    ...(v2 ? [['autoexit', `#/positions/${id}`]] : []),
+    ['plain', `/positions/${id}`],
+    ['compound', `/sequence/compound/${id}`],
+    ['domino', `/sequence/domino/${id}`],
+    ...(v2 ? [['autoexit', `/positions/${id}`]] : []),
   ]);
   assert.match(await next.innerText(), new RegExp(`Position NFT ${id} is in your wallet\\.[\\s\\S]*Plain position[\\s\\S]*View position[\\s\\S]*Auto-compound · 2%[\\s\\S]*Domino-compound · 4%`));
   if (v2) assert.match(await next.locator('[data-created-next="autoexit"]').innerText(), /Auto-exit · 0\.2% of the position’s value, only if it closes[\s\S]*Closes it at the end of its range and sends the tokens to your wallet\.[\s\S]*Turn on/);
@@ -1299,7 +1299,7 @@ async function openCreated(page, id, timeout = 60_000, shot = null) {
     await page.screenshot({ path: join(shots(), shot) });
   }
   await next.locator('[data-created-next="plain"]').click();
-  await page.waitForFunction((want) => location.hash === `#/positions/${want}`, id, { timeout: 10_000 });
+  await page.waitForFunction((want) => location.pathname + location.hash === `/positions/${want}`, id, { timeout: 10_000 });
 }
 /** Records every change of Review's wallet steps from now on, in `window.__walletStepLog`, as `key=state` lists. */
 const recordWalletSteps = page => page.evaluate(() => {
@@ -3289,7 +3289,7 @@ test('a mint declined in the wallet leaves the deposit held: Create position say
     assert.equal(await s.page.locator('#create-reason').innerText(), 'You have a deposit waiting in this pool. Press Create position to finish from it, or refund it.');
     assert.deepEqual(await walletStepStates(s.page), [[`approve:${FIXTURE_TOKEN}`, 'done'], ['fund', 'done'], ['mint', 'failed']]);
     assert.deepEqual(chain.decoded().map(tx => tx.functionName), ['approve', 'open'], 'the mint was never sent');
-    assert.ok((await s.page.evaluate(() => location.hash)).startsWith('#/new'), 'still on New position');
+    assert.ok((await s.page.evaluate(() => location.pathname + location.hash)).startsWith('/new'), 'still on New position');
 
     const refund = s.page.getByRole('button', { name: 'Refund the deposit instead', exact: true });
     await refund.click();
@@ -3300,7 +3300,7 @@ test('a mint declined in the wallet leaves the deposit held: Create position say
     const [, open, cancel] = chain.decoded();
     assert.deepEqual([cancel.functionName, cancel.to, cancel.from, cancel.value, cancel.nonce, cancel.args[0]], ['cancel', setup, OWNER, 0n, '0x2', open.args[0]], 'cancel for the operation the deposit opened, at the nonce the declined mint gave back');
     assert.deepEqual([chain.operations.get(open.args[0]).closed, chain.operations.get(open.args[0]).tokenId], [true, 0n]);
-    assert.ok((await s.page.evaluate(() => location.hash)).startsWith('#/new'));
+    assert.ok((await s.page.evaluate(() => location.pathname + location.hash)).startsWith('/new'));
     await onlyTheWallet(s, chain);
   } finally { await s.close(); }
 });
@@ -4923,8 +4923,8 @@ test('a finalized receipt is one short row: Done, what it added back, and its de
     await open.locator('summary').click();
     // Changed on purpose (2026-09-27, round 5 review): the sentence is plain ("a transaction slot is reserved" was for engineers).
     assert.match(await open.innerText(), /Getting ready\. Nothing has been sent\.\s+It can still be stopped: press Pause on your position’s page before it is signed\.\s+How to pause/);
-    assert.equal(await open.getByRole('link', { name: 'How to pause', exact: true }).getAttribute('href'), '#/docs/non-custodial#pause-revoke-withdraw');
-    assert.deepEqual(await receipts.locator('a').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['#/docs/non-custodial#pause-revoke-withdraw'], 'no external link: the one link is how to pause');
+    assert.equal(await open.getByRole('link', { name: 'How to pause', exact: true }).getAttribute('href'), '/docs/non-custodial#pause-revoke-withdraw');
+    assert.deepEqual(await receipts.locator('a').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['/docs/non-custodial#pause-revoke-withdraw'], 'no external link: the one link is how to pause');
     assert.deepEqual([await done.getAttribute('data-execution-can-cancel'), await done.getByRole('link').count()], ['false', 0]);
     const text = await receipts.innerText();
     assert.doesNotMatch(text, FORBIDDEN); assert.doesNotMatch(text, /_/, 'no code is printed');
@@ -5081,14 +5081,14 @@ test('many receipts: the Positions tab shows four short rows at most, cancelled 
 
     // See all, in the card's head: the full list on its own page, Positions still lit in the header.
     const all = card.locator('[data-receipts-all]');
-    assert.deepEqual([await all.innerText(), await all.getAttribute('href')], ['See all', '#/positions/receipts']);
+    assert.deepEqual([await all.innerText(), await all.getAttribute('href')], ['See all', '/positions/receipts']);
     await all.click();
-    await s.page.waitForFunction(() => location.hash === '#/positions/receipts');
+    await s.page.waitForFunction(() => location.pathname + location.hash === '/positions/receipts');
     // The hash changes before the page's own chunk renders; wait for its heading (CI read "Positions" first, 2026-09-28).
     await s.page.getByRole('heading', { level: 1, name: 'Receipts' }).waitFor();
     assert.equal(await s.page.getByRole('heading', { level: 1 }).innerText(), 'Receipts');
     assert.equal(await s.page.locator('header nav[aria-label="Main"] a[aria-current="page"]').innerText(), 'Positions');
-    assert.equal(await s.page.locator('main a.dm-pos-back').getAttribute('href'), '#/positions');
+    assert.equal(await s.page.locator('main a.dm-pos-back').getAttribute('href'), '/positions');
     const full = s.page.locator('section[aria-label="Execution receipts"]');
     await s.page.locator('section[aria-label="Execution receipts"][data-execution="ready"]').waitFor();
     await unitsRead(full);
@@ -5098,12 +5098,12 @@ test('many receipts: the Positions tab shows four short rows at most, cancelled 
     await shootBoth(s.page, 'many-receipts-page');
     // Back to Positions and See all again: the same rows at once, and still that one read.
     await s.page.locator('main a.dm-pos-back').click();
-    await s.page.waitForFunction(() => location.hash === '#/positions');
+    await s.page.waitForFunction(() => location.pathname + location.hash === '/positions');
     await list.waitFor();
     await unitsRead(receipts);
     assert.deepEqual(await rowTexts(list), ['In progress | Adding fees back', 'Done | Fees added back | 4.2 USDG', 'Done | Fees added back | 16.49 USDG + 1,086.59 UFG', 'Cancelled | 7 cancelled before sending']);
     await all.click();
-    await s.page.waitForFunction(() => location.hash === '#/positions/receipts');
+    await s.page.waitForFunction(() => location.pathname + location.hash === '/positions/receipts');
     // The old Positions list also matches `full`; a changed hash alone does not mean the Receipts page committed.
     await s.page.getByRole('heading', { level: 1, name: 'Receipts' }).waitFor();
     await full.locator('.dm-rcpt-list').waitFor();
@@ -5160,7 +5160,7 @@ test('few receipts and none: a short list with nothing to fold, and a friendly e
       }
       // Managed positions: the position's name opens its page; three figures at a glance, the rest inside All figures.
       // Changed on purpose (the owner, 2026-09-27, round 6): "Fees added back", the one phrase every screen uses (was "Re-added").
-      assert.equal(await row.locator('.dm-mp-name').getAttribute('href'), '#/positions/1');
+      assert.equal(await row.locator('.dm-mp-name').getAttribute('href'), '/positions/1');
       assert.deepEqual(await row.locator(':scope > .dm-mp-figs > div').evaluateAll(cells => cells.map(cell => [cell.querySelector('dt').textContent, cell.querySelector('dd').textContent])),
         [['Fees earned', '$0.50'], ['Fees added back', '$50.00'], ['APR after fees', '-14.78%']]);
       // Each label on one line, on desktop and phone.
@@ -5651,7 +5651,7 @@ test('with an automation the wallet owns and nothing tracked, Managed positions 
     const waiting = history.locator('[data-enrollment-status="queued"]');
     await waiting.waitFor();
     assert.equal(await waiting.locator('.dm-mp-name').innerText(), 'Position #3325113');
-    assert.equal(await waiting.locator('.dm-mp-name').getAttribute('href'), '#/positions/3325113', 'it opens its position, as a tracked row does');
+    assert.equal(await waiting.locator('.dm-mp-name').getAttribute('href'), '/positions/3325113', 'it opens its position, as a tracked row does');
     assert.equal(await waiting.getAttribute('title'), chain.vaults[0], 'the automation’s address is only the row’s title');
     assert.deepEqual([await waiting.locator('.dm-acct-status').innerText(), await waiting.locator('.dm-acct-note').innerText()], ['Tracking requested', 'Waiting for its first figures.']);
     // Its only automation is tracked now: the row above says so, and Track your automations is left out rather than naming it twice.
@@ -5743,7 +5743,7 @@ test('with no wallet the page asks to connect; connected, the wallet’s own pos
     await s.page.keyboard.press('Escape');
     const empty = main.locator('[data-sequence-positions="empty"]');
     await empty.getByText('No open positions', { exact: true }).waitFor();
-    assert.equal(await empty.getByRole('link', { name: 'New position' }).getAttribute('href'), '#/new');
+    assert.equal(await empty.getByRole('link', { name: 'New position' }).getAttribute('href'), '/new');
     assert.equal(await main.locator('input').count(), 0, 'no NFT id or address is ever typed');
     const text = await main.innerText();
     assert.doesNotMatch(text, /Owner controls|Network budget|Create a paused sequence|Manage a sequence|Root NFT|Read my sequences|Sequence address/i);
@@ -6125,9 +6125,9 @@ test('from a position link, one press puts the NFT under Domino-compound: the ap
     assert.equal(await created.getAttribute('data-sequence-create'), 'done');
     assert.match(await created.innerText(), /^\s*Domino-compound is set up for position #5\s+It starts paused, and your position stays in your wallet\./);
     assert.deepEqual(await created.locator('[data-wallet-step]').evaluateAll(items => items.map(item => item.getAttribute('data-step-state'))), ['done', 'done']);
-    assert.equal(await created.getByRole('link', { name: 'How to switch it on' }).getAttribute('href'), '#/docs/domino-compound#start-and-stop');
+    assert.equal(await created.getByRole('link', { name: 'How to switch it on' }).getAttribute('href'), '/docs/domino-compound#start-and-stop');
     // 2026-09-24 (the three features joined up): and the way back to the position, which Positions now shows in its sequence.
-    assert.equal(await created.getByRole('link', { name: 'View position' }).getAttribute('href'), '#/positions/5');
+    assert.equal(await created.getByRole('link', { name: 'View position' }).getAttribute('href'), '/positions/5');
     assert.equal(await main.locator('[data-notice-code]').count(), 0, 'no error code beside any sentence');
     assert.doesNotMatch(await created.innerText(), FORBIDDEN);
     await s.page.screenshot({ path: join(shots(), 'p2-sequence-create.png'), fullPage: true });
@@ -6485,7 +6485,7 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     // The open position's row, every figure from the chain read: the read service is never asked.
     const row = s.page.locator(`a[data-position-row="${OWNED_OPEN}"][data-snapshot="${chain.head}"]`);
     await row.waitFor();
-    assert.equal(await row.getAttribute('href'), `#/positions/${OWNED_OPEN}`);
+    assert.equal(await row.getAttribute('href'), `/positions/${OWNED_OPEN}`);
     const rowText = await row.innerText();
     // Changed on purpose (the owner, round 6, 2026-09-27: one tidy row a position, plain words): the pair and "0.30% fee"
     // over In range; the NFT id is for a screen reader only ("Position #3135288"), no longer a chip.
@@ -6502,7 +6502,7 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     assert.equal(await feature.getAttribute('data-automation'), 'plain');
     assert.equal(await feature.getAttribute('title'), null);
     assert.match(await feature.innerText(), /^Automate$/);
-    assert.equal(await feature.locator('a').getAttribute('href'), `#/sequence/${OWNED_OPEN}`);
+    assert.equal(await feature.locator('a').getAttribute('href'), `/sequence/${OWNED_OPEN}`);
     assert.equal(await s.page.locator('[data-position-row] a, [data-position-row] button').count(), 0, 'the row stays one link, with nothing inside it');
     assert.deepEqual(nftReads(read), [], 'no nft-positions read: the rows are the chain read');
     assert.equal(await s.page.locator('details[data-lookup-disclosure], #nft-ids, #chain-lookup').count(), 0, 'no lookup by NFT id');
@@ -6536,7 +6536,7 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     // A row is a link to the position's own page, read from the chain by the page.
     await s.page.getByRole('tab', { name: /^Open/ }).click();
     await row.click();
-    await s.page.waitForFunction((id) => location.hash === `#/positions/${id}`, OWNED_OPEN);
+    await s.page.waitForFunction((id) => location.pathname + location.hash === `/positions/${id}`, OWNED_OPEN);
     const detail = s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`);
     await detail.waitFor();
     await detail.locator('[data-stat="price"] [data-current-price="usable"]').waitFor();
@@ -6586,14 +6586,14 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     // actions in the title row, beside Collect fees and Close position, and opens the automation page with this position
     // chosen and the mode still to choose; the position's feature is a pill beside its range status.
     assert.deepEqual(await detail.locator('.dm-pos-links a').evaluateAll((links) => links.map((a) => [a.textContent, a.getAttribute('href')])), [
-      ['Pool', `#/pool/${STUB_POOL_ID}/${FIXTURE_TOKEN.toLowerCase()}`],
+      ['Pool', `/pool/${STUB_POOL_ID}/${FIXTURE_TOKEN.toLowerCase()}`],
       // Changed on purpose (round 6, 2026-09-27): the link names the pool's token after its id, as the Pool link does, so
       // New position verifies an unlisted pool with it instead of USDG.
       // Changed on purpose 2026-10-30 (QA round 2, Q33/N43): one name for the New position flow.
-      ['New position in this pool', `#/new/${STUB_POOL_ID}/${FIXTURE_TOKEN}`],
+      ['New position in this pool', `/new/${STUB_POOL_ID}/${FIXTURE_TOKEN}`],
     ]);
     await detail.locator('[data-position-actions] a[data-automate-entry]').waitFor();
-    assert.deepEqual(await detail.locator('[data-position-actions] a[data-automate-entry]').evaluate((a) => [a.textContent, a.getAttribute('href')]), ['Automate', `#/sequence/${OWNED_OPEN}`]);
+    assert.deepEqual(await detail.locator('[data-position-actions] a[data-automate-entry]').evaluate((a) => [a.textContent, a.getAttribute('href')]), ['Automate', `/sequence/${OWNED_OPEN}`]);
     assert.equal(await detail.locator('.dm-pos-chips [data-automation="plain"]').innerText(), 'Plain position');
     // Changed on purpose 2026-10-01 (fees item A21): the page's state read is two calls, the first at 'latest' (naming its
     // block through ArbSys), the second at that block: the head here, where it read head − 2 before.
@@ -6644,6 +6644,11 @@ test('View address lists that address’s positions read-only beside its tokens,
   const s = await scenario({ clock: true, chain, refresh: true, prefetch: true, routes: [site.route, (request, url) => read.handle(request, url)] });
   try {
     await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    // Changed on purpose 2026-11-09 (a flake on CI's slow runner, twice that day: the page drew Positions, "Connect a wallet",
+    // and the address was never shown): the link is followed once the page has opened, its session read and its own list
+    // drawn, so the page's start cannot write its own address over the link's.
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
+    await s.page.locator('[data-empty="owned-connect"]').waitFor({ timeout: 15_000 });
     // A link to the address, with no wallet connected: its positions, named by the address.
     await s.page.evaluate((address) => { location.hash = `#/portfolio/${address}`; }, OTHER);
     const card = s.page.locator(`[data-owned="ready"][data-owned-viewed="${OTHER}"]`);
@@ -6653,7 +6658,7 @@ test('View address lists that address’s positions read-only beside its tokens,
     assert.deepEqual((await card.getByRole('tab').allInnerTexts()).map((text) => text.replace(/\s+/g, ' ').trim()), ['Open 1', 'Closed 1']);
     const row = card.locator('a[data-position-row="4000001"]');
     await row.waitFor();
-    assert.equal(await row.getAttribute('href'), '#/positions/4000001', 'each row opens the position’s public page');
+    assert.equal(await row.getAttribute('href'), '/positions/4000001', 'each row opens the position’s public page');
     // Nothing to act on: no Automate, no held deposit or refund (though the address holds one), no New position, no Connect.
     assert.equal(await s.page.locator('a[data-automate-entry]').count(), 0);
     assert.equal(await s.page.locator('[data-held-deposits]').count(), 0);
@@ -7267,7 +7272,7 @@ test('a position’s page offers New position in this pool only for a pool with 
     const hooked = s.page.locator('[data-position-reason="hooked_pool"]');
     await hooked.waitFor({ timeout: 10_000 });
     assert.equal(await s.page.locator('.dm-pos-links a').count(), 0, 'a pool with hooks: no link');
-    assert.equal(await s.page.locator('a[href^="#/new/"]').count(), 0, 'no way into New position with the dynamic-fee or hooked pool on its page');
+    assert.equal(await s.page.locator('a[href^="/new/"]').count(), 0, 'no way into New position with the dynamic-fee or hooked pool on its page');
   } finally { await s.close(); }
 });
 
@@ -7360,7 +7365,7 @@ test('a position’s page offers Automate and says Plain position only for one o
     // One of the wallet's Domino positions, open: Automate beside the owner's actions, and its feature beside its range.
     const mine = await open(OWNED_OPEN);
     await mine.locator('[data-position-actions] a[data-automate-entry]').waitFor();
-    assert.equal(await mine.locator('[data-position-actions] a[data-automate-entry]').getAttribute('href'), `#/sequence/${OWNED_OPEN}`);
+    assert.equal(await mine.locator('[data-position-actions] a[data-automate-entry]').getAttribute('href'), `/sequence/${OWNED_OPEN}`);
     assert.equal(await mine.locator('.dm-pos-chips [data-automation="plain"]').innerText(), 'Plain position');
 
     // The wallet holds this NFT, open, in the same usable pool, but did not open it with Domino: the owner's actions
@@ -7407,7 +7412,7 @@ test('after a success, New position in the footer opens a fresh flow at step 1; 
     await s.page.locator('[data-create-position="held"]').click({ timeout: 60_000 });
     const next = s.page.locator('[data-created-position="4243"]');
     await next.waitFor({ timeout: 60_000 });
-    assert.equal(await s.page.evaluate(() => location.hash), '#/new');
+    assert.equal(await s.page.evaluate(() => location.pathname + location.hash), '/new');
     assert.equal(await s.page.locator('li[data-step="review"][data-state="current"]').count(), 1);
     // The done steps above the offer are not locked: each still opens (and leaving Review ends the offer).
     assert.deepEqual(await s.page.locator('li[data-step-done] button.dm-flow-row').evaluateAll((rows) => rows.map((row) => row.disabled)), [false, false, false]);
@@ -7416,7 +7421,7 @@ test('after a success, New position in the footer opens a fresh flow at step 1; 
     await s.page.locator('footer').getByRole('link', { name: 'New position', exact: true }).click();
     await next.waitFor({ state: 'detached', timeout: 10_000 });
     await s.page.locator('li[data-step="pool"][data-state="current"]').waitFor({ timeout: 10_000 });
-    assert.equal(await s.page.evaluate(() => location.hash), '#/new', 'the same page');
+    assert.equal(await s.page.evaluate(() => location.pathname + location.hash), '/new', 'the same page');
     assert.equal(await s.page.locator('li[data-step-done], [data-create-position], [data-created-position]').count(), 0, 'no step done, no Create position, no offer');
     assert.ok(await s.page.evaluate(() => window.scrollY) < 200, 'at the top of the page');
     assert.equal(chain.sends.length, 1, 'nothing more was sent');
@@ -7427,7 +7432,7 @@ test('after a success, New position in the footer opens a fresh flow at step 1; 
     const detail = s.page.locator('[data-position-detail][data-position-id="4243"]');
     await detail.waitFor({ timeout: 30_000 });
     await detail.locator('[data-position-actions] a[data-automate-entry]').waitFor({ timeout: 20_000 });
-    assert.equal(await detail.locator('[data-position-actions] a[data-automate-entry]').getAttribute('href'), '#/sequence/4243');
+    assert.equal(await detail.locator('[data-position-actions] a[data-automate-entry]').getAttribute('href'), '/sequence/4243');
     assert.equal(await detail.locator('.dm-pos-chips [data-automation="plain"]').innerText(), 'Plain position');
     // Changed on purpose 2026-10-01 (RPC-SPEC D4): the edge reads the wallet's ids from DominoSetupV1's state, which a
     // node's lagging SetupMinted logs do not hide (they give only the mint's block, functions/_lib/ownedMints.ts): the
@@ -7469,14 +7474,14 @@ test('a paused Auto-compound says so on its row and its page, offers how to swit
     assert.equal(await paused.locator('a').count(), 0, 'no second sequence on it, and no link on the row');
     const plain = s.page.locator(`[data-position-automation="${PLAIN}"][data-automation="plain"]`);
     await plain.locator('a[data-automate-entry]').waitFor();
-    assert.equal(await plain.locator('a[data-automate-entry]').getAttribute('href'), `#/sequence/${PLAIN}`);
+    assert.equal(await plain.locator('a[data-automate-entry]').getAttribute('href'), `/sequence/${PLAIN}`);
 
     await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
     const detail = s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`);
     await detail.waitFor({ timeout: 10_000 });
     await detail.locator('[data-position-actions] a[data-automate-docs]').waitFor({ timeout: 10_000 });
     assert.equal(await detail.locator('.dm-pos-chips [data-automation="compound"]').innerText(), 'Auto-compound · Paused');
-    assert.deepEqual(await detail.locator('[data-position-actions] a').evaluateAll((links) => links.map((a) => [a.textContent, a.getAttribute('href')])), [['How to switch it on', '#/docs/auto-compound#where-it-starts']]);
+    assert.deepEqual(await detail.locator('[data-position-actions] a').evaluateAll((links) => links.map((a) => [a.textContent, a.getAttribute('href')])), [['How to switch it on', '/docs/auto-compound#where-it-starts']]);
     assert.doesNotMatch(await detail.innerText(), FORBIDDEN);
     // Read by the page from the chain: the subscribers, then the vault's factory check, root, policy and permission.
     const reads = chain.log.filter((call) => call.method === 'eth_call').map((call) => call.params[0].data);
@@ -7735,7 +7740,7 @@ test('the success card offers Turn on in the place of the docs link once the ser
     await turnOn.waitFor({ timeout: 10_000 });
     assert.equal(await turnOn.innerText(), 'Turn on');
     assert.equal(await created.getByRole('link', { name: 'How to switch it on' }).count(), 0, 'Turn on stands where the docs link stood');
-    assert.equal(await created.getByRole('link', { name: 'View position' }).getAttribute('href'), '#/positions/5');
+    assert.equal(await created.getByRole('link', { name: 'View position' }).getAttribute('href'), '/positions/5');
     assert.deepEqual(service.asked, [{ vault }]);
     await turnOn.click();
     await created.locator('button[data-sequence-switch="pause"]').waitFor({ timeout: 30_000 });
@@ -8690,7 +8695,7 @@ test('Managed positions never flash empty: a hidden tab, a failed read and the w
       window.__cardsBlank = [];
       const check = () => {
         const managed = document.querySelector('section[aria-label="Private performance"]'), receipts = document.querySelector('section[aria-label="Execution receipts"]');
-        if (location.hash !== '#/positions/receipts' && !managed?.querySelector('.dm-mp-row')) window.__cardsBlank.push(`managed: ${managed?.innerText.slice(0, 60) ?? 'gone'}`);
+        if (location.pathname + location.hash !== '/positions/receipts' && !managed?.querySelector('.dm-mp-row')) window.__cardsBlank.push(`managed: ${managed?.innerText.slice(0, 60) ?? 'gone'}`);
         if (!receipts?.querySelector('.dm-rcpt-list')) window.__cardsBlank.push(`receipts: ${receipts?.innerText.slice(0, 60) ?? 'gone'}`);
       };
       new MutationObserver(check).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
@@ -8914,8 +8919,13 @@ const OTHER_HOLDER = `0x${'0b'.repeat(20)}`;
  * (eth_getLogs); `release` is what the release Worker answers (the published one by default), and `shipped` stands in
  * for the V1 release a deployable build ships for recovery (src/finance/pin.ts SEQUENCE_RECOVERY_RECORD), which a test
  * build has none of unless a test gives one.
+ *
+ * Changed on purpose 2026-11-09 (core flows, V1 leftovers): the card no longer asks the release Worker
+ * (src/finance/reservesLive.ts): V1's profile expired on 2026-10-21 and the request only met a 503. The shipped record
+ * stands in by default (the very deployment every deployable build ships), so each test reads the vaults as before;
+ * `shipped: null` is a build with none.
  */
-async function reservesScenario({ seq, positions = () => [], vaults = () => ({}), batch = false, release = { status: 200, body: seq.release }, shipped = null, clock = false }) {
+async function reservesScenario({ seq, positions = () => [], vaults = () => ({}), batch = false, release = { status: 200, body: seq.release }, shipped = seq.release, clock = false }) {
   const chain = browserChain({ positions: positions(seq), tokens: TOKENS, vaults: vaults(seq) });
   // (2026-10-15, pack 7): `clock` installs the page's clock, so a test can step past the minute a read is kept.
   const s = await scenario({ chain, clock });
@@ -8954,7 +8964,7 @@ test('fees waiting in the vault of an armed root: Positions shows them per token
     const row = card.locator(`[data-reserve-vault="${seq.vaults[0]}"]`);
     await row.locator(`[data-reserve-currency="${RESERVE_QUOTE}"]`).getByText('2.5 BBB', { exact: true }).waitFor({ timeout: 30_000 });
     assert.equal(await row.locator(`[data-reserve-currency="${RESERVE_BASE}"]`).innerText(), '1.25 AAA', 'every digit, in the token’s own units');
-    assert.equal(await row.locator('a').getAttribute('href'), `#/positions/${OWNED_OPEN}`);
+    assert.equal(await row.locator('a').getAttribute('href'), `/positions/${OWNED_OPEN}`);
     assert.equal(await row.locator('[data-reserve-status]').innerText(), 'Automation on');
     const text = await card.innerText();
     assert.doesNotMatch(text, /\$|USD/, 'no price is made up for them');
@@ -9469,7 +9479,7 @@ test('review finding 3: a vault whose chain of positions is longer than one read
   } finally { await s.close(); }
 });
 
-test('review finding 5: with the release refused or switched off and nothing saved in this browser, the fees are still found and withdrawn with the V1 release the build ships', async () => {
+test('review finding 5: with the release refused or switched off and nothing saved in this browser, the fees are still found and withdrawn with the V1 release the build ships, and the release is never asked', async () => {
   const seq = fakeSequenceChain(OWNER, { roots: [100n], settled: true, rootPermissionValid: false, reserves: {
     0: [{ tokenId: 100n, source: 0, currency: 'base', original: 2_000_000_000_000_000_000n }],
   } });
@@ -9488,14 +9498,15 @@ test('review finding 5: with the release refused or switched off and nothing sav
     await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out', null, { timeout: 30_000 });
     await goTo(s, '#/positions');
     await card.locator(`[data-reserve-currency="${RESERVE_BASE}"]`).getByText('2 AAA', { exact: true }).waitFor({ timeout: 30_000 });
-    assert.ok(s.releases.filter((asked) => asked.path === '/api/setup/v1/sequence-release').length >= 2, 'the release was asked again, and is off');
+    // Changed on purpose 2026-11-09 (core flows, V1 leftovers): the card never asks the release (it only met a 503).
+    assert.equal(s.releases.filter((asked) => asked.path === '/api/setup/v1/sequence-release').length, 0, 'the release is never asked by the card');
     await card.getByRole('button', { name: 'Withdraw to wallet', exact: true }).click();
     await s.page.locator('[data-reserves-dialog="ready"]').waitFor({ timeout: 30_000 });
     const dialog = reservesDialog(s);
     await dialog.getByRole('button', { name: 'Withdraw in wallet', exact: true }).click();
     await s.page.locator('[data-reserves-dialog="done"]').waitFor({ timeout: 60_000 });
     assert.deepEqual(sentWithdrawals(seq), [{ to: seq.vaults[0], value: '0x0', functionName: 'withdrawFeeReserves', args: [seq.sourceOf(100n, 0), RESERVE_BASE, 2_000_000_000_000_000_000n, 0n] }]);
-    assert.equal(await saved(), null, 'only a published release is ever kept');
+    assert.equal(await saved(), null, 'nothing is kept: no release is published');
     assert.deepEqual([seq.missing, seq.refused], [[], []]);
   } finally { await s.close(); }
 });

@@ -1,11 +1,11 @@
 """read-v6's live chain reads (app spec F7 §6.2; 0xdecimal's items 1-3 of 5 Oct 2026): the pools of a token on a
-chain, a wallet's balances on each chain, and token search on Base and Arbitrum One.
+chain, a wallet's balances on each chain, and token search on Base, Arbitrum One and Elysium.
 
 Unlike portfolio and activity, these read the chains when asked, so the app lists pools and balances without
 moving the wallet to another network (it still does, to sign: §1.3).
 
-- Robinhood reads Domino's own node through the reader's provider file; Base and Arbitrum read the V2 chain RPC
-  file's hosted endpoints (F6, v2_rpc), billed per call. Each answer is one Multicall3 call per chain at the
+- Robinhood reads Domino's own node through the reader's provider file; Base, Arbitrum and Elysium read the V2
+  chain RPC file's hosted endpoints (F6, v2_rpc), billed per call. Each answer is one Multicall3 call per chain at the
   chain's head (v2_head), chain-pools' a few more for the depths (CHAIN_READ_REQUESTS bounds them all), and answers
   are cached for a few seconds, so a busy page costs little more than a quiet one. Calls go over kept HTTPS
   connections (kept_rpc), and the chains of one answer are read at once (each_chain).
@@ -20,7 +20,8 @@ moving the wallet to another network (it still does, to sign: §1.3).
   profiles are v2_chains.BalanceChainProfile) through the reader's balance chain RPC file, priced by the same rules on
   their own stable, feed and pools. Without that file, or with a fault in it, those two answer `chain_not_configured`
   and every other chain reads as before.
-- chain-tokens searches the tokens Domino knows on Base and Arbitrum (the owner's decision of 5 Oct 2026): the
+- chain-tokens searches the tokens Domino knows on Base and Arbitrum (the owner's decision of 5 Oct 2026) and on
+  Elysium (9 Nov 2026; the pinned list has none of its tokens yet, so the other three sources find them): the
   chain profile's, the Uniswap Labs Default token list's (backend/data/token-lists, GPL-3.0, pinned), those the
   V2 index read, and those a chain-pools read found priced pools for, as Robinhood's catalogue learns from
   visitors. Like read-v3's search it covers known tokens only.

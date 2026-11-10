@@ -58,6 +58,7 @@ import {
   HASH,
   MAX_BYTES,
   MAX_HEADERS,
+  MAX_RPC_CALLS,
   POOL_MANAGER,
   RelayError,
   SAFE_DEPTH,
@@ -88,7 +89,7 @@ import {
   type Budget,
   type FeesRuntime,
 } from './fees'
-import type { LedgerEntry, LedgerPosition, LedgerResponse, LedgerWhy, StatePositionOk } from '../../src/lib/fees/types'
+import type { LedgerEntry, LedgerPosition, LedgerResponse, LedgerWhy, StatePositionOk, StateResponse } from '../../src/lib/fees/types'
 
 // ---------------------------------------------------------------------------
 // Pins (checked against the contracts and the deployment profile in tests/fees-ledger.test.mjs)
@@ -157,6 +158,27 @@ const MINT_PRICE_FAILURE_SECONDS = 30
 const MINT_PRICE_BYTES = 32_768
 /** The most one-block lookups one read makes; past it the ledger is kept as far as they reached, and says `reading`. */
 export const LEDGER_STEP = 200
+/**
+ * Added on purpose 2026-11-09 (core flows, the owner: "I don't want slowness, the site is live"): one answer goes on,
+ * pass after pass, while it is younger than this, where it said `reading` after one pass. A pass is what an answer was:
+ * one LEDGER_SCAN_BLOCKS window for its NFTs, at most LEDGER_STEP lookups, its ledgers kept as it leaves them, so the
+ * next pass (or the next answer, in this data centre) goes on from them. A position five weeks old waited for about
+ * thirty answers of one window each, re-asked two seconds apart (tests/fees-ledger-speed.test.mjs). Well inside
+ * DEADLINE_MS (25 s): the last pass started may still take its own few seconds.
+ */
+export const LEDGER_PASS_MS = 8_000
+/** The calls an answer keeps past its later passes for the opening prices (mintPrices: one read and its Swap fallback). */
+export const MINT_PRICE_CALLS = 2
+/**
+ * What a pass leaves of the answer's calls, past its windows' own rounds, for what its NFTs share after them: the vaults'
+ * checkpoints, who is Domino's, the one-block lookups and the headers. The first pass keeps room for all of them (a
+ * failure there fails the answer, as before); a later one only a little (a later pass that runs short ends, and the answer
+ * is what the passes before it came to).
+ */
+const FIRST_SHARED_CALLS = 8
+const LATER_SHARED_CALLS = 2
+/** What the one-block lookups leave of a pass's calls for the headers of what they found. */
+const HEADER_CALLS = 1
 /** The most settlements one ledger keeps, and the most addresses that held one NFT. */
 export const MAX_ENTRIES = 2_000
 export const MAX_HOLDERS = 8
@@ -487,11 +509,19 @@ async function checkpointsAt(rt: FeesRuntime, budget: Budget, works: Work[], blo
   })
 }
 
-/** Block timestamps: kept per block once final, else one batched eth_getBlockByNumber per MAX_HEADERS. */
-async function headerTimes(rt: FeesRuntime, budget: Budget, origin: string, head: number, blocks: readonly number[]): Promise<Map<number, number>> {
+/**
+ * Block timestamps: kept per block once final, else one batched eth_getBlockByNumber per MAX_HEADERS. `read`
+ * (2026-11-09): what this answer's earlier passes read, at the same head, whatever its depth.
+ */
+async function headerTimes(rt: FeesRuntime, budget: Budget, origin: string, head: number, blocks: readonly number[], read: Map<number, number>): Promise<Map<number, number>> {
   const known = new Map<number, number>()
   const missing: number[] = []
   for (const block of new Set(blocks)) {
+    const seen = read.get(block)
+    if (seen !== undefined) {
+      known.set(block, seen)
+      continue
+    }
     const hit = await kept<{ t: number }>(rt, headerUrl(origin, block))
     if (hit && Number.isSafeInteger(hit.value.t)) known.set(block, hit.value.t)
     else missing.push(block)
@@ -511,6 +541,7 @@ async function headerTimes(rt: FeesRuntime, budget: Budget, origin: string, head
       if (quantity(number) !== part[id]) throw new RelayError('fatal', 'invalid_header')
       const t = quantity(timestamp)
       known.set(part[id], t)
+      read.set(part[id], t)
       if (part[id] <= head - SAFE_DEPTH) await keep(rt, headerUrl(origin, part[id]), { t }, FINAL_SECONDS)
     }
   }
@@ -680,6 +711,9 @@ async function mintPrices(rt: FeesRuntime, budget: Budget, origin: string, head:
 async function lookups(rt: FeesRuntime, budget: Budget, origin: string, head: number, missing: readonly number[]): Promise<Map<number, Modify[]>> {
   const out = new Map<number, Modify[]>()
   for (let at = 0; at < missing.length; at += 50) {
+    // Changed on purpose 2026-11-09 (core flows): the answer's calls short of the headers of what was found, as its byte
+    // budget spent: the blocks looked into so far, the NFTs going as far as those (`reading`). It failed the answer.
+    if (Math.min(budget.cap ?? MAX_RPC_CALLS, MAX_RPC_CALLS) - budget.calls <= HEADER_CALLS) break
     const part = missing.slice(at, at + 50)
     // One block each (rugged97's rule 2: the PoolManager's logs are never read over a range), sender the PositionManager.
     let results: unknown[]
@@ -1069,23 +1103,143 @@ function entriesOf(work: Work, found: Map<number, Modify[]>, running: bigint): {
   return { entries, unseen, broken: false }
 }
 
-/** The ledger of each of `ids` at the node's head (LedgerResponse). `origin`: the edge cache's prefix. */
+/**
+ * What one answer's passes hand on (2026-11-09, core flows): each NFT's ledger and mint discovery as the last pass kept
+ * them (the edge cache may not hold them yet, or at all), which mint hints the node proved, and what stays the same for
+ * the whole answer at its one head: the vaults' checkpoints, the one-block lookups and the headers.
+ */
+interface Passes {
+  ledgers: Map<string, Kept>
+  discovery: Map<string, MintDiscovery>
+  proofs: Map<string, boolean>
+  checkpoints: Map<string, Work['checkpoint']>
+  blocks: Map<number, Modify[]>
+  times: Map<number, number>
+}
+
+/**
+ * What one pass came to: each NFT's position, the NFTs it answered (the others as their kept ledgers left them), and how
+ * many windows the earliest NFT still being read is from the head.
+ */
+interface PassResult {
+  built: Map<string, LedgerPosition>
+  answered: Set<string>
+  behind: number
+}
+
+/** Where the passes stand, each NFT's kept cursors and verdict and its discovery's: the same after a pass that read nothing new. */
+const progressOf = (passes: Passes) =>
+  JSON.stringify([
+    [...passes.ledgers].map(([id, one]) => [id, one.through, one.scanned, one.final, one.trustPending === true, one.mint?.block ?? null]),
+    [...passes.discovery].map(([id, one]) => [id, one.next, one.anchor?.block ?? null]),
+  ])
+
+/**
+ * Room for one more pass (2026-11-09): the answer younger than LEDGER_PASS_MS, its calls short of the opening prices'
+ * holding a window's two rounds and a later pass's share, and its byte budget a round's read (roundRead).
+ */
+const roomForPass = (rt: FeesRuntime, budget: Budget) =>
+  rt.deps.now() - budget.started < LEDGER_PASS_MS &&
+  !rt.deps.cancelled?.() &&
+  MAX_RPC_CALLS - MINT_PRICE_CALLS - budget.calls >= 2 + LATER_SHARED_CALLS &&
+  MAX_BYTES - budget.bytes >= ROUND_BYTES + LEDGER_TAIL_BYTES
+
+/**
+ * The windows one pass reads (2026-11-09, core flows): the earliest, which reads on from the oldest cursor and takes in
+ * each later NFT once it reaches that NFT's cursor (one read for all of them from then on), and the window nearest the
+ * head when the calls the answer has left past `shared` hold both all the way to the head, so its NFTs are answered by
+ * this answer instead of after the earliest reaches them. The windows between wait, not answered by this pass
+ * (`reading`, nothing kept for them, as a spent byte budget leaves an NFT). Each window side by side, as before, cost two
+ * reads per window per pass and never took one in: eight positions minted on eight days cost sixteen reads a window, and
+ * the answer's calls ran out.
+ */
+function chooseGroups<G extends { works: Work[]; to: number }>(groups: G[], budget: Budget, shared: number, head: number): G[] {
+  if (groups.length <= 1) return groups
+  const cost = (group: G) => 2 + (group.works.some((work) => work.v2Vaults.size > 0) ? 1 : 0)
+  const [first, last] = [groups[0], groups[groups.length - 1]]
+  const room = Math.min(budget.cap ?? MAX_RPC_CALLS, MAX_RPC_CALLS) - budget.calls - shared
+  const windows = Math.ceil((head + 1 - Math.min(...last.works.map((work) => work.logsFrom))) / LEDGER_SCAN_BLOCKS)
+  return windows * (cost(first) + cost(last)) <= room ? [first, last] : [first]
+}
+
+/**
+ * The ledger of each of `ids` at the node's head (LedgerResponse). `origin`: the edge cache's prefix.
+ *
+ * Changed on purpose 2026-11-09 (core flows, the owner: "I don't want slowness, the site is live"): passes, where it was
+ * one. The positions are read once, at one head; then each pass is what an answer was (ledgerPass: a LEDGER_SCAN_BLOCKS
+ * window, at most LEDGER_STEP lookups, its ledgers kept as it leaves them), going on from where the one before it kept
+ * them, while a ledger is still `reading`, the last pass moved something, and the answer has room (roomForPass:
+ * LEDGER_PASS_MS, its calls, its bytes). A position five weeks old was about thirty answers of one window each, re-asked
+ * two seconds apart; it is three now, a position ten days old one (tests/fees-ledger-speed.test.mjs). Every limit of a
+ * node call is as it was (narrow windows, one-block PoolManager lookups, the byte caps, one call at a time). The first
+ * pass fails the answer as the one pass did; a later pass that fails (its calls, the deadline, the node) ends the answer
+ * with what the passes before it came to, each kept already. The opening prices are read once, after the last pass, with
+ * calls the later passes leave them (MINT_PRICE_CALLS).
+ */
 export async function readLedger(rt: FeesRuntime, budget: Budget, origin: string, ids: readonly bigint[], hints: LedgerQuestion['mintHints'] = []): Promise<LedgerResponse> {
   const state = await readState(rt, budget, ids, true)
   const head = state.block
+  const passes: Passes = { ledgers: new Map(), discovery: new Map(), proofs: new Map(), checkpoints: new Map(), blocks: new Map(), times: new Map() }
+  const answered = new Map<string, LedgerPosition>()
+  for (let pass = 0; ; pass++) {
+    const before = progressOf(passes)
+    let done: PassResult
+    if (pass > 0) budget.cap = MAX_RPC_CALLS - MINT_PRICE_CALLS
+    try {
+      done = await ledgerPass(rt, budget, origin, state, hints, passes, pass === 0 ? FIRST_SHARED_CALLS : LATER_SHARED_CALLS)
+    } catch (error) {
+      if (pass === 0) throw error
+      break
+    } finally {
+      delete budget.cap
+    }
+    // An NFT a pass did not reach keeps what an earlier pass answered for it.
+    const reading = (id: string) => { const one = answered.get(id); return !one || (one.ok && one.why === 'reading') }
+    const waiting = [...done.built.keys()].filter(reading)
+    for (const [id, position] of done.built) if (done.answered.has(id) || !answered.has(id)) answered.set(id, position)
+    if (![...answered.keys()].some(reading)) break
+    // A pass that finished an NFT's ledger ends the answer when the others still `reading` cannot be read through in what
+    // is left of it: its rate is shown now, not once the others' passes are done (they are asked again together,
+    // lib/fees/store.ts). When they can, the answer goes on and brings them all.
+    if (waiting.some((id) => !reading(id)) && 2 * done.behind > MAX_RPC_CALLS - MINT_PRICE_CALLS - LATER_SHARED_CALLS - budget.calls) break
+    if (progressOf(passes) === before || !roomForPass(rt, budget)) break
+  }
+  const positions = state.positions.map((position): LedgerPosition => (position.ok ? (answered.get(position.tokenId) as LedgerPosition) : { tokenId: position.tokenId, ok: false, reason: position.reason }))
+  await mintPrices(rt, budget, origin, head, positions)
+  return { v: 1, block: head, timestamp: state.timestamp, positions }
+}
+
+/**
+ * One pass of an answer over `state`'s positions (until 2026-11-09 the whole of readLedger): each NFT's ledger read on
+ * from where it was kept (this answer's earlier pass's, else the edge cache's), one window, and kept again. `shared`: the
+ * calls it leaves past its windows' rounds (chooseGroups).
+ */
+async function ledgerPass(rt: FeesRuntime, budget: Budget, origin: string, state: StateResponse, hints: LedgerQuestion['mintHints'], passes: Passes, shared: number): Promise<PassResult> {
+  const head = state.block
   const vaults = new Map((state.automation ?? []).filter((one): one is typeof one & { vault: string } => 'vault' in one && typeof one.vault === 'string').map((one) => [one.tokenId, one.vault]))
   const works: Work[] = []
-  const keptById = new Map(await Promise.all(state.positions.filter((one) => one.ok).map(async (one) => [one.tokenId, await kept<unknown>(rt, keptUrl(origin, BigInt(one.tokenId)))] as const)))
-  const cold = state.positions.filter((one) => {
-    if (!one.ok || hints?.some((hint) => hint.tokenId === one.tokenId && hint.block <= head)) return false
+  /** A ledger kept for the next pass and in the edge cache for the next answer. */
+  const keepWork = async (work: Work, value: Kept) => {
+    passes.ledgers.set(work.key, value)
+    await keepLedger(rt, keptUrl(origin, work.id), value, lifeOf(value.final))
+  }
+  const ok = state.positions.filter((one): one is StatePositionOk => one.ok)
+  const keptById = new Map(
+    await Promise.all(
+      ok.map(async (one) => {
+        const passed = passes.ledgers.get(one.tokenId)
+        return [one.tokenId, passed ? { value: passed as unknown, ageMs: 0 } : await kept<unknown>(rt, keptUrl(origin, BigInt(one.tokenId)))] as const
+      }),
+    ),
+  )
+  const cold = ok.filter((one) => {
+    if (hints?.some((hint) => hint.tokenId === one.tokenId && hint.block <= head)) return false
     const hit = keptById.get(one.tokenId)
     if (hit && isKept(hit.value, one.poolId) && hit.value.final && !(hit.value.final === 'too_many' && hit.ageMs >= TOO_MANY_SECONDS * 1000)) return false
     return !hit || !isKept(hit.value, one.poolId) || !hit.value.mint
   }).map((one) => BigInt(one.tokenId))
-  const { found: discovered, beforeFloor } = await discoverMintStarts(rt, budget, origin, head, cold)
-  for (const position of state.positions) {
-    if (!position.ok) continue
-    const id = BigInt(position.tokenId)
+  const { found: discovered, beforeFloor } = await discoverMintStarts(rt, budget, origin, head, cold, passes.discovery)
+  const plans = ok.map((position) => {
     const hit = keptById.get(position.tokenId)
     let was = hit && isKept(hit.value, position.poolId) ? hit.value : null
     // A `too_many` verdict is checked again once its hour is over (round 4): read anew, as a first read.
@@ -1099,15 +1253,26 @@ export async function readLedger(rt: FeesRuntime, budget: Budget, origin: string
       const restart = was.final ? was.mint?.block ?? LEDGER_FLOOR : Math.max(was.mint?.block ?? LEDGER_FLOOR, V2_FIRST_BLOCK)
       was = { ...was, v: 3, through: restart - 1, scanned: restart - 1, entries: was.final ? [] : was.entries.filter((entry) => entry.block < restart), holders: was.final ? [] : was.holders, trusted: was.final ? [] : was.trusted, vaults: was.final ? [] : was.vaults, v2Vaults: [], pending: noFacts(), final: null }
     }
-    // An indexed mint only saves a history scan after the node proves this exact NFT's zero-address Transfer. A caller
-    // cannot assert its owner, timestamp or fees, or shorten the history with an arbitrary transaction/block hint.
-    let provenStart: number | null = discovered.get(position.tokenId)?.block ?? null
     const hint = hints?.find((item) => item.tokenId === position.tokenId && item.block <= head)
-    if (!was?.mint && hint) {
-      const results = await logsBatch(rt, budget, [{ address: POSITION_MANAGER, fromBlock: hex(hint.block), toBlock: hex(hint.block), topics: [TRANSFER_TOPIC, word(0n), null, word(id)] }], ROUND_BYTES)
-      const matches = (results[0] as unknown[]).map((raw) => logOf(raw, [POSITION_MANAGER], hint.block, hint.block)).filter((log): log is Log => log !== null && log.tx === hint.tx && log.topics.length === 4 && log.topics[0] === TRANSFER_TOPIC && log.topics[1] === word(0n) && ADDRESS_WORD.test(log.topics[2]) && log.topics[3] === word(id) && log.data === '0x')
-      if (matches.length === 1) provenStart = hint.block
-    }
+    return { position, was, hint }
+  })
+  // An indexed mint only saves a history scan after the node proves this exact NFT's zero-address Transfer. A caller
+  // cannot assert its owner, timestamp or fees, or shorten the history with an arbitrary transaction/block hint.
+  // Changed on purpose 2026-11-09 (core flows): the hints of a question proved in one POST of one-block reads (it was one
+  // POST each, eight of the answer's calls for a list's eight rows), and once an answer.
+  const unproved = plans.filter((plan): plan is typeof plan & { hint: NonNullable<typeof plan.hint> } => !plan.was?.mint && !!plan.hint && !passes.proofs.has(plan.position.tokenId))
+  if (unproved.length > 0) {
+    const results = await logsBatch(rt, budget, unproved.map(({ position, hint }) => ({ address: POSITION_MANAGER, fromBlock: hex(hint.block), toBlock: hex(hint.block), topics: [TRANSFER_TOPIC, word(0n), null, word(BigInt(position.tokenId))] })), ROUND_BYTES)
+    unproved.forEach(({ position, hint }, i) => {
+      const id = BigInt(position.tokenId)
+      const matches = (results[i] as unknown[]).map((raw) => logOf(raw, [POSITION_MANAGER], hint.block, hint.block)).filter((log): log is Log => log !== null && log.tx === hint.tx && log.topics.length === 4 && log.topics[0] === TRANSFER_TOPIC && log.topics[1] === word(0n) && ADDRESS_WORD.test(log.topics[2]) && log.topics[3] === word(id) && log.data === '0x')
+      passes.proofs.set(position.tokenId, matches.length === 1)
+    })
+  }
+  for (const { position, was, hint } of plans) {
+    const id = BigInt(position.tokenId)
+    let provenStart: number | null = discovered.get(position.tokenId)?.block ?? null
+    if (!was?.mint && hint && passes.proofs.get(position.tokenId) === true) provenStart = hint.block
     const through = was ? Math.min(was.through, head) : 0
     const scanned = was ? Math.min(was.scanned, head) : 0
     // (2026-10-15, pack 8): discovery covered the floor to the head with no mint, and nothing proves one: before the floor.
@@ -1157,11 +1322,18 @@ export async function readLedger(rt: FeesRuntime, budget: Budget, origin: string
     work.through = group.to
     work.scanned = group.to
   }
-  await checkpointsAt(rt, budget, live(), head)
-  for (const group of groups) await roundOne(rt, budget, group.works.filter((work) => !work.final && !work.unanswered), group.to)
+  const chosen = chooseGroups(groups, budget, shared, head)
+  for (const group of groups) if (!chosen.includes(group)) for (const work of group.works) work.unanswered = true
+  // The vaults' checkpoints at the head: read once an answer (2026-11-09).
+  await checkpointsAt(rt, budget, live().filter((work) => !passes.checkpoints.has(work.key)), head)
+  for (const work of live()) {
+    if (passes.checkpoints.has(work.key)) work.checkpoint = passes.checkpoints.get(work.key) ?? null
+    else if (work.vault) passes.checkpoints.set(work.key, work.checkpoint)
+  }
+  for (const group of chosen) await roundOne(rt, budget, group.works.filter((work) => !work.final && !work.unanswered), group.to)
   for (const work of live()) if (work.holders.length > MAX_HOLDERS) work.final = 'too_many'
   await trust(rt, budget, live().filter((work) => work.mint), head)
-  for (const group of groups) {
+  for (const group of chosen) {
     const settled = () => group.works.filter((work) => !work.final && !work.unanswered && !work.trustPending && !work.restart && work.mint)
     await v2Collections(rt, budget, settled(), group.to)
     await roundTwo(rt, budget, settled(), group.to)
@@ -1171,7 +1343,7 @@ export async function readLedger(rt: FeesRuntime, budget: Budget, origin: string
   const told = new Set<Work>()
   for (const work of works) {
     if (!work.final || work.kept?.final) continue
-    await keepLedger(rt, keptUrl(origin, work.id), verdict(work, work.final, work.mint, head), lifeOf(work.final))
+    await keepWork(work, verdict(work, work.final, work.mint, head))
     told.add(work)
   }
 
@@ -1184,16 +1356,28 @@ export async function readLedger(rt: FeesRuntime, budget: Budget, origin: string
     work.candidates = [...blocks].filter((block) => block >= work.entriesFrom && block <= head).sort((a, b) => a - b)
   }
   // At most LEDGER_STEP lookups of blocks not kept, oldest first across the NFTs; an NFT whose next block is past them
-  // goes as far as the block before it.
-  const all = [...new Set(works.flatMap((work) => work.candidates))].sort((a, b) => a - b)
+  // goes as far as the block before it. Changed on purpose 2026-11-09 (core flows): only the blocks of NFTs whose logs are
+  // read to the head now. An NFT still reading its windows keeps its blocks to look into with its ledger (`pending`, as
+  // past LEDGER_STEP), and the pass that reads its last window looks into them all, LEDGER_STEP at a time: a window is its
+  // two rounds alone, where its lookups and their headers made it four calls.
+  const all = [...new Set(works.filter((work) => work.scanned >= head).flatMap((work) => work.candidates))].sort((a, b) => a - b)
   const known = new Map<number, Modify[]>()
   const fresh: number[] = []
   for (const block of all) {
+    // (2026-11-09) A block this answer's earlier pass looked into, final or not: the same head.
+    const passed = passes.blocks.get(block)
+    if (passed) {
+      known.set(block, passed)
+      continue
+    }
     const hit = block <= head - SAFE_DEPTH ? await kept<Modify[]>(rt, blockUrl(origin, block)) : null
     if (hit && Array.isArray(hit.value)) known.set(block, hit.value)
     else fresh.push(block)
   }
-  for (const [block, modifies] of await lookups(rt, budget, origin, head, fresh.slice(0, LEDGER_STEP))) known.set(block, modifies)
+  for (const [block, modifies] of await lookups(rt, budget, origin, head, fresh.slice(0, LEDGER_STEP))) {
+    known.set(block, modifies)
+    passes.blocks.set(block, modifies)
+  }
   for (const work of works) {
     const next = work.candidates.find((block) => !known.has(block))
     if (next !== undefined) work.through = next - 1
@@ -1215,7 +1399,7 @@ export async function readLedger(rt: FeesRuntime, budget: Budget, origin: string
     pending.push({ work, entries: broken ? [] : entries, unseen })
     if (!broken) newBlocks.push(...entries.map((entry) => entry.block))
   }
-  const times = await headerTimes(rt, budget, origin, head, newBlocks)
+  const times = await headerTimes(rt, budget, origin, head, newBlocks, passes.times)
   const built = new Map<string, LedgerPosition>()
   // Not answered this time (round 4): what it has kept, as far as it is worked out, `reading`; nothing kept for it.
   for (const work of works) {
@@ -1263,11 +1447,11 @@ export async function readLedger(rt: FeesRuntime, budget: Budget, origin: string
           final: null,
           pending: factsWhere({ ...work.facts, candidates: work.candidates }, (block) => block > work.through),
         }
-    await keepLedger(rt, keptUrl(origin, work.id), value, lifeOf(work.final))
+    await keepWork(work, value)
   }
-  const positions = state.positions.map((position): LedgerPosition => (position.ok ? (built.get(position.tokenId) as LedgerPosition) : { tokenId: position.tokenId, ok: false, reason: position.reason }))
-  await mintPrices(rt, budget, origin, head, positions)
-  return { v: 1, block: head, timestamp: state.timestamp, positions }
+  const cursors = works.filter((work) => !work.final && !work.beforeFloor && (work.unanswered || work.scanned < head)).map((work) => (work.unanswered ? work.logsFrom : work.scanned + 1 - SAFE_DEPTH))
+  const behind = cursors.length > 0 ? Math.ceil((head + 1 - Math.min(...cursors)) / LEDGER_SCAN_BLOCKS) : 0
+  return { built, answered: new Set(works.filter((work) => !work.unanswered).map((work) => work.key)), behind }
 }
 
 type MintAnchor = { block: number; tx: string; hash: string; index: number }
@@ -1277,13 +1461,14 @@ type MintDiscovery = { head: number; next: number; anchor?: MintAnchor }
  * archive eth_call. Empty windows advance a bounded cursor; they never mean the position earned zero or is closed.
  * (2026-10-15, pack 8): `beforeFloor`, the ids whose discovery has now covered the floor to the head (this read's windows
  * and its re-read tail, or the kept cursor) and found no mint. */
-async function discoverMintStarts(rt: FeesRuntime, budget: Budget, origin: string, head: number, ids: readonly bigint[]): Promise<{ found: Map<string, MintAnchor | null>; beforeFloor: Set<string> }> {
+async function discoverMintStarts(rt: FeesRuntime, budget: Budget, origin: string, head: number, ids: readonly bigint[], passed: Map<string, MintDiscovery>): Promise<{ found: Map<string, MintAnchor | null>; beforeFloor: Set<string> }> {
   const found = new Map<string, MintAnchor | null>()
   const beforeFloor = new Set<string>()
   const groups = new Map<number, { id: bigint; prior: MintDiscovery | null }[]>()
   for (const id of ids) {
     const key = cacheUrl(origin, 'mintDiscovery1', String(id), 0)
-    const saved = (await kept<unknown>(rt, key))?.value as Partial<MintDiscovery> | undefined
+    // (2026-11-09) What this answer's earlier pass kept first: the cache may not hold it yet, or at all (tests).
+    const saved = (passed.get(String(id)) ?? (await kept<unknown>(rt, key))?.value) as Partial<MintDiscovery> | undefined
     const valid = saved && Number.isSafeInteger(saved.head) && saved.head! <= head && Number.isSafeInteger(saved.next) && saved.next! >= LEDGER_FLOOR - 1 && saved.next! <= saved.head!
     const prior = valid ? saved as MintDiscovery : null
     const a = prior?.anchor
@@ -1327,7 +1512,9 @@ async function discoverMintStarts(rt: FeesRuntime, budget: Budget, origin: strin
     }
     for (const { id } of group) {
       const anchor = anchors.get(String(id))
-      await keep(rt, cacheUrl(origin, 'mintDiscovery1', String(id), 0), { head, next: from - 1, ...(anchor ? { anchor } : {}) } satisfies MintDiscovery, KEPT_SECONDS)
+      const cursor: MintDiscovery = { head, next: from - 1, ...(anchor ? { anchor } : {}) }
+      passed.set(String(id), cursor)
+      await keep(rt, cacheUrl(origin, 'mintDiscovery1', String(id), 0), cursor, KEPT_SECONDS)
       if (anchor) found.set(String(id), anchor)
       else if (from > LEDGER_FLOOR) found.set(String(id), null)
       // Exhausted the indexed range without a mint: minted before the floor (2026-10-15, pack 8: answered at once, where

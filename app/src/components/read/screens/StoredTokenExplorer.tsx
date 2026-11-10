@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReadRequests, ReadSource } from '../../../lib/read/types'
 import type { MarketsProvider, MarketsState } from '../../../lib/read/marketsProvider'
 import type { Market } from '../../../lib/markets'
-import { overviewRows } from '../../../lib/read/publicOverview'
+import { acquisitionPending, overviewPollMs, overviewRows } from '../../../lib/read/publicOverview'
+import { useWaitOver } from '../../../lib/readWait'
 import { candidateFromToken } from '../../../lib/read/screens/tokens'
 import { askAgainLater, readWithin, type ScreenOutcome } from '../../../lib/read/screens/screenRead'
 import { whenVisibleAfter } from '../../../lib/read/screens/quietRead'
@@ -58,6 +59,13 @@ function useDiscoveredPools(source: ReadSource, token: string): Market[] {
 
 const NONE: Market[] = []
 
+/**
+ * Added 2026-11-09 (core flows, the owner: nothing may load forever): how long a pool's price waits, as its quiet placeholder,
+ * for a token still being acquired; then the dash, while the page goes on asking (overviewPollMs) and the price appears
+ * when the token does. It waited for as long as the producer said pending.
+ */
+const PRICE_WAIT_MS = 15_000
+
 /** The read's answers that are not asked again on their own: they need the person (a gate to pass, a reload). */
 const STOPPED: readonly string[] = ['gate_required', 'gate_unavailable', 'access_required', 'disabled', 'not_connected', 'incompatible', 'invalid']
 
@@ -96,6 +104,9 @@ export function StoredTokenExplorer({ source, token }: { source: ReadSource; tok
   const value = outcome?.state === 'ok' ? outcome : retained?.key === key ? retained.outcome : null
   const featured = useFeatured()
   const discovered = useDiscoveredPools(source, token)
+  // How many answers in a row had something still being acquired (2026-11-09: the poll's pace slows with them).
+  const busyRounds = useRef(0)
+  useEffect(() => { busyRounds.current = 0 }, [token])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -116,10 +127,13 @@ export function StoredTokenExplorer({ source, token }: { source: ReadSource; tok
       // acquisitionAccepted false, its capacity ceiling — asking harder is
       // exactly wrong: it cannot start until the ceiling drains, so back off and
       // let it.
+      // Changed on purpose 2026-11-09 (core flows): an acquisition the producer is not working on (publicOverview.ts
+      // acquisitionStalled) earns no fast poll, and the fast poll slows down after half a minute (overviewPollMs).
       const stop = STOPPED.includes(read.state)
-      const busy = read.state === 'ok' && (read.data.tokens.some((entry) => entry.acquisition.status === 'pending') || read.data.pools.some((entry) => entry.acquisition.status === 'pending'))
+      const busy = read.state === 'ok' && (read.data.tokens.some((entry) => acquisitionPending(entry.acquisition, read.data.generatedAt)) || read.data.pools.some((entry) => acquisitionPending(entry.acquisition, read.data.generatedAt)))
       const refused = read.state === 'ok' && read.data.acquisitionAccepted === false
-      const after = read.state !== 'ok' ? 60_000 : busy ? (refused ? 30_000 : 5_000) : 60_000
+      busyRounds.current = busy ? busyRounds.current + 1 : 0
+      const after = read.state !== 'ok' ? 60_000 : busy ? (refused ? 30_000 : overviewPollMs(busyRounds.current - 1)) : 60_000
       if (!stop) cancel = whenVisibleAfter(after, () => setRefresh((n) => n + 1))
     }
     if (typeof document === 'undefined' || !document.hidden) void load()
@@ -128,7 +142,11 @@ export function StoredTokenExplorer({ source, token }: { source: ReadSource; tok
   }, [source, token, page, key, pages.length, refresh])
 
   const firstPage = pages.length === 1
-  const stored = useMemo(() => (value ? overviewRows(value) : NONE), [value])
+  // Added 2026-11-09 (core flows): a counterpart token still on its way holds its pools' prices as placeholders for
+  // PRICE_WAIT_MS at most; then they are the dash, until the token arrives.
+  const tokensComing = value !== null && value.data.tokens.some((entry) => entry.value === null && acquisitionPending(entry.acquisition, value.data.generatedAt))
+  const waitedForTokens = useWaitOver(tokensComing, PRICE_WAIT_MS)
+  const stored = useMemo(() => (value ? overviewRows(value, undefined, !waitedForTokens) : NONE), [value, waitedForTokens])
   // Today's Top pools that hold the token come first (B6), then the largest by liquidity; DEX Screener's figure orders a
   // pool whose own figures the provider refused.
   const listed = useMemo(() => featuredPoolIds(addressKey(token), null, featured.entries), [token, featured.entries])
@@ -154,8 +172,9 @@ export function StoredTokenExplorer({ source, token }: { source: ReadSource; tok
   const selected = value?.data.tokens.find((entry) => entry.address === token)
   const candidate = selected?.value ? candidateFromToken(selected.value, token) : null
   const warning = candidate ? tokenWarning(candidate.token) : null
-  const collecting = value?.data.pools.filter((entry) => entry.acquisition.status === 'pending').length ?? 0
-  const pending = value?.data.tokens.some((entry) => entry.acquisition.status === 'pending') || collecting > 0
+  // Changed on purpose 2026-11-09 (core flows): a stalled acquisition is not "being collected" (acquisitionPending).
+  const collecting = value ? value.data.pools.filter((entry) => acquisitionPending(entry.acquisition, value.data.generatedAt)).length : 0
+  const pending = (value ? value.data.tokens.some((entry) => acquisitionPending(entry.acquisition, value.data.generatedAt)) : false) || collecting > 0
   // The producer says whether it took the acquisition on. Refused and pending
   // is not "collecting": nothing is collecting, and saying so forever is a lie
   // a person cannot act on. Same words the history chart already uses.

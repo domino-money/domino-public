@@ -13,7 +13,9 @@
   .dm-footer-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 2.5rem; min-height: 10.625rem; }
   .dm-footer-cols { display: flex; gap: 7rem; }
 
-  /* The X link (.ft-x): a quiet tinted pill whose mark tips on hover. */
+  /* The X link (.ft-x): a quiet tinted pill whose mark tips on hover. Changed on purpose 2026-11-08 (the owner): the
+     GitHub link is the same pill beside it, and the pair wraps rather than squeezing on a narrow screen. */
+  .dm-footer-socials { display: flex; flex-wrap: wrap; gap: 0.5rem; }
   .dm-footer-social { display: inline-flex; flex: none; align-items: center; gap: 0.625rem; height: 2.375rem; padding: 0 0.875rem 0 0.75rem; border-radius: 0.75rem; background: var(--v4-w03); box-shadow: inset 0 0 0 1px var(--border); font-size: 0.875rem; font-weight: 500; color: var(--fg); text-decoration: none; transition: color 0.18s var(--ease-std), box-shadow 0.2s var(--ease-std), background-color 0.18s var(--ease-std), scale 0.1s var(--ease-fast); }
   .dm-footer-social-mark { flex: none; transition: transform 0.35s var(--ease-enter); }
   .dm-footer-social:hover { color: var(--fg); background: var(--v4-w05); box-shadow: inset 0 0 0 1px var(--border-lip); }

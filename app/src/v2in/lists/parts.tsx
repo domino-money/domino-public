@@ -10,6 +10,8 @@ import { usdAsOf, type AmountShown, type PositionRowView, type TokenName } from 
 import { markOf } from '../position/marks'
 import { positionBurn } from './positionSync'
 import { usdTitleWords } from '../position/usdAvailability'
+import { offerVault } from '../automate/handoff'
+import type { Address, V2ChainId } from '../../v2/types'
 
 /*
  * The pieces the lists draw for read-v6's positions, in V1's own row markup and classes (components/positions/PositionRow.tsx,
@@ -208,9 +210,14 @@ export function V2PositionRow({ row, apr = null, late = false }: { row: Position
   ) : (
     <>Position #{row.tokenId}</>
   )
+  // Added 2026-11-09 (the core-flows fix; the owner: getting your money back must be totally easy): a closed position whose
+  // automation still holds its fees says Withdraw to wallet where it said View history, and opening it lands on that
+  // dialog (../automate/handoff.ts, taken by the position's automation panel), one press from the wallet.
+  const fundsLeft = closed && row.family?.reserves === 'available' && typeof row.family.vault === 'string'
+  const withdrawOnOpen = fundsLeft ? () => offerVault({ chainId: row.chainId as V2ChainId, vault: row.family!.vault as Address, focus: 'withdraw' }) : undefined
   return (
     <div className="dm-own-item" data-v2-position-item={row.key}>
-      <a href={row.href} className="dm-own-row" data-v2-position-row={row.key} data-v2-row-status={row.status} data-position-block={row.block ?? undefined} data-row-state={closed ? 'closed' : 'open'} data-usd-reason={row.usdReason}>
+      <a href={row.href} className="dm-own-row" onClick={withdrawOnOpen} data-v2-position-row={row.key} data-v2-row-status={row.status} data-position-block={row.block ?? undefined} data-row-state={closed ? 'closed' : 'open'} data-usd-reason={row.usdReason}>
         <span className="dm-own-pool">
           <Marks tokens={row.tokens} />
           <span className="dm-own-name">
@@ -255,7 +262,7 @@ export function V2PositionRow({ row, apr = null, late = false }: { row: Position
             {apr?.kind === 'loading' ? <Skeleton className="dm-collection-apr-loading" /> : apr?.kind === 'rate' ? <span className="dm-own-fig" title="Annualized fees earned by this position since it opened.">{apr.text}</span> : <span className="dm-own-dash">—</span>}
           </span>}
         </span>}
-        {closed && <span className="dm-own-closed-caption">View history</span>}
+        {closed && <span className="dm-own-closed-caption" data-row-withdraw={fundsLeft ? '' : undefined}>{fundsLeft ? 'Withdraw to wallet' : 'View history'}</span>}
         <span className="dm-own-chev">
           <IconChevronRight size={16} />
           <span className="sr-only">Details</span>

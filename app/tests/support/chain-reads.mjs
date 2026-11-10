@@ -9,6 +9,7 @@
  */
 import { readFileSync } from 'node:fs';
 import * as runtime from '../../../api-contracts/read-v6/runtime.mjs';
+import { ELYSIUM_SUITE_PROFILE } from './elysium-profile.mjs';
 import { poolIdOf } from './v2-chain.mjs';
 
 const fixture = (name) => JSON.parse(readFileSync(new URL(`../../../api-contracts/read-v6/fixtures/valid/${name}.json`, import.meta.url), 'utf8'));
@@ -24,8 +25,11 @@ const STABLE_PRICE = POOLS.tokens.find((token) => token.symbol === 'USDC').price
  */
 const balanceChain = (name) => JSON.parse(readFileSync(new URL(`../../../api-contracts/v2/balance-chains/${name}.json`, import.meta.url), 'utf8'));
 const BALANCE_CHAINS = [balanceChain('ethereum-1'), balanceChain('optimism-10')];
-/** Added 2026-11-07 (Elysium's screens): Elysium as the builds forcing it on serve it (tests/fixtures/v2-chains). */
-const ELYSIUM = JSON.parse(readFileSync(new URL('../fixtures/v2-chains/elysium-99901.json', import.meta.url), 'utf8'));
+/**
+ * Added 2026-11-07 (Elysium's screens): Elysium as the builds forcing it on serve it (tests/fixtures/v2-chains).
+ * Changed on purpose 2026-11-07 (day-9 rehearsal, finding F5): the repository's own profile once it turns Elysium on.
+ */
+const ELYSIUM = ELYSIUM_SUITE_PROFILE;
 const STABLES = {
   4663: '0x5fc5360d0400a0fd4f2af552add042d716f1d168', 8453: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', 42161: '0xaf88d065e77c8cc2239327c5edb3a432268e5831',
   ...Object.fromEntries(BALANCE_CHAINS.map((chain) => [chain.chainId, chain.chargeCurrencies.find((c) => c.rank === 1).address.toLowerCase()])),

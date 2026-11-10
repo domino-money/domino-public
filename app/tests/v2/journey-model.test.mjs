@@ -374,10 +374,10 @@ test('O-17: a pool\'s chips name its DEX only for a v3 pool on Robinhood Chain; 
 // Added 2026-11-06 (the replica rule, O-18): Robinhood Chain's success for a position made on Base or Arbitrum One.
 test('O-18: the success on another network links by that network\'s routes, and offers only the automations its gates and read-v6 allow now', () => {
   const created = require(`${BUILD}v2in/journey/model/created.js`);
-  assert.equal(created.createdHref(8453, 4, 5000001n, 'plain'), '#/positions/base-v4-5000001');
-  assert.equal(created.createdHref(8453, 4, 5000001n, 'compound'), '#/sequence/compound/base-v4-5000001');
-  assert.equal(created.createdHref(42161, 3, 77n, 'domino'), '#/sequence/domino/arbitrum-v3-77');
-  assert.equal(created.createdHref(42161, 3, 77n, 'plain'), '#/positions/arbitrum-v3-77');
+  assert.equal(created.createdHref(8453, 4, 5000001n, 'plain'), '/positions/base-v4-5000001');
+  assert.equal(created.createdHref(8453, 4, 5000001n, 'compound'), '/sequence/compound/base-v4-5000001');
+  assert.equal(created.createdHref(42161, 3, 77n, 'domino'), '/sequence/domino/arbitrum-v3-77');
+  assert.equal(created.createdHref(42161, 3, 77n, 'plain'), '/positions/arbitrum-v3-77');
   assert.equal(created.createdKey(8453, 4, 5000001n), '8453:4:5000001', 'the automation panel\'s own key (autoexit/entry.ts exitOrderKey)');
   assert.equal(created.createdKey(4663, 4, 9n), '9', 'Robinhood Chain v4: the bare id, as CreatedNext asks it');
   const running = { automationHalted: false, operatorsAdmitted: 1 };

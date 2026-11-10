@@ -171,31 +171,59 @@ expiry, including a final guard before committing authentication mutations.
 | Verification attempts | 5 per challenge, atomically reserved |
 | Session | 12 hours absolute; 30 minutes idle |
 | Bootstrap + challenge issuance | Shared 30/minute/trusted IP |
+| Bootstrap + challenge issuance per IPv6 /48 | Shared 120/minute (four IPs' worth), on top of each /64's |
 | Successful ownership proof before EOA RPC | 20/hour/proven wallet |
-| Bootstrap + challenge issuance globally | Shared 1000/minute |
-| Verification globally | 1000/minute |
+| Bootstrap + challenge issuance globally | Shared 1000/minute; a challenge counts only when stored |
+| Verification globally | 1000/minute attempts that reach the signature check |
 | Verification | 30/minute/trusted IP |
+| Verification per IPv6 /48 | 120/minute (four IPs' worth), on top of each /64's |
 | Protected session refresh | 30/minute, burst 5 per IP and verified account |
 
 These limits are abuse controls, not proof that an anonymous requester owns an
 address. IPv4-mapped IPv6 is normalized to IPv4; other IPv6 addresses share a
-/64 abuse scope so interface-address rotation cannot reset limits. Since 3 Nov
+/64 abuse scope so interface-address rotation cannot reset limits. Since 8 Nov
+2026 the /64s of one IPv6 /48 also share a sign-in window of four IPs' worth
+(see [Site-wide sign-in windows](#site-wide-sign-in-windows)). Since 3 Nov
 2026 a step reads every one of its limits, the global one first, before charging
-any: a refused attempt spends neither its IP's budget nor the global one.
-Expected denials after that (a bad context or challenge) commit the attempt and
-rate reservations. Saturation returns a 429 rather than evicting live security
-records. A 429's `Retry-After` is 1 to 60 whole seconds by cause: 2 to 5 at
+any: an attempt a limit refuses spends neither its IP's budget nor the global
+one. Since 8 Nov 2026 challenge and verify read what they were sent before
+charging their site-wide window: a denial for what an attempt carries (a bad
+context or challenge) commits only its IP's charge, in the guesses' share of the
+table, and for a wrong message its use of one of the challenge's attempts (see
+[Site-wide sign-in windows](#site-wide-sign-in-windows)). Saturation returns a
+429 rather than evicting live security records, except for refresh's
+private-limit keys (below) and the guesses' share of rate keys
+([Shared tables and the global windows](#shared-tables-and-the-global-windows)),
+which fail open. A 429's `Retry-After` is 1 to 60 whole seconds by cause: 2 to 5 at
 random for `session_capacity_busy` (the listener's 8 workers or the store's
 lock; a request first waits up to 2.5 s for a worker, never past its deadline,
 with at most 4 waiting), and for `session_rate_limited` the seconds until the
 fullest window admits again, at most 60 (the hourly wallet limit may refuse
 again then). Each transaction performs
 indexed cleanup in batches of at most 100 per cleanup pass; table capacities are
-10,000 contexts, 20,000 challenges, 10,000 sessions, 50,000 issuance/rate keys and
-20,000 private-limit keys. Expired/revoked records are unusable immediately even
+10,000 contexts, 20,000 challenges, 64,000 sessions in their first 30 minutes,
+200,000 issuance/rate keys and 20,000 private-limit keys (see
+[Shared tables and the global windows](#shared-tables-and-the-global-windows)
+for how those two are sized). Expired/revoked records are unusable immediately even
 before physical cleanup. Idle installations require operator-scheduled cleanup
 before any promised data-retention maximum; request-driven cleanup alone gives
 no wall-clock deletion guarantee.
+
+Since 8 Nov 2026, protected refresh charges its IP's bucket and its account's
+together or not at all. If either one refuses a refresh, neither is charged, so
+a session presented from new /64s writes nothing once its account's credit is
+spent. Before this, every such /64 left a private-limit key behind, and one
+session could fill the table and refuse refresh to every new client. A key now
+lives only until its bucket is full again, at most 10 s; after that it reads
+exactly as a missing key, so no decision changes.
+
+Refresh is never refused for private-limit room. Past 20,000 keys, a new IP or
+account goes unrecorded and its refresh proceeds; every recorded key is still
+charged. Each charge holds a key for 2 s and a refresh makes two, so filling
+the table takes 5,000 admitted refreshes a second, each with its account check.
+An attacker who can send that many already holds more accounts and /64s than
+the buckets constrain. The listener's 8 workers bound the account checks either
+way.
 
 Successful verification atomically consumes the challenge and context, revokes
 any supplied inactive prior session, and creates one session. Bootstrap and
@@ -219,6 +247,68 @@ closed internal directive schema. It rejects credential/CSRF aliasing and strips
 all upstream cookies/diagnostic headers. All responses are JSON, no-store,
 nosniff, with request ID and contract version. A lost response is not evidence
 that a transaction in the session store rolled back.
+
+### Site-wide sign-in windows
+
+Finding L-04 (the app team's open-site test, 7 Nov 2026) showed sign-in steps
+that need no wallet spending what every visitor shares. Its class reached the
+windows too: until 8 Nov 2026 challenge and verify charged `issuance-global`
+and `verify-global` before reading what they were sent, so well-formed random
+tokens spent them. About 34 clients (IPv4 addresses or IPv6 /64s at 30 a minute
+each: 1,000 / 30) kept a window full, and nobody could sign in while they ran.
+Now a site-wide window is spent only by an attempt the store carries out:
+
+- Verify spends `verify-global` only for an attempt that goes on to its
+  signature check: no active session presented, its own live context and CSRF,
+  a live challenge of that context with an attempt left, and that challenge's
+  exact message.
+- Challenge spends `issuance-global` only for a challenge it stores: its own
+  live context and CSRF, more than a second of the context left, and room in
+  the table (a full one refuses before any window is charged).
+- A request refused for what it carries is charged to its own IP's minute only,
+  in the guesses' share of `rate_limits`. It writes a new row only while the
+  table holds fewer than 10,000 rows; past that it is refused all the same but
+  not counted, so refusals from any number of clients never take a row the
+  windows need. A client that already has a window is charged as before. An IP
+  out of its minute gets the 429 instead of its answer and spends nothing. A
+  wrong message still uses one of the challenge's five attempts; an attempt a
+  full window refuses uses none.
+
+What an anonymous visitor may spend: every step of sign-in is open to anyone.
+Bootstrap needs nothing, a challenge only a preauth, and a fresh wallet signs
+for free. So any window every visitor shares can still be kept full by about 34
+IPv4 addresses, or 9 IPv6 /48s (below), running the steps themselves. What
+changed is that they must run the whole protocol instead of sending random
+tokens:
+
+- `issuance-global` stays at challenge, one charge per stored challenge. It is
+  what bounds the rows sign-in stores (contexts and challenges). Without it the
+  same traffic from more clients would fill those tables, which then refuse
+  every sign-in until their rows expire, up to ten minutes later. A challenge
+  with no row would only move the window to verify, where a fresh wallet's valid
+  signature costs nothing.
+- `verify-global` stays per attempt, not per challenge. Each attempt it admits
+  costs a signature check of about 7 ms in the listener's one process
+  (pure-Python secp256k1, measured 8 Nov 2026), and a challenge allows five.
+- Keeping `verify-global` full now takes about 200 stored challenges a minute
+  (five attempts each), which spend `issuance-global` as well. Keeping
+  `issuance-global` full takes 1,000 a minute; until bootstrap stops charging
+  the issuance windows (L-04's own fix), 1,000 bootstraps a minute do too.
+  Either way those clients store only rows the windows bound, and sign-in admits
+  again at most 60 seconds after their traffic stops.
+- An IPv6 client is its /64, and one /48 holds 65,536 of them, so until 8 Nov
+  2026 a single /48 could be every one of those 34 clients and more. Each
+  sign-in step now also charges a window for the /48 holding its client: four
+  IPs' worth, 120 a minute for issuance (bootstrap and challenge together) and
+  120 for verification, read with the step's other windows before any is
+  charged, so a full /48 refuses before anything is spent. Keeping a site-wide
+  window full from IPv6 now takes 9 /48s (1,000 / 120). A /48 is one site (a
+  home, an office, a free tunnel-broker allocation) or a slice of a mobile
+  carrier's pool, so a few people may sign in from it at once; four IPs' worth
+  is what PR #470 gives a /48 at the read gateway. IPv4 gets no wider group:
+  carrier-grade NAT already puts many people behind one address, which keeps
+  its own 30 a minute. A refused attempt never reaches the /48's window; it is
+  charged to its /64 alone.
 
 ### Delegated accounts (EIP-7702)
 
@@ -248,6 +338,47 @@ package it as source (`PACKAGED_ONLY_MIGRATIONS`) and an operator applies it as
 above. A rollback to an rc.3 producer needs no schema change: it never reads
 `delegate` and treats `eoa_or_7702_v1` sessions as inactive, so those browsers
 sign in again under the old policy.
+
+### Shared tables and the global windows
+
+Since 7 Nov 2026 (the siblings of finding L-04), no table that every visitor
+shares can fill with what the global windows admit. Every new client needs a
+`rate_limits` row and every sign-in a `sessions` row, and a full table refuses
+them all with `session_capacity_busy`. Each capacity now covers production's and
+the previews' scopes at once, and `SharedTableCapacityTests` pins the arithmetic:
+
+- `rate_limits` holds 200,000 rows. The global windows can open at most 180,014
+  live rows. Per scope, issuance and verification take 4,001 rows each: the
+  site-wide row, 2,000 IP minutes and, since 8 Nov 2026, 2,000 minutes of the
+  IPv6 /48s holding those clients. Proven wallets' hours take 62,000 rows per
+  scope, because 62 windows of 1,000 verifications fit in an hour when a proof
+  follows its verification by up to the listener's 20 seconds. Each of the five
+  preview budgets takes 4,001 rows per scope: its site-wide row and 4,000 IP and
+  account minutes. The guesses' share below takes up to 10,000 more.
+- Guesses: a preview request (onboarding, deposits, performance, execution
+  status, plans and bridging) whose session or CSRF is missing, malformed or
+  unknown is still charged to its IP's window, and since 8 Nov 2026 so is a
+  challenge or verify refused for what it carries
+  ([Site-wide sign-in windows](#site-wide-sign-in-windows)). No global window
+  bounds how many clients guess, so a guess writes a new row only while the
+  table holds fewer than 10,000 rows. Past that it is refused as before, and not
+  counted. A client that already has a window is charged as before. The read
+  before a preview's credentials never refuses for room, so a guess always gets
+  its own answer.
+- `sessions` counts only the sessions created in the last 30 minutes against its
+  64,000. Verification can admit at most 1,000 a minute per scope, over 32
+  windows. An older session is alive only because its owner keeps using it: each
+  refresh or preview reads the chain and spends that owner's own budgets.
+  Cleanup removes it once it is idle, revoked or expired. It no longer counts
+  against anyone's sign-in. The count reads `expires_at`, which is indexed and
+  is `created_at` plus 12 hours by 008's CHECK.
+
+Before this, an attacker could fill these tables with anonymous guesses or with
+sign-ins from freshly generated wallets. A filled table refused every new sign-in
+until its rows expired: up to an hour for proven wallets' rows, and for sessions
+as long as the attacker kept them in use. The global windows themselves are still
+shared by design. Saturating one refuses sign-in only while the traffic lasts, and
+the window admits again at most 60 seconds after the traffic stops.
 
 ## Frontend handoff, still owned by #14
 

@@ -186,7 +186,9 @@ test('the v2-test build: the session is kept while the wallet is on Base or Arbi
 test('the deposit origins the session is kept across are crosschain-v1 pins as origins, less Domino’s own three', async () => {
   const m = withV2(true, `${BUILD}session/machine.js`);
   const { CONSTANTS } = await import(new URL('../../../api-contracts/crosschain-v1/schema-data.mjs', import.meta.url).href);
-  const pinned = Object.keys(CONSTANTS.chains).map(Number).sort((a, b) => a - b);
+  // Changed on purpose 2026-11-09 (rugged97's #488 pins Relay for Elysium): 99901 is Domino's own chain where Elysium is
+  // live (V2_CHAIN_IDS), and no origin at all where it is off, so funds never come from a network the build does not serve.
+  const pinned = Object.keys(CONSTANTS.chains).map(Number).filter((id) => id !== 99901 || identity.V2_CHAIN_IDS.includes(id)).sort((a, b) => a - b);
   assert.deepEqual([...new Set([...identity.V2_CHAIN_IDS, ...m.CROSSCHAIN_ORIGIN_CHAIN_IDS])].sort((a, b) => a - b), pinned);
   assert.equal(m.CROSSCHAIN_ORIGIN_CHAIN_IDS.some((id) => identity.V2_CHAIN_IDS.includes(id)), false, 'Domino’s own are V2_CHAIN_IDS');
   assert.equal(m.CROSSCHAIN_ORIGIN_CHAIN_IDS.includes(99801), false);

@@ -64,6 +64,19 @@ HAND_APPLIED = {
     '056_position_mint_scan': ADMIN,
     # The session's origin (4 Nov 2026, launch round P3, review M1): the session schema's, as 041.
     '057_session_origin': POSTGRES,
+    # The points ledger (season 1, 7 Nov 2026): its own schema beside the V2 index's, as 052.
+    '058_points_ledger': POSTGRES,
+    # The points engine's links, bridge fees and snapshots (season 1), in 058's schema.
+    '059_points_engine': POSTGRES,
+    # The chunks' (pool_id, end_block) index (7 Nov 2026): a domino_activity change like 053, as the
+    # catalogue owner. Production built it CONCURRENTLY first, so there it is a no-op.
+    '060_chunk_end_index': ADMIN,
+    # The entities' keep-warm index (8 Nov 2026), for the collector's hot claims: a domino_public
+    # change like 044, as postgres. Production builds it CONCURRENTLY first, so there it is a no-op.
+    '061_public_entities_keep_warm': POSTGRES,
+    # The collector's scheduled cadence (9 Nov 2026), a count per kind in place of the sum of every
+    # entity's generation: a domino_public change like 044, as postgres, before the release that reads it.
+    '062_public_claim_cadence': POSTGRES,
 }
 
 

@@ -167,7 +167,25 @@ test('the link a visitor opened survives the password, and the access page’s o
   await page.fill('#password', PASSWORD);
   leaving(page);
   await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle' }), page.click('button[type="submit"]')]);
-  assert.equal(new URL(page.url()).hash, '#/docs/wallet');
+  // Changed on purpose 2026-11-07 (pages of their own, src/lib/route.ts): the app shows the page's own address.
+  await page.waitForFunction(() => `${location.pathname}${location.hash}` === '/docs/wallet');
+  await page.locator('h1', { hasText: 'Wallet and sign-in' }).waitFor();
+  assert.deepEqual(log.errors.filter((e) => !/status of 401/.test(e)), []);
+  await closeContext(context);
+});
+
+// 2026-11-07 (PROPOSAL.md §2, from approach A): a page's own address survives the password too; the access page carries
+// it as the route it always carried (functions/_lib/seo.ts askedRoute), and the app shows the clean address after it.
+test('a page’s own address survives the password, as a link from before does', async () => {
+  const { context, page, log } = await visitor();
+  const response = await page.goto(`${origin}/docs/wallet`, { waitUntil: 'networkidle' });
+  assert.equal(response.status(), 401);
+  assert.equal(await page.title(), 'Domino · Access');
+  assert.equal(await page.locator('#next').inputValue(), '#/docs/wallet', 'the server put the address into the form');
+  await page.fill('#password', PASSWORD);
+  leaving(page);
+  await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle' }), page.click('button[type="submit"]')]);
+  await page.waitForFunction(() => `${location.pathname}${location.hash}` === '/docs/wallet');
   await page.locator('h1', { hasText: 'Wallet and sign-in' }).waitFor();
   assert.deepEqual(log.errors.filter((e) => !/status of 401/.test(e)), []);
   await closeContext(context);

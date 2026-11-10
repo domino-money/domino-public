@@ -10,6 +10,9 @@
  *   withRecord(raw)  the same with a pinned deployment record (`raw`, as the file holds it) and a pin, as day 9's build
  *                    carries rugged97's, for the production admission's own checks.
  *   withFunds        ELYSIUM_FORCED and funds from Elysium (DOMINO_TEST_ELYSIUM_FUNDS_FROM=1).
+ *   withFundsTo      ELYSIUM_FORCED and funds brought to Elysium, its stable alone (DOMINO_TEST_ELYSIUM_FUNDS_TO=1;
+ *                    added 2026-11-09, Elysium's day 9), with the profile naming Relay alone, as rugged97's will
+ *                    (`bridge.providers: ["relay"]`: Relay bridges Elysium's USDC; Across does not serve 99901).
  *
  * Use: `const on = loadWith(require, ELYSIUM_FORCED, () => require(`${BUILD}v2/chains.js`))`, with the test file's own
  * createRequire(import.meta.url), whose cache it works on.
@@ -30,6 +33,10 @@ export const ELYSIUM_FORCED = Object.freeze({
   __DOMINO_ELYSIUM_UNISWAP__: { positionManager: ELYSIUM_PROFILE.uniswap.v4.positionManager.toLowerCase(), permit2: ELYSIUM_PROFILE.permit2.toLowerCase() },
 });
 export const withFunds = Object.freeze({ ...ELYSIUM_FORCED, __DOMINO_ELYSIUM_FUNDS_FROM__: true });
+/** The synthetic profile's stable (its rank-1 charge currency that is not native), lowercase. */
+export const ELYSIUM_STABLE = ELYSIUM_PROFILE.chargeCurrencies.find((currency) => currency.rank === 1 && currency.address.toLowerCase() !== `0x${'0'.repeat(40)}`).address.toLowerCase();
+export const ELYSIUM_RELAY_PROFILE_TEXT = JSON.stringify({ ...ELYSIUM_PROFILE, bridge: { ...ELYSIUM_PROFILE.bridge, providers: ['relay'] } });
+export const withFundsTo = Object.freeze({ ...ELYSIUM_FORCED, __DOMINO_ELYSIUM_PROFILE__: ELYSIUM_RELAY_PROFILE_TEXT, __DOMINO_ELYSIUM_FUNDS_TO__: true, __DOMINO_ELYSIUM_DESTINATIONS__: [ELYSIUM_STABLE] });
 
 /** ELYSIUM_FORCED with a deployment record's text and its pin, as a live build carries rugged97's pinned record. */
 export function withRecord(raw, path = 'docs/deployments/v2-elysium-99901-2026-11-09/deployment.json') {

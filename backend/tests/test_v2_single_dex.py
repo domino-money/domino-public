@@ -88,8 +88,9 @@ class ProfileTests(unittest.TestCase):
             self.load(change, **options)
         self.assertIn(rule, str(caught.exception.__cause__))
 
-    def test_the_live_chains_have_both_versions(self):
-        self.assertEqual([chain.dexes for chain in load_registry().chains], [(3, 4)] * 3)
+    def test_the_live_chains_have_both_versions_and_elysium_v4_alone(self):
+        # Changed on purpose 2026-11-09 (Elysium's mainnet): Elysium, the fourth chain, has Uniswap v4 only.
+        self.assertEqual([chain.dexes for chain in load_registry().chains], [(3, 4)] * 3 + [(4,)])
         self.assertEqual(BOTH.dexes, (3, 4))
 
     def test_a_chain_names_the_version_it_lacks_null_and_needs_none_of_its_contracts(self):

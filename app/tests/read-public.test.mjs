@@ -1283,3 +1283,32 @@ test('keepFigures: a row whose figures are coming shows the ones kept for it, st
   assert.equal(shown.poolState, coming.poolState, 'its own price');
   assert.deepEqual(keepFigures(good, coming, 1_000_000).tvlUsd, good.tvlUsd, 'a figure it has is never replaced');
 });
+
+// Added 2026-11-09 (core flows, the owner's sweep of a token page: "Price loading" for 45 s and more). A counterpart token
+// the producer says is pending but is not working on (not refreshing, its own next attempt long overdue) holds no price as a
+// placeholder; one still on its way does, until the page has waited long enough (`waitForTokens` false: the dash). The
+// page's fast poll slows down after half a minute. And a provider's zero TVL is the dash its table's other gaps are.
+test('a stalled or long-awaited counterpart token ends its pools’ price placeholders; the token page’s poll slows down; a provider’s zero TVL is the dash', () => {
+  const { acquisitionStalled, overviewPollMs, STALLED_AFTER_S } = built('publicOverview');
+  const { shownTvl, presentMetric } = require('../.test-build/app/src/lib/markets.js');
+  const provenance = { transport: 'bridge', receivedAt: 100_000, receivedMonotonic: 100_000, attempts: 1 };
+  const data = fixture('overview');
+  const other = data.tokens.find((entry) => entry.address !== '0x0000000000000000000000000000000000000000');
+  other.value = null; other.observedAt = null;
+  other.acquisition = { status: 'pending', refreshing: false, reason: null, nextAttemptAt: data.generatedAt - 10 };
+  assert.equal(overviewRows({ data, provenance })[0].tokensPending, true, 'still on its way: the quiet placeholder');
+  assert.equal(overviewRows({ data, provenance }, undefined, false)[0].tokensPending, undefined, 'waited long enough: the dash');
+  other.acquisition.nextAttemptAt = data.generatedAt - STALLED_AFTER_S - 1;
+  assert.equal(acquisitionStalled(other.acquisition, data.generatedAt), true);
+  assert.equal(overviewRows({ data, provenance })[0].tokensPending, undefined, 'stalled: no placeholder at all');
+  other.acquisition.refreshing = true;
+  assert.equal(acquisitionStalled(other.acquisition, data.generatedAt), false, 'one being worked on is not stalled');
+  other.acquisition = { status: 'pending', refreshing: false, reason: null, nextAttemptAt: null };
+  assert.equal(acquisitionStalled(other.acquisition, data.generatedAt), false, 'no attempt named: not stalled');
+  assert.deepEqual([0, 5, 6, 7, 8, 9, 10, 40].map(overviewPollMs), [5_000, 5_000, 10_000, 20_000, 40_000, 60_000, 60_000, 60_000]);
+  const zero = { value: '0', state: 'provider', source: 'GeckoTerminal' };
+  assert.equal(presentMetric(shownTvl(zero)).kind, 'absent', 'a provider’s zero TVL is the dash');
+  assert.equal(presentMetric(shownTvl({ value: '0.00', state: 'stale', source: 'DexScreener' })).kind, 'absent');
+  assert.equal(shownTvl({ value: '12.5', state: 'provider', source: 'GeckoTerminal' }).value, '12.5', 'any other figure is itself');
+  assert.equal(shownTvl({ value: '0', state: 'qualified' }).value, '0', 'Domino’s own figure is itself');
+});

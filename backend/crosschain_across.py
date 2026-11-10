@@ -457,9 +457,10 @@ class EndpointsChainRpc(ChainRpc):
         raise DataError('across_rpc_unavailable')
 
 
-# The destinations with hosted RPC in the V2 chain RPC file: every chain S2 serves (crosschain_common) but Robinhood,
-# the listener's own node (--rpc-config), which that file can never name (v2_rpc).
-HOSTED_DESTINATIONS = tuple(sorted(chain for chain in load_destinations() if chain != CHAIN_ID))
+# The destinations with hosted RPC in the V2 chain RPC file: every chain S2 serves through Across (crosschain_common)
+# but Robinhood, the listener's own node (--rpc-config), which that file can never name (v2_rpc).
+HOSTED_DESTINATIONS = tuple(sorted(chain for chain, row in load_destinations().items()
+                                   if chain != CHAIN_ID and 'across' in row['providers']))
 
 
 def destination_endpoints(chain_rpc_file, registry=None):

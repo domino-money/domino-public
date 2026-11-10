@@ -280,6 +280,16 @@ export function networkRows(
 }
 
 /**
+ * The names (`dexNameOf`) of the pools among `options` that `dex` holds no figures of, or only figures read more than ten
+ * minutes before `nowS` (unix seconds), in their order, pure (Added 2026-11-07: DEX Screener lists 30 pairs a token, not
+ * ranked by liquidity, and Base USDC's left out every WETH/USDC pool, Arbitrum One WETH's every pool with native USDC):
+ * once the list's token was read, these are asked about by their own names (components/read/screens/PoolPicker.tsx
+ * useNetworkPools, lib/read/dexFigures.ts askPairs), and `networkRows` takes what comes back as it takes the token's.
+ */
+export const unnamedPools = (options: readonly PoolOption[], dex: (chainId: number, name: string) => DexPool | null, nowS: number): string[] =>
+  options.filter((option) => tooOld(dex(option.currencies[0].chainId, dexNameOf(option))?.retrievedAt ?? -Infinity, nowS)).map(dexNameOf)
+
+/**
  * A pool of Base or Arbitrum One as it may be shown at `nowS`, unix seconds (Added 2026-10-06, rugged97's delta of 6 Oct
  * §4), pure: a DEX Screener figure read more than ten minutes before is a dash saying so, and the APR worked out from it
  * goes with it. For a row kept on screen while time passes (the chosen pool, the row last pointed at: the pool preview,

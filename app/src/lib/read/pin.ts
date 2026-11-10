@@ -147,7 +147,10 @@ export const PRODUCER_PIN = {
       // Changed on purpose (data) 2026-11-04 (launch round P3): read_api.py, read_gateway.py, bridge_http.py and
       // hop_log.py serve read-v6's position-fees behind its version window, closed at the gateway by default; no
       // read-v1 route, schema, reason code or version moved.
-      manifestSha256: '887a9707adbbe98ea2637f2e901e7863042711382203fedddd3a5cc8b5fc985a',
+      // Changed on purpose (data) 2026-11-07: fee_store.py, position_store.py and capital_store.py, which the manifest
+      // hashes, find a chunk's predecessor through the primary key instead of by end_block, which timed the ledger
+      // workers out and answered pool-activity with 503; no read-v1 route, schema, reason code or version moved.
+      manifestSha256: '3c0c594fbb8bea4df3ce88ba285d9f9bedb8ca022157f3eb3c6bb896d88bb198',
     },
     'session-v1': {
       version: '3.0.0-rc.4',
@@ -160,7 +163,19 @@ export const PRODUCER_PIN = {
       // session_siwe.py, hop_log.py and migration 057: a session belongs to the origin it signed in on, and a listed
       // preview origin rides its own Access identity; a listed preview origin signs in with its own SIWE message; no
       // route or version moved.
-      manifestSha256: '7c17858d123dc3c6923538127381d4e0bc1c24370b21d4ee6f9481559a09f1f2',
+      // Changed on purpose (data) 2026-11-07 (L-04's siblings): session_store.py: no table every visitor shares can
+      // fill with what the global windows admit (rate_limits sized above them, sessions counted in their first 30
+      // minutes, guesses in a share that fails open); no route, schema, reason code or version moved.
+      // Changed on purpose (data) 2026-11-08: session_store.py, which the manifest hashes, charges refresh's IP and
+      // account buckets together or not at all, keeps a bucket's row only until it is full again and never refuses a
+      // refresh for private-limit room; no route, schema, reason code or version moved.
+      // Changed on purpose (data) 2026-11-08 (L-04's class, on windows): session_store.py: challenge and verify spend
+      // their site-wide window only for an attempt the store carries out, and a refused one only its IP's, in the
+      // guesses' share of rate_limits, which fails open; no route, schema, reason code or version moved.
+      // Changed on purpose (data) 2026-11-08 (IPv6 /48 sign-in windows): session_store.py: bootstrap, challenge and
+      // verify also charge the IPv6 /48 holding their client a window of four IPs' worth; no route, schema, reason
+      // code or version moved.
+      manifestSha256: '72bcb1f0b2ae811cdff19e20d69279076b2c0a370602bc9268333ff1b9616d78',
     },
     'onboarding-v1': {
       version: '1.1.0',
@@ -178,7 +193,19 @@ export const PRODUCER_PIN = {
       // listed preview origin rides its own Access identity, with preview budgets of its own; a read-only route may
       // take an account check up to a minute old, for the delegate the session was admitted with; no route, schema,
       // reason code or version moved.
-      manifestSha256: '7044d28f69468d94534c70abf338bde844d5a0d6ac0e07b0eee2e25f2c47b920',
+      // Changed on purpose (data) 2026-11-07 (L-04's siblings): session_store.py and test_onboarding_auth.py, which the
+      // manifest hashes: a refused credential's IP charge takes only the guesses' share of rate_limits, which fails
+      // open, and the read before the credentials never refuses for room; no route, schema, reason code or version
+      // moved.
+      // Changed on purpose (data) 2026-11-08: session_store.py, which the manifest hashes, changes only session-v1's
+      // refresh buckets (charged together or not at all, never refused for room); no route, schema, reason code or
+      // version moved.
+      // Changed on purpose (data) 2026-11-08 (L-04's class, on windows): session_store.py, which the manifest hashes:
+      // sign-in's challenge and verify spend their site-wide window only for an attempt the store carries out; no
+      // route, schema, reason code or version moved.
+      // Changed on purpose (data) 2026-11-08 (IPv6 /48 sign-in windows): session_store.py, which the manifest hashes:
+      // sign-in also charges the IPv6 /48 holding its client; no route, schema, reason code or version moved.
+      manifestSha256: '3085c04e2588ae44be78dd42633302b84974033d76a2ff661b99ed5282074146',
     },
     'deposit-v1': {
       version: '1.1.0-rc.4',
@@ -227,7 +254,12 @@ export const READ_V2_PIN = {
   // Changed on purpose (data) 2026-11-07 (W-01, the read Worker): bridge/src/worker.mjs answers capabilities per
   // requested read-v6 version and serves position-fees only in 1.2.0-rc.1, and its capabilities name read-v6's own
   // chain list; no read-v2 route, schema, reason code or version moved.
-  manifestSha256: 'e4754f9bcd7e1f8f585f97be74d5c7ac7983f3f02891c5d22636e71e054a040c',
+  // Changed on purpose (data) 2026-11-07 (the read-v6 version skew): bridge/src/worker.mjs checks a read-v6 portfolio or
+  // activity answer that names a chain beyond its package's again without that chain, and relays only what it checked;
+  // no read-v2 route, schema, reason code or version moved.
+  // Changed on purpose (data) 2026-11-08 (Points, Season 1): app/functions/_lib/bridge.ts, which the manifest hashes,
+  // declares the points family (POINTS_BRIDGE) for points-v1; no read-v2 route, schema, reason code or version moved.
+  manifestSha256: '78f09cf774f7e9b8aaa853f63f5b8ed21e95d70565562e844c19c2666baf455e',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */
@@ -277,7 +309,9 @@ export const BACKEND_OPENAPI_PIN = {
   // (1) and OP Mainnet (10); no other route, schema or version moved.
   // Changed on purpose (data) 2026-11-04: read-v6 1.2.0-rc.1's position-fees path (Base's and Arbitrum's Fees earned),
   // served only to a request that names that version; every other path is as before.
-  sha256: '3abf4f1aba15b6e608846915fb498c24f3e73e1d1594d8f839a4630c77e2866f',
+  // Changed on purpose (data) 2026-11-09: read-v6's chain enums name Elysium (99901), and chain-tokens searches it too
+  // (rugged97's day-9 read-v6); no path, version or reason code moved.
+  sha256: 'b5584d6ab70724150dd579e2b2bf6d150c4a22d8e86df95c0bda4f2414ca7305',
 } as const
 
 export type ReadContractPin = (typeof PRODUCER_PIN)['packages']['read-v1']['version']

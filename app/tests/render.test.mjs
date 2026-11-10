@@ -20,6 +20,7 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { closeBrowser } from './support/close-browser.mjs';
+import { ELYSIUM_REPO_FUNDS_FROM, ELYSIUM_REPO_LIVE, ELYSIUM_REPO_STAGE } from './support/elysium-profile.mjs';
 import { TEXT_FILE, findForbidden } from '../scripts/deploy-markers.mjs';
 import { apiOf, close, dexOf, go, leaving, open as openPage, problemsOf, reload, shown, watch } from './page-watch.mjs';
 import { feesAnswer } from './support/fees/stub.mjs';
@@ -68,11 +69,13 @@ function serveDist() {
     }
     try {
       if ((await stat(file)).isDirectory()) file = join(file, 'index.html');
+      // Changed on purpose 2026-11-07 (pages of their own): /docs is a page and a folder of pictures, with no index.html.
+      await stat(file);
     } catch {
       // Only extension-less paths fall back to the app shell. A missing asset
       // must be a real 404, or a broken image would load as HTML with a 200
       // and the artwork test could never see it.
-      if (extname(file)) {
+      if (extname(file) && extname(file) !== '.html') {
         res.writeHead(404, { 'content-type': 'text/plain' }).end('not found');
         return;
       }
@@ -258,9 +261,9 @@ test('the header names the three places, each at its route, and marks the one th
     const links = await nav.locator('a').evaluateAll((els) => els.map((a) => [a.textContent.trim(), a.getAttribute('href'), a.getAttribute('aria-current')]));
     const current = (name) => (LIT[route] === name ? 'page' : null);
     assert.deepEqual(links, [
-      ['Markets', '#/markets', current('Markets')],
-      ['Positions', '#/positions', current('Positions')],
-      ['Automate', '#/automate', current('Automate')],
+      ['Markets', '/markets', current('Markets')],
+      ['Positions', '/positions', current('Positions')],
+      ['Automate', '/automate', current('Automate')],
     ], `header on ${route}`);
     assert.equal(await page.locator('header .dm-wordmark').getAttribute('aria-current'), route === '/' ? 'page' : null);
     assert.equal(await nav.getAttribute('data-home'), route === '/' ? '' : null);
@@ -310,7 +313,7 @@ test('Home navigation is neutral until hovered or focused, and only the current 
 
 test('the mobile Positions screen leads to Markets: reachable, bounded to the viewport, and idle until a read is requested', async () => {
   const page = await open('/app');
-  assert.equal(await page.locator('header').getByRole('link', { name: 'Markets', exact: true }).first().getAttribute('href'), '#/markets');
+  assert.equal(await page.locator('header').getByRole('link', { name: 'Markets', exact: true }).first().getAttribute('href'), '/markets');
   await page.setViewportSize({ width: 375, height: 812 });
   const entrance = page.locator('main').getByRole('link', { name: 'Markets', exact: true });
   assert.equal(await entrance.isVisible(), true, 'the mobile Positions screen has a visible entrance');
@@ -622,18 +625,18 @@ test('section links land on their target, across routes and within one route', a
   // Cross-route to a route with no section: the header's Positions link opens that screen at its top.
   leaving(page);
   await page.locator('header').getByRole('link', { name: 'Positions' }).first().click();
-  await page.waitForFunction(() => location.hash === '#/positions');
+  await page.waitForFunction(() => location.pathname + location.hash === '/positions');
   await page.waitForTimeout(80);
   assert.equal(await page.evaluate(() => window.scrollY), 0, 'the positions screen did not start at the top');
 
   // The positions screen leads to Markets; from there the footer's learn link returns to the landing section.
   leaving(page);
   await page.locator('main').getByRole('link', { name: 'Markets', exact: true }).click();
-  await page.waitForFunction(() => location.hash === '#/markets');
+  await page.waitForFunction(() => location.pathname + location.hash === '/markets');
   await page.getByRole('heading', { name: 'Markets', exact: true }).waitFor();
   leaving(page);
   await page.locator('footer').getByRole('link', { name: 'How it works' }).click();
-  await page.waitForFunction(() => location.hash === '#/#learn');
+  await page.waitForFunction(() => location.pathname + location.hash === '/#learn');
   await assertSectionLanded(page, 'learn');
 
   // Same route, different section: only the hash section changes.
@@ -666,30 +669,36 @@ test('every footer and navigation link goes somewhere this app has: no "#/" plac
   // Changed on purpose (owner, 2026-09-26): Domino's X account is the footer's one link that leaves the app, and only it.
   // It is exactly the confirmed profile, opens in a new tab with no opener and no referrer, and says so to a screen reader.
   const external = await page.evaluate(() =>
-    Array.from(document.querySelectorAll('footer a')).filter((a) => !(a.getAttribute('href') ?? '').startsWith('#')).map((a) => ({
+    Array.from(document.querySelectorAll('footer a')).filter((a) => !(a.getAttribute('href') ?? '').startsWith('/')).map((a) => ({
       href: a.getAttribute('href'), target: a.getAttribute('target'), rel: a.getAttribute('rel'), label: a.getAttribute('aria-label'), text: a.textContent.trim(),
     })),
   );
-  assert.deepEqual(external, [{ href: 'https://x.com/dominomoney', target: '_blank', rel: 'noopener noreferrer', label: 'Domino on X (opens in a new tab)', text: '@dominomoney' }], 'the footer leaves the app only for Domino’s X account');
+  // Changed on purpose 2026-11-08 (the owner: Domino's repository is public): its GitHub link beside X, the same way.
+  assert.deepEqual(external, [
+    { href: 'https://x.com/dominomoney', target: '_blank', rel: 'noopener noreferrer', label: 'Domino on X (opens in a new tab)', text: '@dominomoney' },
+    { href: 'https://github.com/domino-money/domino-public', target: '_blank', rel: 'noopener noreferrer', label: 'Domino’s source code on GitHub (opens in a new tab)', text: 'Source code' },
+  ], 'the footer leaves the app only for Domino’s X account and its public source');
   // Changed on purpose (2026-09-27, the owner's round 6, point 6): Settings is gone from the footer with its page.
   assert.deepEqual(
-    links.filter((l) => l.footer && l.href.startsWith('#')).map((l) => l.text),
+    links.filter((l) => l.footer && l.href.startsWith('/')).map((l) => l.text),
     // Changed on purpose 2026-10-30 (QA round 2, Q16): the menu's guide names, and Risks opens the docs' Risks page.
     ['Markets', 'Positions', 'Automate', 'New position', 'Docs', 'How it works', 'Price ranges', 'Risks'],
     'the footer names the product pages, the docs and the guides',
   );
   // The routes App.tsx wires, with the older spellings it keeps: `#/explore` and `#/pools` are Markets, `#/app` is Positions.
   // No link names `/settings` any more (2026-09-27): it is only an older spelling of the docs. `/docs/risks`: the guides' Risks.
-  const ROUTES = ['/', '/markets', '/explore', '/pools', '/pool', '/positions', '/app', '/portfolio', '/new', '/automate', '/docs', '/docs/risks'];
+  // Changed on purpose 2026-11-07 (the owner's Points page, Season 1, decision D4): the menu's Points, always there.
+  const ROUTES = ['/', '/markets', '/explore', '/pools', '/pool', '/positions', '/app', '/portfolio', '/new', '/automate', '/docs', '/docs/risks', '/points'];
   for (const link of links) {
-    if (link.footer && link.href === 'https://x.com/dominomoney') continue
+    if (link.footer && (link.href === 'https://x.com/dominomoney' || link.href === 'https://github.com/domino-money/domino-public')) continue
     const label = `${link.footer ? 'footer' : 'header'} link "${link.text}" (${link.href})`;
     assert.ok(link.href !== null && link.href.trim() !== '', `${label} has no target`);
     assert.notEqual(link.href, '#', `${label} goes nowhere`);
     // "#/" is the landing route itself: only the header's wordmark may name it.
-    if (link.href === '#/') assert.ok(link.overview, `${label} is a placeholder`);
-    assert.ok(link.href.startsWith('#/'), `${label} leaves the app for an unconfirmed destination`);
-    const raw = link.href.slice(1);
+    if (link.href === '/') assert.ok(link.overview, `${label} is a placeholder`);
+    assert.ok(link.href.startsWith('/'), `${label} leaves the app for an unconfirmed destination`);
+    // Changed on purpose 2026-11-07 (pages of their own, src/lib/route.ts): a link is the page's own address, `/markets`.
+    const raw = link.href;
     const cut = raw.indexOf('#');
     const route = (cut === -1 ? raw : raw.slice(0, cut)) || '/';
     const section = cut === -1 ? '' : raw.slice(cut + 1);
@@ -1272,7 +1281,7 @@ async function catalogueOnly(page, label) {
   // Changed on purpose 2026-11-02 (the owner's new embedded list): ETH/TORCH, third, holds no USDG. Its row names both
   // currencies, and its link names TORCH, the one of them that is a contract (native ETH names none).
   const TORCH = '0x000050e18ffa3f8f7ad170eb9cef160eb3ed1111';
-  assert.deepEqual(await rows.evaluateAll((trs) => trs.map((tr) => tr.querySelector('a').getAttribute('href'))), SELECTED.map((id, index) => `#/pool/${id}/${index === 2 ? TORCH : USDG}`), `${label}: row links`);
+  assert.deepEqual(await rows.evaluateAll((trs) => trs.map((tr) => tr.querySelector('a').getAttribute('href'))), SELECTED.map((id, index) => `/pool/${id}/${index === 2 ? TORCH : USDG}`), `${label}: row links`);
 }
 
 /**
@@ -1431,7 +1440,7 @@ test('Settings is gone: an old link opens the docs with no error, and neither th
   // Nothing lit in the header: the docs are none of the three places.
   assert.equal(await page.locator('header nav[aria-label="Main"] a[aria-current="page"]').count(), 0);
   assert.equal(await page.locator('footer').getByRole('link', { name: 'Settings' }).count(), 0, 'no Settings in the footer');
-  assert.equal(await page.locator('a[href="#/settings"]').count(), 0, 'no link names the old route');
+  assert.equal(await page.locator('a[href="/settings"]').count(), 0, 'no link names the old route');
 
   // The menu at a desktop width: New position and Docs, then the guides on Home. Docs is lit on the docs.
   await page.getByRole('button', { name: 'Menu', exact: true }).click();
@@ -1439,12 +1448,14 @@ test('Settings is gone: an old link opens the docs with no error, and neither th
   await items.first().waitFor();
   const entries = await items.evaluateAll((els) => els.map((a) => [a.textContent.trim(), a.getAttribute('href'), a.getAttribute('aria-current')]));
   assert.deepEqual(entries, [
-    ['New position', '#/new', null],
-    ['Docs', '#/docs', 'page'],
+    ['New position', '/new', null],
+    // Added 2026-11-07 (the owner's Points page, Season 1, decision D4): Points, under New position, always there.
+    ['Points', '/points', null],
+    ['Docs', '/docs', 'page'],
     // Changed on purpose 2026-10-30 (QA round 2, Q16): the footer's guide names and places.
-    ['How it works', '#/#learn', null],
-    ['Price ranges', '#/#ranges', null],
-    ['Risks', '#/docs/risks', null],
+    ['How it works', '/#learn', null],
+    ['Price ranges', '/#ranges', null],
+    ['Risks', '/docs/risks', null],
   ]);
   // Each entry wears a mark of its own: the book is the docs'.
   const marks = await items.evaluateAll((els) => els.map((a) => a.querySelector('svg')?.innerHTML ?? ''));
@@ -1458,7 +1469,7 @@ test('Settings is gone: an old link opens the docs with no error, and neither th
   const docs = page.locator('#site-menu [role="menuitem"]', { hasText: 'Docs' });
   assert.equal(await docs.getAttribute('aria-current'), null);
   await docs.click();
-  await page.waitForFunction(() => location.hash === '#/docs');
+  await page.waitForFunction(() => location.pathname + location.hash === '/docs');
   await page.getByRole('heading', { level: 1, name: 'Docs', exact: true }).waitFor();
   clean(page, 'the old Settings link');
   await close(page);
@@ -1495,7 +1506,7 @@ test('Automate connects three visual choices to their guarded flows and keeps ex
   // with compounding, in its own line (no note under the cards, above).
   assert.equal(await page.locator('[data-automation-card="protection"] .dm-automation-choice-description').innerText(), 'Closes at the end of your range, with no price to set, and sends the tokens to your wallet. Lasts a year, then turn it on again. Can’t be combined with Auto-compound or Domino-compound.');
   assert.doesNotMatch(await plain.innerText(), /\bfree\b/i, 'no claim that a plain position has no costs');
-  assert.deepEqual(await plain.getByRole('link').evaluateAll((links) => links.map((a) => [a.textContent, a.getAttribute('href')])), [['New position', '#/new'], ['How it works', '#/docs/new-position']]);
+  assert.deepEqual(await plain.getByRole('link').evaluateAll((links) => links.map((a) => [a.textContent, a.getAttribute('href')])), [['New position', '/new'], ['How it works', '/docs/new-position']]);
   assert.deepEqual(await page.locator('main .dm-automation-choice-grid [data-automation-card]').evaluateAll((cards) => cards.map((card) => card.getAttribute('data-automation-card'))), ['compound', 'domino', 'protection']);
   assert.equal(await page.locator('.dm-automation-start [data-automation-card="plain"]').count(), 1, 'plain setup stays available outside the automation comparison');
   assert.equal(await page.locator('.dm-automation-start').evaluate(start => start.nextElementSibling?.classList.contains('dm-automation-choice-grid')), true, 'New position precedes the three automation choices');
@@ -1503,7 +1514,7 @@ test('Automate connects three visual choices to their guarded flows and keeps ex
   const protection = page.locator('[data-automation-card="protection"]');
   await protection.getByRole('button', { name: 'Unavailable right now', exact: true }).waitFor();
   assert.equal(await protection.getByRole('button').isDisabled(), true, 'a missing execution capability never becomes an actionable Auto-exit entry');
-  assert.deepEqual(await protection.getByRole('link').evaluateAll((links) => links.map((a) => a.getAttribute('href'))), ['#/docs/auto-exit'], 'docs stay available without opening an unavailable execution');
+  assert.deepEqual(await protection.getByRole('link').evaluateAll((links) => links.map((a) => a.getAttribute('href'))), ['/docs/auto-exit'], 'docs stay available without opening an unavailable execution');
   if (process.env.DOMINO_UI_CAPTURE_DIR) {
     for (const width of [320, 390, 1280, 1440]) {
       await page.setViewportSize({ width, height: width < 768 ? 844 : 900 });
@@ -1599,7 +1610,7 @@ test('the positions screen without a wallet shows one receipts summary, no manag
   // 2026-10-01 (audit D2): with no session there is nothing to list, so See all is not shown (it opened an empty page).
   assert.equal(await page.locator('[data-receipts-all]').isVisible(), false);
   // 2026-09-27 (round 5): the Receipts card is a short Recent list; its See all opens every receipt on a page of its own.
-  assert.equal(await page.locator('[data-receipts-all]').getAttribute('href'), '#/positions/receipts');
+  assert.equal(await page.locator('[data-receipts-all]').getAttribute('href'), '/positions/receipts');
   assert.doesNotMatch(text, /Canonical receipts|unavailable values|never shown as completed|Sent exactly as typed|checksum|proves nothing/i, 'no caption about data states');
   assert.equal(await page.locator('#portfolio-address-input').getAttribute('title'), 'Spaces at the ends are removed. Viewing an address proves nothing about who controls it.');
   assert.doesNotMatch(text, /practice|reinvested|awaiting|\$\s?\d|[0-9]+%/i);
@@ -1607,7 +1618,7 @@ test('the positions screen without a wallet shows one receipts summary, no manag
   // Nothing reads on load without a wallet, and the screen shows no figure of its own.
   assert.deepEqual(apiOf(page), [[]], 'the positions screen reads nothing by itself');
   assert.equal(await page.locator('main [data-metric]').count(), 0, 'no figure without a wallet');
-  assert.equal(await page.locator('main').getByRole('link', { name: 'Markets', exact: true }).getAttribute('href'), '#/markets');
+  assert.equal(await page.locator('main').getByRole('link', { name: 'Markets', exact: true }).getAttribute('href'), '/markets');
   // The empty state's Connect wallet is the header's: it opens the same wallet dialog.
   await empty.getByRole('button', { name: 'Connect wallet' }).click();
   await page.locator('[role="dialog"]').first().waitFor();
@@ -1628,7 +1639,7 @@ test('the receipts page keeps Positions lit, and with no wallet asks for one and
   await page.locator('section[aria-labelledby="receipts-title"] [data-signed-out="no_wallet"]').waitFor();
   assert.equal(await page.locator('[data-receipts-all]').isVisible(), false, 'no See all with nothing to list');
   await page.evaluate(() => { location.hash = '#/positions/receipts'; });
-  await page.waitForFunction(() => location.hash === '#/positions/receipts');
+  await page.waitForFunction(() => location.pathname + location.hash === '/positions/receipts');
   // The hash changes before the page is drawn, and Positions' own Receipts card says the same sentence: wait for the
   // page's heading first (audit H3; finance.browser read "Positions" there on CI, 2026-09-28).
   await page.getByRole('heading', { level: 1, name: 'Receipts', exact: true }).waitFor();
@@ -1637,7 +1648,7 @@ test('the receipts page keeps Positions lit, and with no wallet asks for one and
   assert.equal(await page.getByRole('heading', { level: 2, name: 'All receipts' }).count(), 1);
   const nav = await page.locator('header nav[aria-label="Main"] a').evaluateAll((els) => els.map((a) => [a.textContent.trim(), a.getAttribute('aria-current')]));
   assert.deepEqual(nav, [['Markets', null], ['Positions', 'page'], ['Automate', null]]);
-  assert.deepEqual(await page.locator('main a').evaluateAll((els) => els.map((a) => [a.textContent.trim(), a.getAttribute('href')])), [['Positions', '#/positions']], 'one way back, and the page does not link itself');
+  assert.deepEqual(await page.locator('main a').evaluateAll((els) => els.map((a) => [a.textContent.trim(), a.getAttribute('href')])), [['Positions', '/positions']], 'one way back, and the page does not link itself');
   const text = await page.locator('main').innerText();
   assert.doesNotMatch(text, /Automated positions|Your positions|\$\s?\d|0x[0-9a-fA-F]{4}/, 'the receipts alone (no other card), and no figure or hash signed out');
   assert.equal(await page.getByRole('button', { name: 'Connect wallet' }).count(), 1, 'the header keeps the one wallet control');
@@ -1654,10 +1665,28 @@ test('Home connects funding, pools, three automations and risks, with the option
   }
   // Changed on purpose 2026-10-17 (the approved V4 prototype puts Top pools under the strip, before the story).
   assert.deepEqual(await page.locator('main section[id]').evaluateAll(sections => sections.map(section => section.id)), ['pools', 'funding', 'learn', 'limits'], 'the page follows a readable sequence from the pools to managing the position');
-  assert.deepEqual(await page.locator('.dm-hero-funding li > a > span:last-child').allInnerTexts(), ['Ethereum', 'Base', 'Arbitrum One', 'OP Mainnet', 'Robinhood Chain'], 'the hero names all five funding networks');
+  // Changed on purpose 2026-11-07 (day-9 rehearsal, finding F3): read inside the "Bring funds from" group itself, since a
+  // build where the repository turns Elysium on draws a second row of the same chips ("Open positions on", below).
+  const funding = page.getByRole('group', { name: 'Networks to bring funds from', exact: true });
+  assert.deepEqual(await funding.locator('li > a > span:last-child').allInnerTexts(), ['Ethereum', 'Base', 'Arbitrum One', 'OP Mainnet', 'Robinhood Chain', ...(ELYSIUM_REPO_FUNDS_FROM ? ['Elysium'] : [])], 'the hero names every funding network (Elysium last once funds can come from it, rugged97’s #488)');
   // Changed on purpose 2026-10-30 (QA round 2, N20): each chip leads to Home's funding section, in a named group.
-  assert.deepEqual(await page.locator('.dm-hero-funding li > a').evaluateAll((links) => [...new Set(links.map((a) => a.getAttribute('href')))]), ['#/#funding']);
-  assert.equal(await page.getByRole('group', { name: 'Networks to bring funds from', exact: true }).count(), 1);
+  // Changed on purpose 2026-11-07 (pages of their own, lib/route.ts): every link is the page's own address.
+  assert.deepEqual(await funding.locator('li > a').evaluateAll((links) => [...new Set(links.map((a) => a.getAttribute('href')))]), ['/#funding']);
+  assert.equal(await funding.count(), 1);
+  const positions = page.getByRole('group', { name: 'Networks to open positions on', exact: true });
+  if (ELYSIUM_REPO_LIVE) {
+    assert.deepEqual(await positions.locator('li > a > span:last-child').allInnerTexts(), ['Robinhood Chain', 'Base', 'Arbitrum One', 'Elysium'], 'where Elysium is live, the four networks to open positions on');
+    assert.deepEqual(await positions.locator('li > a').evaluateAll((links) => [...new Set(links.map((a) => a.getAttribute('href')))]), ['/new']);
+  } else if (ELYSIUM_REPO_STAGE === 'prelaunch') {
+    // Changed on purpose 2026-11-07 (Elysium's pre-launch, the owner's order): before Elysium opens the row names the four
+    // networks; the three open ones lead to New position, Elysium's chip to its docs section (its tag is checked by
+    // tests/v2in-browser/elysium-surface.test.mjs).
+    const chips = await positions.locator('li > a').evaluateAll((links) => links.map((a) => ({ name: a.querySelector(':scope > span:not(.dm-network-mark):not(.dm-hero-when)')?.textContent ?? null, href: a.getAttribute('href') })));
+    assert.deepEqual(chips.map((chip) => chip.name), ['Robinhood Chain', 'Base', 'Arbitrum One', 'Elysium'], 'before Elysium opens, the four networks to open positions on');
+    assert.deepEqual(chips.map((chip) => chip.href), ['/new', '/new', '/new', '/docs/what-is-domino#elysium']);
+  } else {
+    assert.equal(await positions.count(), 0, 'no such row while Elysium is off');
+  }
   // QA round 2, Q7 (the owner's exact line): the hero says what Domino is under the headline.
   assert.equal(await page.locator('.dm-hero-lede').innerText(), 'Put two tokens in a pool and earn its trading fees.');
   assert.deepEqual(await page.locator('#learn article h3').allInnerTexts(), ['Auto-compound', 'Domino-compound', 'Auto-exit']);
@@ -1678,8 +1707,8 @@ test('Home connects funding, pools, three automations and risks, with the option
   assert.doesNotMatch(sim, /Interactive example|Example data/, 'no persistent example badge');
   assert.doesNotMatch(text, /MEME|Example token/, 'no example token');
   assert.equal(await page.locator('#hero-amount, #amount').count(), 0, 'no amount to type in');
-  assert.equal(await page.locator('main').getByRole('link', { name: 'New position', exact: true }).first().getAttribute('href'), '#/new');
-  assert.equal(await page.locator('main').getByRole('link', { name: 'Explore markets', exact: true }).first().getAttribute('href'), '#/markets');
+  assert.equal(await page.locator('main').getByRole('link', { name: 'New position', exact: true }).first().getAttribute('href'), '/new');
+  assert.equal(await page.locator('main').getByRole('link', { name: 'Explore markets', exact: true }).first().getAttribute('href'), '/markets');
   assert.equal(await page.locator('[data-domino-token]').count(), 0, 'no Domino token card on Home');
   assert.doesNotMatch(text, /The Domino token is coming|Ticker, supply and launch date/);
   assert.doesNotMatch(await page.locator('#pools').innerText(), /COMBINED TVL|NETWORK/, 'the six-pool stat strip is gone');
@@ -1730,22 +1759,23 @@ test('the docs: every page opens from the sidebar with its title and its link ma
   const sidebar = page.locator('nav[aria-label="Docs"]');
   assert.equal(await sidebar.count(), 1, 'one docs nav');
   const links = await sidebar.locator('a').evaluateAll((anchors) => anchors.map((a) => [a.textContent.trim(), a.getAttribute('href')]));
-  assert.deepEqual(links[0], ['Overview', '#/docs'], 'the sidebar starts at the index');
+  assert.deepEqual(links[0], ['Overview', '/docs'], 'the sidebar starts at the index');
   assert.deepEqual(await sidebar.locator('a[aria-current="page"]').allInnerTexts(), ['Overview']);
   assert.equal(await page.locator('nav[aria-label="On this page"]').count(), 0, 'the index lists pages, not sections');
   const pages = links.slice(1);
   // Changed on purpose 2026-10-01 (the copy workstream): Wallet requests, A pool’s page and Privacy joined the docs.
   // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): Bring funds from another network, Manage a
   // position, Stop-loss / take-profit and Your automation joined them.
-  assert.equal(pages.length, 23, `the sidebar lists ${pages.length} pages`);
-  const listed = await page.locator('main a[href^="#/docs/"]').evaluateAll((anchors) => [...new Set(anchors.filter((a) => !a.closest('nav[aria-label="Docs"]')).map((a) => a.getAttribute('href')))].sort());
+  // Changed on purpose 2026-11-07 (the owner: a Docs page for Season 1 of points): Points joined them.
+  assert.equal(pages.length, 24, `the sidebar lists ${pages.length} pages`);
+  const listed = await page.locator('main a[href^="/docs/"]').evaluateAll((anchors) => [...new Set(anchors.filter((a) => !a.closest('nav[aria-label="Docs"]')).map((a) => a.getAttribute('href')))].sort());
   assert.deepEqual(listed, pages.map(([, href]) => href).sort(), 'the index itself links every page');
 
   for (const [index, [title, href]] of pages.entries()) {
-    assert.match(href, /^#\/docs\/[a-z0-9]+(?:-[a-z0-9]+)*$/, `${title} links ${href}`);
+    assert.match(href, /^\/docs\/[a-z0-9]+(?:-[a-z0-9]+)*$/, `${title} links ${href}`);
     leaving(page);
     await sidebar.getByRole('link', { name: title, exact: true }).click();
-    await page.waitForFunction((hash) => location.hash === hash, href);
+    await page.waitForFunction((hash) => location.pathname + location.hash === hash, href);
     await page.waitForFunction((words) => document.querySelector('h1')?.textContent === words, title);
     assert.equal(await page.locator('h1').count(), 1, `${href} has one h1`);
     assert.deepEqual(await sidebar.locator('a[aria-current="page"]').allInnerTexts(), [title], `${href} marks its own link`);
@@ -1761,13 +1791,21 @@ test('the docs: every page opens from the sidebar with its title and its link ma
     assert.deepEqual(pager, [pages[index - 1]?.[1], pages[index + 1]?.[1]].filter(Boolean), `${href}: previous and next are its sidebar neighbours`);
     // Changed on purpose 2026-10-30 (QA round 2, the owner's decision on N24): Contracts links each address to its network's
     // block explorer, in a new tab; no other link leaves the app.
-    assert.equal(await page.locator('main a[href^="http"]:not([data-docs-explorer]), main a[href="#"]').count(), 0, `${href}: no link leaves the app`);
-    if (href === '#/docs/contracts') {
+    // Changed on purpose 2026-11-08 (the owner: Domino's repository is public): and Contracts' Source code section links
+    // to Domino's public source, once, in a new tab with no opener and no referrer.
+    assert.equal(await page.locator('main a[href^="http"]:not([data-docs-explorer]):not([data-docs-source]), main a[href="#"]').count(), 0, `${href}: no link leaves the app`);
+    const sources = await page.locator('main a[data-docs-source]').evaluateAll((anchors) => anchors.map((a) => [a.getAttribute('href'), a.target, a.rel, a.textContent, a.getAttribute('aria-label')]));
+    assert.deepEqual(sources, href === '/docs/contracts'
+      ? [['https://github.com/domino-money/domino-public', '_blank', 'noreferrer noopener', 'domino-money/domino-public', 'domino-money/domino-public on GitHub (opens in a new tab)']]
+      : [], `${href}: Domino's public source is linked from Contracts only`);
+    if (href === '/docs/contracts') {
       const explorers = await page.locator('main a[data-docs-explorer]').evaluateAll((anchors) => anchors.map((a) => [new URL(a.href).origin, a.target, a.rel, a.textContent, a.getAttribute('aria-label')]));
       assert.ok(explorers.length >= 25, `${explorers.length} explorer links`);
       // Changed on purpose 2026-10-31 (QA round 2 follow-ups, R4): each link is named by the explorer it opens, so one name
       // never stands for two sites (Domino's own contracts open Robin Etherscan, every other Robinhood Chain address Blockscout).
-      const NAMES = { 'https://robinhoodchain.blockscout.com': 'Robinhood explorer', 'https://robin.etherscan.io': 'Robin Etherscan', 'https://basescan.org': 'Basescan', 'https://arbiscan.io': 'Arbiscan' };
+      // Changed on purpose 2026-11-09 (Elysium's day 9, checklist step 5): and Kinetiq's explorer for Elysium's rows, in a
+      // build where Elysium is live (src/lib/elysiumIdentity.ts ELYSIUM_EXPLORER).
+      const NAMES = { 'https://robinhoodchain.blockscout.com': 'Robinhood explorer', 'https://robin.etherscan.io': 'Robin Etherscan', 'https://basescan.org': 'Basescan', 'https://arbiscan.io': 'Arbiscan', 'https://elysium.kinetiq.xyz': 'Elysium explorer' };
       for (const [origin, target, rel, text, label] of explorers) {
         assert.ok(origin in NAMES, origin);
         assert.deepEqual([target, rel], ['_blank', 'noreferrer noopener']);
@@ -1878,9 +1916,9 @@ test('a docs section lands just under the header: opened directly, from On this 
   // Changed on purpose 2026-10-04 (the owner: docs revalidated for V2): the section says Domino's automation; its id stays.
   const operator = toc.getByRole('link', { name: 'What Domino’s automation can and cannot do', exact: true });
   await operator.click();
-  await page.waitForFunction(() => location.hash === '#/docs/non-custodial#operator');
+  await page.waitForFunction(() => location.pathname + location.hash === '/docs/non-custodial#operator');
   await lands('operator', 'from On this page');
-  await page.waitForFunction(() => document.querySelector('nav[aria-label="On this page"] a[aria-current="location"]')?.getAttribute('href') === '#/docs/non-custodial#operator');
+  await page.waitForFunction(() => document.querySelector('nav[aria-label="On this page"] a[aria-current="location"]')?.getAttribute('href') === '/docs/non-custodial#operator');
 
   // Back to the top, then the same link: the hash stays as it is, so only the link itself can scroll.
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -1888,12 +1926,12 @@ test('a docs section lands just under the header: opened directly, from On this 
   assert.equal(await page.evaluate(() => window.scrollY), 0);
   await operator.click();
   await lands('operator', 'clicked again');
-  assert.equal(await page.evaluate(() => location.hash), '#/docs/non-custodial#operator');
+  assert.equal(await page.evaluate(() => location.pathname + location.hash), '/docs/non-custodial#operator');
 
   // A link in the prose to another page's section, then a plain docs route, which starts at the top.
   leaving(page);
   await page.locator('main').getByRole('link', { name: 'Signing in', exact: true }).click();
-  await page.waitForFunction(() => location.hash === '#/docs/wallet#sign-in');
+  await page.waitForFunction(() => location.pathname + location.hash === '/docs/wallet#sign-in');
   await page.waitForFunction(() => document.querySelector('h1')?.textContent === 'Wallet and sign-in');
   await lands('sign-in', 'from a link in the prose');
   await go(page, '/docs/fees');
@@ -1915,7 +1953,7 @@ test('Home funding examples preserve consent, show available networks and disclo
   const funding = page.locator('#funding');
   // Changed on purpose 2026-10-17 (the owner's decision on the V4 prototype: "Find your funds" goes to Positions, where the
   // wallet's tokens and positions are; it was New position).
-  assert.equal(await funding.getByRole('link', { name: 'Find your funds', exact: true }).getAttribute('href'), '#/positions');
+  assert.equal(await funding.getByRole('link', { name: 'Find your funds', exact: true }).getAttribute('href'), '/positions');
   assert.equal(await funding.locator('details[open]').count(), 0, 'route conditions start folded');
   // Changed on purpose 2026-10-16 (V4 Home, the owner's D-H3): the range lesson starts open, with its one control; its
   // title still folds it away (it was: starts folded, no control until opened).
@@ -1932,7 +1970,7 @@ test('Home funding examples preserve consent, show available networks and disclo
   const across = funding.getByRole('button', { name: 'From another network', exact: true });
   const local = funding.getByRole('button', { name: 'On this network', exact: true });
   assert.equal(await across.getAttribute('aria-pressed'), 'true');
-  assert.deepEqual(await funding.locator('.dm-funding-networks > span').evaluateAll(nodes => nodes.map(node => [...node.childNodes].filter(child => child.nodeType === Node.TEXT_NODE).map(child => child.textContent).join('').trim())), ['Ethereum', 'Base', 'Arbitrum One', 'OP Mainnet', 'Robinhood Chain']);
+  assert.deepEqual(await funding.locator('.dm-funding-networks > span').evaluateAll(nodes => nodes.map(node => [...node.childNodes].filter(child => child.nodeType === Node.TEXT_NODE).map(child => child.textContent).join('').trim())), ['Ethereum', 'Base', 'Arbitrum One', 'OP Mainnet', ...(ELYSIUM_REPO_FUNDS_FROM ? ['Elysium'] : []), 'Robinhood Chain']);
   assert.equal(await funding.getByRole('img', { name: 'Tokens from another network are transferred and swapped into the two tokens for your position.', exact: true }).isVisible(), true);
   await local.click();
   assert.equal(await local.getAttribute('aria-pressed'), 'true');
@@ -1944,16 +1982,17 @@ test('Home funding examples preserve consent, show available networks and disclo
   await across.click();
   assert.equal(await across.getAttribute('aria-pressed'), 'true');
   await funding.locator('summary').click();
-  assert.match(await funding.locator('details').innerText(), /Ethereum, Base, Arbitrum One, OP Mainnet and Robinhood Chain/);
+  // Changed on purpose 2026-11-09 (rugged97’s #488): Elysium named last once funds can come from it.
+  assert.match(await funding.locator('details').innerText(), ELYSIUM_REPO_FUNDS_FROM ? /Ethereum, Base, Arbitrum One, OP Mainnet, Robinhood Chain and Elysium/ : /Ethereum, Base, Arbitrum One, OP Mainnet and Robinhood Chain/);
   assert.match(await funding.locator('details').innerText(), /depend on the token and destination/);
   assert.match(await funding.locator('details').innerText(), /Review swaps, transfer costs and network fees before you approve in your wallet/);
   const automations = page.locator('#learn');
   for (const [name, fee, href] of [
     // Changed on purpose 2026-10-30 (QA round 2, Q16): each "How it works" opens its own docs page.
     // Changed on purpose 2026-10-30 (QA round 2, Q1): one fee wording everywhere.
-    ['Auto-compound', '2% of the earned fees it uses, each time. Your original deposit is not charged.', '#/docs/auto-compound'],
-    ['Domino-compound', '4% of the earned fees it uses, each time. Your original deposit is not charged.', '#/docs/domino-compound'],
-    ['Auto-exit', '0.2% of the position’s value, only if it closes.', '#/docs/auto-exit'],
+    ['Auto-compound', '2% of the earned fees it uses, each time. Your original deposit is not charged.', '/docs/auto-compound'],
+    ['Domino-compound', '4% of the earned fees it uses, each time. Your original deposit is not charged.', '/docs/domino-compound'],
+    ['Auto-exit', '0.2% of the position’s value, only if it closes.', '/docs/auto-exit'],
   ]) {
     const card = automations.getByRole('article').filter({ has: page.getByRole('heading', { name, exact: true }) });
     assert.equal(await card.isVisible(), true, name + ' is presented without a carousel or tab');
@@ -1967,18 +2006,18 @@ test('Home funding examples preserve consent, show available networks and disclo
   await captureUI(page, 'home-automation-details', '#learn');
   leaving(page);
   await funding.getByRole('link', { name: 'Find your funds', exact: true }).click();
-  await page.waitForFunction(() => location.hash === '#/positions');
+  await page.waitForFunction(() => location.pathname + location.hash === '/positions');
   await page.getByRole('heading', { name: 'Positions', exact: true, level: 1 }).waitFor();
   await go(page, '/');
   leaving(page);
   await page.locator('#learn').getByRole('link', { name: 'Explore automation', exact: true }).click();
-  await page.waitForFunction(() => location.hash === '#/automate');
+  await page.waitForFunction(() => location.pathname + location.hash === '/automate');
   await page.locator('[data-automation-card="protection"]').waitFor();
   const docs = page.locator('[data-automation-card="protection"]').getByRole('link', { name: 'How Auto-exit works', exact: true });
-  assert.equal(await docs.getAttribute('href'), '#/docs/auto-exit');
+  assert.equal(await docs.getAttribute('href'), '/docs/auto-exit');
   leaving(page);
   await docs.click();
-  await page.waitForFunction(() => location.hash === '#/docs/auto-exit');
+  await page.waitForFunction(() => location.pathname + location.hash === '/docs/auto-exit');
   await page.waitForFunction(() => document.querySelector('h1')?.textContent === 'Auto-exit');
   clean(page, 'Home funding and automation flows');
   await close(page);
@@ -2007,7 +2046,7 @@ test('the docs on a phone: nothing spills sideways, nothing sticks, the docs men
   // the CI failure here): the fold clips (docs.css, overflow: clip) instead of hiding, so the click's scroll into view no
   // longer shifts the list inside the growing box; the list slid away between press and release, and the hash never moved.
   await menu.getByRole('link', { name: 'Fees', exact: true }).click();
-  await page.waitForFunction(() => location.hash === '#/docs/fees');
+  await page.waitForFunction(() => location.pathname + location.hash === '/docs/fees');
   await page.waitForFunction(() => document.querySelector('h1')?.textContent === 'Fees');
   assert.equal(await page.locator('details[data-docs-menu]').evaluate((element) => element.open), false, 'the menu starts closed on the page it opened');
   assert.equal(await page.evaluate(() => window.scrollY), 0);
@@ -2046,7 +2085,7 @@ test('the docs on a phone: nothing spills sideways, nothing sticks, the docs men
   await disclosure.locator('summary').click();
   assert.equal(await disclosure.evaluate((element) => element.open), true, 'On this page opens');
   await disclosure.getByRole('link', { name: 'Network gas', exact: true }).click();
-  await page.waitForFunction(() => location.hash === '#/docs/fees#network-gas');
+  await page.waitForFunction(() => location.pathname + location.hash === '/docs/fees#network-gas');
   await landsOnGas('from the disclosure');
   // The same section again, from the top: no hashchange, and the list closes before the section is measured.
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -2073,7 +2112,7 @@ test('a route that names no page says so plainly, offers the ways on, and lights
     assert.equal(await page.locator('#pools').count(), 0, `${route}: not Home`);
     assert.equal(await page.locator('nav[aria-label="Main"] a[aria-current="page"]').count(), 0, `${route}: nothing lit`);
     const links = await page.locator('main a').evaluateAll((list) => list.map((a) => [a.textContent.trim(), a.getAttribute('href')]));
-    assert.deepEqual(links, [['Go to Home', '#/'], ['Explore markets', '#/markets']], route);
+    assert.deepEqual(links, [['Go to Home', '/'], ['Explore markets', '/markets']], route);
     clean(page, route);
     await close(page);
   }
@@ -2139,14 +2178,15 @@ test('each route names its tab, gives Home its own name back, and a move to anot
   const page = await open('/markets');
   await page.waitForFunction(() => document.title === 'Markets · Domino');
   assert.equal(await page.locator('[data-route-announcer]').count(), 0, 'the first screen of a visit is not announced: the browser reads its title');
-  for (const [route, title] of [['/automate', 'Automate · Domino'], ['/positions', 'Positions · Domino'], ['/new', 'New position · Domino'], ['/docs/privacy', 'Privacy · Docs · Domino'], ['/', 'Domino']]) {
+  for (const [route, title] of [['/automate', 'Automate · Domino'], ['/positions', 'Positions · Domino'], ['/new', 'New position · Domino'], ['/docs/privacy', 'Privacy · Docs · Domino'], ['/', 'Domino · Earn fees. Keep control.']]) {
     await go(page, route);
     await page.waitForFunction((want) => document.title === want, title, { timeout: 10_000 });
   }
   const region = page.locator('[data-route-announcer]');
   assert.equal(await region.count(), 1, 'one region, made once');
   assert.deepEqual(await region.evaluate((node) => [node.getAttribute('aria-live'), node.getAttribute('aria-atomic'), node.className, node.closest('#root') === null]), ['polite', 'true', 'sr-only', true]);
-  await page.waitForFunction(() => document.querySelector('[data-route-announcer]')?.textContent === 'Domino');
+  // Changed on purpose 2026-11-07 (the owner: Domino in Google, decision 1): Home's tab is its search title.
+  await page.waitForFunction(() => document.querySelector('[data-route-announcer]')?.textContent === 'Domino · Earn fees. Keep control.');
   // The older docs slug still opens Domino-compound (live note L12).
   await go(page, '/docs/domino-compounder');
   // Changed on purpose 2026-10-30 (QA round 2, N25): the docs' tabs follow every screen's pattern, "<page> · Docs · Domino".
@@ -2164,7 +2204,10 @@ test('the page asks for the opened route’s code and styles while the app start
   assert.equal(table.early, true, 'the deployable build sends Home’s first reads early');
   // Changed on purpose 2026-10-01 (fix round 1): the second chain's section has no row. The same build is served on
   // domino.money, where #/elysium… is not found, so the page never preloads its chunk (vite.config.ts ROUTE_MODULES).
-  assert.deepEqual(Object.keys(table.chunks).sort(), ['automate', 'docs', 'markets', 'new', 'pool', 'position', 'positions', 'sequence', 'setup']);
+  // Changed on purpose 2026-11-07 (launch sweep F11): Receipts (#/positions/receipts) has its own row.
+  // Changed on purpose 2026-11-07 (the owner's Points page, Season 1): Points has its own row.
+  assert.deepEqual(Object.keys(table.chunks).sort(), ['automate', 'docs', 'markets', 'new', 'points', 'pool', 'position', 'positions', 'receipts', 'sequence', 'setup']);
+  assert.ok(table.chunks.points.some((file) => /^\/assets\/Points-[\w-]+\.js$/.test(file)) && table.chunks.points.some((file) => /^\/assets\/Points-[\w-]+\.css$/.test(file)), 'the Points page’s code and its own styles');
   assert.ok(!html.includes('ElysiumEntry'), 'the page names none of the section’s files');
   assert.match(table.chunks.markets[0], /^\/assets\/Explore-[\w-]+\.js$/);
   // Changed on purpose 2026-10-01 (RPC-SPEC §7.8): a position's page no longer runs the chain code; its first read asks the
@@ -2210,6 +2253,93 @@ test('the page asks for the opened route’s code and styles while the app start
   for (const after of prefetchedAt) assert.ok(after >= 3_500, `a prefetch began ${Math.round(after)} ms after the page loaded`);
   clean(home, 'home');
   await close(home);
+});
+
+/** A page of the release build opened at `url`, with every console line about a preload it left unused recorded. */
+async function openWatchingPreloads(url) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  watch(page, { ignore: (problem) => problem.includes('nosuchtoken') });
+  const unused = [];
+  page.on('console', (message) => { if (/preloaded using link preload but not used/.test(message.text())) unused.push(message.text()); });
+  await page.route('https://api.dexscreener.com/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.goto(url, { waitUntil: 'networkidle' });
+  return { page, unused };
+}
+
+// Added 2026-11-07 (launch sweep F11): the console said a stylesheet "was preloaded using link preload but not used within
+// a few seconds" on Receipts, which took the list's files and so its OwnedRows stylesheet, which it never applies; and
+// after a link to a screen was pointed at or focused (the site menu focuses its first item) and not followed, whose
+// stylesheets were preloaded then. Receipts asks its own files now, and a link pointed at prefetches its screen's styles.
+test('no stylesheet is preloaded that the page leaves unused: Receipts asks its own files, a link pointed at prefetches its styles', async () => {
+  const html = readFileSync(join(DIST, 'index.html'), 'utf8');
+  const table = JSON.parse(/<script type="application\/json" id="dm-boot">(.*?)<\/script>/.exec(html)[1]);
+  const listStyles = table.chunks.positions.filter((file) => /^\/assets\/OwnedRows-[\w-]+\.css$/.test(file));
+  assert.equal(listStyles.length, 1, 'the list’s own stylesheet comes with the list’s files');
+  assert.ok(table.chunks.receipts.some((file) => /^\/assets\/Positions-[\w-]+\.js$/.test(file)), 'Receipts’ files hold its screen');
+  assert.ok(!table.chunks.receipts.some((file) => listStyles.includes(file)), 'and none of the list’s styles');
+  const receipts = await openWatchingPreloads(`${origin}/#/positions/receipts`);
+  await shown(receipts.page, '/positions/receipts');
+  // Chrome says it about three seconds after the load event.
+  await receipts.page.waitForTimeout(5_000);
+  assert.deepEqual(receipts.unused, [], 'Receipts applies every stylesheet it asked for');
+  clean(receipts.page, 'receipts');
+  await close(receipts.page);
+  const home = await openWatchingPreloads(`${origin}/#/`);
+  await shown(home.page, '/');
+  // Changed on purpose 2026-11-07 (pages of their own, lib/route.ts): the site's links are its pages' own addresses.
+  await home.page.locator('a[href="/new"]:visible').first().hover();
+  await home.page.waitForFunction(() => document.querySelector('link[rel="modulepreload"][href^="/assets/NewPosition-"], link[rel="prefetch"][href^="/assets/NewPosition-"]') !== null, undefined, { timeout: 10_000 });
+  assert.deepEqual(await home.page.evaluate(() => [...document.querySelectorAll('link[rel="preload"][as="style"]')].map((link) => link.getAttribute('href'))), [], 'a link pointed at preloads no stylesheet');
+  await home.page.waitForTimeout(5_000);
+  assert.deepEqual(home.unused, [], 'and nothing is said about one left unused');
+  clean(home.page, 'home, a link pointed at');
+  await close(home.page);
+});
+
+// Added 2026-11-07 (launch sweep F12): Pages answers every path that names no file with the site's page, and the page
+// routes by its hash alone, so /nope showed Home (and /nope#/positions Positions) as if the link had worked. A path the
+// site has no page at is not found; following a link from there moves to the site's own path, where every screen is.
+// Changed on purpose 2026-11-07 (pages of their own, lib/route.ts): /positions is a page's own address now, so it opens
+// Positions (below), and a path under a page's name that names nothing (/markets/nope) is not found too; Home is `/`.
+test('a path the site has no page at is not found, whatever its hash, and its ways on lead back to the site', async () => {
+  for (const path of ['/nope', '/nope#/positions', '/markets/nope#/positions', '/nope/deeper#/markets', '//markets', '/#/nope']) {
+    const { page } = await openWatchingPreloads(`${origin}${path}`);
+    await page.locator('[data-not-found]').waitFor();
+    assert.equal(await page.locator('h1').first().innerText(), 'This page doesn’t exist', path);
+    assert.equal(await page.title(), 'Page not found · Domino', path);
+    assert.equal(await page.locator('#pools').count(), 0, `${path}: not Home`);
+    assert.equal(await page.locator('nav[aria-label="Main"] a[aria-current="page"]').count(), 0, `${path}: nothing lit`);
+    clean(page, path);
+    await close(page);
+  }
+  const { page } = await openWatchingPreloads(`${origin}/nope`);
+  await page.locator('[data-not-found]').waitFor();
+  await page.locator('main').getByRole('link', { name: 'Go to Home', exact: true }).click();
+  await shown(page, '/');
+  assert.deepEqual(await page.evaluate(() => [location.pathname, location.hash]), ['/', ''], 'Home, at the site’s own path');
+  await page.locator('main').getByRole('link', { name: 'New position', exact: true }).first().click();
+  await page.waitForFunction(() => location.pathname === '/new');
+  assert.equal(await page.locator('[data-not-found]').count(), 0, 'every link works on from there');
+  clean(page, 'from /nope on');
+  await close(page);
+  // A link from before followed on such a path (a hash change) moves to the site's own path, where its screen is.
+  const typed = await openWatchingPreloads(`${origin}/nope`);
+  await typed.page.locator('[data-not-found]').waitFor();
+  await typed.page.evaluate(() => { location.hash = '#/markets'; });
+  await typed.page.waitForFunction(() => location.pathname === '/markets' && location.hash === '');
+  await shown(typed.page, '/markets');
+  assert.equal(await typed.page.locator('[data-not-found]').count(), 0, 'a link from before, followed from /nope');
+  clean(typed.page, 'a link from before, followed from /nope');
+  await close(typed.page);
+  // A page's own address and its forms from before open the screen they name, at that address: never not found.
+  for (const [path, own] of [['/#/markets', '/markets'], ['/index.html#/markets', '/markets'], ['/markets', '/markets'], ['/positions', '/positions'], ['/#/positions', '/positions'], ['/explore', '/markets'], ['/docs/risks', '/docs/risks'], ['/#/docs/risks', '/docs/risks']]) {
+    const opened = await openWatchingPreloads(`${origin}${path}`);
+    await shown(opened.page, own);
+    assert.equal(await opened.page.locator('[data-not-found]').count(), 0, path);
+    assert.equal(await opened.page.evaluate(() => location.pathname), own, `${path}: at the page’s own address`);
+    clean(opened.page, path);
+    await close(opened.page);
+  }
 });
 
 // D7: Tab from New position's token search lost the keyboard's place: the list's scrolling box was a Tab stop that
@@ -2258,4 +2388,24 @@ test('#/elysium is not found where the second chain’s section is off: no chunk
   assert.ok(!homeLoaded.some((path) => /ElysiumEntry-/.test(path)), 'Home loads none of the section');
   clean(home, 'home');
   await close(home);
+});
+
+// Added 2026-11-07 (the owner's Points page, Season 1, Stage 1): /points draws in the deployed build with no wallet and no
+// points service behind this server: its tab, the season's line (before 9 Nov) or the line to connect (after it), Season 1,
+// and the quiet link to the docs' Points page; the menu names it.
+test('the Points page renders with no wallet and no points service: its tab, its line, Season 1 and the docs’ Points page', async () => {
+  const page = await open('/points');
+  await page.locator('main.dm-points-page:not([data-points-lead="wait"])').waitFor();
+  const before = Date.now() < Date.UTC(2026, 10, 9);
+  assert.equal(await page.locator('main.dm-points-page').getAttribute('data-points-lead'), before ? 'before' : 'connect');
+  assert.equal(await page.title(), 'Points · Domino');
+  const text = (await page.locator('main').innerText()).replace(/\s+/g, ' ');
+  assert.match(text, before ? /Season 1 starts 9 Nov at 00:00 UTC\./ : /Connect a wallet to see your points\./);
+  assert.match(text, /Season 1 9 Nov 2026 to 9 Feb 2027/);
+  assert.equal(await page.locator('main a[href="/docs/points"]').innerText(), 'How points work');
+  assert.equal(await page.locator('main button[data-points-action="connect"]').count(), 1);
+  await page.locator('header button[aria-controls="site-menu"]').first().click();
+  assert.equal(await page.locator('#site-menu a[href="/points"]').count(), 1, 'the menu names it');
+  clean(page, 'points');
+  await close(page);
 });

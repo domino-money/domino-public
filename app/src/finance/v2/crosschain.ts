@@ -6,6 +6,7 @@ import { isJournalRecord, journalRecord, stillSendable, walletSteps, type Crossc
 import type { CrosschainTransport } from '../../v2/crosschain/transport'
 import type { CrosschainValidators, DestinationChainId, QuotePlan } from '../../v2/crosschain/types'
 import { V2_CHAINS } from '../../v2/chains'
+import { isS2Destination } from '../../v2/types'
 import { NONCE_LATCH_EXPIRY_S, WalletNotAsked } from './transact'
 
 /**
@@ -1155,7 +1156,9 @@ export function isPendingBatch(value: unknown): value is PendingBatch {
   if (keys.length !== BATCH_FIELDS.length || !BATCH_FIELDS.every((key) => Object.hasOwn(entry, key))) return false
   const { originChainId, destinationChainId, provider, requestId, batchId, quote, at } = entry
   if (typeof originChainId !== 'number' || !Number.isSafeInteger(originChainId) || originChainId < 1) return false
-  if (destinationChainId !== 4663 && destinationChainId !== 8453 && destinationChainId !== 42161) return false
+  // Changed on purpose 2026-11-09 (Elysium's day 9, the owner: funds brought to Elysium from other networks as on Base):
+  // the deposit's destinations (v2/types.ts S2_DESTINATION_CHAIN_IDS), Elysium's too where funds can be brought to it.
+  if (!isS2Destination(destinationChainId)) return false
   if (originChainId === destinationChainId) return false
   if (provider === 'relay' ? typeof requestId !== 'string' || !HASH.test(requestId) : provider !== 'across' || requestId !== null) return false
   return (

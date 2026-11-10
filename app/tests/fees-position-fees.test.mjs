@@ -16,7 +16,9 @@ const { positionApr } = require('../.test-build/app/src/lib/positionApr.js');
 const { basisOf, valueNumber, valueUnits, unitsText } = require('../.test-build/app/src/components/positions/visual/value.js');
 const { feesEvents, feesView, periodView } = require('../.test-build/app/src/components/positions/visual/model.js');
 
-const fixture = (name) => JSON.parse(readFileSync(new URL(`../../api-contracts/read-v6/fixtures/1.2.0-rc.1/valid/${name}.json`, import.meta.url), 'utf8'));
+// Changed on purpose 2026-11-07 (day-9 rehearsal, finding F8): read-v6's versions are the package's own
+// (api-contracts/read-v6/runtime.mjs), never literals, so a day-9 version move needs only docs/ELYSIUM_DAY9.md step 3.
+const fixture = (name) => JSON.parse(readFileSync(new URL(`../../api-contracts/read-v6/fixtures/${runtime.NEXT_VERSION}/valid/${name}.json`, import.meta.url), 'utf8'));
 const WETH = '0x4200000000000000000000000000000000000006';
 const USDC = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
 const tokenOf = (address) => (address === WETH ? { symbol: 'WETH', decimals: 18 } : address === USDC ? { symbol: 'USDC', decimals: 6 } : { symbol: null, decimals: null });

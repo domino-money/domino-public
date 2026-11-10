@@ -512,7 +512,7 @@ export default function SequenceCreate({ positions, intent, connect, capabilitie
             signIn={false}
             size="lg"
             fallback={
-              <LinkButton href={chosen.key === 'domino' ? '#/docs/domino-compound#start-and-stop' : '#/docs/auto-compound#where-it-starts'} variant="outline" size="lg" className="dm-seq-done-link">
+              <LinkButton href={chosen.key === 'domino' ? '/docs/domino-compound#start-and-stop' : '/docs/auto-compound#where-it-starts'} variant="outline" size="lg" className="dm-seq-done-link">
                 How to switch it on
                 <IconChevronRight />
               </LinkButton>

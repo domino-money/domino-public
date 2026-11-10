@@ -2,6 +2,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { WagmiProvider } from 'wagmi'
 import { publishWalletIdentity } from '../../lib/walletIdentity'
+import { onRoute } from '../../lib/route'
 import { forgetPrivate } from '../../finance/privateCards'
 import { forgetWallets } from '../../lib/browserCopies'
 import { privateQueryClient } from '../../session/privateQuery'
@@ -44,12 +45,11 @@ function WalletControl() {
   // connection or a sign-in under way goes on (wallet/port.ts, wallet/signIn.ts) and the header says so.
   useEffect(() => {
     if (!open) return
-    const route = (url: string) => new URL(url).hash.replace(/^#/, '').split('#')[0] || '/'
-    const moved = (event: HashChangeEvent) => {
-      if (route(event.oldURL) !== route(event.newURL)) setOpen(false)
-    }
-    window.addEventListener('hashchange', moved)
-    return () => window.removeEventListener('hashchange', moved)
+    const route = (hash: string) => hash.replace(/^#/, '').split('#')[0] || '/'
+    // Each move of the route, before and after (lib/route.ts; it was hashchange's old and new URL).
+    return onRoute(({ from, to }) => {
+      if (route(from) !== route(to)) setOpen(false)
+    })
   }, [open])
 
   // Published outward for the screens that mention the connected address;

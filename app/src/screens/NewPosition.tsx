@@ -10,6 +10,7 @@ import { Journey } from '../components/create/Journey'
 import { parseNewHash, parseNewNetworkHash, type NetworkTokenLocation } from '../components/explore/routes'
 import { useHash } from '../components/explore/useHash'
 import { recovering } from '../lib/staleRelease'
+import { currentRoute, onRoute, routeOfHref } from '../lib/route'
 
 /**
  * Changed on purpose (data) 2026-10-02 (Domino V2 integration, the journey): in a build that carries V2 (`__DOMINO_V2__`;
@@ -23,7 +24,7 @@ import { recovering } from '../lib/staleRelease'
  */
 type V2JourneyProps = { flow: number; poolId: string; linkToken: string | null; networkToken: NetworkTokenLocation | null }
 const V2NewPosition = __DOMINO_V2__ ? lazy(recovering(() => import('../v2in/journey/NewPositionV2'), () => ({ default: ({ flow, poolId, linkToken, networkToken }: V2JourneyProps) => networkToken
-  ? <PageShell width="flow"><PageHeader size="display" title={CREATE.page.title} /><p role="status">{CREATE.token.networkClosed('this network')} <a href="#/new">Search again</a></p></PageShell>
+  ? <PageShell width="flow"><PageHeader size="display" title={CREATE.page.title} /><p role="status">{CREATE.token.networkClosed('this network')} <a href="/new">Search again</a></p></PageShell>
   : <Journey key={flow} poolId={poolId} linkToken={linkToken} /> }))) : null
 
 /**
@@ -49,14 +50,14 @@ function useFlowKey(): number {
     const onClick = (event: MouseEvent) => {
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
       const link = event.target instanceof Element ? event.target.closest('a[href]') : null
-      if (!(link instanceof HTMLAnchorElement) || link.getAttribute('href') !== window.location.hash) return
+      if (!(link instanceof HTMLAnchorElement) || routeOfHref(link.getAttribute('href') ?? '') !== currentRoute()) return
       again()
       window.scrollTo(0, 0)
     }
-    window.addEventListener('hashchange', again)
+    const moved = onRoute(again)
     document.addEventListener('click', onClick)
     return () => {
-      window.removeEventListener('hashchange', again)
+      moved()
       document.removeEventListener('click', onClick)
     }
   }, [created])
